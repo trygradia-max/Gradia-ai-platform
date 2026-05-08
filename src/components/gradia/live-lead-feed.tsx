@@ -72,7 +72,7 @@ export function LiveLeadFeed({ leads }: { leads: LeadRow[] }) {
                   colSpan={6}
                   className="py-14 text-center text-sm text-muted-foreground"
                 >
-                  No leads yet. Capture your first inquiry with Quick add lead.
+                  No leads yet — let&apos;s capture our first with Quick add lead.
                 </TableCell>
               </TableRow>
             ) : (

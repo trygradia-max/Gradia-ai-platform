@@ -1,6 +1,6 @@
 import { CalendarRange } from "lucide-react"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function SchedulePage() {
   return (
@@ -8,9 +8,7 @@ export default function SchedulePage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Schedule</h1>
         <p className="text-sm text-muted-foreground">
-          Appointments reference your leads and respect{" "}
-          <span className="font-medium text-foreground">shop_id</span> at the
-          database layer.
+          Our jobs, day by day.
         </p>
       </div>
       <Card className="border-border/80">
@@ -20,26 +18,13 @@ export default function SchedulePage() {
           </div>
           <div>
             <CardTitle className="text-base font-medium">
-              Routing board
+              Calendar coming soon
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Wire calendar and AI handoffs here — schema is ready in{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                appointments
-              </code>
-              .
+              Today&apos;s bookings will live here — tap to confirm or reschedule from the road.
             </p>
           </div>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Booking UI lands next: fetch rows with{" "}
-            <span className="font-medium text-foreground">
-              eq(&quot;shop_id&quot;, currentShopId)
-            </span>{" "}
-            only.
-          </p>
-        </CardContent>
       </Card>
     </div>
   )

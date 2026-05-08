@@ -12,11 +12,24 @@ export type ShopRow = {
 export type LeadRow = {
   id: string
   shop_id: string
+  customer_id: string | null
   customer_name: string
   phone: string
   car_info: string | null
   pin_notes: string | null
   status: LeadStatus
+  created_at: string
+  updated_at: string
+}
+
+export type CustomerRow = {
+  id: string
+  shop_id: string
+  name: string | null
+  phone: string | null
+  email: string | null
+  instagram_handle: string | null
+  facebook_id: string | null
   created_at: string
   updated_at: string
 }
@@ -37,6 +50,30 @@ export type AppointmentRow = {
   shop_id: string
   lead_id: string | null
   scheduled_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type PendingActionType = "create_lead"
+
+export type PendingActionStatus =
+  | "pending"
+  | "approved"
+  | "edit_requested"
+  | "rejected"
+
+export type PendingActionRow = {
+  id: string
+  shop_id: string
+  action_type: PendingActionType
+  payload: Record<string, unknown>
+  status: PendingActionStatus
+  requested_by: string
+  decided_at: string | null
+  decided_by_slack: string | null
+  result_id: string | null
+  slack_channel: string | null
+  slack_message_ts: string | null
   created_at: string
   updated_at: string
 }

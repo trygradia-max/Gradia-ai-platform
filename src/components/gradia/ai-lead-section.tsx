@@ -74,7 +74,7 @@ export function AiLeadSection() {
     setSaving(false)
 
     if (res.ok) {
-      toast.success("Lead saved")
+      toast.success("Sent for approval — approve in Slack to save")
       setRaw("")
       setCustomerName("")
       setPhone("")

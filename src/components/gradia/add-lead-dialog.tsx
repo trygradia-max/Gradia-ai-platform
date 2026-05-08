@@ -56,7 +56,7 @@ export function AddLeadDialog() {
     setPending(false)
 
     if (result.ok) {
-      toast.success("Lead captured")
+      toast.success("Sent for approval — approve in Slack to save")
       setOpen(false)
       form.reset()
       setStatus("new")
@@ -80,7 +80,7 @@ export function AddLeadDialog() {
         <DialogHeader>
           <DialogTitle>Add lead</DialogTitle>
           <DialogDescription>
-            Log a walk-in or phone inquiry. Scoped to your shop automatically.
+            Log a walk-in or phone inquiry. We&apos;ll save it to our pipeline.
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={handleSubmit}>

@@ -1,0 +1,4 @@
+- UI must feel like Lovable — clean, simple, premium
+- Every screen should work for a one-person detailing business
+- Mobile first — detailers are on their phones on the job
+- No clutter, no jargon, actions should be obvious

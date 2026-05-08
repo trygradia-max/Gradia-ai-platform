@@ -11,8 +11,7 @@ export default async function LeadsPage() {
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Leads</h1>
           <p className="text-sm text-muted-foreground">
-            Same tenant-scoped dataset as the dashboard — optimized for deeper
-            workflows next.
+            Every lead, newest first.
           </p>
         </div>
         <AddLeadDialog />

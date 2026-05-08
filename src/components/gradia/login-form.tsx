@@ -45,7 +45,7 @@ export function LoginForm() {
         setPending(false)
         return
       }
-      setMessage("Check your email for a secure sign-in link.")
+      setMessage("Sign-in link sent — check the inbox.")
     } catch (err) {
       setMessage(
         err instanceof Error ? err.message : "Unable to reach authentication."
@@ -104,8 +104,7 @@ export function LoginForm() {
           </p>
         ) : null}
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          New here? Sign in, then we will prompt you to name your shop before
-          opening the console.
+          New here? Sign in, and we&apos;ll set up our shop together.
         </p>
       </CardContent>
     </Card>

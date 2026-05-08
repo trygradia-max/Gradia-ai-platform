@@ -35,14 +35,9 @@ export function OnboardingForm() {
   return (
     <Card className="w-full max-w-lg border-border/80 shadow-xl">
       <CardHeader>
-        <CardTitle className="text-xl">Create your shop</CardTitle>
+        <CardTitle className="text-xl">Let&apos;s set up our shop</CardTitle>
         <CardDescription>
-          One shop record anchors every lead, service, and appointment you
-          create in Gradia. You can extend settings later inside the JSON{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-            settings
-          </code>{" "}
-          column.
+          We&apos;ll use this to organize every lead, job, and customer. We can fine-tune the rest from settings later.
         </CardDescription>
       </CardHeader>
       <CardContent>

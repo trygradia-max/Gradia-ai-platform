@@ -1,13 +1,12 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { createClient } from "@/lib/supabase/server"
-import { sendLeadAlert } from "@/lib/slack"
+import { sendLeadApprovalRequest } from "@/lib/slack"
 import { requireShop } from "@/lib/shop"
 
-const createLeadSchema = z.object({
+const submitLeadSchema = z.object({
   customerName: z.string().min(1, "Name is required").max(200),
   phone: z.string().min(5).max(40),
   carInfo: z.string().max(500).optional().nullable(),
@@ -19,10 +18,15 @@ export type CreateLeadResult =
   | { ok: true }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> }
 
+/**
+ * Submits a proposed lead for human approval. Nothing is written to `leads`
+ * until someone clicks Approve in Slack — the interactivity route handles
+ * the insert.
+ */
 export async function createLead(
-  input: z.infer<typeof createLeadSchema>
+  input: z.infer<typeof submitLeadSchema>
 ): Promise<CreateLeadResult> {
-  const parsed = createLeadSchema.safeParse(input)
+  const parsed = submitLeadSchema.safeParse(input)
   if (!parsed.success) {
     return {
       ok: false,
@@ -37,30 +41,54 @@ export async function createLead(
   const shop = await requireShop()
   const supabase = await createClient()
 
-  const { error } = await supabase.from("leads").insert({
-    shop_id: shop.id,
-    customer_name: parsed.data.customerName,
-    phone: parsed.data.phone,
-    car_info: parsed.data.carInfo ?? null,
-    pin_notes: parsed.data.pinNotes ?? null,
-    status: parsed.data.status ?? "new",
-  })
-
-  if (error) {
-    return { ok: false, error: error.message }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return { ok: false, error: "Sign-in expired — please refresh." }
   }
 
-  revalidatePath("/dashboard")
-  revalidatePath("/leads")
+  const status = parsed.data.status ?? "new"
+  const carInfo = parsed.data.carInfo ?? null
+  const pinNotes = parsed.data.pinNotes ?? null
+
+  const proposal = {
+    customer_name: parsed.data.customerName,
+    phone: parsed.data.phone,
+    car_info: carInfo,
+    pin_notes: pinNotes,
+    status,
+  }
+
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "create_lead",
+      payload: proposal,
+      requested_by: user.id,
+    })
+    .select("id")
+    .single()
+
+  if (pendingErr || !pending) {
+    return {
+      ok: false,
+      error: pendingErr?.message ?? "Could not queue lead for approval.",
+    }
+  }
 
   try {
-    await sendLeadAlert({
+    await sendLeadApprovalRequest({
+      pendingActionId: pending.id,
       customerName: parsed.data.customerName,
       phone: parsed.data.phone,
-      carInfo: parsed.data.carInfo ?? null,
+      carInfo,
+      pinNotes,
+      status,
     })
   } catch (slackErr) {
-    console.error("[slack] sendLeadAlert:", slackErr)
+    console.error("[slack] sendLeadApprovalRequest:", slackErr)
   }
 
   return { ok: true }

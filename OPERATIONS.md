@@ -1,0 +1,4 @@
+- Every agent action must go through HITL before executing
+- All channels (voice, SMS, email) share one memory layer
+- Never duplicate a customer record — always check unified identity first
+- All outbound messages must include Gradia's name and role

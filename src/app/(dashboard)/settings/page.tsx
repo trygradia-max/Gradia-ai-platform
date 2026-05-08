@@ -8,7 +8,7 @@ export default function SettingsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Shop profile and integrations, always filtered by ownership in RLS.
+          Shop, integrations, and account.
         </p>
       </div>
       <Card className="border-border/80">
@@ -18,22 +18,17 @@ export default function SettingsPage() {
           </div>
           <div>
             <CardTitle className="text-base font-medium">
-              Security posture
+              More coming soon
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Never pass <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">shop_id</code> from the client without re-validating on
-              the server.
+              Service menu, integrations, team, and billing live here next.
             </p>
           </div>
         </CardHeader>
         <CardContent>
           <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
-            <li>
-              Row-level policies scope reads and writes to shops you own.
-            </li>
-            <li>
-              Server actions call <span className="font-medium text-foreground">requireShop()</span> so inserts cannot target another tenant.
-            </li>
+            <li>Edit our service menu — prices, durations, descriptions.</li>
+            <li>Connect Slack, voice, email, and payments in one place.</li>
           </ul>
         </CardContent>
       </Card>

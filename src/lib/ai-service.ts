@@ -9,10 +9,7 @@ export type ExtractedLeadJson = {
   service: string
 }
 
-/** 2026 default — Haiku with improved tool / JSON extraction */
-const CLAUDE_MODEL_PRIMARY = "claude-haiku-4.5"
-/** Used only when primary model id returns not-found */
-const CLAUDE_MODEL_FALLBACK = "claude-3-5-haiku-latest"
+const CLAUDE_MODEL_PRIMARY = "claude-haiku-4-5-20251001"
 
 const TOOL_NAME = "submit_gradia_lead"
 
@@ -263,12 +260,5 @@ export async function extractLeadFromRawText(
     throw new Error("Note is too long (max 12,000 characters).")
   }
 
-  try {
-    return await extractWithModel(CLAUDE_MODEL_PRIMARY, trimmed)
-  } catch (e) {
-    if (isModelNotFoundError(e)) {
-      return await extractWithModel(CLAUDE_MODEL_FALLBACK, trimmed)
-    }
-    throw e
-  }
+  return extractWithModel(CLAUDE_MODEL_PRIMARY, trimmed)
 }
