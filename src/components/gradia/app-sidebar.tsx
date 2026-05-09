@@ -49,7 +49,7 @@ export function AppSidebar() {
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
               Gradia
             </span>
-            <span className="text-xs text-muted-foreground">Operator console</span>
+            <span className="text-xs text-muted-foreground">Our AI office</span>
           </div>
         </div>
       </SidebarHeader>
