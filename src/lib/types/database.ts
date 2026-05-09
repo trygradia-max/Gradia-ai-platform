@@ -80,3 +80,39 @@ export type PendingActionRow = {
   created_at: string
   updated_at: string
 }
+
+export type InteractionChannel =
+  | "voice"
+  | "sms"
+  | "email"
+  | "instagram"
+  | "facebook"
+  | "web"
+  | "note"
+
+export type InteractionRole = "customer" | "gradia" | "system"
+
+export type InteractionRow = {
+  id: string
+  shop_id: string
+  customer_id: string | null
+  channel: InteractionChannel
+  role: InteractionRole
+  content: string
+  metadata: Record<string, unknown>
+  embedding: number[] | null
+  embedding_model: string | null
+  occurred_at: string
+  created_at: string
+}
+
+export type MatchedInteraction = {
+  id: string
+  customer_id: string | null
+  channel: InteractionChannel
+  role: InteractionRole
+  content: string
+  metadata: Record<string, unknown>
+  occurred_at: string
+  similarity: number
+}
