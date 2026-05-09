@@ -71,6 +71,7 @@ export type PendingActionRow = {
   requested_by: string
   decided_at: string | null
   decided_by_slack: string | null
+  decided_by_user: string | null
   result_id: string | null
   slack_channel: string | null
   slack_message_ts: string | null

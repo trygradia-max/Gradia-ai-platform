@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache"
 
-import { findOrCreateCustomer } from "@/lib/customers"
+import { executeApproval, markEditRequested } from "@/lib/approvals"
 import { createServiceClient } from "@/lib/supabase/service"
 import {
   leadApprovedBlocks,
@@ -8,7 +8,6 @@ import {
   replaceOriginalMessage,
   verifySlackSignature,
 } from "@/lib/slack"
-import type { LeadStatus } from "@/lib/types/database"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -21,14 +20,6 @@ type SlackInteractionPayload = {
     value: string
   }>
   response_url: string
-}
-
-type LeadProposal = {
-  customer_name: string
-  phone: string
-  car_info: string | null
-  pin_notes: string | null
-  status: LeadStatus
 }
 
 export async function POST(request: Request) {
@@ -67,112 +58,35 @@ export async function POST(request: Request) {
     return new Response("Missing pending_action id", { status: 400 })
   }
 
-  const nextStatus =
-    action.action_id === "approve_lead"
-      ? "approved"
-      : action.action_id === "edit_lead"
-        ? "edit_requested"
-        : null
-
-  if (!nextStatus) {
-    return new Response("Unknown action", { status: 400 })
-  }
-
   const supabase = createServiceClient()
+  const decider = { slackUserId: payload.user.id }
 
-  // Atomic claim: only the first click flips status off 'pending', so a
-  // double-click can never insert the same lead twice.
-  const { data: pending, error: claimErr } = await supabase
-    .from("pending_actions")
-    .update({
-      status: nextStatus,
-      decided_at: new Date().toISOString(),
-      decided_by_slack: payload.user.id,
-    })
-    .eq("id", pendingId)
-    .eq("status", "pending")
-    .select("id, shop_id, action_type, payload")
-    .maybeSingle()
+  if (action.action_id === "approve_lead") {
+    const result = await executeApproval(supabase, pendingId, decider)
 
-  if (claimErr) {
-    console.error("[slack] claim pending_action:", claimErr)
-    return new Response("DB error", { status: 500 })
-  }
-
-  if (!pending) {
-    // Already decided — silently ack so Slack doesn't retry.
-    return Response.json({ ok: true, alreadyDecided: true })
-  }
-
-  const proposal = pending.payload as LeadProposal
-
-  if (nextStatus === "approved" && pending.action_type === "create_lead") {
-    const rollbackPending = async () => {
-      await supabase
-        .from("pending_actions")
-        .update({
-          status: "pending",
-          decided_at: null,
-          decided_by_slack: null,
-        })
-        .eq("id", pending.id)
-    }
-
-    const failApproval = async (reason: string, logErr: unknown) => {
-      console.error(`[slack] ${reason}:`, logErr)
-      await rollbackPending()
-      await replaceOriginalMessage(
-        payload.response_url,
-        "Approval failed",
-        [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: ":warning: We could not save the lead — please try again from Gradia.",
-            },
+    if (!result.ok) {
+      console.error("[slack] approve failed:", result.error)
+      await replaceOriginalMessage(payload.response_url, "Approval failed", [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: ":warning: We could not save the lead — please try again from Gradia.",
           },
-        ]
-      )
+        },
+      ])
+      return new Response("Approval failed", { status: 500 })
     }
 
-    const customerResult = await findOrCreateCustomer(supabase, pending.shop_id, {
-      name: proposal.customer_name,
-      phone: proposal.phone,
-    })
-
-    if (!customerResult.ok) {
-      await failApproval("resolve customer after approval", customerResult.error)
-      return new Response("Customer resolution failed", { status: 500 })
+    if (result.status === "already_decided") {
+      return Response.json({ ok: true, alreadyDecided: true })
     }
-
-    const { data: created, error: insertErr } = await supabase
-      .from("leads")
-      .insert({
-        shop_id: pending.shop_id,
-        customer_id: customerResult.customer.id,
-        customer_name: proposal.customer_name,
-        phone: proposal.phone,
-        car_info: proposal.car_info,
-        pin_notes: proposal.pin_notes,
-        status: proposal.status,
-      })
-      .select("id")
-      .single()
-
-    if (insertErr || !created) {
-      await failApproval("insert lead after approval", insertErr)
-      return new Response("Insert failed", { status: 500 })
-    }
-
-    await supabase
-      .from("pending_actions")
-      .update({ result_id: created.id })
-      .eq("id", pending.id)
 
     revalidatePath("/dashboard")
     revalidatePath("/leads")
+    revalidatePath("/approvals")
 
+    const { proposal } = result
     await replaceOriginalMessage(
       payload.response_url,
       `Lead approved · ${proposal.customer_name}`,
@@ -189,7 +103,21 @@ export async function POST(request: Request) {
     return Response.json({ ok: true })
   }
 
-  if (nextStatus === "edit_requested") {
+  if (action.action_id === "edit_lead") {
+    const result = await markEditRequested(supabase, pendingId, decider)
+
+    if (!result.ok) {
+      console.error("[slack] edit_requested failed:", result.error)
+      return new Response("DB error", { status: 500 })
+    }
+
+    if (result.status === "already_decided") {
+      return Response.json({ ok: true, alreadyDecided: true })
+    }
+
+    revalidatePath("/approvals")
+
+    const { proposal } = result
     await replaceOriginalMessage(
       payload.response_url,
       `Edit requested · ${proposal.customer_name}`,
@@ -201,8 +129,9 @@ export async function POST(request: Request) {
         approverSlackId: payload.user.id,
       })
     )
+
     return Response.json({ ok: true })
   }
 
-  return new Response("", { status: 200 })
+  return new Response("Unknown action", { status: 400 })
 }

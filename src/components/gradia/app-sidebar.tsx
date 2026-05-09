@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   Calendar,
+  Inbox,
   LayoutDashboard,
   Settings,
   Sparkles,
@@ -25,6 +26,7 @@ import {
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/approvals", label: "Approvals", icon: Inbox },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/schedule", label: "Schedule", icon: Calendar },
   { href: "/settings", label: "Settings", icon: Settings },
