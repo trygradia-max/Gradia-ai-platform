@@ -75,6 +75,36 @@ function buildOrFilter(ids: NormalizedIdentifiers): string | null {
 }
 
 /**
+ * Lookup-only counterpart to findOrCreateCustomer. Returns the oldest
+ * matching record or null. Use this from voice / email / SMS handlers when
+ * recalling history — we don't want to create empty customer rows during
+ * a "do we know this caller?" check.
+ */
+export async function findCustomerByChannel(
+  supabase: SupabaseClient,
+  shopId: string,
+  input: ChannelIdentifiers
+): Promise<CustomerRow | null> {
+  const ids = normalizeIdentifiers(input)
+  const orFilter = buildOrFilter(ids)
+  if (!orFilter) return null
+
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("shop_id", shopId)
+    .or(orFilter)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    return null
+  }
+  return (data as CustomerRow | null) ?? null
+}
+
+/**
  * Resolves a customer for the given shop, creating one if no existing row
  * matches any of the provided channel identifiers. The match wins by oldest
  * created_at, so concurrent inserts deterministically converge on one record.

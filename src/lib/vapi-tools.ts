@@ -1,0 +1,397 @@
+/**
+ * Vapi function-tool handlers. Each takes (supabase, shopId, params, ctx)
+ * and returns a string the assistant will speak back to the caller —
+ * already in we/us tone per HUMAN.md. Strings are kept short for low
+ * TTS latency and natural delivery.
+ *
+ * Tools:
+ *   - capture_lead          — log a general inquiry (HITL via Slack)
+ *   - propose_booking       — log a quoted booking request (HITL via Slack)
+ *   - quote_service         — read the shop's service menu
+ *   - lookup_customer_history — recall recent touchpoints across channels
+ */
+
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { revalidatePath } from "next/cache"
+
+import { findCustomerByChannel } from "@/lib/customers"
+import { recentChannelActivity, recentInteractions } from "@/lib/memory"
+import { sendLeadApprovalRequest } from "@/lib/slack"
+import type {
+  InteractionChannel,
+  LeadStatus,
+  ServiceRow,
+} from "@/lib/types/database"
+
+export type VapiCallContext = {
+  id?: string
+  callerPhone?: string
+  callerName?: string
+}
+
+// ---------- formatters tuned for TTS ----------
+
+function speakPrice(cents: number): string {
+  const dollars = cents / 100
+  return dollars % 1 === 0 ? `$${dollars}` : `$${dollars.toFixed(2)}`
+}
+
+function speakDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} minutes`
+  const hours = minutes / 60
+  if (hours === 1) return "about an hour"
+  if (Number.isInteger(hours)) return `about ${hours} hours`
+  return `about ${hours.toFixed(1).replace(".0", "")} hours`
+}
+
+function speakRelative(iso: string): string {
+  const then = new Date(iso).getTime()
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000))
+  if (seconds < 60) return "just now"
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  const days = Math.round(hours / 24)
+  if (days < 14) return `${days} day${days === 1 ? "" : "s"} ago`
+  const weeks = Math.round(days / 7)
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`
+}
+
+function asString(value: unknown): string {
+  if (typeof value === "string") return value
+  if (value === null || value === undefined) return ""
+  return String(value)
+}
+
+function firstName(full: string): string {
+  return full.split(/\s+/)[0] || full
+}
+
+// Tolerant param reads — Vapi tool schemas land as snake_case but LLMs
+// occasionally emit camelCase too. Accept both.
+function readParam(
+  params: Record<string, unknown>,
+  ...keys: string[]
+): string {
+  for (const k of keys) {
+    const v = params[k]
+    if (v !== undefined && v !== null) {
+      const s = asString(v).trim()
+      if (s) return s
+    }
+  }
+  return ""
+}
+
+// ---------- shared lead-proposal flow (used by capture_lead + propose_booking) ----------
+
+async function submitLeadProposal(
+  supabase: SupabaseClient,
+  shopId: string,
+  proposal: {
+    customerName: string
+    phone: string
+    carInfo: string | null
+    pinNotes: string | null
+    status: LeadStatus
+    extras: Record<string, unknown>
+  },
+  ctx: VapiCallContext
+): Promise<{ ok: true; pendingId: string } | { ok: false; reason: string }> {
+  const { data: shop, error: shopErr } = await supabase
+    .from("shops")
+    .select("owner_id")
+    .eq("id", shopId)
+    .single()
+
+  if (shopErr || !shop?.owner_id) {
+    console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
+    return { ok: false, reason: "shop_not_found" }
+  }
+
+  const payload = {
+    customer_name: proposal.customerName,
+    phone: proposal.phone,
+    car_info: proposal.carInfo,
+    pin_notes: proposal.pinNotes,
+    status: proposal.status,
+    source: "voice",
+    vapi_call_id: ctx.id ?? null,
+    ...proposal.extras,
+  }
+
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shopId,
+      action_type: "create_lead",
+      payload,
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+
+  if (pendingErr || !pending) {
+    console.error("[vapi-tools] pending_action insert failed:", pendingErr)
+    return { ok: false, reason: "pending_action_failed" }
+  }
+
+  try {
+    await sendLeadApprovalRequest({
+      pendingActionId: pending.id,
+      customerName: proposal.customerName,
+      phone: proposal.phone,
+      carInfo: proposal.carInfo,
+      pinNotes: proposal.pinNotes,
+      status: proposal.status,
+    })
+  } catch (slackErr) {
+    console.error("[vapi-tools] Slack approval send failed:", slackErr)
+  }
+
+  revalidatePath("/approvals")
+
+  return { ok: true, pendingId: pending.id }
+}
+
+// ---------- capture_lead ----------
+
+export async function captureLead(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const customerName = readParam(params, "customer_name", "customerName")
+  const phone =
+    readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const vehicle =
+    readParam(params, "vehicle", "car_info", "carInfo") || null
+  const service = readParam(params, "service") || null
+  const notes = readParam(params, "notes", "note") || null
+
+  if (!customerName || !phone) {
+    return "I couldn't catch the name and phone — could we try those one more time?"
+  }
+
+  const pinNotes =
+    [service && `Requested: ${service}`, notes]
+      .filter((s): s is string => Boolean(s))
+      .join(" — ") || null
+
+  const result = await submitLeadProposal(
+    supabase,
+    shopId,
+    {
+      customerName,
+      phone,
+      carInfo: vehicle,
+      pinNotes,
+      status: "new",
+      extras: {},
+    },
+    ctx
+  )
+
+  if (!result.ok) {
+    return "Something went wrong on our end — let me have someone follow up."
+  }
+
+  return `Got it, ${firstName(customerName)} — we'll confirm shortly and text you the details.`
+}
+
+// ---------- propose_booking ----------
+
+export async function proposeBooking(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const customerName = readParam(params, "customer_name", "customerName")
+  const phone =
+    readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const service = readParam(params, "service")
+  const when =
+    readParam(params, "when", "requested_when", "requestedWhen", "time")
+  const vehicle =
+    readParam(params, "vehicle", "car_info", "carInfo") || null
+  const notes = readParam(params, "notes", "note") || null
+
+  if (!customerName || !phone || !service || !when) {
+    const missing = [
+      !customerName && "name",
+      !phone && "phone",
+      !service && "what they want done",
+      !when && "when they want it",
+    ]
+      .filter(Boolean)
+      .join(", ")
+    return `Almost there — I still need ${missing}. Could we go through that one more time?`
+  }
+
+  const pinNotes =
+    [
+      `Booking request: ${service} on ${when}`,
+      notes,
+    ]
+      .filter((s): s is string => Boolean(s))
+      .join(" — ")
+
+  const result = await submitLeadProposal(
+    supabase,
+    shopId,
+    {
+      customerName,
+      phone,
+      carInfo: vehicle,
+      pinNotes,
+      status: "quoted",
+      extras: {
+        requested_service: service,
+        requested_when: when,
+      },
+    },
+    ctx
+  )
+
+  if (!result.ok) {
+    return "Something went wrong saving that — let me have someone confirm with you."
+  }
+
+  return `Perfect — we'll text ${firstName(customerName)} to lock in ${service} for ${when}.`
+}
+
+// ---------- quote_service ----------
+
+function matchServices(services: ServiceRow[], query: string): ServiceRow[] {
+  const q = query.toLowerCase().trim()
+  if (!q) return []
+
+  // Exact + contains match on name; fall back to description contains.
+  const byName = services.filter((s) => s.name.toLowerCase().includes(q))
+  if (byName.length > 0) return byName
+
+  return services.filter((s) =>
+    (s.description ?? "").toLowerCase().includes(q)
+  )
+}
+
+export async function quoteService(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  _ctx: VapiCallContext
+): Promise<string> {
+  void _ctx
+  const query = readParam(params, "service", "name", "query")
+
+  const { data, error } = await supabase
+    .from("services")
+    .select("*")
+    .eq("shop_id", shopId)
+    .order("price_cents", { ascending: true })
+
+  if (error) {
+    console.error("[vapi-tools] service list failed:", error)
+    return "I'm having trouble pulling up our menu — let me have someone call you back with pricing."
+  }
+
+  const services = (data as ServiceRow[] | null) ?? []
+  if (services.length === 0) {
+    return "We're still finalizing our menu — can I take down your details and have someone reach out with pricing?"
+  }
+
+  const matches = query ? matchServices(services, query) : []
+
+  if (matches.length === 1) {
+    const s = matches[0]
+    const desc = s.description ? ` ${s.description}.` : ""
+    return `${s.name} is ${speakPrice(s.price_cents)} and runs ${speakDuration(s.duration_minutes)}.${desc} Want us to get that booked?`
+  }
+
+  if (matches.length > 1) {
+    const top = matches.slice(0, 3)
+    const list = top
+      .map(
+        (s) =>
+          `${s.name} at ${speakPrice(s.price_cents)} (${speakDuration(s.duration_minutes)})`
+      )
+      .join(", ")
+    return `We have a few options — ${list}. Which sounds right?`
+  }
+
+  // No specific match: read the menu (cap at 5).
+  const top = services.slice(0, 5)
+  const list = top.map((s) => `${s.name} at ${speakPrice(s.price_cents)}`).join(", ")
+  return `We don't have that exact thing on our menu, but here's what we offer: ${list}. Want one of those?`
+}
+
+// ---------- lookup_customer_history ----------
+
+const CHANNEL_PHRASE: Record<InteractionChannel, string> = {
+  voice: "called us",
+  sms: "texted us",
+  email: "emailed us",
+  instagram: "messaged us on Instagram",
+  facebook: "messaged us on Facebook",
+  web: "reached out from our site",
+  note: "left a note for us",
+}
+
+export async function lookupCustomerHistory(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const phone =
+    readParam(params, "phone") || asString(ctx.callerPhone).trim()
+
+  if (!phone) {
+    return "I don't have a phone on file yet — could I get yours so we can pull our history?"
+  }
+
+  const customer = await findCustomerByChannel(supabase, shopId, { phone })
+  if (!customer) {
+    return "Looks like this is our first time talking — happy to get you set up."
+  }
+
+  const recent = await recentInteractions(supabase, shopId, customer.id, 5)
+  const otherChannels = await recentChannelActivity(
+    supabase,
+    shopId,
+    customer.id,
+    {
+      excludeChannel: "voice",
+      withinMinutes: 60 * 24 * 7, // last 7 days
+    }
+  )
+
+  const parts: string[] = []
+  parts.push(`Customer on file: ${customer.name ?? "name unknown"}`)
+
+  if (recent.length > 0) {
+    const last = recent[0]
+    const preview = last.content.slice(0, 80)
+    parts.push(
+      `Last touchpoint ${speakRelative(last.occurred_at)} on ${last.channel}: "${preview}${last.content.length > 80 ? "…" : ""}".`
+    )
+  } else {
+    parts.push("No prior conversations logged yet.")
+  }
+
+  if (otherChannels.length > 0) {
+    const flag = otherChannels
+      .slice(0, 2)
+      .map(
+        (a) =>
+          `${CHANNEL_PHRASE[a.channel]} ${speakRelative(a.occurred_at)}`
+      )
+      .join("; ")
+    parts.push(`Heads up — also ${flag}.`)
+  }
+
+  return parts.join(" ")
+}

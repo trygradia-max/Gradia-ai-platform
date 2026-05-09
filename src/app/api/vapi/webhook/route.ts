@@ -2,12 +2,11 @@
  * Vapi voice receptionist webhook.
  *
  * Vapi handles telephony, STT, and TTS; this endpoint is the bridge into
- * Gradia's brain. Two events matter for MVP:
+ * Gradia's brain. Two events matter:
  *
- *   - `function-call` — the assistant invoked a tool. We dispatch on
- *     functionCall.name. The only tool right now is `capture_lead`, which
- *     creates a pending_action and posts a Slack approval card (same HITL
- *     gate the dashboard uses).
+ *   - `function-call` — the assistant invoked a tool. Dispatched by name
+ *     to handlers in lib/vapi-tools.ts. Available tools:
+ *       capture_lead, propose_booking, quote_service, lookup_customer_history.
  *
  *   - `end-of-call-report` — when the call ends, every turn lands in the
  *     `interactions` table with channel="voice" so future calls (or other
@@ -16,19 +15,29 @@
  * Multi-tenancy: Vapi has no concept of a Gradia shop. For MVP, the shop
  * is resolved from the VAPI_DEFAULT_SHOP_ID env var (single-shop dev
  * mode). When we onboard multiple shops to Vapi, the natural extension
- * is to route by `message.assistant.id` (each shop's Vapi assistant
- * gets a unique id) — leave that to its own PR.
+ * is to route by `message.assistant.id` — leave that to its own PR.
  *
  * Vapi assistant must be configured with:
  *   - Server URL = https://<your-public-url>/api/vapi/webhook
  *   - Server URL Secret = VAPI_WEBHOOK_SECRET (sent as x-vapi-secret)
- *   - Function tool `capture_lead` with parameters:
- *       customer_name (string, required)
- *       phone (string, required)  — defaults to caller ID if absent
- *       vehicle (string, optional)
- *       service (string, optional)
- *       notes (string, optional)
+ *   - Server events at minimum: function-call, end-of-call-report
  *   - System prompt should reflect HUMAN.md tone (we/us, partner voice)
+ *   - Tools (declare each as a function in the Vapi assistant config):
+ *
+ *     capture_lead — log a general inquiry
+ *       { customer_name: string, phone?: string,
+ *         vehicle?: string, service?: string, notes?: string }
+ *
+ *     propose_booking — log an agreed-upon booking request
+ *       { customer_name: string, phone?: string,
+ *         service: string, when: string,
+ *         vehicle?: string, notes?: string }
+ *
+ *     quote_service — read the shop's service menu
+ *       { service: string }
+ *
+ *     lookup_customer_history — recall recent touchpoints
+ *       { phone?: string }
  */
 
 import { timingSafeEqual } from "node:crypto"
@@ -37,9 +46,15 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
-import { sendLeadApprovalRequest } from "@/lib/slack"
 import { createServiceClient } from "@/lib/supabase/service"
-import type { InteractionRole, LeadStatus } from "@/lib/types/database"
+import type { InteractionRole } from "@/lib/types/database"
+import {
+  captureLead,
+  lookupCustomerHistory,
+  proposeBooking,
+  quoteService,
+  type VapiCallContext,
+} from "@/lib/vapi-tools"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -101,6 +116,19 @@ function asString(value: unknown): string {
   return String(value)
 }
 
+function callContextFrom(message: VapiMessage): VapiCallContext {
+  const callerPhone =
+    asString(message.call?.customer?.number).trim() ||
+    asString(message.call?.phoneNumber?.number).trim() ||
+    undefined
+  const callerName = asString(message.call?.customer?.name).trim() || undefined
+  return {
+    id: message.call?.id,
+    callerPhone,
+    callerName,
+  }
+}
+
 export async function POST(request: Request) {
   if (!verifyVapiSecret(request)) {
     return new Response("Invalid signature", { status: 401 })
@@ -147,108 +175,29 @@ async function handleFunctionCall(
     return Response.json({ result: "No function specified." })
   }
 
+  const ctx = callContextFrom(message)
+  const params = fn.parameters ?? {}
+
   switch (fn.name) {
-    case "capture_lead": {
-      const result = await captureLeadFromVoice(
-        supabase,
-        shopId,
-        fn.parameters ?? {},
-        message.call
-      )
-      return Response.json({ result })
-    }
+    case "capture_lead":
+      return Response.json({
+        result: await captureLead(supabase, shopId, params, ctx),
+      })
+    case "propose_booking":
+      return Response.json({
+        result: await proposeBooking(supabase, shopId, params, ctx),
+      })
+    case "quote_service":
+      return Response.json({
+        result: await quoteService(supabase, shopId, params, ctx),
+      })
+    case "lookup_customer_history":
+      return Response.json({
+        result: await lookupCustomerHistory(supabase, shopId, params, ctx),
+      })
     default:
       return Response.json({ result: `Unknown function: ${fn.name}` })
   }
-}
-
-/**
- * Vapi tool handler — creates a pending_action proposal and fires Slack
- * approval. Returns a string the assistant will speak back to the caller.
- */
-async function captureLeadFromVoice(
-  supabase: SupabaseClient,
-  shopId: string,
-  params: Record<string, unknown>,
-  call: VapiCall | undefined
-): Promise<string> {
-  const customerName = asString(
-    params.customer_name ?? params.customerName
-  ).trim()
-  const phone = (
-    asString(params.phone).trim() ||
-    asString(call?.customer?.number).trim() ||
-    asString(call?.phoneNumber?.number).trim()
-  )
-  const vehicle =
-    asString(params.vehicle ?? params.car_info ?? params.carInfo).trim() ||
-    null
-  const service = asString(params.service).trim() || null
-  const noteParam = asString(params.notes ?? params.note).trim() || null
-
-  if (!customerName || !phone) {
-    return "I couldn't catch the name and phone — could we try those one more time?"
-  }
-
-  const { data: shop, error: shopErr } = await supabase
-    .from("shops")
-    .select("owner_id")
-    .eq("id", shopId)
-    .single()
-
-  if (shopErr || !shop?.owner_id) {
-    console.error("[vapi] shop owner not found for", shopId, shopErr)
-    return "I'm having trouble saving that on our end — let me have someone call you back."
-  }
-
-  const pinNotes =
-    [service && `Requested: ${service}`, noteParam]
-      .filter((s): s is string => Boolean(s))
-      .join(" — ") || null
-
-  const proposal = {
-    customer_name: customerName,
-    phone,
-    car_info: vehicle,
-    pin_notes: pinNotes,
-    status: "new" as LeadStatus,
-    source: "voice",
-    vapi_call_id: call?.id ?? null,
-  }
-
-  const { data: pending, error: pendingErr } = await supabase
-    .from("pending_actions")
-    .insert({
-      shop_id: shopId,
-      action_type: "create_lead",
-      payload: proposal,
-      requested_by: shop.owner_id,
-    })
-    .select("id")
-    .single()
-
-  if (pendingErr || !pending) {
-    console.error("[vapi] could not create pending_action:", pendingErr)
-    return "Something went wrong on our end — let me have someone follow up."
-  }
-
-  try {
-    await sendLeadApprovalRequest({
-      pendingActionId: pending.id,
-      customerName,
-      phone,
-      carInfo: vehicle,
-      pinNotes,
-      status: "new",
-    })
-  } catch (slackErr) {
-    console.error("[vapi] Slack approval send failed:", slackErr)
-  }
-
-  revalidatePath("/approvals")
-
-  const firstName = customerName.split(/\s+/)[0] ?? customerName
-  return `Got it, ${firstName} — we'll confirm shortly and text you the details.`
 }
 
 /**
