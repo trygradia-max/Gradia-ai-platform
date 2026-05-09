@@ -1,19 +1,44 @@
-import { redirect } from "next/navigation"
-
-import { getOptionalShop } from "@/lib/shop"
-import { OnboardingForm } from "@/components/gradia/onboarding-form"
+import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
+import { requireUser } from "@/lib/shop"
+import { createClient } from "@/lib/supabase/server"
+import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
 export default async function OnboardingPage() {
-  const shop = await getOptionalShop()
+  await requireUser()
+  const supabase = await createClient()
+
+  const { data: shopRow } = await supabase
+    .from("shops")
+    .select("*")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  const shop = (shopRow as ShopRow | null) ?? null
+
+  let services: ServiceRow[] = []
   if (shop) {
-    redirect("/dashboard")
+    const { data } = await supabase
+      .from("services")
+      .select("*")
+      .eq("shop_id", shop.id)
+      .order("created_at", { ascending: true })
+    services = (data as ServiceRow[] | null) ?? []
   }
 
+  let initialStep: 1 | 2 | 3 = 1
+  if (shop && services.length === 0) initialStep = 2
+  if (shop && services.length > 0) initialStep = 3
+
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center bg-background p-6">
-      <OnboardingForm />
+    <div className="flex min-h-svh flex-col items-center bg-background p-4 sm:justify-center sm:p-6">
+      <OnboardingWizard
+        initialShop={shop}
+        initialServices={services}
+        initialStep={initialStep}
+      />
     </div>
   )
 }

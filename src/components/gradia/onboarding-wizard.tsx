@@ -1,0 +1,624 @@
+"use client"
+
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Loader2,
+  Plus,
+  Sparkles,
+  Trash2,
+} from "lucide-react"
+import { toast } from "sonner"
+
+import { addService, deleteService } from "@/app/actions/services"
+import { saveShop } from "@/app/actions/shop"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
+import type { ServiceRow, ShopRow } from "@/lib/types/database"
+
+type Step = 1 | 2 | 3
+
+const STEP_LABELS: Record<Step, string> = {
+  1: "Our shop",
+  2: "What we offer",
+  3: "Ready to roll",
+}
+
+function formatPrice(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).format(cents / 100)
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const hours = minutes / 60
+  if (Number.isInteger(hours)) return `${hours} hr`
+  return `${hours.toFixed(1)} hr`
+}
+
+export function OnboardingWizard({
+  initialShop,
+  initialServices,
+  initialStep,
+}: {
+  initialShop: ShopRow | null
+  initialServices: ServiceRow[]
+  initialStep: Step
+}) {
+  const router = useRouter()
+  const [step, setStep] = React.useState<Step>(initialStep)
+  const [shop, setShop] = React.useState<ShopRow | null>(initialShop)
+  const [services, setServices] =
+    React.useState<ServiceRow[]>(initialServices)
+
+  return (
+    <Card className="w-full max-w-xl border-border/80 shadow-xl">
+      <CardHeader className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
+            <Sparkles className="size-4" aria-hidden />
+          </div>
+          <span className="text-sm font-semibold tracking-tight">Gradia</span>
+        </div>
+        <StepIndicator current={step} />
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {step === 1 ? (
+          <ShopStep
+            shop={shop}
+            onSaved={(saved) => {
+              setShop(saved)
+              setStep(2)
+            }}
+          />
+        ) : null}
+        {step === 2 ? (
+          <ServicesStep
+            services={services}
+            onAdded={(svc) => setServices((prev) => [...prev, svc])}
+            onDeleted={(id) =>
+              setServices((prev) => prev.filter((s) => s.id !== id))
+            }
+            onBack={() => setStep(1)}
+            onContinue={() => setStep(3)}
+          />
+        ) : null}
+        {step === 3 ? (
+          <ConfirmStep
+            shop={shop}
+            services={services}
+            onBack={() => setStep(2)}
+            onComplete={() => {
+              router.push("/dashboard")
+            }}
+          />
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function StepIndicator({ current }: { current: Step }) {
+  const steps: Step[] = [1, 2, 3]
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        Step {current} of 3 · {STEP_LABELS[current]}
+      </p>
+      <div className="flex items-center gap-2">
+        {steps.map((id, i) => {
+          const isActive = id === current
+          const isComplete = id < current
+          return (
+            <React.Fragment key={id}>
+              <div
+                className={dotClass(isActive, isComplete)}
+                aria-current={isActive ? "step" : undefined}
+              >
+                {isComplete ? (
+                  <Check className="size-3" aria-hidden />
+                ) : (
+                  <span className="text-[11px] font-semibold">{id}</span>
+                )}
+              </div>
+              {i < steps.length - 1 ? (
+                <div
+                  className={`h-px flex-1 ${
+                    isComplete ? "bg-primary/60" : "bg-border"
+                  }`}
+                  aria-hidden
+                />
+              ) : null}
+            </React.Fragment>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function dotClass(active: boolean, complete: boolean): string {
+  const base =
+    "flex size-7 shrink-0 items-center justify-center rounded-full transition-colors"
+  if (complete) return `${base} bg-primary text-primary-foreground`
+  if (active) return `${base} bg-primary/15 text-primary ring-1 ring-primary/40`
+  return `${base} bg-muted text-muted-foreground`
+}
+
+// --- Step 1: Shop ---------------------------------------------------------
+
+function ShopStep({
+  shop,
+  onSaved,
+}: {
+  shop: ShopRow | null
+  onSaved: (shop: ShopRow) => void
+}) {
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+    const fd = new FormData(e.currentTarget)
+    const name = String(fd.get("name") ?? "").trim()
+    const location = String(fd.get("location") ?? "").trim() || null
+    const phone = String(fd.get("phone") ?? "").trim() || null
+
+    setPending(true)
+    const result = await saveShop({ name, location, phone })
+    setPending(false)
+
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+
+    onSaved(result.shop)
+  }
+
+  return (
+    <form className="grid gap-5" onSubmit={handleSubmit}>
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold tracking-tight">Our shop</h2>
+        <p className="text-sm text-muted-foreground">
+          Just the basics so we can quote, book, and follow up correctly.
+        </p>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="shop-name">Shop name</Label>
+        <Input
+          id="shop-name"
+          name="name"
+          required
+          maxLength={120}
+          defaultValue={shop?.name ?? ""}
+          placeholder="North Shore Auto Studio"
+          autoComplete="organization"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="shop-location">Location</Label>
+        <Input
+          id="shop-location"
+          name="location"
+          maxLength={200}
+          defaultValue={shop?.location ?? ""}
+          placeholder="Boston, MA — or 'Mobile across Greater Boston'"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="shop-phone">Phone</Label>
+        <Input
+          id="shop-phone"
+          name="phone"
+          type="tel"
+          maxLength={40}
+          defaultValue={shop?.phone ?? ""}
+          placeholder="+1 (555) 010-2030"
+          autoComplete="tel"
+        />
+      </div>
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Button
+        type="submit"
+        disabled={pending}
+        className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+      >
+        {pending ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+        ) : null}
+        Continue
+        <ArrowRight className="size-4" aria-hidden />
+      </Button>
+    </form>
+  )
+}
+
+// --- Step 2: Services -----------------------------------------------------
+
+function ServicesStep({
+  services,
+  onAdded,
+  onDeleted,
+  onBack,
+  onContinue,
+}: {
+  services: ServiceRow[]
+  onAdded: (svc: ServiceRow) => void
+  onDeleted: (id: string) => void
+  onBack: () => void
+  onContinue: () => void
+}) {
+  const [showForm, setShowForm] = React.useState(services.length === 0)
+
+  return (
+    <div className="grid gap-5">
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold tracking-tight">What we offer</h2>
+        <p className="text-sm text-muted-foreground">
+          Our service menu — the AI uses this to quote and book accurately.
+          We can edit anytime.
+        </p>
+      </div>
+
+      {services.length > 0 ? (
+        <ul className="grid gap-3">
+          {services.map((s) => (
+            <li key={s.id}>
+              <ServiceRowCard
+                service={s}
+                onDelete={() => onDeleted(s.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {showForm ? (
+        <AddServiceForm
+          onAdded={(svc) => {
+            onAdded(svc)
+            setShowForm(false)
+          }}
+          onCancel={services.length > 0 ? () => setShowForm(false) : undefined}
+        />
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setShowForm(true)}
+          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+        >
+          <Plus className="size-4" aria-hidden />
+          Add another service
+        </Button>
+      )}
+
+      {services.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          Heads up — the AI needs at least one service to quote a customer.
+        </p>
+      ) : null}
+
+      <Separator />
+
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onBack}
+          className="h-11 gap-2"
+        >
+          <ArrowLeft className="size-4" aria-hidden />
+          Back
+        </Button>
+        <Button
+          type="button"
+          onClick={onContinue}
+          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+        >
+          Continue
+          <ArrowRight className="size-4" aria-hidden />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ServiceRowCard({
+  service,
+  onDelete,
+}: {
+  service: ServiceRow
+  onDelete: () => void
+}) {
+  const [deleting, setDeleting] = React.useState(false)
+
+  async function handleDelete() {
+    setDeleting(true)
+    const result = await deleteService(service.id)
+    setDeleting(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    onDelete()
+  }
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border/80 bg-card p-3">
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-sm font-medium">{service.name}</p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {formatPrice(service.price_cents)} ·{" "}
+          {formatDuration(service.duration_minutes)}
+        </p>
+        {service.description ? (
+          <p className="line-clamp-2 text-xs text-muted-foreground">
+            {service.description}
+          </p>
+        ) : null}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={handleDelete}
+        disabled={deleting}
+        aria-label={`Remove ${service.name}`}
+      >
+        {deleting ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+        ) : (
+          <Trash2 className="size-4" aria-hidden />
+        )}
+      </Button>
+    </div>
+  )
+}
+
+function AddServiceForm({
+  onAdded,
+  onCancel,
+}: {
+  onAdded: (svc: ServiceRow) => void
+  onCancel?: () => void
+}) {
+  const [pending, setPending] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const formRef = React.useRef<HTMLFormElement>(null)
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+    const fd = new FormData(e.currentTarget)
+    const name = String(fd.get("svc-name") ?? "").trim()
+    const description = String(fd.get("svc-description") ?? "").trim() || null
+    const priceDollars = Number(fd.get("svc-price"))
+    const durationHours = Number(fd.get("svc-duration"))
+
+    if (!name) {
+      setError("Service name is required.")
+      return
+    }
+    if (!Number.isFinite(priceDollars) || priceDollars < 0) {
+      setError("Price must be 0 or more.")
+      return
+    }
+    if (!Number.isFinite(durationHours) || durationHours <= 0) {
+      setError("Duration must be greater than zero.")
+      return
+    }
+
+    setPending(true)
+    const result = await addService({
+      name,
+      description,
+      priceDollars,
+      durationHours,
+    })
+    setPending(false)
+
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+
+    formRef.current?.reset()
+    onAdded(result.service)
+  }
+
+  return (
+    <form
+      ref={formRef}
+      className="grid gap-4 rounded-lg border border-border/80 bg-muted/20 p-4"
+      onSubmit={handleSubmit}
+    >
+      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        Add a service
+      </p>
+      <div className="grid gap-2">
+        <Label htmlFor="svc-name">Name</Label>
+        <Input
+          id="svc-name"
+          name="svc-name"
+          required
+          maxLength={200}
+          placeholder="Standard wash & wax"
+          autoComplete="off"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="svc-description">Description (optional)</Label>
+        <Textarea
+          id="svc-description"
+          name="svc-description"
+          rows={2}
+          maxLength={2000}
+          placeholder="Foam bath, hand dry, tire shine, sealant"
+          className="resize-none"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-2">
+          <Label htmlFor="svc-price">Price ($)</Label>
+          <Input
+            id="svc-price"
+            name="svc-price"
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            required
+            placeholder="80"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="svc-duration">Duration (hours)</Label>
+          <Input
+            id="svc-duration"
+            name="svc-duration"
+            type="number"
+            min={0.25}
+            step="0.25"
+            inputMode="decimal"
+            required
+            placeholder="1"
+          />
+        </div>
+      </div>
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="submit"
+          disabled={pending}
+          className="h-10 gap-2 transition-transform duration-200 active:scale-[0.99]"
+        >
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Plus className="size-4" aria-hidden />
+          )}
+          Add to menu
+        </Button>
+        {onCancel ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCancel}
+            className="h-10"
+          >
+            Cancel
+          </Button>
+        ) : null}
+      </div>
+    </form>
+  )
+}
+
+// --- Step 3: Confirm ------------------------------------------------------
+
+function ConfirmStep({
+  shop,
+  services,
+  onBack,
+  onComplete,
+}: {
+  shop: ShopRow | null
+  services: ServiceRow[]
+  onBack: () => void
+  onComplete: () => void
+}) {
+  return (
+    <div className="grid gap-5">
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold tracking-tight">Looking good</h2>
+        <p className="text-sm text-muted-foreground">
+          Quick check before we open the dashboard.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border/80 p-4">
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          Our shop
+        </p>
+        <p className="mt-2 text-sm font-medium">{shop?.name ?? "—"}</p>
+        {shop?.location ? (
+          <p className="text-xs text-muted-foreground">{shop.location}</p>
+        ) : null}
+        {shop?.phone ? (
+          <p className="text-xs tabular-nums text-muted-foreground">
+            {shop.phone}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="rounded-lg border border-border/80 p-4">
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          What we offer ({services.length})
+        </p>
+        {services.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            No services yet — we can add them from settings later.
+          </p>
+        ) : (
+          <ul className="mt-2 grid gap-2">
+            {services.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-baseline justify-between gap-3 text-sm"
+              >
+                <span className="min-w-0 truncate">{s.name}</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {formatPrice(s.price_cents)} ·{" "}
+                  {formatDuration(s.duration_minutes)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Separator />
+
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onBack}
+          className="h-11 gap-2"
+        >
+          <ArrowLeft className="size-4" aria-hidden />
+          Back
+        </Button>
+        <Button
+          type="button"
+          onClick={onComplete}
+          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+        >
+          Open dashboard
+          <ArrowRight className="size-4" aria-hidden />
+        </Button>
+      </div>
+    </div>
+  )
+}

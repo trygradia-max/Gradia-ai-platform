@@ -4,6 +4,8 @@ export type ShopRow = {
   id: string
   name: string
   owner_id: string
+  location: string | null
+  phone: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
