@@ -5,6 +5,8 @@ import { createServiceClient } from "@/lib/supabase/service"
 import {
   leadApprovedBlocks,
   leadEditRequestedBlocks,
+  noteApprovedBlocks,
+  noteEditRequestedBlocks,
   replaceOriginalMessage,
   verifySlackSignature,
 } from "@/lib/slack"
@@ -86,19 +88,33 @@ export async function POST(request: Request) {
     revalidatePath("/leads")
     revalidatePath("/approvals")
 
-    const { proposal } = result
-    await replaceOriginalMessage(
-      payload.response_url,
-      `Lead approved · ${proposal.customer_name}`,
-      leadApprovedBlocks({
-        customerName: proposal.customer_name,
-        phone: proposal.phone,
-        carInfo: proposal.car_info,
-        pinNotes: proposal.pin_notes,
-        status: proposal.status,
-        approverSlackId: payload.user.id,
-      })
-    )
+    if (result.actionType === "create_lead") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Lead approved · ${proposal.customer_name}`,
+        leadApprovedBlocks({
+          customerName: proposal.customer_name,
+          phone: proposal.phone,
+          carInfo: proposal.car_info,
+          pinNotes: proposal.pin_notes,
+          status: proposal.status,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        "Note saved",
+        noteApprovedBlocks({
+          content: proposal.content,
+          customerName: proposal.customer_name,
+          phone: proposal.phone,
+          approverSlackId: payload.user.id,
+        })
+      )
+    }
 
     return Response.json({ ok: true })
   }
@@ -117,18 +133,31 @@ export async function POST(request: Request) {
 
     revalidatePath("/approvals")
 
-    const { proposal } = result
-    await replaceOriginalMessage(
-      payload.response_url,
-      `Edit requested · ${proposal.customer_name}`,
-      leadEditRequestedBlocks({
-        customerName: proposal.customer_name,
-        phone: proposal.phone,
-        carInfo: proposal.car_info,
-        status: proposal.status,
-        approverSlackId: payload.user.id,
-      })
-    )
+    if (result.actionType === "create_lead") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · ${proposal.customer_name}`,
+        leadEditRequestedBlocks({
+          customerName: proposal.customer_name,
+          phone: proposal.phone,
+          carInfo: proposal.car_info,
+          status: proposal.status,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        "Edit requested · note",
+        noteEditRequestedBlocks({
+          content: proposal.content,
+          customerName: proposal.customer_name,
+          approverSlackId: payload.user.id,
+        })
+      )
+    }
 
     return Response.json({ ok: true })
   }

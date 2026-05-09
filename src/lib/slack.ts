@@ -129,27 +129,19 @@ function approvalRequestBlocks(p: LeadApprovalPayload): Block[] {
   return blocks
 }
 
-/**
- * Posts an Approve / Edit card via incoming webhook.
- * No-ops when SLACK_WEBHOOK_URL is unset. Throws only on Slack HTTP failures.
- */
-export async function sendLeadApprovalRequest(
-  p: LeadApprovalPayload
+async function postWebhook(
+  text: string,
+  blocks: Block[]
 ): Promise<void> {
   const webhookUrl = process.env.SLACK_WEBHOOK_URL?.trim()
   if (!webhookUrl) {
     return
   }
 
-  const body = {
-    text: `Approval needed · ${p.customerName.trim() || "new lead"}`,
-    blocks: approvalRequestBlocks(p),
-  }
-
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json;charset=utf-8" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ text, blocks }),
   })
 
   const raw = await res.text()
@@ -160,6 +152,104 @@ export async function sendLeadApprovalRequest(
         : `Slack webhook failed (${res.status}): ${raw.slice(0, 200)}`
     )
   }
+}
+
+/**
+ * Posts an Approve / Edit card via incoming webhook.
+ * No-ops when SLACK_WEBHOOK_URL is unset. Throws only on Slack HTTP failures.
+ */
+export async function sendLeadApprovalRequest(
+  p: LeadApprovalPayload
+): Promise<void> {
+  await postWebhook(
+    `Approval needed · ${p.customerName.trim() || "new lead"}`,
+    approvalRequestBlocks(p)
+  )
+}
+
+export type NoteApprovalPayload = {
+  pendingActionId: string
+  content: string
+  customerName: string | null
+  phone: string | null
+}
+
+function noteApprovalRequestBlocks(p: NoteApprovalPayload): Block[] {
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Approval needed: Note from Whisper",
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Note*\n${dashOr(p.content, "(empty)")}`,
+      },
+    },
+  ]
+
+  if (p.customerName?.trim() || p.phone?.trim()) {
+    blocks.push({
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*About*\n${dashOr(p.customerName, "Not specified")}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Phone*\n${dashOr(p.phone, "Not specified")}`,
+        },
+      ],
+    })
+  }
+
+  blocks.push({
+    type: "actions",
+    block_id: "note_approval",
+    elements: [
+      {
+        type: "button",
+        action_id: "approve_lead",
+        text: { type: "plain_text", text: "Approve", emoji: true },
+        style: "primary",
+        value: p.pendingActionId,
+      },
+      {
+        type: "button",
+        action_id: "edit_lead",
+        text: { type: "plain_text", text: "Edit", emoji: true },
+        value: p.pendingActionId,
+      },
+    ],
+  })
+
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: "Gradia · awaiting your approval before saving",
+      },
+    ],
+  })
+
+  return blocks
+}
+
+export async function sendNoteApprovalRequest(
+  p: NoteApprovalPayload
+): Promise<void> {
+  const preview = p.content.slice(0, 60).replace(/\s+/g, " ")
+  await postWebhook(
+    `Approval needed · note: ${preview}`,
+    noteApprovalRequestBlocks(p)
+  )
 }
 
 /**
@@ -285,6 +375,84 @@ export function leadEditRequestedBlocks(p: {
       carInfo: p.carInfo,
       status: p.status,
     }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — reopen in <${dashboardUrl()}|Gradia> to revise.`,
+        },
+      ],
+    },
+  ]
+}
+
+export function noteApprovedBlocks(p: {
+  content: string
+  customerName: string | null
+  phone: string | null
+  approverSlackId: string
+}): Block[] {
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Note saved", emoji: true },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Note*\n${dashOr(p.content, "(empty)")}`,
+      },
+    },
+  ]
+
+  if (p.customerName?.trim() || p.phone?.trim()) {
+    blocks.push({
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*About*\n${dashOr(p.customerName, "Not specified")}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Phone*\n${dashOr(p.phone, "Not specified")}`,
+        },
+      ],
+    })
+  }
+
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: `Approved by <@${p.approverSlackId}> · saved to our memory · <${dashboardUrl()}|Open Gradia>`,
+      },
+    ],
+  })
+
+  return blocks
+}
+
+export function noteEditRequestedBlocks(p: {
+  content: string
+  customerName: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Note*\n${dashOr(p.content, "(empty)")}`,
+      },
+    },
     {
       type: "context",
       elements: [

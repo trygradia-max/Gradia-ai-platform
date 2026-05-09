@@ -4,14 +4,20 @@
  * → finalize flow lives in one place. Helpers take any SupabaseClient — pass
  * a service-role client for Slack callbacks (no user session) or a
  * user-session client for the dashboard (RLS naturally limits scope).
+ *
+ * Two action types are supported:
+ *   - create_lead: insert a row into `leads` (customer auto-resolved)
+ *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { findOrCreateCustomer } from "@/lib/customers"
+import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
+import { recordInteraction } from "@/lib/memory"
 import type {
   LeadStatus,
   PendingActionStatus,
+  PendingActionType,
 } from "@/lib/types/database"
 
 export type Decider = {
@@ -27,21 +33,45 @@ export type LeadProposal = {
   status: LeadStatus
 }
 
+export type NoteProposal = {
+  content: string
+  customer_name: string | null
+  phone: string | null
+}
+
 type ClaimedAction = {
   id: string
   shop_id: string
-  action_type: "create_lead"
-  payload: LeadProposal
+  action_type: PendingActionType
+  payload: Record<string, unknown>
 }
 
+export type ApprovalSuccess =
+  | {
+      status: "executed"
+      actionType: "create_lead"
+      resultId: string
+      proposal: LeadProposal
+    }
+  | {
+      status: "executed"
+      actionType: "add_note"
+      resultId: string
+      proposal: NoteProposal
+    }
+  | { status: "already_decided" }
+
 export type ApprovalResult =
-  | { ok: true; status: "executed"; resultId: string; proposal: LeadProposal }
-  | { ok: true; status: "already_decided" }
+  | ({ ok: true } & ApprovalSuccess)
   | { ok: false; error: string }
 
+export type DecisionSuccess =
+  | { status: "claimed"; actionType: "create_lead"; proposal: LeadProposal }
+  | { status: "claimed"; actionType: "add_note"; proposal: NoteProposal }
+  | { status: "already_decided" }
+
 export type DecisionResult =
-  | { ok: true; status: "claimed"; proposal: LeadProposal }
-  | { ok: true; status: "already_decided" }
+  | ({ ok: true } & DecisionSuccess)
   | { ok: false; error: string }
 
 async function claimPendingAction(
@@ -86,39 +116,11 @@ async function rollbackClaim(
     .eq("id", pendingId)
 }
 
-/**
- * Atomically claims a pending action and executes it. Idempotent — a second
- * call with the same id returns `already_decided`. On execution failure, the
- * row is rolled back to `pending` so the human can retry.
- */
-export async function executeApproval(
+async function executeCreateLead(
   supabase: SupabaseClient,
-  pendingId: string,
-  decider: Decider
+  claimed: ClaimedAction
 ): Promise<ApprovalResult> {
-  let claimed: ClaimedAction | null
-  try {
-    claimed = await claimPendingAction(supabase, pendingId, "approved", decider)
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    }
-  }
-
-  if (!claimed) {
-    return { ok: true, status: "already_decided" }
-  }
-
-  if (claimed.action_type !== "create_lead") {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error: `Unsupported action_type: ${claimed.action_type}`,
-    }
-  }
-
-  const proposal = claimed.payload
+  const proposal = claimed.payload as unknown as LeadProposal
 
   const customerResult = await findOrCreateCustomer(supabase, claimed.shop_id, {
     name: proposal.customer_name,
@@ -160,8 +162,125 @@ export async function executeApproval(
   return {
     ok: true,
     status: "executed",
+    actionType: "create_lead",
     resultId: created.id,
     proposal,
+  }
+}
+
+async function executeAddNote(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as NoteProposal
+  const content = (proposal.content ?? "").trim()
+
+  if (!content) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: "Note content is empty" }
+  }
+
+  // Best-effort customer attachment — only if a phone was extracted.
+  let customerId: string | null = null
+  if (proposal.phone?.trim()) {
+    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
+      phone: proposal.phone,
+    })
+    if (customer) customerId = customer.id
+  }
+
+  const result = await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId,
+    channel: "note",
+    role: "gradia",
+    content,
+    metadata: {
+      source: "whisper",
+      pending_action_id: claimed.id,
+      mentioned_name: proposal.customer_name ?? null,
+      mentioned_phone: proposal.phone ?? null,
+    },
+  })
+
+  if (!result.ok) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: `Note save failed: ${result.error}` }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: result.id })
+    .eq("id", claimed.id)
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "add_note",
+    resultId: result.id,
+    proposal,
+  }
+}
+
+/**
+ * Atomically claims a pending action and executes it. Idempotent — a second
+ * call with the same id returns `already_decided`. On execution failure, the
+ * row is rolled back to `pending` so the human can retry.
+ */
+export async function executeApproval(
+  supabase: SupabaseClient,
+  pendingId: string,
+  decider: Decider
+): Promise<ApprovalResult> {
+  let claimed: ClaimedAction | null
+  try {
+    claimed = await claimPendingAction(supabase, pendingId, "approved", decider)
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  if (!claimed) {
+    return { ok: true, status: "already_decided" }
+  }
+
+  switch (claimed.action_type) {
+    case "create_lead":
+      return executeCreateLead(supabase, claimed)
+    case "add_note":
+      return executeAddNote(supabase, claimed)
+    default:
+      await rollbackClaim(supabase, claimed.id)
+      return {
+        ok: false,
+        error: `Unsupported action_type: ${claimed.action_type}`,
+      }
+  }
+}
+
+function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
+  switch (claimed.action_type) {
+    case "create_lead":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "create_lead",
+        proposal: claimed.payload as unknown as LeadProposal,
+      }
+    case "add_note":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "add_note",
+        proposal: claimed.payload as unknown as NoteProposal,
+      }
+    default:
+      return {
+        ok: false,
+        error: `Unsupported action_type: ${claimed.action_type}`,
+      }
   }
 }
 
@@ -190,7 +309,7 @@ export async function markEditRequested(
     return { ok: true, status: "already_decided" }
   }
 
-  return { ok: true, status: "claimed", proposal: claimed.payload }
+  return decisionFromClaim(claimed)
 }
 
 /** Drops the proposal permanently (dashboard Reject button). */
@@ -218,5 +337,5 @@ export async function executeRejection(
     return { ok: true, status: "already_decided" }
   }
 
-  return { ok: true, status: "claimed", proposal: claimed.payload }
+  return decisionFromClaim(claimed)
 }

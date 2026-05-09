@@ -56,7 +56,7 @@ export type AppointmentRow = {
   updated_at: string
 }
 
-export type PendingActionType = "create_lead"
+export type PendingActionType = "create_lead" | "add_note"
 
 export type PendingActionStatus =
   | "pending"

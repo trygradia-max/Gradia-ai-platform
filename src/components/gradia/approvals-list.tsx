@@ -22,6 +22,12 @@ type LeadProposal = {
   status: LeadStatus
 }
 
+type NoteProposal = {
+  content: string
+  customer_name: string | null
+  phone: string | null
+}
+
 function formatRelative(iso: string): string {
   const then = new Date(iso).getTime()
   const seconds = Math.max(0, Math.round((Date.now() - then) / 1000))
@@ -68,7 +74,7 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
     if (result.alreadyDecided) {
       toast.message("Already decided — refreshing")
     } else if (decision === "approve") {
-      toast.success("Lead saved to our pipeline")
+      toast.success("Saved")
     } else {
       toast.success("Dropped")
     }
@@ -79,11 +85,11 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
   return (
     <ul className="grid gap-4">
       {items.map((item) => {
-        const proposal = item.payload as unknown as LeadProposal
         const isEditRequested = item.status === "edit_requested"
         const approveBusy = busyId === `${item.id}:approve`
         const rejectBusy = busyId === `${item.id}:reject`
         const anyBusy = approveBusy || rejectBusy
+        const isNote = item.action_type === "add_note"
 
         return (
           <li key={item.id}>
@@ -91,27 +97,24 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
               <CardHeader className="flex flex-col gap-3 pb-2">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-base font-medium">
-                      {proposal.customer_name || "Unknown caller"}
-                    </p>
-                    <p className="text-sm tabular-nums text-muted-foreground">
-                      {proposal.phone}
-                    </p>
+                    {isNote
+                      ? renderNoteHeader(item.payload as unknown as NoteProposal)
+                      : renderLeadHeader(item.payload as unknown as LeadProposal)}
                   </div>
-                  <Badge variant={isEditRequested ? "outline" : "default"}>
-                    {isEditRequested ? "Edit needed" : "Pending"}
-                  </Badge>
+                  <div className="flex flex-wrap gap-2">
+                    {isNote ? (
+                      <Badge variant="secondary">Note</Badge>
+                    ) : null}
+                    <Badge variant={isEditRequested ? "outline" : "default"}>
+                      {isEditRequested ? "Edit needed" : "Pending"}
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3 pb-4 pt-0">
-                {proposal.car_info ? (
-                  <p className="text-sm">{proposal.car_info}</p>
-                ) : null}
-                {proposal.pin_notes ? (
-                  <p className="text-sm text-muted-foreground">
-                    {proposal.pin_notes}
-                  </p>
-                ) : null}
+                {isNote
+                  ? renderNoteBody(item.payload as unknown as NoteProposal)
+                  : renderLeadBody(item.payload as unknown as LeadProposal)}
                 <p className="text-xs text-muted-foreground">
                   Submitted {formatRelative(item.created_at)}
                 </p>
@@ -144,5 +147,50 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
         )
       })}
     </ul>
+  )
+}
+
+function renderLeadHeader(proposal: LeadProposal) {
+  return (
+    <>
+      <p className="text-base font-medium">
+        {proposal.customer_name || "Unknown caller"}
+      </p>
+      <p className="text-sm tabular-nums text-muted-foreground">
+        {proposal.phone}
+      </p>
+    </>
+  )
+}
+
+function renderLeadBody(proposal: LeadProposal) {
+  return (
+    <>
+      {proposal.car_info ? (
+        <p className="text-sm">{proposal.car_info}</p>
+      ) : null}
+      {proposal.pin_notes ? (
+        <p className="text-sm text-muted-foreground">{proposal.pin_notes}</p>
+      ) : null}
+    </>
+  )
+}
+
+function renderNoteHeader(proposal: NoteProposal) {
+  const subject =
+    proposal.customer_name?.trim() ||
+    proposal.phone?.trim() ||
+    "General note"
+  return (
+    <>
+      <p className="text-base font-medium">{subject}</p>
+      <p className="text-xs text-muted-foreground">From Whisper</p>
+    </>
+  )
+}
+
+function renderNoteBody(proposal: NoteProposal) {
+  return (
+    <p className="whitespace-pre-line text-sm">{proposal.content}</p>
   )
 }
