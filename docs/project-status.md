@@ -1,7 +1,8 @@
 # Gradia — Project Status
 
 **Snapshot date:** 2026-05-11
-**Phase:** Phase 1 MVP, late stage. Pre-Vercel deploy.
+**Phase:** Phase 1 MVP functionally live in production at https://gradia-ai-platform.vercel.app
+**End-to-end verified:** Whisper voice → Slack approval → lead landed in `/leads`.
 
 ---
 
@@ -42,7 +43,7 @@
 - `lib/memory.ts` primitives: `recordInteraction`, `recentInteractions`, `searchCustomerMemory`, `recentChannelActivity`
 - Best-effort embedding — if OpenAI fails, the row still lands with NULL embedding
 
-### Voice receptionist (Vapi)
+### Voice receptionist (Vapi) — backend only
 - `/api/vapi/webhook` route with HMAC verification
 - End-of-call transcripts ingested into the memory layer (channel=voice)
 - Four function tools, all extracted to `lib/vapi-tools.ts`:
@@ -51,6 +52,7 @@
   - `quote_service` — reads service menu, speaks voice-friendly TTS strings
   - `lookup_customer_history` — recalls customer + cross-channel sync flag
 - Single-shop dev routing via `VAPI_DEFAULT_SHOP_ID` (per-shop routing is a follow-up)
+- **Note: not actually a live phone line yet.** Backend is ready; needs a Vapi assistant configured in the Vapi dashboard with a real number pointed at this webhook.
 
 ### Gradia Whisper (voice-to-action)
 - Mobile mic button on dashboard (`<WhisperButton />`)
@@ -77,18 +79,22 @@
 
 | Integration | Why it matters |
 |---|---|
-| Aurinko (Gmail) | Email lead capture — biggest unbuilt channel |
+| Aurinko (Gmail) — inbound | Email lead capture — biggest unbuilt inbound channel |
+| Aurinko (Gmail) — outbound | Nurture sequences, quote replies, confirmations, review requests |
 | Twilio SMS | <1 min lead response, reminders, follow-ups |
 | Google Calendar | Bookings need a real calendar surface |
 | Stripe | Whisper "charge Smith $450" + invoicing |
 | HubSpot / Jobber | CRM sync — push leads, statuses |
 | Meta DMs | Instagram + Facebook lead capture (Phase 3 stretch) |
 
+**Scope decision (2026-05-11):** Outbound voice (Vapi-driven outbound calls for nurture) removed from the roadmap. Outbound email replaces it as the nurture channel. Inbound voice (Vapi receptionist) stays in scope.
+
 ---
 
 ## Pending product work
 
 - Per-shop Vapi assistant routing (`vapi_assistant_id` column + onboarding step)
+- Vapi assistant config in their dashboard + phone number provisioning — to actually go live as a receptionist
 - `book_appointment` as a real action type → `/schedule` UI gets a real calendar
 - `/leads/pending/[id]` editor (HITL revision UX for the Edit button)
 - `/customers` view (browse / merge)
@@ -97,6 +103,7 @@
 - Real `/settings` page
 - BI chat (Phase 2)
 - Agent Builder + Co-owner chat surfaces (Phase 2)
+- **UI/UX polish queued** — current layout + language is functional but not warm enough; full design pass coming after core features land.
 
 ---
 
