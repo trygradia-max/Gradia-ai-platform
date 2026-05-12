@@ -29,6 +29,10 @@ import {
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// Transcription (Whisper) + intent parse (Claude) easily exceed Vercel's
+// 10 s Hobby default. 60 s is the max for Hobby — plenty for normal voice
+// commands.
+export const maxDuration = 60
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024 // OpenAI Whisper file-size limit
 
