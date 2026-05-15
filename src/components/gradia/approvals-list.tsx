@@ -47,6 +47,21 @@ type SmsProposal = {
   reason: string | null
 }
 
+type ChargeProposal = {
+  customer_name: string
+  customer_email: string
+  amount_cents: number
+  description: string
+}
+
+function formatMoney(cents: number): string {
+  const dollars = cents / 100
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(dollars)
+}
+
 function formatBookingWhen(iso: string, minutes: number): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
@@ -124,6 +139,7 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
         const isNote = item.action_type === "add_note"
         const isBooking = item.action_type === "book_appointment"
         const isSms = item.action_type === "send_sms"
+        const isCharge = item.action_type === "charge_customer"
 
         return (
           <li key={item.id}>
@@ -139,7 +155,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                           )
                         : isSms
                           ? renderSmsHeader(item.payload as unknown as SmsProposal)
-                          : renderLeadHeader(item.payload as unknown as LeadProposal)}
+                          : isCharge
+                            ? renderChargeHeader(
+                                item.payload as unknown as ChargeProposal
+                              )
+                            : renderLeadHeader(
+                                item.payload as unknown as LeadProposal
+                              )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {isNote ? (
@@ -150,6 +172,9 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                     ) : null}
                     {isSms ? (
                       <Badge variant="secondary">SMS</Badge>
+                    ) : null}
+                    {isCharge ? (
+                      <Badge variant="secondary">Charge</Badge>
                     ) : null}
                     <Badge variant={isEditRequested ? "outline" : "default"}>
                       {isEditRequested ? "Edit needed" : "Pending"}
@@ -166,7 +191,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                       )
                     : isSms
                       ? renderSmsBody(item.payload as unknown as SmsProposal)
-                      : renderLeadBody(item.payload as unknown as LeadProposal)}
+                      : isCharge
+                        ? renderChargeBody(
+                            item.payload as unknown as ChargeProposal
+                          )
+                        : renderLeadBody(
+                            item.payload as unknown as LeadProposal
+                          )}
                 <p className="text-xs text-muted-foreground">
                   Caught {formatRelative(item.created_at)}
                 </p>
@@ -301,6 +332,29 @@ function renderSmsBody(proposal: SmsProposal) {
   return (
     <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {proposal.body}
+    </p>
+  )
+}
+
+function renderChargeHeader(proposal: ChargeProposal) {
+  return (
+    <>
+      <p className="text-base font-medium">
+        {proposal.customer_name || "Unknown customer"}{" "}
+        <span className="text-muted-foreground">·</span>{" "}
+        {formatMoney(proposal.amount_cents)}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {proposal.customer_email || "Email missing — edit to add"}
+      </p>
+    </>
+  )
+}
+
+function renderChargeBody(proposal: ChargeProposal) {
+  return (
+    <p className="text-sm">
+      <span className="font-medium">{proposal.description || "Detailing service"}</span>
     </p>
   )
 }

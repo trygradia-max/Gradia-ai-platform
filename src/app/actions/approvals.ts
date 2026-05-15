@@ -94,11 +94,23 @@ const smsPatchSchema = z.object({
   reason: z.string().trim().max(200).nullable(),
 })
 
+const chargePatchSchema = z.object({
+  type: z.literal("charge_customer"),
+  customer_name: z.string().trim().min(1, "Customer name is required.").max(200),
+  customer_email: z
+    .string()
+    .trim()
+    .email("Use a valid email so Stripe can deliver the invoice."),
+  amount_cents: z.number().int().positive().max(10_000_000),
+  description: z.string().trim().min(1, "Tell us what they're paying for.").max(500),
+})
+
 const patchSchema = z.discriminatedUnion("type", [
   leadPatchSchema,
   notePatchSchema,
   bookingPatchSchema,
   smsPatchSchema,
+  chargePatchSchema,
 ])
 
 export type ProposalPatch = z.infer<typeof patchSchema>
@@ -184,12 +196,20 @@ export async function updatePendingProposal(
               customer_name: parsed.data.customer_name,
               reason: parsed.data.reason,
             }
-          : {
-              ...current.payload,
-              content: parsed.data.content,
-              customer_name: parsed.data.customer_name,
-              phone: parsed.data.phone,
-            }
+          : parsed.data.type === "charge_customer"
+            ? {
+                ...current.payload,
+                customer_name: parsed.data.customer_name,
+                customer_email: parsed.data.customer_email,
+                amount_cents: parsed.data.amount_cents,
+                description: parsed.data.description,
+              }
+            : {
+                ...current.payload,
+                content: parsed.data.content,
+                customer_name: parsed.data.customer_name,
+                phone: parsed.data.phone,
+              }
 
   const { data: updated, error: updateErr } = await supabase
     .from("pending_actions")

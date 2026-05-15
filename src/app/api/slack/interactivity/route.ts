@@ -5,6 +5,8 @@ import { createServiceClient } from "@/lib/supabase/service"
 import {
   bookingApprovedBlocks,
   bookingEditRequestedBlocks,
+  chargeApprovedBlocks,
+  chargeEditRequestedBlocks,
   leadApprovedBlocks,
   leadEditRequestedBlocks,
   noteApprovedBlocks,
@@ -137,6 +139,21 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
+    } else if (result.actionType === "charge_customer") {
+      const { proposal, invoiceUrl } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Invoice sent · ${proposal.customer_name || proposal.customer_email}`,
+        chargeApprovedBlocks({
+          pendingActionId: pendingId,
+          customerName: proposal.customer_name,
+          customerEmail: proposal.customer_email,
+          amountCents: proposal.amount_cents,
+          description: proposal.description,
+          invoiceUrl,
+          approverSlackId: payload.user.id,
+        })
+      )
     } else {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -210,6 +227,20 @@ export async function POST(request: Request) {
           customerName: proposal.customer_name,
           body: proposal.body,
           reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "charge_customer") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · charge ${proposal.customer_name || proposal.customer_email}`,
+        chargeEditRequestedBlocks({
+          pendingActionId: pendingId,
+          customerName: proposal.customer_name,
+          customerEmail: proposal.customer_email,
+          amountCents: proposal.amount_cents,
+          description: proposal.description,
           approverSlackId: payload.user.id,
         })
       )

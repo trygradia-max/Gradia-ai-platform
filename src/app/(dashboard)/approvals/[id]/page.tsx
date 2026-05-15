@@ -47,6 +47,14 @@ type SmsPayload = {
   source?: string
 }
 
+type ChargePayload = {
+  customer_name?: string
+  customer_email?: string
+  amount_cents?: number
+  description?: string
+  source?: string
+}
+
 export default async function PendingProposalPage({
   params,
 }: {
@@ -221,6 +229,24 @@ function buildEditorProps(
         body: p.body ?? "",
         customer_name: p.customer_name ?? null,
         reason: p.reason ?? null,
+      },
+    }
+  }
+
+  if (pending.action_type === "charge_customer") {
+    const p = pending.payload as ChargePayload
+    return {
+      pendingId: pending.id,
+      source: typeof p.source === "string" ? p.source : null,
+      submittedAt: pending.created_at,
+      status,
+      initial: {
+        type: "charge_customer",
+        customer_name: p.customer_name ?? "",
+        customer_email: p.customer_email ?? "",
+        amount_cents:
+          typeof p.amount_cents === "number" ? p.amount_cents : 0,
+        description: p.description ?? "",
       },
     }
   }

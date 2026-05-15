@@ -423,6 +423,190 @@ export function bookingApprovedBlocks(p: {
   ]
 }
 
+export type ChargeApprovalPayload = {
+  pendingActionId: string
+  customerName: string
+  customerEmail: string
+  amountCents: number
+  description: string
+}
+
+function formatMoney(cents: number): string {
+  const dollars = cents / 100
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(dollars)
+}
+
+function chargeFieldBlocks(p: ChargeApprovalPayload): Block[] {
+  return [
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Customer*\n${dashOr(p.customerName, "Unknown")}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Email*\n${dashOr(p.customerEmail, "Missing — edit to add")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Amount*\n${formatMoney(p.amountCents)}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*For*\n${dashOr(p.description, "Detailing service")}`,
+        },
+      ],
+    },
+  ]
+}
+
+function chargeApprovalRequestBlocks(p: ChargeApprovalPayload): Block[] {
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `Approval needed: Charge ${formatMoney(p.amountCents)}`,
+        emoji: true,
+      },
+    },
+    ...chargeFieldBlocks(p),
+    {
+      type: "actions",
+      block_id: "charge_approval",
+      elements: [
+        {
+          type: "button",
+          action_id: "approve_lead",
+          text: {
+            type: "plain_text",
+            text: `Approve & send invoice`,
+            emoji: true,
+          },
+          style: "primary",
+          value: p.pendingActionId,
+        },
+        {
+          type: "button",
+          action_id: "edit_lead",
+          text: { type: "plain_text", text: "Edit", emoji: true },
+          value: p.pendingActionId,
+        },
+      ],
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Gradia · Stripe emails the customer a hosted-payment link the moment you approve",
+        },
+      ],
+    },
+  ]
+}
+
+export async function sendChargeApprovalRequest(
+  p: ChargeApprovalPayload
+): Promise<void> {
+  await postWebhook(
+    `Approval needed · charge ${p.customerName.trim() || p.customerEmail} ${formatMoney(p.amountCents)}`,
+    chargeApprovalRequestBlocks(p)
+  )
+}
+
+export function chargeApprovedBlocks(p: {
+  pendingActionId: string
+  customerName: string
+  customerEmail: string
+  amountCents: number
+  description: string
+  invoiceUrl: string | null
+  approverSlackId: string
+}): Block[] {
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `Invoice sent · ${formatMoney(p.amountCents)}`,
+        emoji: true,
+      },
+    },
+    ...chargeFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      customerName: p.customerName,
+      customerEmail: p.customerEmail,
+      amountCents: p.amountCents,
+      description: p.description,
+    }),
+  ]
+
+  if (p.invoiceUrl) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Invoice link* (Stripe-hosted)\n<${p.invoiceUrl}|Open invoice>`,
+      },
+    })
+  }
+
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: `Approved by <@${p.approverSlackId}> · customer emailed · <${dashboardUrl()}|Open Gradia>`,
+      },
+    ],
+  })
+
+  return blocks
+}
+
+export function chargeEditRequestedBlocks(p: {
+  pendingActionId: string
+  customerName: string
+  customerEmail: string
+  amountCents: number
+  description: string
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    ...chargeFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      customerName: p.customerName,
+      customerEmail: p.customerEmail,
+      amountCents: p.amountCents,
+      description: p.description,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
+        },
+      ],
+    },
+  ]
+}
+
 export type SmsApprovalPayload = {
   pendingActionId: string
   toPhone: string

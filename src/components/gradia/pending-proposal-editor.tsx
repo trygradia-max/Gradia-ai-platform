@@ -62,12 +62,25 @@ type SmsInitial = {
   reason: string | null
 }
 
+type ChargeInitial = {
+  type: "charge_customer"
+  customer_name: string
+  customer_email: string
+  amount_cents: number
+  description: string
+}
+
 export type PendingProposalEditorProps = {
   pendingId: string
   source: string | null
   submittedAt: string
   status: "pending" | "edit_requested"
-  initial: LeadInitial | NoteInitial | BookingInitial | SmsInitial
+  initial:
+    | LeadInitial
+    | NoteInitial
+    | BookingInitial
+    | SmsInitial
+    | ChargeInitial
 }
 
 function toLocalInputValue(iso: string): string {
@@ -99,13 +112,25 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
     kind === "book_appointment" ? (props.initial as BookingInitial) : null
   const noteInit = kind === "add_note" ? (props.initial as NoteInitial) : null
   const smsInit = kind === "send_sms" ? (props.initial as SmsInitial) : null
+  const chargeInit =
+    kind === "charge_customer" ? (props.initial as ChargeInitial) : null
 
   const [customerName, setCustomerName] = React.useState(
     leadInit?.customer_name ??
       bookingInit?.customer_name ??
       smsInit?.customer_name ??
+      chargeInit?.customer_name ??
       noteInit?.customer_name ??
       ""
+  )
+  const [chargeEmail, setChargeEmail] = React.useState(
+    chargeInit?.customer_email ?? ""
+  )
+  const [chargeAmountDollars, setChargeAmountDollars] = React.useState(
+    chargeInit ? (chargeInit.amount_cents / 100).toFixed(2) : ""
+  )
+  const [chargeDescription, setChargeDescription] = React.useState(
+    chargeInit?.description ?? ""
   )
   const [phone, setPhone] = React.useState(
     leadInit?.phone ?? bookingInit?.phone ?? noteInit?.phone ?? ""
@@ -162,6 +187,19 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
         body: smsBody,
         customer_name: customerName.trim() ? customerName : null,
         reason: smsReason.trim() ? smsReason : null,
+      }
+    }
+    if (kind === "charge_customer") {
+      const dollars = Number.parseFloat(chargeAmountDollars)
+      const amountCents = Number.isFinite(dollars)
+        ? Math.round(dollars * 100)
+        : 0
+      return {
+        type: "charge_customer",
+        customer_name: customerName,
+        customer_email: chargeEmail.trim(),
+        amount_cents: amountCents,
+        description: chargeDescription,
       }
     }
     return {
@@ -227,7 +265,9 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
                 ? "Edit booking request"
                 : kind === "send_sms"
                   ? "Edit SMS draft"
-                  : "Edit note proposal"}
+                  : kind === "charge_customer"
+                    ? "Edit charge"
+                    : "Edit note proposal"}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
             Source: {props.source ?? "unknown"} ·{" "}
@@ -430,6 +470,59 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
                 autoComplete="off"
               />
             </div>
+          </>
+        ) : kind === "charge_customer" ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="customer-name">Customer name</Label>
+                <Input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="e.g. Sam Rivera"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="charge-email">Email</Label>
+                <Input
+                  id="charge-email"
+                  value={chargeEmail}
+                  onChange={(e) => setChargeEmail(e.target.value)}
+                  placeholder="sam@example.com"
+                  autoComplete="off"
+                  inputMode="email"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="charge-amount">Amount (USD)</Label>
+                <Input
+                  id="charge-amount"
+                  value={chargeAmountDollars}
+                  onChange={(e) => setChargeAmountDollars(e.target.value)}
+                  placeholder="450.00"
+                  inputMode="decimal"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="charge-description">What for</Label>
+                <Input
+                  id="charge-description"
+                  value={chargeDescription}
+                  onChange={(e) => setChargeDescription(e.target.value)}
+                  placeholder="e.g. Ceramic coating"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              On approve, Stripe creates an invoice on our connected
+              account and emails the customer a hosted-payment link. No
+              card on file required.
+            </p>
           </>
         ) : (
           <>

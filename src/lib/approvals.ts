@@ -17,6 +17,7 @@ import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
+import { chargeCustomerViaInvoice, type StripeInvoice } from "@/lib/stripe"
 import { sendOutboundSms } from "@/lib/twilio"
 import type {
   LeadStatus,
@@ -65,6 +66,14 @@ export type SmsProposal = {
   reason: string | null
 }
 
+export type ChargeProposal = {
+  customer_name: string
+  customer_email: string
+  customer_id: string | null
+  amount_cents: number
+  description: string
+}
+
 type ClaimedAction = {
   id: string
   shop_id: string
@@ -99,6 +108,13 @@ export type ApprovalSuccess =
       proposal: SmsProposal
       messageSid: string
     }
+  | {
+      status: "executed"
+      actionType: "charge_customer"
+      resultId: string
+      proposal: ChargeProposal
+      invoiceUrl: string | null
+    }
   | { status: "already_decided" }
 
 export type ApprovalResult =
@@ -114,6 +130,11 @@ export type DecisionSuccess =
       proposal: BookingProposal
     }
   | { status: "claimed"; actionType: "send_sms"; proposal: SmsProposal }
+  | {
+      status: "claimed"
+      actionType: "charge_customer"
+      proposal: ChargeProposal
+    }
   | { status: "already_decided" }
 
 export type DecisionResult =
@@ -301,6 +322,8 @@ export async function executeApproval(
       return executeBookAppointment(supabase, claimed)
     case "send_sms":
       return executeSendSms(supabase, claimed)
+    case "charge_customer":
+      return executeChargeCustomer(supabase, claimed)
     default:
       await rollbackClaim(supabase, claimed.id)
       return {
@@ -592,6 +615,86 @@ async function executeSendSms(
   }
 }
 
+async function executeChargeCustomer(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as ChargeProposal
+
+  if (!proposal.customer_email?.trim()) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        "Charge needs the customer's email — open the editor and add it before approving.",
+    }
+  }
+  if (!proposal.amount_cents || proposal.amount_cents <= 0) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: "Charge amount must be greater than zero." }
+  }
+
+  const shop = await loadShopWithToken(supabase, claimed.shop_id)
+  if (!shop?.stripe_account_id || !shop.stripe_charges_enabled) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        "Finish Stripe onboarding in /settings before approving any charge.",
+    }
+  }
+
+  let invoice: StripeInvoice
+  try {
+    invoice = await chargeCustomerViaInvoice({
+      stripeAccount: shop.stripe_account_id,
+      customerEmail: proposal.customer_email,
+      customerName: proposal.customer_name || null,
+      amountCents: Math.round(proposal.amount_cents),
+      description: proposal.description?.trim() || "Detailing service",
+    })
+  } catch (err) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? `Stripe: ${err.message}` : "Stripe charge failed.",
+    }
+  }
+
+  // Log on the customer's timeline so it shows up in shared memory.
+  await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId: proposal.customer_id,
+    channel: "note",
+    role: "gradia",
+    content: `Sent invoice for $${(proposal.amount_cents / 100).toFixed(2)} — ${
+      proposal.description?.trim() || "detailing service"
+    }`,
+    metadata: {
+      stripe_invoice_id: invoice.id,
+      stripe_invoice_number: invoice.number,
+      stripe_invoice_url: invoice.hosted_invoice_url,
+      amount_cents: proposal.amount_cents,
+      pending_action_id: claimed.id,
+    },
+  })
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: invoice.id })
+    .eq("id", claimed.id)
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "charge_customer",
+    resultId: invoice.id,
+    proposal,
+    invoiceUrl: invoice.hosted_invoice_url,
+  }
+}
+
 function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
   switch (claimed.action_type) {
     case "create_lead":
@@ -621,6 +724,13 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         status: "claimed",
         actionType: "send_sms",
         proposal: claimed.payload as unknown as SmsProposal,
+      }
+    case "charge_customer":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "charge_customer",
+        proposal: claimed.payload as unknown as ChargeProposal,
       }
     default:
       return {

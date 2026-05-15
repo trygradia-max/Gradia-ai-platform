@@ -12,6 +12,8 @@ export type ShopRow = {
   aurinko_access_token: string | null
   aurinko_subscription_id: string | null
   twilio_phone_number: string | null
+  stripe_account_id: string | null
+  stripe_charges_enabled: boolean
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -74,6 +76,7 @@ export type PendingActionType =
   | "add_note"
   | "book_appointment"
   | "send_sms"
+  | "charge_customer"
 
 export type PendingActionStatus =
   | "pending"

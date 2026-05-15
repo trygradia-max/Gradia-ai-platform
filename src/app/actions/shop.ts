@@ -193,6 +193,43 @@ export async function saveTwilioNumber(
   return { ok: true, shop: data as ShopRow }
 }
 
+export type DisconnectStripeResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+/**
+ * "Disconnects" Stripe from Gradia's side — clears the stored
+ * connected-account id and the charges-enabled flag. The Stripe account
+ * itself isn't deleted (the shop owner keeps full control of it on
+ * Stripe's side). To fully sever access, the owner has to revoke
+ * Gradia in their Stripe Dashboard → Connected accounts.
+ */
+export async function disconnectStripe(): Promise<DisconnectStripeResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      stripe_account_id: null,
+      stripe_charges_enabled: false,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not disconnect." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
 export type DisconnectSmsResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }

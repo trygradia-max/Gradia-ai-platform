@@ -119,7 +119,11 @@ export function WhisperButton() {
         body: formData,
       })
       const result = (await res.json()) as
-        | { ok: true; intent: "create_lead" | "add_note"; transcript: string }
+        | {
+            ok: true
+            intent: "create_lead" | "add_note" | "charge_customer"
+            transcript: string
+          }
         | { ok: false; error: string; transcript?: string }
 
       if (!result.ok) {
@@ -128,7 +132,12 @@ export function WhisperButton() {
         return
       }
 
-      const intentLabel = result.intent === "add_note" ? "note" : "lead"
+      const intentLabel =
+        result.intent === "add_note"
+          ? "note"
+          : result.intent === "charge_customer"
+            ? "charge"
+            : "lead"
       toast.success(`Got it — approve the ${intentLabel} in Slack or Approvals.`)
       router.refresh()
     } catch (err) {

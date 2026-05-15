@@ -3,6 +3,7 @@ import { Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
+import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
 import {
   Card,
@@ -43,10 +44,19 @@ const KNOWN_EMAIL_STATUSES = new Set([
   "save_failed",
 ])
 
+const KNOWN_STRIPE_STATUSES = new Set([
+  "ok",
+  "needs_more",
+  "no_account",
+  "fetch_failed",
+  "account_create_failed",
+  "link_failed",
+])
+
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string }>
+  searchParams: Promise<{ email?: string; stripe?: string }>
 }) {
   const shopCtx = await requireShop()
   const supabase = await createClient()
@@ -72,6 +82,10 @@ export default async function SettingsPage({
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
       process.env.TWILIO_AUTH_TOKEN?.trim()
   )
+  const stripeConfigured = Boolean(
+    process.env.STRIPE_SECRET_KEY?.trim() &&
+      process.env.STRIPE_CONNECT_CLIENT_ID?.trim()
+  )
 
   const params = await searchParams
   const rawEmailStatus = params.email ?? null
@@ -86,6 +100,18 @@ export default async function SettingsPage({
           | "account_fetch_failed"
           | "subscription_failed"
           | "save_failed")
+      : null
+
+  const rawStripeStatus = params.stripe ?? null
+  const stripeStatus =
+    rawStripeStatus && KNOWN_STRIPE_STATUSES.has(rawStripeStatus)
+      ? (rawStripeStatus as
+          | "ok"
+          | "needs_more"
+          | "no_account"
+          | "fetch_failed"
+          | "account_create_failed"
+          | "link_failed")
       : null
 
   return (
@@ -115,6 +141,13 @@ export default async function SettingsPage({
         twilioConfigured={twilioConfigured}
       />
 
+      <StripeSettingsCard
+        connected={Boolean(shop?.stripe_account_id)}
+        chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
+        stripeConfigured={stripeConfigured}
+        callbackStatus={stripeStatus}
+      />
+
       <Card className="border-border/80">
         <CardHeader className="flex flex-row items-center gap-3 space-y-0">
           <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
@@ -125,14 +158,14 @@ export default async function SettingsPage({
               More coming soon
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Service menu, calendar, and billing land here next.
+              Service menu, team, and billing controls land here next.
             </p>
           </div>
         </CardHeader>
         <CardContent>
           <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
             <li>Edit our service menu — prices, durations, descriptions.</li>
-            <li>Connect Google Calendar and Stripe in one place.</li>
+            <li>Invite teammates and manage permissions.</li>
           </ul>
         </CardContent>
       </Card>
