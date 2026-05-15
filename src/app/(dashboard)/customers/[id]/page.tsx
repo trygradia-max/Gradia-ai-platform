@@ -10,6 +10,7 @@ import {
   User,
 } from "lucide-react"
 
+import { CustomerMergeDialog } from "@/components/gradia/customer-merge-dialog"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -100,12 +101,18 @@ export default async function CustomerDetailPage({
             Everything we know — and every touchpoint, across every channel.
           </p>
         </div>
-        <Link
-          href="/customers"
-          className={buttonVariants({ variant: "ghost" })}
-        >
-          Back
-        </Link>
+        <div className="flex items-center gap-2">
+          <CustomerMergeDialog
+            winnerId={customer.id}
+            winnerName={customer.name}
+          />
+          <Link
+            href="/customers"
+            className={buttonVariants({ variant: "ghost" })}
+          >
+            Back
+          </Link>
+        </div>
       </div>
 
       <IdentityCard customer={customer} />
@@ -307,9 +314,6 @@ function PipelineCard({
             </ul>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Merge / split coming soon.
-        </p>
       </CardContent>
     </Card>
   )
