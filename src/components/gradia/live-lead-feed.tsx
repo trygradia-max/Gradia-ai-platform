@@ -46,10 +46,11 @@ export function LiveLeadFeed({ leads }: { leads: LeadRow[] }) {
       <CardHeader className="flex flex-col gap-1 border-b border-border/60 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="text-lg font-semibold tracking-tight">
-            Live lead feed
+            Latest leads
           </CardTitle>
           <CardDescription>
-            Newest signals first — wired for AI follow-ups next.
+            Newest first — everyone we&apos;ve heard from across voice, email,
+            and the front desk.
           </CardDescription>
         </div>
       </CardHeader>
@@ -72,7 +73,7 @@ export function LiveLeadFeed({ leads }: { leads: LeadRow[] }) {
                   colSpan={6}
                   className="py-14 text-center text-sm text-muted-foreground"
                 >
-                  No leads yet — let&apos;s capture our first with Quick add lead.
+                  Quiet so far — when a lead comes in, we&apos;ll catch it here together.
                 </TableCell>
               </TableRow>
             ) : (

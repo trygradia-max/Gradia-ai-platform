@@ -9,9 +9,9 @@ export default async function LeadsPage() {
     <div className="mx-auto max-w-6xl space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Leads</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Our leads</h1>
           <p className="text-sm text-muted-foreground">
-            Every lead, newest first.
+            Everyone we&apos;re working — newest first.
           </p>
         </div>
         <AddLeadDialog />

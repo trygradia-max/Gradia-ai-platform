@@ -16,7 +16,10 @@ import { revalidatePath } from "next/cache"
 
 import { findCustomerByChannel } from "@/lib/customers"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
-import { sendLeadApprovalRequest } from "@/lib/slack"
+import {
+  sendBookingApprovalRequest,
+  sendLeadApprovalRequest,
+} from "@/lib/slack"
 import type {
   InteractionChannel,
   LeadStatus,
@@ -203,6 +206,109 @@ export async function captureLead(
 
 // ---------- propose_booking ----------
 
+function parseIsoOrNull(value: string): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
+async function lookupServiceDuration(
+  supabase: SupabaseClient,
+  shopId: string,
+  serviceName: string
+): Promise<number | null> {
+  if (!serviceName) return null
+  const { data } = await supabase
+    .from("services")
+    .select("name, duration_minutes")
+    .eq("shop_id", shopId)
+  const services = (data as ServiceRow[] | null) ?? []
+  const q = serviceName.toLowerCase()
+  const match =
+    services.find((s) => s.name.toLowerCase() === q) ??
+    services.find((s) => s.name.toLowerCase().includes(q))
+  return match?.duration_minutes ?? null
+}
+
+async function submitBookingProposal(
+  supabase: SupabaseClient,
+  shopId: string,
+  proposal: {
+    customerName: string
+    phone: string
+    carInfo: string | null
+    service: string
+    isoStartTime: string
+    durationMinutes: number
+    timezone: string | null
+    pinNotes: string | null
+  },
+  ctx: VapiCallContext
+): Promise<{ ok: true; pendingId: string } | { ok: false; reason: string }> {
+  const { data: shop, error: shopErr } = await supabase
+    .from("shops")
+    .select("owner_id")
+    .eq("id", shopId)
+    .single()
+
+  if (shopErr || !shop?.owner_id) {
+    console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
+    return { ok: false, reason: "shop_not_found" }
+  }
+
+  const payload = {
+    customer_name: proposal.customerName,
+    phone: proposal.phone,
+    car_info: proposal.carInfo,
+    service: proposal.service,
+    iso_start_time: proposal.isoStartTime,
+    duration_minutes: proposal.durationMinutes,
+    timezone: proposal.timezone,
+    email: null,
+    pin_notes: proposal.pinNotes,
+    source: "voice",
+    vapi_call_id: ctx.id ?? null,
+  }
+
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shopId,
+      action_type: "book_appointment",
+      payload,
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+
+  if (pendingErr || !pending) {
+    console.error(
+      "[vapi-tools] book_appointment pending_action insert failed:",
+      pendingErr
+    )
+    return { ok: false, reason: "pending_action_failed" }
+  }
+
+  try {
+    await sendBookingApprovalRequest({
+      pendingActionId: pending.id,
+      customerName: proposal.customerName,
+      phone: proposal.phone,
+      service: proposal.service,
+      carInfo: proposal.carInfo,
+      startIso: proposal.isoStartTime,
+      durationMinutes: proposal.durationMinutes,
+      timezone: proposal.timezone,
+    })
+  } catch (slackErr) {
+    console.error("[vapi-tools] booking Slack approval send failed:", slackErr)
+  }
+
+  revalidatePath("/approvals")
+  return { ok: true, pendingId: pending.id }
+}
+
 export async function proposeBooking(
   supabase: SupabaseClient,
   shopId: string,
@@ -215,6 +321,17 @@ export async function proposeBooking(
   const service = readParam(params, "service")
   const when =
     readParam(params, "when", "requested_when", "requestedWhen", "time")
+  const isoStart = parseIsoOrNull(
+    readParam(params, "iso_start_time", "isoStartTime", "startIso")
+  )
+  const durationRaw = readParam(
+    params,
+    "duration_minutes",
+    "durationMinutes"
+  )
+  const durationParam = Number.parseInt(durationRaw, 10)
+  const timezone =
+    readParam(params, "timezone", "timeZone", "tz") || null
   const vehicle =
     readParam(params, "vehicle", "car_info", "carInfo") || null
   const notes = readParam(params, "notes", "note") || null
@@ -229,6 +346,46 @@ export async function proposeBooking(
       .filter(Boolean)
       .join(", ")
     return `Almost there — I still need ${missing}. Could we go through that one more time?`
+  }
+
+  // If the model gave us a parseable ISO time, propose a real booking
+  // — calendar event on approve. Otherwise fall back to a quoted lead
+  // so a human can clarify the time.
+  if (isoStart) {
+    const fallbackDuration =
+      Number.isFinite(durationParam) && durationParam > 0
+        ? durationParam
+        : (await lookupServiceDuration(supabase, shopId, service)) ?? 90
+
+    const pinNotes =
+      [
+        `Booking ask: ${service} on ${when}`,
+        notes,
+      ]
+        .filter((s): s is string => Boolean(s))
+        .join(" — ") || null
+
+    const result = await submitBookingProposal(
+      supabase,
+      shopId,
+      {
+        customerName,
+        phone,
+        carInfo: vehicle,
+        service,
+        isoStartTime: isoStart,
+        durationMinutes: fallbackDuration,
+        timezone,
+        pinNotes,
+      },
+      ctx
+    )
+
+    if (!result.ok) {
+      return "Something went wrong saving that — let me have someone confirm with you."
+    }
+
+    return `Perfect — we'll text ${firstName(customerName)} to lock in ${service} for ${when}.`
   }
 
   const pinNotes =

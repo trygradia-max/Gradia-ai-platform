@@ -48,7 +48,7 @@ export function AiLeadSection() {
     setPhone(result.data.phone)
     setCarInfo(result.data.carInfo)
     setService(result.data.service)
-    toast.success("Lead fields extracted — review and save")
+    toast.success("Here's what we caught — review and save")
   }
 
   async function handleSaveLead(e: React.FormEvent) {
@@ -74,7 +74,7 @@ export function AiLeadSection() {
     setSaving(false)
 
     if (res.ok) {
-      toast.success("Sent for approval — approve in Slack to save")
+      toast.success("Queued for our approval — Slack or Approvals to lock it in")
       setRaw("")
       setCustomerName("")
       setPhone("")
@@ -96,14 +96,13 @@ export function AiLeadSection() {
           </div>
           <div className="min-w-0 space-y-1">
             <CardTitle className="text-lg font-semibold tracking-tight">
-              AI Lead
+              Turn a messy note into a lead
             </CardTitle>
             <CardDescription>
-              Paste a messy note (SMS, walk-in, voicemail, thread). Nothing is
-              sent until you click{" "}
-              <span className="font-medium text-foreground">Process</span>
-              {" — "}Claude + LangChain fill name, phone, vehicle, and
-              service; then confirm and save.
+              Paste anything — a text thread, a walk-in scribble, a voicemail
+              transcript. We&apos;ll pull out the name, phone, vehicle, and
+              what they want when you tap{" "}
+              <span className="font-medium text-foreground">Process</span>.
             </CardDescription>
           </div>
         </div>
@@ -145,7 +144,7 @@ export function AiLeadSection() {
 
         <form className="grid gap-4 rounded-xl border border-border/60 bg-muted/20 p-4" onSubmit={handleSaveLead}>
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Extracted fields — edit if needed
+            What we caught — tweak anything before saving
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2 sm:col-span-1">
@@ -180,7 +179,7 @@ export function AiLeadSection() {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="ai-service">Service requested</Label>
+            <Label htmlFor="ai-service">What they want</Label>
             <Textarea
               id="ai-service"
               value={service}
@@ -190,11 +189,7 @@ export function AiLeadSection() {
               className="resize-y"
             />
             <p className="text-xs text-muted-foreground">
-              Maps to Claude&apos;s{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-                service
-              </code>{" "}
-              field; saved as pin-point notes on the lead.
+              Saved on the lead so the next touchpoint knows the ask.
             </p>
           </div>
           <Button

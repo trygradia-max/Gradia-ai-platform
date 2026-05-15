@@ -15,6 +15,18 @@ function dashboardUrl(): string {
   return process.env.GRADIA_DASHBOARD_URL?.trim() || DEFAULT_DASHBOARD
 }
 
+function appOrigin(): string {
+  try {
+    return new URL(dashboardUrl()).origin
+  } catch {
+    return "http://localhost:3000"
+  }
+}
+
+function pendingActionUrl(pendingActionId: string): string {
+  return `${appOrigin()}/approvals/${pendingActionId}`
+}
+
 function escapeMrkdwn(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
@@ -252,6 +264,355 @@ export async function sendNoteApprovalRequest(
   )
 }
 
+export type BookingApprovalPayload = {
+  pendingActionId: string
+  customerName: string
+  phone: string
+  service: string | null
+  carInfo: string | null
+  startIso: string
+  durationMinutes: number
+  timezone: string | null
+}
+
+function formatBookingWhen(
+  startIso: string,
+  durationMinutes: number,
+  timezone: string | null
+): string {
+  const start = new Date(startIso)
+  if (Number.isNaN(start.getTime())) return startIso
+  const opts: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone ?? undefined,
+    timeZoneName: timezone ? "short" : undefined,
+  }
+  return `${new Intl.DateTimeFormat("en-US", opts).format(start)} · ${durationMinutes} min`
+}
+
+function bookingFieldBlocks(p: BookingApprovalPayload): Block[] {
+  return [
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Customer*\n${dashOr(p.customerName, "Not provided")}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Phone*\n${dashOr(p.phone, "Not provided")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Service*\n${dashOr(p.service, "Not specified")}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Vehicle*\n${dashOr(p.carInfo, "Not specified")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*When*\n${escapeMrkdwn(
+          formatBookingWhen(p.startIso, p.durationMinutes, p.timezone)
+        )}`,
+      },
+    },
+  ]
+}
+
+function bookingApprovalRequestBlocks(p: BookingApprovalPayload): Block[] {
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Approval needed: Booking",
+        emoji: true,
+      },
+    },
+    ...bookingFieldBlocks(p),
+    {
+      type: "actions",
+      block_id: "booking_approval",
+      elements: [
+        {
+          type: "button",
+          action_id: "approve_lead",
+          text: { type: "plain_text", text: "Approve & book", emoji: true },
+          style: "primary",
+          value: p.pendingActionId,
+        },
+        {
+          type: "button",
+          action_id: "edit_lead",
+          text: { type: "plain_text", text: "Edit", emoji: true },
+          value: p.pendingActionId,
+        },
+      ],
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Gradia · we'll put it on our calendar once you approve",
+        },
+      ],
+    },
+  ]
+}
+
+export async function sendBookingApprovalRequest(
+  p: BookingApprovalPayload
+): Promise<void> {
+  await postWebhook(
+    `Booking request · ${p.customerName.trim() || "new lead"}`,
+    bookingApprovalRequestBlocks(p)
+  )
+}
+
+export function bookingApprovedBlocks(p: {
+  pendingActionId: string
+  customerName: string
+  phone: string
+  service: string | null
+  carInfo: string | null
+  startIso: string
+  durationMinutes: number
+  timezone: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Booking confirmed", emoji: true },
+    },
+    ...bookingFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      customerName: p.customerName,
+      phone: p.phone,
+      service: p.service,
+      carInfo: p.carInfo,
+      startIso: p.startIso,
+      durationMinutes: p.durationMinutes,
+      timezone: p.timezone,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Approved by <@${p.approverSlackId}> · on our calendar · <${dashboardUrl()}|Open Gradia>`,
+        },
+      ],
+    },
+  ]
+}
+
+export type SmsApprovalPayload = {
+  pendingActionId: string
+  toPhone: string
+  customerName: string | null
+  body: string
+  reason: string | null
+}
+
+function smsFieldBlocks(p: SmsApprovalPayload): Block[] {
+  return [
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*To*\n${dashOr(
+            p.customerName ? `${p.customerName} (${p.toPhone})` : p.toPhone,
+            "Unknown"
+          )}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Reason*\n${dashOr(p.reason, "Not specified")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Message*\n${dashOr(p.body, "(empty)")}`,
+      },
+    },
+  ]
+}
+
+function smsApprovalRequestBlocks(p: SmsApprovalPayload): Block[] {
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Approval needed: Outbound SMS",
+        emoji: true,
+      },
+    },
+    ...smsFieldBlocks(p),
+    {
+      type: "actions",
+      block_id: "sms_approval",
+      elements: [
+        {
+          type: "button",
+          action_id: "approve_lead",
+          text: { type: "plain_text", text: "Approve & send", emoji: true },
+          style: "primary",
+          value: p.pendingActionId,
+        },
+        {
+          type: "button",
+          action_id: "edit_lead",
+          text: { type: "plain_text", text: "Edit", emoji: true },
+          value: p.pendingActionId,
+        },
+      ],
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Gradia · we'll send it the moment you approve",
+        },
+      ],
+    },
+  ]
+}
+
+export async function sendSmsApprovalRequest(
+  p: SmsApprovalPayload
+): Promise<void> {
+  const preview = p.body.slice(0, 60).replace(/\s+/g, " ")
+  await postWebhook(
+    `Approval needed · SMS to ${p.customerName ?? p.toPhone}: ${preview}`,
+    smsApprovalRequestBlocks(p)
+  )
+}
+
+export function smsApprovedBlocks(p: {
+  pendingActionId: string
+  toPhone: string
+  customerName: string | null
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "SMS sent", emoji: true },
+    },
+    ...smsFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      toPhone: p.toPhone,
+      customerName: p.customerName,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Approved by <@${p.approverSlackId}> · on its way · <${dashboardUrl()}|Open Gradia>`,
+        },
+      ],
+    },
+  ]
+}
+
+export function smsEditRequestedBlocks(p: {
+  pendingActionId: string
+  toPhone: string
+  customerName: string | null
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    ...smsFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      toPhone: p.toPhone,
+      customerName: p.customerName,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
+        },
+      ],
+    },
+  ]
+}
+
+export function bookingEditRequestedBlocks(p: {
+  pendingActionId: string
+  customerName: string
+  phone: string
+  service: string | null
+  carInfo: string | null
+  startIso: string
+  durationMinutes: number
+  timezone: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    ...bookingFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      customerName: p.customerName,
+      phone: p.phone,
+      service: p.service,
+      carInfo: p.carInfo,
+      startIso: p.startIso,
+      durationMinutes: p.durationMinutes,
+      timezone: p.timezone,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
+        },
+      ],
+    },
+  ]
+}
+
 /**
  * Verifies the X-Slack-Signature header against the raw POST body.
  * Rejects requests older than 5 minutes (replay protection).
@@ -358,6 +719,7 @@ export function leadApprovedBlocks(p: {
 }
 
 export function leadEditRequestedBlocks(p: {
+  pendingActionId: string
   customerName: string
   phone: string
   carInfo: string | null
@@ -380,7 +742,7 @@ export function leadEditRequestedBlocks(p: {
       elements: [
         {
           type: "mrkdwn",
-          text: `<@${p.approverSlackId}> requested edits — reopen in <${dashboardUrl()}|Gradia> to revise.`,
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
         },
       ],
     },
@@ -437,6 +799,7 @@ export function noteApprovedBlocks(p: {
 }
 
 export function noteEditRequestedBlocks(p: {
+  pendingActionId: string
   content: string
   customerName: string | null
   approverSlackId: string
@@ -458,7 +821,7 @@ export function noteEditRequestedBlocks(p: {
       elements: [
         {
           type: "mrkdwn",
-          text: `<@${p.approverSlackId}> requested edits — reopen in <${dashboardUrl()}|Gradia> to revise.`,
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
         },
       ],
     },

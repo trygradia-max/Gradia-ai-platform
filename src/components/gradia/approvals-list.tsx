@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -10,7 +11,7 @@ import {
   rejectFromDashboard,
 } from "@/app/actions/approvals"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import type { LeadStatus, PendingActionRow } from "@/lib/types/database"
 
@@ -26,6 +27,37 @@ type NoteProposal = {
   content: string
   customer_name: string | null
   phone: string | null
+}
+
+type BookingProposal = {
+  customer_name: string
+  phone: string
+  car_info: string | null
+  service: string | null
+  iso_start_time: string
+  duration_minutes: number
+  timezone: string | null
+  pin_notes: string | null
+}
+
+type SmsProposal = {
+  to_phone: string
+  body: string
+  customer_name: string | null
+  reason: string | null
+}
+
+function formatBookingWhen(iso: string, minutes: number): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const opts: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }
+  return `${new Intl.DateTimeFormat(undefined, opts).format(d)} · ${minutes} min`
 }
 
 function formatRelative(iso: string): string {
@@ -48,7 +80,7 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
     return (
       <Card className="border-border/80">
         <CardContent className="py-14 text-center text-sm text-muted-foreground">
-          All caught up — nothing waiting on us.
+          All clear — nothing waiting on us right now.
         </CardContent>
       </Card>
     )
@@ -90,6 +122,8 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
         const rejectBusy = busyId === `${item.id}:reject`
         const anyBusy = approveBusy || rejectBusy
         const isNote = item.action_type === "add_note"
+        const isBooking = item.action_type === "book_appointment"
+        const isSms = item.action_type === "send_sms"
 
         return (
           <li key={item.id}>
@@ -99,11 +133,23 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                   <div className="min-w-0">
                     {isNote
                       ? renderNoteHeader(item.payload as unknown as NoteProposal)
-                      : renderLeadHeader(item.payload as unknown as LeadProposal)}
+                      : isBooking
+                        ? renderBookingHeader(
+                            item.payload as unknown as BookingProposal
+                          )
+                        : isSms
+                          ? renderSmsHeader(item.payload as unknown as SmsProposal)
+                          : renderLeadHeader(item.payload as unknown as LeadProposal)}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {isNote ? (
                       <Badge variant="secondary">Note</Badge>
+                    ) : null}
+                    {isBooking ? (
+                      <Badge variant="secondary">Booking</Badge>
+                    ) : null}
+                    {isSms ? (
+                      <Badge variant="secondary">SMS</Badge>
                     ) : null}
                     <Badge variant={isEditRequested ? "outline" : "default"}>
                       {isEditRequested ? "Edit needed" : "Pending"}
@@ -114,11 +160,17 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
               <CardContent className="space-y-3 pb-4 pt-0">
                 {isNote
                   ? renderNoteBody(item.payload as unknown as NoteProposal)
-                  : renderLeadBody(item.payload as unknown as LeadProposal)}
+                  : isBooking
+                    ? renderBookingBody(
+                        item.payload as unknown as BookingProposal
+                      )
+                    : isSms
+                      ? renderSmsBody(item.payload as unknown as SmsProposal)
+                      : renderLeadBody(item.payload as unknown as LeadProposal)}
                 <p className="text-xs text-muted-foreground">
-                  Submitted {formatRelative(item.created_at)}
+                  Caught {formatRelative(item.created_at)}
                 </p>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
+                <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3">
                   <Button
                     onClick={() => handleDecision(item.id, "approve")}
                     disabled={anyBusy}
@@ -129,6 +181,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                     ) : null}
                     Approve
                   </Button>
+                  <Link
+                    href={`/approvals/${item.id}`}
+                    className={buttonVariants({ variant: "outline" })}
+                    aria-disabled={anyBusy}
+                  >
+                    Edit
+                  </Link>
                   <Button
                     onClick={() => handleDecision(item.id, "reject")}
                     disabled={anyBusy}
@@ -192,5 +251,56 @@ function renderNoteHeader(proposal: NoteProposal) {
 function renderNoteBody(proposal: NoteProposal) {
   return (
     <p className="whitespace-pre-line text-sm">{proposal.content}</p>
+  )
+}
+
+function renderBookingHeader(proposal: BookingProposal) {
+  return (
+    <>
+      <p className="text-base font-medium">
+        {proposal.customer_name || "Unknown customer"}
+      </p>
+      <p className="text-sm tabular-nums text-muted-foreground">
+        {proposal.phone}
+      </p>
+    </>
+  )
+}
+
+function renderBookingBody(proposal: BookingProposal) {
+  return (
+    <>
+      <p className="text-sm">
+        <span className="font-medium">{proposal.service ?? "Service TBD"}</span>{" "}
+        — {formatBookingWhen(proposal.iso_start_time, proposal.duration_minutes)}
+      </p>
+      {proposal.car_info ? (
+        <p className="text-sm text-muted-foreground">{proposal.car_info}</p>
+      ) : null}
+      {proposal.pin_notes ? (
+        <p className="text-sm text-muted-foreground">{proposal.pin_notes}</p>
+      ) : null}
+    </>
+  )
+}
+
+function renderSmsHeader(proposal: SmsProposal) {
+  const target =
+    proposal.customer_name?.trim() || proposal.to_phone || "Unknown"
+  return (
+    <>
+      <p className="text-base font-medium">To {target}</p>
+      <p className="text-xs text-muted-foreground">
+        {proposal.reason ?? "Outbound SMS"}
+      </p>
+    </>
+  )
+}
+
+function renderSmsBody(proposal: SmsProposal) {
+  return (
+    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+      {proposal.body}
+    </p>
   )
 }

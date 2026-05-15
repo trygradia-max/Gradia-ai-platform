@@ -12,10 +12,11 @@
  *     `interactions` table with channel="voice" so future calls (or other
  *     channels) can recall this conversation via the shared memory layer.
  *
- * Multi-tenancy: Vapi has no concept of a Gradia shop. For MVP, the shop
- * is resolved from the VAPI_DEFAULT_SHOP_ID env var (single-shop dev
- * mode). When we onboard multiple shops to Vapi, the natural extension
- * is to route by `message.assistant.id` — leave that to its own PR.
+ * Multi-tenancy: Vapi has no concept of a Gradia shop. The webhook
+ * resolves the shop by matching `message.call.assistantId` against
+ * `shops.vapi_assistant_id` (set in /settings → Voice receptionist).
+ * `VAPI_DEFAULT_SHOP_ID` is kept as a single-shop dev fallback for
+ * local testing without a real assistant configured.
  *
  * Vapi assistant must be configured with:
  *   - Server URL = https://<your-public-url>/api/vapi/webhook
@@ -106,8 +107,25 @@ function verifyVapiSecret(request: Request): boolean {
   }
 }
 
-function resolveShopId(): string | null {
-  return process.env.VAPI_DEFAULT_SHOP_ID?.trim() || null
+async function resolveShopId(
+  supabase: SupabaseClient,
+  message: VapiMessage
+): Promise<string | null> {
+  const assistantId = asString(message.call?.assistantId).trim()
+  if (assistantId) {
+    const { data, error } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("vapi_assistant_id", assistantId)
+      .maybeSingle()
+    if (error) {
+      console.error("[vapi] shop lookup by assistant_id failed:", error)
+    }
+    if (data?.id) return data.id
+  }
+
+  const fallback = process.env.VAPI_DEFAULT_SHOP_ID?.trim()
+  return fallback || null
 }
 
 function asString(value: unknown): string {
@@ -134,12 +152,6 @@ export async function POST(request: Request) {
     return new Response("Invalid signature", { status: 401 })
   }
 
-  const shopId = resolveShopId()
-  if (!shopId) {
-    console.error("[vapi] VAPI_DEFAULT_SHOP_ID not configured")
-    return new Response("Server not configured", { status: 500 })
-  }
-
   let payload: VapiPayload
   try {
     payload = (await request.json()) as VapiPayload
@@ -153,6 +165,15 @@ export async function POST(request: Request) {
   }
 
   const supabase = createServiceClient()
+
+  const shopId = await resolveShopId(supabase, message)
+  if (!shopId) {
+    console.error(
+      "[vapi] no shop matched assistantId and no VAPI_DEFAULT_SHOP_ID fallback set",
+      { assistantId: message.call?.assistantId ?? null }
+    )
+    return new Response("Shop not configured", { status: 500 })
+  }
 
   switch (message.type) {
     case "function-call":

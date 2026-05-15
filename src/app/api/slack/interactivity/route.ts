@@ -3,11 +3,15 @@ import { revalidatePath } from "next/cache"
 import { executeApproval, markEditRequested } from "@/lib/approvals"
 import { createServiceClient } from "@/lib/supabase/service"
 import {
+  bookingApprovedBlocks,
+  bookingEditRequestedBlocks,
   leadApprovedBlocks,
   leadEditRequestedBlocks,
   noteApprovedBlocks,
   noteEditRequestedBlocks,
   replaceOriginalMessage,
+  smsApprovedBlocks,
+  smsEditRequestedBlocks,
   verifySlackSignature,
 } from "@/lib/slack"
 
@@ -102,6 +106,37 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
+    } else if (result.actionType === "book_appointment") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Booking confirmed · ${proposal.customer_name}`,
+        bookingApprovedBlocks({
+          pendingActionId: pendingId,
+          customerName: proposal.customer_name,
+          phone: proposal.phone,
+          service: proposal.service,
+          carInfo: proposal.car_info,
+          startIso: proposal.iso_start_time,
+          durationMinutes: proposal.duration_minutes,
+          timezone: proposal.timezone,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "send_sms") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `SMS sent · ${proposal.customer_name ?? proposal.to_phone}`,
+        smsApprovedBlocks({
+          pendingActionId: pendingId,
+          toPhone: proposal.to_phone,
+          customerName: proposal.customer_name,
+          body: proposal.body,
+          reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
     } else {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -139,10 +174,42 @@ export async function POST(request: Request) {
         payload.response_url,
         `Edit requested · ${proposal.customer_name}`,
         leadEditRequestedBlocks({
+          pendingActionId: pendingId,
           customerName: proposal.customer_name,
           phone: proposal.phone,
           carInfo: proposal.car_info,
           status: proposal.status,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "book_appointment") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · booking for ${proposal.customer_name}`,
+        bookingEditRequestedBlocks({
+          pendingActionId: pendingId,
+          customerName: proposal.customer_name,
+          phone: proposal.phone,
+          service: proposal.service,
+          carInfo: proposal.car_info,
+          startIso: proposal.iso_start_time,
+          durationMinutes: proposal.duration_minutes,
+          timezone: proposal.timezone,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "send_sms") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · SMS to ${proposal.customer_name ?? proposal.to_phone}`,
+        smsEditRequestedBlocks({
+          pendingActionId: pendingId,
+          toPhone: proposal.to_phone,
+          customerName: proposal.customer_name,
+          body: proposal.body,
+          reason: proposal.reason,
           approverSlackId: payload.user.id,
         })
       )
@@ -152,6 +219,7 @@ export async function POST(request: Request) {
         payload.response_url,
         "Edit requested · note",
         noteEditRequestedBlocks({
+          pendingActionId: pendingId,
           content: proposal.content,
           customerName: proposal.customer_name,
           approverSlackId: payload.user.id,

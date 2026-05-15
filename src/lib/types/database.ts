@@ -6,6 +6,12 @@ export type ShopRow = {
   owner_id: string
   location: string | null
   phone: string | null
+  vapi_assistant_id: string | null
+  aurinko_account_id: number | null
+  aurinko_account_email: string | null
+  aurinko_access_token: string | null
+  aurinko_subscription_id: string | null
+  twilio_phone_number: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -51,12 +57,23 @@ export type AppointmentRow = {
   id: string
   shop_id: string
   lead_id: string | null
+  customer_id: string | null
   scheduled_at: string
+  duration_minutes: number | null
+  service_name: string | null
+  aurinko_calendar_id: string | null
+  aurinko_event_id: string | null
+  timezone: string | null
+  reminder_pending_action_id: string | null
   created_at: string
   updated_at: string
 }
 
-export type PendingActionType = "create_lead" | "add_note"
+export type PendingActionType =
+  | "create_lead"
+  | "add_note"
+  | "book_appointment"
+  | "send_sms"
 
 export type PendingActionStatus =
   | "pending"

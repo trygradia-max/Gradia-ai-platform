@@ -9,9 +9,12 @@ export default async function ApprovalsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Approvals</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Waiting on us
+        </h1>
         <p className="text-sm text-muted-foreground">
-          What&apos;s waiting on us — approve to save, reject to drop.
+          A quick yes or no before anything lands — approve to save, edit to
+          tweak, reject to drop.
         </p>
       </div>
       <ApprovalsList items={items} />

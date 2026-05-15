@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import { deleteSubscription } from "@/lib/aurinko"
 import { createClient } from "@/lib/supabase/server"
 import { getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
@@ -74,5 +75,199 @@ export async function saveShop(
   }
 
   revalidatePath("/", "layout")
+  return { ok: true, shop: data as ShopRow }
+}
+
+const saveVapiAssistantSchema = z.object({
+  vapi_assistant_id: z.string().trim().max(120).nullable(),
+})
+
+export type SaveVapiAssistantResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+/**
+ * Connects a shop to its Vapi assistant. The webhook resolves the shop
+ * by matching the incoming call's assistantId against this column, so
+ * each shop's calls route to their own brain.
+ */
+export async function saveVapiAssistantId(
+  input: z.infer<typeof saveVapiAssistantSchema>
+): Promise<SaveVapiAssistantResult> {
+  const parsed = saveVapiAssistantSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: "Assistant ID is too long." }
+  }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const value = parsed.data.vapi_assistant_id?.trim() || null
+
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ vapi_assistant_id: value })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    // 23505 = unique_violation — another shop already claimed this assistant.
+    if (error?.code === "23505") {
+      return {
+        ok: false,
+        error: "That assistant is already connected to another shop.",
+      }
+    }
+    return { ok: false, error: error?.message ?? "Could not save." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+const saveTwilioSchema = z.object({
+  twilio_phone_number: z
+    .string()
+    .trim()
+    .nullable()
+    .refine(
+      (v) => v === null || v === "" || /^\+\d{8,15}$/.test(v),
+      "Use E.164 format (e.g. +15551234567)."
+    ),
+})
+
+export type SaveTwilioResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+/**
+ * Connects the shop to the Twilio phone number they own. Pilot model
+ * uses one global Twilio account in env vars — this only records the
+ * number, no auth tokens stored per shop.
+ */
+export async function saveTwilioNumber(
+  input: z.infer<typeof saveTwilioSchema>
+): Promise<SaveTwilioResult> {
+  const parsed = saveTwilioSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error:
+        parsed.error.issues[0]?.message ??
+        "That doesn't look like a valid phone number.",
+    }
+  }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const value = parsed.data.twilio_phone_number?.trim() || null
+
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ twilio_phone_number: value })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    if (error?.code === "23505") {
+      return {
+        ok: false,
+        error: "That number is already connected to another shop.",
+      }
+    }
+    return { ok: false, error: error?.message ?? "Could not save." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+export type DisconnectSmsResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function disconnectSms(): Promise<DisconnectSmsResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ twilio_phone_number: null })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not disconnect." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+export type DisconnectEmailResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+/**
+ * Disconnects the shop's Aurinko email integration. Best-effort cleanup
+ * on Aurinko's side, then nulls out the local credentials. The
+ * subscription delete is fire-and-forget — if it fails, the local row is
+ * still cleared so the UI reflects the disconnect.
+ */
+export async function disconnectEmail(): Promise<DisconnectEmailResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data: current } = await supabase
+    .from("shops")
+    .select("aurinko_access_token, aurinko_subscription_id")
+    .eq("id", existing.id)
+    .single()
+
+  const row = current as
+    | { aurinko_access_token: string | null; aurinko_subscription_id: string | null }
+    | null
+
+  if (row?.aurinko_access_token && row.aurinko_subscription_id) {
+    await deleteSubscription(row.aurinko_access_token, row.aurinko_subscription_id)
+  }
+
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      aurinko_account_id: null,
+      aurinko_account_email: null,
+      aurinko_access_token: null,
+      aurinko_subscription_id: null,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not disconnect." }
+  }
+
+  revalidatePath("/settings")
   return { ok: true, shop: data as ShopRow }
 }

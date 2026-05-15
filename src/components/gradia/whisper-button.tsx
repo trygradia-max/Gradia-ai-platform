@@ -129,7 +129,7 @@ export function WhisperButton() {
       }
 
       const intentLabel = result.intent === "add_note" ? "note" : "lead"
-      toast.success(`Sent for approval — review the ${intentLabel} in Slack or Approvals`)
+      toast.success(`Got it — approve the ${intentLabel} in Slack or Approvals.`)
       router.refresh()
     } catch (err) {
       console.error("[whisper] upload failed:", err)
@@ -149,7 +149,8 @@ export function WhisperButton() {
           <div className="min-w-0 space-y-1">
             <p className="text-base font-semibold tracking-tight">Talk to us</p>
             <p className="text-sm text-muted-foreground">
-              Tap and tell us what just happened — log a lead, leave a note, or queue a booking. We&apos;ll ping you to approve.
+              Tap and tell us what just happened. We&apos;ll write it up and
+              ping you to approve before anything sticks.
             </p>
           </div>
         </div>
@@ -190,7 +191,7 @@ export function WhisperButton() {
         ) : (
           <Button type="button" disabled className="h-12 gap-2">
             <Loader2 className="size-5 animate-spin" aria-hidden />
-            Listening… we&apos;re parsing what we heard
+            Writing it up…
           </Button>
         )}
       </CardContent>
