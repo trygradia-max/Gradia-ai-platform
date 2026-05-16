@@ -125,6 +125,22 @@ export type TwilioSendResult = {
 }
 
 /**
+ * Builds the public URL Twilio should call back on delivery status
+ * transitions. Returns null when GRADIA_DASHBOARD_URL isn't set —
+ * sends without a callback still work, the status just freezes at
+ * the initial value the create-response returned.
+ */
+export function defaultStatusCallbackUrl(): string | null {
+  const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
+  if (!configured) return null
+  try {
+    return `${new URL(configured).origin}/api/twilio/sms/status`
+  } catch {
+    return null
+  }
+}
+
+/**
  * Sends an outbound SMS via Twilio's Messages API.
  * Endpoint: POST /2010-04-01/Accounts/{AccountSid}/Messages.json,
  * Basic auth with AccountSid:AuthToken, form-encoded body.
@@ -138,6 +154,7 @@ export async function sendOutboundSms(input: {
   from: string
   to: string
   body: string
+  statusCallback?: string | null
 }): Promise<TwilioSendResult> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim()
   const authToken = process.env.TWILIO_AUTH_TOKEN?.trim()
@@ -158,6 +175,9 @@ export async function sendOutboundSms(input: {
     To: input.to,
     Body: trimmedBody,
   })
+  if (input.statusCallback) {
+    form.set("StatusCallback", input.statusCallback)
+  }
 
   const res = await fetch(
     `${TWILIO_API_BASE}/Accounts/${encodeURIComponent(accountSid)}/Messages.json`,

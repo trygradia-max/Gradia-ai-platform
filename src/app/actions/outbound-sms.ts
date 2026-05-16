@@ -8,7 +8,7 @@ import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
-import { sendOutboundSms } from "@/lib/twilio"
+import { defaultStatusCallbackUrl, sendOutboundSms } from "@/lib/twilio"
 import type { ShopRow } from "@/lib/types/database"
 
 const PHONE_PATTERN = /^\+\d{8,15}$/
@@ -148,6 +148,7 @@ export async function sendOperatorSms(
       from: shop.twilio_phone_number,
       to: parsed.data.to_phone,
       body: parsed.data.body,
+      statusCallback: defaultStatusCallbackUrl(),
     })
   } catch (err) {
     return {

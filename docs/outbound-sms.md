@@ -137,10 +137,15 @@ The approval card lands; approve and verify the SMS arrives.
 
 ## 5. Known limitations (pilot scope)
 
-- **No status callbacks.** We don't listen for Twilio delivery
-  receipts. The `interactions.metadata.twilio_status` field captures
-  Twilio's *initial* status (`queued` / `accepted`), not the final
-  delivery state. A separate webhook route would close that loop.
+- **Delivery status callbacks live.** Every outbound send passes a
+  `StatusCallback` URL; Twilio POSTs to `/api/twilio/sms/status` on
+  each transition. The handler verifies the signature, looks up the
+  interaction by `metadata.twilio_message_sid`, and overwrites
+  `metadata.twilio_status` + `twilio_status_updated_at` (and
+  `twilio_error_code` on failures). Failed / undelivered transitions
+  log loud server-side. No UI surface yet — values live in metadata
+  for now; a "Couldn't deliver" badge on the customer detail page is
+  a small follow-up.
 - **No media (MMS).** Body-only sends. The `body` text-only path is
   the only thing wired.
 - **No queue.** Approvals send synchronously inline with the Slack
