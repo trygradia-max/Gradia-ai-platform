@@ -15,6 +15,7 @@ import {
   exchangeAuthCode,
   getAccount,
 } from "@/lib/aurinko"
+import { encryptSecret } from "@/lib/crypto"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -101,13 +102,21 @@ export async function GET(request: Request) {
     redirect(settingsRedirect("subscription_failed"))
   }
 
+  let encryptedToken: string | null
+  try {
+    encryptedToken = encryptSecret(token.accessToken)
+  } catch (err) {
+    console.error("[aurinko callback] token encryption failed:", err)
+    redirect(settingsRedirect("save_failed"))
+  }
+
   const supabase = await createClient()
   const { error: updateErr } = await supabase
     .from("shops")
     .update({
       aurinko_account_id: account.id,
       aurinko_account_email: account.email,
-      aurinko_access_token: token.accessToken,
+      aurinko_access_token_enc: encryptedToken,
       aurinko_subscription_id: subscription.id,
     })
     .eq("id", shop.id)

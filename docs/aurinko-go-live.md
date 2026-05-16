@@ -101,9 +101,11 @@ Expected:
 
 ## 6. Known limitations (pilot scope)
 
-- **Token storage is plain text.** `aurinko_access_token` lives in the
-  Supabase row unencrypted. This is intentional for the pilot but gates
-  the broader multi-tenant secrets work flagged in `docs/project-status.md`.
+- **Tokens are encrypted at rest.** As of `20260515200000_encrypt_aurinko_token`,
+  `aurinko_access_token_enc` is AES-256-GCM with `ENCRYPTION_KEY` from
+  env (`src/lib/crypto.ts`). Anyone who only compromises the database
+  doesn't get usable tokens. The threat model assumes Vercel env access
+  stays gated separately.
 - **Refresh flow not built.** Aurinko tokens are long-lived per their
   docs, but on expiry the user will need to disconnect → reconnect.
   A refresh job is a follow-up.

@@ -29,6 +29,7 @@ import {
   verifyAurinkoSignature,
   type AurinkoMessage,
 } from "@/lib/aurinko"
+import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
 import { recordInteraction } from "@/lib/memory"
@@ -87,9 +88,10 @@ export async function POST(request: Request) {
   }
 
   const shop = (shopRow as ShopRow | null) ?? null
-  if (!shop || !shop.aurinko_access_token) {
+  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  if (!shop || !accessToken) {
     console.warn(
-      "[aurinko webhook] no shop matched accountId or token missing",
+      "[aurinko webhook] no shop matched accountId, token missing, or decryption failed",
       { accountId }
     )
     // Ack so Aurinko doesn't retry forever — we can't process it anyway.
@@ -105,7 +107,7 @@ export async function POST(request: Request) {
     if (!payload.id) continue
 
     try {
-      const handled = await handleMessage(supabase, shop, payload.id)
+      const handled = await handleMessage(supabase, shop, accessToken, payload.id)
       if (handled) proposed += 1
     } catch (err) {
       console.error("[aurinko webhook] message handle failed:", err)
@@ -123,11 +125,10 @@ export async function POST(request: Request) {
 async function handleMessage(
   supabase: SupabaseClient,
   shop: ShopRow,
+  accessToken: string,
   messageId: string
 ): Promise<boolean> {
-  if (!shop.aurinko_access_token) return false
-
-  const message = await getEmailMessage(shop.aurinko_access_token, messageId)
+  const message = await getEmailMessage(accessToken, messageId)
 
   // Skip messages the connected mailbox sent (outbound copies show up
   // on the same subscription stream).

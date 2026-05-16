@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { deleteSubscription } from "@/lib/aurinko"
+import { tryDecryptSecret } from "@/lib/crypto"
 import { createClient } from "@/lib/supabase/server"
 import { getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
@@ -277,16 +278,20 @@ export async function disconnectEmail(): Promise<DisconnectEmailResult> {
   const supabase = await createClient()
   const { data: current } = await supabase
     .from("shops")
-    .select("aurinko_access_token, aurinko_subscription_id")
+    .select("aurinko_access_token_enc, aurinko_subscription_id")
     .eq("id", existing.id)
     .single()
 
   const row = current as
-    | { aurinko_access_token: string | null; aurinko_subscription_id: string | null }
+    | {
+        aurinko_access_token_enc: string | null
+        aurinko_subscription_id: string | null
+      }
     | null
 
-  if (row?.aurinko_access_token && row.aurinko_subscription_id) {
-    await deleteSubscription(row.aurinko_access_token, row.aurinko_subscription_id)
+  const accessToken = tryDecryptSecret(row?.aurinko_access_token_enc)
+  if (accessToken && row?.aurinko_subscription_id) {
+    await deleteSubscription(accessToken, row.aurinko_subscription_id)
   }
 
   const { data, error } = await supabase
@@ -294,7 +299,7 @@ export async function disconnectEmail(): Promise<DisconnectEmailResult> {
     .update({
       aurinko_account_id: null,
       aurinko_account_email: null,
-      aurinko_access_token: null,
+      aurinko_access_token_enc: null,
       aurinko_subscription_id: null,
     })
     .eq("id", existing.id)

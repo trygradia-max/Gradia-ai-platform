@@ -9,7 +9,7 @@ export type ShopRow = {
   vapi_assistant_id: string | null
   aurinko_account_id: number | null
   aurinko_account_email: string | null
-  aurinko_access_token: string | null
+  aurinko_access_token_enc: string | null
   aurinko_subscription_id: string | null
   twilio_phone_number: string | null
   stripe_account_id: string | null

@@ -10,6 +10,7 @@ import {
   listCalendarEvents,
   type AurinkoCalendarEvent,
 } from "@/lib/aurinko"
+import { tryDecryptSecret } from "@/lib/crypto"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -81,8 +82,8 @@ export default async function SchedulePage() {
     .eq("id", shopCtx.id)
     .single()
   const shop = (data as ShopRow | null) ?? null
-
-  const notConnected = !shop?.aurinko_access_token
+  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  const notConnected = !accessToken
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -96,10 +97,7 @@ export default async function SchedulePage() {
       {notConnected ? (
         <NotConnectedCard />
       ) : (
-        <ConnectedSchedule
-          accessToken={shop!.aurinko_access_token!}
-          calendarId="primary"
-        />
+        <ConnectedSchedule accessToken={accessToken!} calendarId="primary" />
       )}
     </div>
   )

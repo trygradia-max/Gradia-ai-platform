@@ -13,6 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { createCalendarEvent } from "@/lib/aurinko"
+import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
 import { sendSmsApprovalRequest } from "@/lib/slack"
@@ -360,7 +361,8 @@ async function executeBookAppointment(
   const end = new Date(start.getTime() + durationMinutes * 60_000)
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  if (!shop?.aurinko_access_token) {
+  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  if (!shop || !accessToken) {
     await rollbackClaim(supabase, claimed.id)
     return {
       ok: false,
@@ -391,7 +393,7 @@ async function executeBookAppointment(
 
   let calendarEventId: string | null = null
   try {
-    const created = await createCalendarEvent(shop.aurinko_access_token, calendarId, {
+    const created = await createCalendarEvent(accessToken, calendarId, {
       subject,
       startIso: start.toISOString(),
       endIso: end.toISOString(),
