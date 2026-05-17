@@ -180,6 +180,59 @@ function IdentityCard({ customer }: { customer: { phone: string | null; email: s
   )
 }
 
+type StatusBadge = {
+  label: string
+  tone: "good" | "bad" | "neutral"
+}
+
+function pickStatusBadge(it: InteractionRow): StatusBadge | null {
+  const meta = (it.metadata as Record<string, unknown> | null) ?? {}
+  // Outbound SMS — Twilio status callback writes here.
+  if (it.channel === "sms" && meta.direction === "outbound") {
+    const status =
+      typeof meta.twilio_status === "string"
+        ? meta.twilio_status.toLowerCase()
+        : ""
+    if (status === "delivered") return { label: "Delivered", tone: "good" }
+    if (status === "failed" || status === "undelivered") {
+      return { label: "Failed", tone: "bad" }
+    }
+    if (status === "sent") return { label: "Sent", tone: "neutral" }
+    if (status === "queued") return { label: "Queued", tone: "neutral" }
+  }
+  // Charges land as channel=note with Stripe metadata.
+  if (it.channel === "note" && typeof meta.stripe_invoice_id === "string") {
+    const status =
+      typeof meta.stripe_payment_status === "string"
+        ? meta.stripe_payment_status.toLowerCase()
+        : ""
+    if (status === "paid") return { label: "Paid", tone: "good" }
+    if (status === "payment_failed") {
+      return { label: "Payment failed", tone: "bad" }
+    }
+    return { label: "Invoice sent", tone: "neutral" }
+  }
+  return null
+}
+
+function renderStatusBadge(it: InteractionRow): React.ReactNode {
+  const badge = pickStatusBadge(it)
+  if (!badge) return null
+  const className =
+    badge.tone === "good"
+      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+      : badge.tone === "bad"
+        ? "bg-destructive/15 text-destructive"
+        : "bg-muted text-muted-foreground"
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${className}`}
+    >
+      {badge.label}
+    </span>
+  )
+}
+
 function InteractionTimeline({ interactions }: { interactions: InteractionRow[] }) {
   return (
     <Card className="border-border/80">
@@ -208,7 +261,7 @@ function InteractionTimeline({ interactions }: { interactions: InteractionRow[] 
                 className="grid gap-1 rounded-md border border-border/60 bg-muted/15 px-3 py-2"
               >
                 <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="font-normal">
                       {CHANNEL_LABEL[it.channel] ?? it.channel}
                     </Badge>
@@ -219,6 +272,7 @@ function InteractionTimeline({ interactions }: { interactions: InteractionRow[] 
                           ? "from us"
                           : "system"}
                     </span>
+                    {renderStatusBadge(it)}
                   </span>
                   <span title={new Date(it.occurred_at).toISOString()}>
                     {formatRelative(it.occurred_at)}
