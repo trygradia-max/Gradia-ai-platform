@@ -50,10 +50,25 @@ In Vercel → Project → Settings → Environment Variables:
 ```
 STRIPE_SECRET_KEY=sk_test_...      # or sk_live_... for prod
 STRIPE_CONNECT_CLIENT_ID=ca_...
+STRIPE_WEBHOOK_SECRET=whsec_...    # see step 2b
 ```
 
-Drop the same two into `.env.local` for local dev. **Redeploy** after
+Drop all three into `.env.local` for local dev. **Redeploy** after
 saving.
+
+### 2b. Wire the paid-status webhook
+
+In Stripe Dashboard → **Developers → Webhooks → Add endpoint**:
+
+- **Endpoint URL:** `https://gradia-ai-platform.vercel.app/api/stripe/webhook`
+- **Listen to:** *Events on Connected accounts* (this is the key
+  toggle — without it, events fire only for the platform account)
+- **Events to send:** `invoice.paid`, `invoice.payment_failed`
+
+Copy the endpoint's **Signing secret** (`whsec_...`) into the
+`STRIPE_WEBHOOK_SECRET` env above. Stripe will send a test event on
+endpoint creation; the handler returns 200 for any event type it
+doesn't act on, so the test won't generate a Slack post.
 
 > While in test mode, you can also use `sk_test_...` and Stripe's
 > test card numbers (e.g. `4242 4242 4242 4242`) end-to-end without
@@ -144,10 +159,17 @@ the Slack card → land on `/approvals/[id]` → add the email →
 - **No platform fee.** We're not taking a cut of the charge. When/if
   we want to, add `application_fee_amount` on the invoice create
   call in `src/lib/stripe.ts`.
-- **No webhook for paid-status callbacks.** When a customer pays the
-  invoice, we don't get a real-time signal — the shop sees it in
-  their Stripe Dashboard. A `/api/stripe/webhook` route with
-  signature verification + status updates is a follow-up.
+- **Paid-status webhook live.** `/api/stripe/webhook` receives
+  `invoice.paid` and `invoice.payment_failed` events for every
+  connected account (Stripe routes Connect events through the
+  platform's webhook with `account` set). Signature verified per
+  Stripe spec (`Stripe-Signature` header, HMAC-SHA256 on
+  `${timestamp}.${rawBody}`, 5-min tolerance). Each event posts a
+  Slack notice ("Paid · Smith · $450" or "Payment failed · …") and
+  updates the originating interaction's metadata with
+  `stripe_payment_status` so a "Paid" badge can surface on the
+  customer detail timeline in a follow-up. Set
+  `STRIPE_WEBHOOK_SECRET` in Vercel env.
 - **No `/customers` view in Gradia.** Editing the customer's email
   on the charge card before approving works fine, but ongoing
   customer-record management still lives in the database / Stripe.

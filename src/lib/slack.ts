@@ -575,6 +575,118 @@ export function chargeApprovedBlocks(p: {
   return blocks
 }
 
+export async function sendPaymentReceivedNotice(input: {
+  customerName: string | null
+  customerEmail: string | null
+  amountCents: number
+  invoiceNumber: string | null
+  invoiceUrl: string | null
+}): Promise<void> {
+  const target =
+    input.customerName?.trim() ||
+    input.customerEmail?.trim() ||
+    "a customer"
+  const amount = formatMoney(input.amountCents)
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `Paid · ${amount}`,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Customer*\n${escapeMrkdwn(target)}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Invoice*\n${dashOr(input.invoiceNumber, "unnamed")}`,
+        },
+      ],
+    },
+  ]
+  if (input.invoiceUrl) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `<${input.invoiceUrl}|Open the invoice in Stripe>`,
+      },
+    })
+  }
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: "Gradia · funds landed on our connected account",
+      },
+    ],
+  })
+  await postWebhook(`Paid · ${target} · ${amount}`, blocks)
+}
+
+export async function sendPaymentFailedNotice(input: {
+  customerName: string | null
+  customerEmail: string | null
+  amountCents: number
+  invoiceNumber: string | null
+  invoiceUrl: string | null
+}): Promise<void> {
+  const target =
+    input.customerName?.trim() ||
+    input.customerEmail?.trim() ||
+    "a customer"
+  const amount = formatMoney(input.amountCents)
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `Payment failed · ${amount}`,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Customer*\n${escapeMrkdwn(target)}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Invoice*\n${dashOr(input.invoiceNumber, "unnamed")}`,
+        },
+      ],
+    },
+  ]
+  if (input.invoiceUrl) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `<${input.invoiceUrl}|Reopen the invoice in Stripe>`,
+      },
+    })
+  }
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: "Gradia · their card got declined or the invoice expired — worth a follow-up",
+      },
+    ],
+  })
+  await postWebhook(`Payment failed · ${target} · ${amount}`, blocks)
+}
+
 export function chargeEditRequestedBlocks(p: {
   pendingActionId: string
   customerName: string

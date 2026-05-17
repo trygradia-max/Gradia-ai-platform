@@ -12,8 +12,12 @@
  * Docs: https://stripe.com/docs/api
  */
 
+import { createHmac, timingSafeEqual } from "node:crypto"
+
 const STRIPE_API_BASE = "https://api.stripe.com/v1"
 const STRIPE_API_VERSION = "2024-06-20"
+
+const WEBHOOK_TOLERANCE_SECONDS = 300
 
 export class StripeError extends Error {
   status: number
@@ -260,4 +264,58 @@ export async function chargeCustomerViaInvoice(input: {
     path: `/invoices/${encodeURIComponent(invoice.id)}/send`,
     stripeAccount: input.stripeAccount,
   })
+}
+
+// ---------- Webhook signature verification ----------
+
+/**
+ * Verifies the Stripe-Signature header per Stripe's spec:
+ *   - Header is `t={unix_seconds},v1={hex_hmac_sha256}` (and possibly
+ *     more v1=... entries — any one matching is sufficient).
+ *   - Signed payload is `${timestamp}.${rawBody}`.
+ *   - HMAC-SHA256 with the endpoint's signing secret (whsec_...).
+ *   - Reject ages > 5 minutes (replay protection).
+ *
+ * Returns true on valid + fresh signature; false on anything that
+ * doesn't match. Fails closed when the secret isn't configured so
+ * misconfig surfaces as 401 rather than silent acceptance.
+ */
+export function verifyStripeSignature(input: {
+  rawBody: string
+  signature: string | null
+}): boolean {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim()
+  if (!secret) return false
+  if (!input.signature) return false
+
+  let timestamp: string | null = null
+  const candidateSignatures: string[] = []
+  for (const part of input.signature.split(",")) {
+    const [k, v] = part.trim().split("=")
+    if (!k || !v) continue
+    if (k === "t") timestamp = v
+    else if (k === "v1") candidateSignatures.push(v)
+  }
+  if (!timestamp || candidateSignatures.length === 0) return false
+
+  const ts = Number.parseInt(timestamp, 10)
+  if (!Number.isFinite(ts)) return false
+  const ageSeconds = Math.abs(Date.now() / 1000 - ts)
+  if (ageSeconds > WEBHOOK_TOLERANCE_SECONDS) return false
+
+  const expected = createHmac("sha256", secret)
+    .update(`${timestamp}.${input.rawBody}`)
+    .digest("hex")
+  const expectedBuf = Buffer.from(expected)
+
+  for (const sig of candidateSignatures) {
+    const sigBuf = Buffer.from(sig)
+    if (sigBuf.length !== expectedBuf.length) continue
+    try {
+      if (timingSafeEqual(expectedBuf, sigBuf)) return true
+    } catch {
+      // length mismatch already filtered; ignore
+    }
+  }
+  return false
 }
