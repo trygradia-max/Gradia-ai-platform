@@ -77,6 +77,7 @@ export type PendingActionType =
   | "book_appointment"
   | "send_sms"
   | "charge_customer"
+  | "send_email"
 
 export type PendingActionStatus =
   | "pending"

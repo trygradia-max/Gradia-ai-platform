@@ -607,6 +607,174 @@ export function chargeEditRequestedBlocks(p: {
   ]
 }
 
+export type EmailApprovalPayload = {
+  pendingActionId: string
+  toEmail: string
+  customerName: string | null
+  subject: string
+  body: string
+  reason: string | null
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max).trim()}…`
+}
+
+function emailFieldBlocks(p: EmailApprovalPayload): Block[] {
+  return [
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*To*\n${dashOr(
+            p.customerName ? `${p.customerName} (${p.toEmail})` : p.toEmail,
+            "Unknown"
+          )}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Reason*\n${dashOr(p.reason, "Not specified")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Subject*\n${dashOr(p.subject, "(no subject)")}`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Body*\n${dashOr(truncate(p.body, 800), "(empty)")}`,
+      },
+    },
+  ]
+}
+
+function emailApprovalRequestBlocks(p: EmailApprovalPayload): Block[] {
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Approval needed: Outbound email",
+        emoji: true,
+      },
+    },
+    ...emailFieldBlocks(p),
+    {
+      type: "actions",
+      block_id: "email_approval",
+      elements: [
+        {
+          type: "button",
+          action_id: "approve_lead",
+          text: { type: "plain_text", text: "Approve & send", emoji: true },
+          style: "primary",
+          value: p.pendingActionId,
+        },
+        {
+          type: "button",
+          action_id: "edit_lead",
+          text: { type: "plain_text", text: "Edit", emoji: true },
+          value: p.pendingActionId,
+        },
+      ],
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Gradia · we'll send it from our connected inbox the moment you approve",
+        },
+      ],
+    },
+  ]
+}
+
+export async function sendEmailApprovalRequest(
+  p: EmailApprovalPayload
+): Promise<void> {
+  await postWebhook(
+    `Approval needed · email to ${p.customerName ?? p.toEmail}: ${truncate(p.subject, 60)}`,
+    emailApprovalRequestBlocks(p)
+  )
+}
+
+export function emailApprovedBlocks(p: {
+  pendingActionId: string
+  toEmail: string
+  customerName: string | null
+  subject: string
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Email sent", emoji: true },
+    },
+    ...emailFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      toEmail: p.toEmail,
+      customerName: p.customerName,
+      subject: p.subject,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Approved by <@${p.approverSlackId}> · on its way · <${dashboardUrl()}|Open Gradia>`,
+        },
+      ],
+    },
+  ]
+}
+
+export function emailEditRequestedBlocks(p: {
+  pendingActionId: string
+  toEmail: string
+  customerName: string | null
+  subject: string
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    ...emailFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      toEmail: p.toEmail,
+      customerName: p.customerName,
+      subject: p.subject,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
+        },
+      ],
+    },
+  ]
+}
+
 export type SmsApprovalPayload = {
   pendingActionId: string
   toPhone: string

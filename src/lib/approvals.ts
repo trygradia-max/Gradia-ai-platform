@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { createCalendarEvent } from "@/lib/aurinko"
+import { createCalendarEvent, sendEmailMessage } from "@/lib/aurinko"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
@@ -75,6 +75,15 @@ export type ChargeProposal = {
   description: string
 }
 
+export type EmailProposal = {
+  to_email: string
+  subject: string
+  body: string
+  customer_name: string | null
+  customer_id: string | null
+  reason: string | null
+}
+
 type ClaimedAction = {
   id: string
   shop_id: string
@@ -116,6 +125,12 @@ export type ApprovalSuccess =
       proposal: ChargeProposal
       invoiceUrl: string | null
     }
+  | {
+      status: "executed"
+      actionType: "send_email"
+      resultId: string
+      proposal: EmailProposal
+    }
   | { status: "already_decided" }
 
 export type ApprovalResult =
@@ -136,6 +151,7 @@ export type DecisionSuccess =
       actionType: "charge_customer"
       proposal: ChargeProposal
     }
+  | { status: "claimed"; actionType: "send_email"; proposal: EmailProposal }
   | { status: "already_decided" }
 
 export type DecisionResult =
@@ -325,6 +341,8 @@ export async function executeApproval(
       return executeSendSms(supabase, claimed)
     case "charge_customer":
       return executeChargeCustomer(supabase, claimed)
+    case "send_email":
+      return executeSendEmail(supabase, claimed)
     default:
       await rollbackClaim(supabase, claimed.id)
       return {
@@ -698,6 +716,93 @@ async function executeChargeCustomer(
   }
 }
 
+async function executeSendEmail(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as EmailProposal
+
+  if (
+    !proposal.to_email?.trim() ||
+    !proposal.subject?.trim() ||
+    !proposal.body?.trim()
+  ) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Email needs a recipient, subject, and body.",
+    }
+  }
+
+  const shop = await loadShopWithToken(supabase, claimed.shop_id)
+  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  if (!shop || !accessToken) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Connect Gmail via Aurinko (in /settings) before approving emails.",
+    }
+  }
+
+  let sentId: string
+  try {
+    const sent = await sendEmailMessage(accessToken, {
+      subject: proposal.subject,
+      body: proposal.body,
+      to: proposal.to_email,
+    })
+    sentId = sent.id
+  } catch (err) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Aurinko: ${err.message}`
+          : "Email send failed.",
+    }
+  }
+
+  let customerId = proposal.customer_id
+  if (!customerId) {
+    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
+      email: proposal.to_email,
+    })
+    if (customer) customerId = customer.id
+  }
+
+  const interaction = await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId,
+    channel: "email",
+    role: "gradia",
+    content: `Subject: ${proposal.subject}\n\n${proposal.body}`,
+    metadata: {
+      direction: "outbound",
+      aurinko_message_id: sentId || null,
+      to_email: proposal.to_email,
+      subject: proposal.subject,
+      pending_action_id: claimed.id,
+      reason: proposal.reason ?? null,
+    },
+  })
+
+  const resultId = interaction.ok ? interaction.id : sentId
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: resultId })
+    .eq("id", claimed.id)
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "send_email",
+    resultId,
+    proposal,
+  }
+}
+
 function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
   switch (claimed.action_type) {
     case "create_lead":
@@ -734,6 +839,13 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         status: "claimed",
         actionType: "charge_customer",
         proposal: claimed.payload as unknown as ChargeProposal,
+      }
+    case "send_email":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "send_email",
+        proposal: claimed.payload as unknown as EmailProposal,
       }
     default:
       return {

@@ -1,0 +1,119 @@
+/**
+ * Drafts a short, on-brand email reply to an inbound lead. The
+ * draft is staged as a `send_email` pending_action — operator
+ * approves (or edits) in Slack before it actually sends.
+ *
+ * Email constraints differ from SMS:
+ *   - Has a subject (we draft "Re: ..." matching the inbound)
+ *   - Body can run 4–8 sentences, but shorter is still better
+ *   - Plain text only (no HTML) — keeps rendering predictable across
+ *     clients and avoids accidental link tracking / formatting drift
+ *   - Always signed "— Gradia at {shop_name}" per OPERATIONS.md
+ */
+
+import { ChatAnthropic } from "@langchain/anthropic"
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+import { z } from "zod"
+
+const CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+const TOOL_NAME = "draft_email_reply"
+
+const schema = z
+  .object({
+    subject: z
+      .string()
+      .min(1)
+      .max(180)
+      .describe(
+        "Reply subject. Default to 'Re: {original subject}' when the inbound has one; otherwise something concise about the inquiry."
+      ),
+    body: z
+      .string()
+      .min(1)
+      .max(1500)
+      .describe(
+        "Plain-text email body, signed 'Gradia at {shop_name}'. Warm, 3–6 sentences. One clear next step."
+      ),
+  })
+  .describe(
+    "A drafted email reply ready for human approval. No prices, no commitments, one next step."
+  )
+
+export type EmailDraft = z.infer<typeof schema>
+
+const SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a single email reply to a new customer who just emailed us. The shop owner will approve before it sends — make the approval fast by writing something they'd actually send.
+
+Tone rules:
+- Speak as "we" and "us" — never "I" or "you and I".
+- Warm, confident, specific. Acknowledge what they asked about by name when the summary tells you.
+- One clear next step (e.g., "want us to send a few times?", "what year is the Tesla?", "happy to get you on the calendar — just need a day that works"). Never multiple asks.
+
+Body structure (plain text):
+- Greeting line
+- 2–4 short sentences acknowledging their inquiry + offering the next step
+- Sign-off: "— Gradia at {shop_name}" on the last line
+
+Hard rules:
+- Never quote a specific price. If they asked about price, say something like "we'll send a quote once we know the {make/model}" or "happy to put together pricing — what day works for us to take a look?"
+- Never confirm a specific time. Bookings need owner approval — say "we'll lock it in shortly" if a time is mentioned, never "you're booked."
+- Always sign with: — Gradia at {shop_name}
+- Plain text only. No HTML tags, no markdown.`
+
+const HUMAN = `Draft an email reply via the ${TOOL_NAME} tool.
+
+Shop name: {shop_name}
+Their email: {from}
+Original subject: {subject}
+What they asked about (summary): {summary}
+Service mentioned (if any): {service}
+Vehicle mentioned (if any): {vehicle}
+
+--- THEIR MESSAGE ---
+{body}`
+
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", SYSTEM],
+  ["human", HUMAN],
+])
+
+function anthropicKey(): string {
+  const k = process.env.ANTHROPIC_API_KEY?.trim()
+  if (!k) throw new Error("ANTHROPIC_API_KEY is not configured")
+  return k
+}
+
+const MAX_BODY_CHARS = 8_000
+
+export async function draftEmailReply(input: {
+  shopName: string
+  from: string
+  subject: string
+  body: string
+  summary: string
+  service: string
+  vehicle: string
+}): Promise<EmailDraft | null> {
+  const llm = new ChatAnthropic({
+    model: CLAUDE_MODEL,
+    temperature: 0.4,
+    maxTokens: 1024,
+    apiKey: anthropicKey(),
+  }).withStructuredOutput(schema, { name: TOOL_NAME })
+
+  const chain = prompt.pipe(llm)
+  const raw = await chain.invoke({
+    shop_name: input.shopName.trim() || "the shop",
+    from: input.from.trim() || "(unknown)",
+    subject: input.subject.trim() || "(no subject)",
+    summary: input.summary.trim() || "(no summary)",
+    service: input.service.trim() || "(not specified)",
+    vehicle: input.vehicle.trim() || "(not specified)",
+    body: input.body.trim().slice(0, MAX_BODY_CHARS) || "(empty body)",
+  })
+
+  const parsed = schema.parse(raw)
+  const subject = parsed.subject.trim()
+  const body = parsed.body.trim()
+  if (!subject || !body) return null
+  return { subject, body }
+}

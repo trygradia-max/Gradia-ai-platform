@@ -272,6 +272,80 @@ export async function getEmailMessage(
   }
 }
 
+// ---------- outbound email ----------
+
+export type AurinkoSentMessage = {
+  id: string
+}
+
+/**
+ * Sends an email from the connected mailbox.
+ * Endpoint: POST /v1/email/messages.
+ *
+ * Body is plain text (bodyType=text). HTML support exists via the
+ * `bodyType=html` query param — not used in the pilot drafter path,
+ * which produces plain-text bodies on purpose (no formatting drift
+ * across mail clients).
+ *
+ * Threading: Aurinko doesn't document an explicit reference-message
+ * field, so this sends as a new message. The recipient sees a
+ * standalone email rather than a threaded reply. Fine for pilot —
+ * proper threading is a follow-up.
+ */
+export async function sendEmailMessage(
+  accessToken: string,
+  input: {
+    subject: string
+    body: string
+    to: string
+    cc?: string | null
+  }
+): Promise<AurinkoSentMessage> {
+  const trimmedSubject = input.subject.trim()
+  const trimmedBody = input.body.trim()
+  if (!trimmedSubject) {
+    throw new AurinkoError(400, "Email subject is empty")
+  }
+  if (!trimmedBody) {
+    throw new AurinkoError(400, "Email body is empty")
+  }
+  if (!input.to.trim()) {
+    throw new AurinkoError(400, "Missing recipient")
+  }
+
+  const body: Record<string, unknown> = {
+    subject: trimmedSubject,
+    body: trimmedBody,
+    bodyType: "text",
+    to: [{ address: input.to.trim() }],
+  }
+  if (input.cc?.trim()) {
+    body.cc = [{ address: input.cc.trim() }]
+  }
+
+  const res = await fetch(`${AURINKO_API_BASE}/email/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    throw new AurinkoError(res.status, `Email send failed: ${raw.slice(0, 300)}`)
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new AurinkoError(500, "Email send response was not JSON")
+  }
+  const obj = parsed as { id?: string | number }
+  return { id: obj.id !== undefined ? String(obj.id) : "" }
+}
+
 // ---------- calendar ----------
 
 export type AurinkoCalendarEvent = {

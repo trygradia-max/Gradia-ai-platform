@@ -105,12 +105,22 @@ const chargePatchSchema = z.object({
   description: z.string().trim().min(1, "Tell us what they're paying for.").max(500),
 })
 
+const emailPatchSchema = z.object({
+  type: z.literal("send_email"),
+  to_email: z.string().trim().email("Recipient must be a valid email."),
+  subject: z.string().trim().min(1, "Subject can't be empty.").max(200),
+  body: z.string().trim().min(1, "Body can't be empty.").max(8_000),
+  customer_name: z.string().trim().max(200).nullable(),
+  reason: z.string().trim().max(200).nullable(),
+})
+
 const patchSchema = z.discriminatedUnion("type", [
   leadPatchSchema,
   notePatchSchema,
   bookingPatchSchema,
   smsPatchSchema,
   chargePatchSchema,
+  emailPatchSchema,
 ])
 
 export type ProposalPatch = z.infer<typeof patchSchema>
@@ -204,12 +214,21 @@ export async function updatePendingProposal(
                 amount_cents: parsed.data.amount_cents,
                 description: parsed.data.description,
               }
-            : {
-                ...current.payload,
-                content: parsed.data.content,
-                customer_name: parsed.data.customer_name,
-                phone: parsed.data.phone,
-              }
+            : parsed.data.type === "send_email"
+              ? {
+                  ...current.payload,
+                  to_email: parsed.data.to_email,
+                  subject: parsed.data.subject,
+                  body: parsed.data.body,
+                  customer_name: parsed.data.customer_name,
+                  reason: parsed.data.reason,
+                }
+              : {
+                  ...current.payload,
+                  content: parsed.data.content,
+                  customer_name: parsed.data.customer_name,
+                  phone: parsed.data.phone,
+                }
 
   const { data: updated, error: updateErr } = await supabase
     .from("pending_actions")

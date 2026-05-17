@@ -55,6 +55,15 @@ type ChargePayload = {
   source?: string
 }
 
+type EmailPayload = {
+  to_email?: string
+  subject?: string
+  body?: string
+  customer_name?: string | null
+  reason?: string | null
+  source?: string
+}
+
 export default async function PendingProposalPage({
   params,
 }: {
@@ -247,6 +256,24 @@ function buildEditorProps(
         amount_cents:
           typeof p.amount_cents === "number" ? p.amount_cents : 0,
         description: p.description ?? "",
+      },
+    }
+  }
+
+  if (pending.action_type === "send_email") {
+    const p = pending.payload as EmailPayload
+    return {
+      pendingId: pending.id,
+      source: typeof p.source === "string" ? p.source : null,
+      submittedAt: pending.created_at,
+      status,
+      initial: {
+        type: "send_email",
+        to_email: p.to_email ?? "",
+        subject: p.subject ?? "",
+        body: p.body ?? "",
+        customer_name: p.customer_name ?? null,
+        reason: p.reason ?? null,
       },
     }
   }

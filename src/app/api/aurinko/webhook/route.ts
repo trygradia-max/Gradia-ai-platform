@@ -32,8 +32,12 @@ import {
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
+import { draftEmailReply } from "@/lib/email-drafter"
 import { recordInteraction } from "@/lib/memory"
-import { sendLeadApprovalRequest } from "@/lib/slack"
+import {
+  sendEmailApprovalRequest,
+  sendLeadApprovalRequest,
+} from "@/lib/slack"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -182,7 +186,94 @@ async function handleMessage(
 
   if (classification && !classification.is_lead) return false
 
-  return proposeLead(supabase, shop, message, senderEmail, classification)
+  const proposed = await proposeLead(
+    supabase,
+    shop,
+    message,
+    senderEmail,
+    classification
+  )
+  // Best-effort auto-draft reply. Failures here must not block the
+  // lead proposal that just landed.
+  try {
+    await proposeDraftEmailReply(
+      supabase,
+      shop,
+      message,
+      senderEmail,
+      customerId,
+      classification
+    )
+  } catch (err) {
+    console.warn("[aurinko webhook] auto-draft email reply failed:", err)
+  }
+  return proposed
+}
+
+async function proposeDraftEmailReply(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  message: AurinkoMessage,
+  senderEmail: string,
+  customerId: string | null,
+  classification: EmailClassification | null
+): Promise<void> {
+  const draft = await draftEmailReply({
+    shopName: shop.name,
+    from: senderEmail,
+    subject: message.subject ?? "",
+    body: message.bodyPlain ?? "",
+    summary: classification?.summary ?? "",
+    service: classification?.service ?? "",
+    vehicle: classification?.vehicle ?? "",
+  })
+  if (!draft) return
+
+  const customerName = classification?.customer_name?.trim() || message.fromName || null
+  const reason = classification?.service?.trim()
+    ? `Reply to inquiry about ${classification.service.trim()}`
+    : "Reply to new email inquiry"
+
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "send_email",
+      payload: {
+        to_email: senderEmail,
+        subject: draft.subject,
+        body: draft.body,
+        customer_name: customerName,
+        customer_id: customerId,
+        reason,
+        source: "email_auto_draft",
+        aurinko_inbound_message_id: message.id,
+      },
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+
+  if (pendingErr || !pending) {
+    console.error(
+      "[aurinko webhook] send_email pending_action insert failed:",
+      pendingErr
+    )
+    return
+  }
+
+  try {
+    await sendEmailApprovalRequest({
+      pendingActionId: pending.id,
+      toEmail: senderEmail,
+      customerName,
+      subject: draft.subject,
+      body: draft.body,
+      reason,
+    })
+  } catch (err) {
+    console.error("[aurinko webhook] email draft Slack send failed:", err)
+  }
 }
 
 function interactionContent(m: AurinkoMessage): string {

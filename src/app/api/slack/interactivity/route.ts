@@ -7,6 +7,8 @@ import {
   bookingEditRequestedBlocks,
   chargeApprovedBlocks,
   chargeEditRequestedBlocks,
+  emailApprovedBlocks,
+  emailEditRequestedBlocks,
   leadApprovedBlocks,
   leadEditRequestedBlocks,
   noteApprovedBlocks,
@@ -154,6 +156,21 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
+    } else if (result.actionType === "send_email") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Email sent · ${proposal.customer_name ?? proposal.to_email}`,
+        emailApprovedBlocks({
+          pendingActionId: pendingId,
+          toEmail: proposal.to_email,
+          customerName: proposal.customer_name,
+          subject: proposal.subject,
+          body: proposal.body,
+          reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
     } else {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -241,6 +258,21 @@ export async function POST(request: Request) {
           customerEmail: proposal.customer_email,
           amountCents: proposal.amount_cents,
           description: proposal.description,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "send_email") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · email to ${proposal.customer_name ?? proposal.to_email}`,
+        emailEditRequestedBlocks({
+          pendingActionId: pendingId,
+          toEmail: proposal.to_email,
+          customerName: proposal.customer_name,
+          subject: proposal.subject,
+          body: proposal.body,
+          reason: proposal.reason,
           approverSlackId: payload.user.id,
         })
       )

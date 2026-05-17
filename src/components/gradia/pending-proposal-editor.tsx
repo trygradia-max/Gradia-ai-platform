@@ -70,6 +70,15 @@ type ChargeInitial = {
   description: string
 }
 
+type EmailInitial = {
+  type: "send_email"
+  to_email: string
+  subject: string
+  body: string
+  customer_name: string | null
+  reason: string | null
+}
+
 export type PendingProposalEditorProps = {
   pendingId: string
   source: string | null
@@ -81,6 +90,7 @@ export type PendingProposalEditorProps = {
     | BookingInitial
     | SmsInitial
     | ChargeInitial
+    | EmailInitial
 }
 
 function toLocalInputValue(iso: string): string {
@@ -114,15 +124,24 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
   const smsInit = kind === "send_sms" ? (props.initial as SmsInitial) : null
   const chargeInit =
     kind === "charge_customer" ? (props.initial as ChargeInitial) : null
+  const emailInit =
+    kind === "send_email" ? (props.initial as EmailInitial) : null
 
   const [customerName, setCustomerName] = React.useState(
     leadInit?.customer_name ??
       bookingInit?.customer_name ??
       smsInit?.customer_name ??
       chargeInit?.customer_name ??
+      emailInit?.customer_name ??
       noteInit?.customer_name ??
       ""
   )
+  const [emailTo, setEmailTo] = React.useState(emailInit?.to_email ?? "")
+  const [emailSubject, setEmailSubject] = React.useState(
+    emailInit?.subject ?? ""
+  )
+  const [emailBody, setEmailBody] = React.useState(emailInit?.body ?? "")
+  const [emailReason, setEmailReason] = React.useState(emailInit?.reason ?? "")
   const [chargeEmail, setChargeEmail] = React.useState(
     chargeInit?.customer_email ?? ""
   )
@@ -202,6 +221,16 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
         description: chargeDescription,
       }
     }
+    if (kind === "send_email") {
+      return {
+        type: "send_email",
+        to_email: emailTo.trim(),
+        subject: emailSubject,
+        body: emailBody,
+        customer_name: customerName.trim() ? customerName : null,
+        reason: emailReason.trim() ? emailReason : null,
+      }
+    }
     return {
       type: "add_note",
       content: noteContent,
@@ -267,7 +296,9 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
                   ? "Edit SMS draft"
                   : kind === "charge_customer"
                     ? "Edit charge"
-                    : "Edit note proposal"}
+                    : kind === "send_email"
+                      ? "Edit email draft"
+                      : "Edit note proposal"}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
             Source: {props.source ?? "unknown"} ·{" "}
@@ -523,6 +554,66 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
               account and emails the customer a hosted-payment link. No
               card on file required.
             </p>
+          </>
+        ) : kind === "send_email" ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="email-to">To</Label>
+                <Input
+                  id="email-to"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="sam@example.com"
+                  autoComplete="off"
+                  inputMode="email"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="customer-name">Customer (optional)</Label>
+                <Input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="e.g. Sam Rivera"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email-subject">Subject</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="Re: Ceramic coating quote"
+                autoComplete="off"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email-body">Body</Label>
+              <Textarea
+                id="email-body"
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                placeholder="Hey Sam — thanks for reaching out about ceramic coating..."
+                rows={9}
+              />
+              <p className="text-xs text-muted-foreground">
+                Plain text. Send as plain text from the shop&apos;s
+                connected mailbox.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email-reason">Why we&apos;re sending</Label>
+              <Input
+                id="email-reason"
+                value={emailReason}
+                onChange={(e) => setEmailReason(e.target.value)}
+                placeholder="e.g. Reply to inquiry about ceramic"
+                autoComplete="off"
+              />
+            </div>
           </>
         ) : (
           <>
