@@ -46,6 +46,8 @@ export type LeadApprovalPayload = {
   carInfo: string | null
   pinNotes: string | null
   status: LeadStatus
+  /** Optional one-liner about recent touchpoints on other channels. */
+  crossChannelHint?: string | null
 }
 
 type Block = Record<string, unknown>
@@ -100,6 +102,18 @@ function approvalRequestBlocks(p: LeadApprovalPayload): Block[] {
       status: p.status,
     }),
   ]
+
+  if (p.crossChannelHint?.trim()) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `:link: ${escapeMrkdwn(p.crossChannelHint.trim())}`,
+        },
+      ],
+    })
+  }
 
   if (p.pinNotes && p.pinNotes.trim()) {
     blocks.push({
@@ -273,6 +287,8 @@ export type BookingApprovalPayload = {
   startIso: string
   durationMinutes: number
   timezone: string | null
+  /** Optional one-liner about recent touchpoints on other channels. */
+  crossChannelHint?: string | null
 }
 
 function formatBookingWhen(
@@ -335,7 +351,7 @@ function bookingFieldBlocks(p: BookingApprovalPayload): Block[] {
 }
 
 function bookingApprovalRequestBlocks(p: BookingApprovalPayload): Block[] {
-  return [
+  const blocks: Block[] = [
     {
       type: "header",
       text: {
@@ -345,6 +361,19 @@ function bookingApprovalRequestBlocks(p: BookingApprovalPayload): Block[] {
       },
     },
     ...bookingFieldBlocks(p),
+  ]
+  if (p.crossChannelHint?.trim()) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `:link: ${escapeMrkdwn(p.crossChannelHint.trim())}`,
+        },
+      ],
+    })
+  }
+  blocks.push(
     {
       type: "actions",
       block_id: "booking_approval",
@@ -372,8 +401,9 @@ function bookingApprovalRequestBlocks(p: BookingApprovalPayload): Block[] {
           text: "Gradia · we'll put it on our calendar once you approve",
         },
       ],
-    },
-  ]
+    }
+  )
+  return blocks
 }
 
 export async function sendBookingApprovalRequest(

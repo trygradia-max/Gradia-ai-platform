@@ -31,6 +31,7 @@ import {
 } from "@/lib/aurinko"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
+import { getCrossChannelHint } from "@/lib/customer-context"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
 import { draftEmailReply } from "@/lib/email-drafter"
 import { recordInteraction } from "@/lib/memory"
@@ -191,6 +192,7 @@ async function handleMessage(
     shop,
     message,
     senderEmail,
+    customerId,
     classification
   )
   // Best-effort auto-draft reply. Failures here must not block the
@@ -294,6 +296,7 @@ async function proposeLead(
   shop: ShopRow,
   message: AurinkoMessage,
   senderEmail: string,
+  customerId: string | null,
   classification: EmailClassification | null
 ): Promise<boolean> {
   const customerName =
@@ -339,6 +342,13 @@ async function proposeLead(
     return false
   }
 
+  const crossChannelHint = await getCrossChannelHint(
+    supabase,
+    shop.id,
+    customerId,
+    "email"
+  )
+
   try {
     await sendLeadApprovalRequest({
       pendingActionId: pending.id,
@@ -347,6 +357,7 @@ async function proposeLead(
       carInfo: vehicle,
       pinNotes,
       status: "new",
+      crossChannelHint,
     })
   } catch (err) {
     console.error("[aurinko webhook] Slack send failed:", err)

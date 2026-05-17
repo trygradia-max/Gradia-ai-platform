@@ -15,6 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { revalidatePath } from "next/cache"
 
 import { findCustomerByChannel } from "@/lib/customers"
+import { getCrossChannelHint } from "@/lib/customer-context"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
 import {
   sendBookingApprovalRequest,
@@ -140,6 +141,18 @@ async function submitLeadProposal(
     return { ok: false, reason: "pending_action_failed" }
   }
 
+  // Resolve customer (best-effort) so we can surface cross-channel
+  // context on the Slack card.
+  const customer = await findCustomerByChannel(supabase, shopId, {
+    phone: proposal.phone,
+  })
+  const crossChannelHint = await getCrossChannelHint(
+    supabase,
+    shopId,
+    customer?.id ?? null,
+    "voice"
+  )
+
   try {
     await sendLeadApprovalRequest({
       pendingActionId: pending.id,
@@ -148,6 +161,7 @@ async function submitLeadProposal(
       carInfo: proposal.carInfo,
       pinNotes: proposal.pinNotes,
       status: proposal.status,
+      crossChannelHint,
     })
   } catch (slackErr) {
     console.error("[vapi-tools] Slack approval send failed:", slackErr)
@@ -290,6 +304,16 @@ async function submitBookingProposal(
     return { ok: false, reason: "pending_action_failed" }
   }
 
+  const customer = await findCustomerByChannel(supabase, shopId, {
+    phone: proposal.phone,
+  })
+  const crossChannelHint = await getCrossChannelHint(
+    supabase,
+    shopId,
+    customer?.id ?? null,
+    "voice"
+  )
+
   try {
     await sendBookingApprovalRequest({
       pendingActionId: pending.id,
@@ -300,6 +324,7 @@ async function submitBookingProposal(
       startIso: proposal.isoStartTime,
       durationMinutes: proposal.durationMinutes,
       timezone: proposal.timezone,
+      crossChannelHint,
     })
   } catch (slackErr) {
     console.error("[vapi-tools] booking Slack approval send failed:", slackErr)

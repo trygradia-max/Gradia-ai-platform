@@ -25,6 +25,7 @@ import { headers } from "next/headers"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { findOrCreateCustomer, normalizePhone } from "@/lib/customers"
+import { getCrossChannelHint } from "@/lib/customer-context"
 import { recordInteraction } from "@/lib/memory"
 import {
   sendLeadApprovalRequest,
@@ -162,7 +163,7 @@ async function handleMessage(
 
   if (!classification || !classification.is_lead) return
 
-  await proposeLead(supabase, shop, sms, fromPhone, classification)
+  await proposeLead(supabase, shop, sms, fromPhone, customerId, classification)
   // Best-effort auto-draft. Drafter or Slack failing must not block
   // the lead proposal we just staged.
   try {
@@ -249,6 +250,7 @@ async function proposeLead(
   shop: ShopRow,
   sms: TwilioInboundSms,
   fromPhone: string,
+  customerId: string | null,
   classification: SmsClassification
 ): Promise<void> {
   const customerName = classification.customer_name?.trim() || fromPhone
@@ -289,6 +291,13 @@ async function proposeLead(
     return
   }
 
+  const crossChannelHint = await getCrossChannelHint(
+    supabase,
+    shop.id,
+    customerId,
+    "sms"
+  )
+
   try {
     await sendLeadApprovalRequest({
       pendingActionId: pending.id,
@@ -297,6 +306,7 @@ async function proposeLead(
       carInfo: vehicle,
       pinNotes,
       status: "new",
+      crossChannelHint,
     })
   } catch (err) {
     console.error("[twilio sms] Slack send failed:", err)
