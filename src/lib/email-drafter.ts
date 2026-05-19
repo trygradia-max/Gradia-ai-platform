@@ -84,6 +84,85 @@ function anthropicKey(): string {
 
 const MAX_BODY_CHARS = 8_000
 
+// ---------- custom-agent email drafter ----------
+
+const CUSTOM_EMAIL_TOOL = "draft_custom_email"
+
+const customEmailSchema = z
+  .object({
+    subject: z
+      .string()
+      .min(3)
+      .max(180)
+      .describe("Subject line. Make it scannable in an inbox preview."),
+    body: z
+      .string()
+      .min(8)
+      .max(1500)
+      .describe(
+        "Plain-text body signed '— Gradia at {shop_name}'. 3–6 sentences."
+      ),
+  })
+  .describe(
+    "Email matching the operator's intent. No prices, no commitments."
+  )
+
+const CUSTOM_EMAIL_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. The shop owner set up a custom agent that fires on an event (a payment, a booking, etc.). For each event the agent matches, write one short email the owner will approve before it sends.
+
+Tone rules:
+- Speak as "we" and "us".
+- Warm, specific, brief. Match the operator's intent exactly.
+
+Hard rules:
+- Plain text only. No HTML, no markdown.
+- Never quote a price or confirm a new commitment.
+- Always sign with: — Gradia at {shop_name}`
+
+const CUSTOM_EMAIL_HUMAN = `Draft a custom-agent email via the ${CUSTOM_EMAIL_TOOL} tool.
+
+Shop name: {shop_name}
+Customer name: {customer_name}
+Service / context (if known): {service}
+When (if relevant): {when}
+
+--- INTENT (from our owner) ---
+{intent}`
+
+const customEmailPrompt = ChatPromptTemplate.fromMessages([
+  ["system", CUSTOM_EMAIL_SYSTEM],
+  ["human", CUSTOM_EMAIL_HUMAN],
+])
+
+export async function draftCustomEmailForCustomer(input: {
+  shopName: string
+  customerName: string
+  service: string | null
+  when: string | null
+  intent: string
+}): Promise<EmailDraft | null> {
+  const llm = new ChatAnthropic({
+    model: CLAUDE_MODEL,
+    temperature: 0.4,
+    maxTokens: 1024,
+    apiKey: anthropicKey(),
+  }).withStructuredOutput(customEmailSchema, { name: CUSTOM_EMAIL_TOOL })
+
+  const chain = customEmailPrompt.pipe(llm)
+  const raw = await chain.invoke({
+    shop_name: input.shopName.trim() || "the shop",
+    customer_name: input.customerName.trim() || "there",
+    service: input.service?.trim() || "(not specified)",
+    when: input.when?.trim() || "(not specified)",
+    intent: input.intent.trim() || "send a warm note",
+  })
+
+  const parsed = customEmailSchema.parse(raw)
+  const subject = parsed.subject.trim()
+  const body = parsed.body.trim()
+  if (!subject || !body) return null
+  return { subject, body }
+}
+
 // ---------- appointment reminder email drafter ----------
 
 const REMINDER_TOOL = "draft_appointment_reminder_email"

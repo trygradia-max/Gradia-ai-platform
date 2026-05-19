@@ -168,10 +168,26 @@ const planSchema = z.object({
             ),
         }),
       }),
+      z.object({
+        id: z.literal("payment_received_thank_you_sms"),
+        params: z
+          .object({})
+          .describe(
+            "No params today. EVENT-DRIVEN — fires when a Stripe invoice is paid. OMIT the schedule field for this recipe."
+          ),
+      }),
+      z.object({
+        id: z.literal("booking_approved_prep_email"),
+        params: z
+          .object({})
+          .describe(
+            "No params today. EVENT-DRIVEN — fires when a booking approval lands. OMIT the schedule field for this recipe."
+          ),
+      }),
     ])
     .optional()
     .describe(
-      "Machine-executable mapping. Pick ONE recipe id that fits the problem:\n• 'lead_followup_sms' — leads in a given status, older than N days, no inbound recently → drafts an SMS.\n• 'appointment_reminder_email' — drafts an email reminder ~N hours before a booked appointment. Pair with hourly cadence.\n• 'stale_customer_sms' — drafts an SMS to customers whose last interaction is N+ days ago.\nOMIT entirely if no recipe fits — the plan still saves but won't run."
+      "Machine-executable mapping. Pick ONE recipe id that fits the problem:\n\nSCHEDULED (require a schedule):\n• 'lead_followup_sms' — leads in a given status, older than N days, no inbound recently → drafts an SMS.\n• 'appointment_reminder_email' — drafts an email reminder ~N hours before a booked appointment. Pair with hourly cadence.\n• 'stale_customer_sms' — drafts an SMS to customers whose last interaction is N+ days ago.\n\nEVENT-DRIVEN (omit the schedule field):\n• 'payment_received_thank_you_sms' — fires when a Stripe invoice is paid; drafts a thank-you SMS.\n• 'booking_approved_prep_email' — fires when a booking approval lands an appointment; drafts a prep email.\n\nOMIT recipe entirely if no recipe fits — the plan still saves but won't run."
     ),
   schedule: z
     .object({

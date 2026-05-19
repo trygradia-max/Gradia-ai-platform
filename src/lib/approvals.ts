@@ -12,6 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { dispatchAgentEvent } from "@/lib/agent-events"
 import { createCalendarEvent, sendEmailMessage } from "@/lib/aurinko"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
@@ -477,6 +478,29 @@ async function executeBookAppointment(
       "[approvals] booking confirmation draft failed (booking still succeeded):",
       err
     )
+  }
+
+  // Fan out booking_approved to any enabled event-driven custom agents
+  // (e.g., the prep-email recipe). Best-effort — never blocks the
+  // approval flow.
+  try {
+    await dispatchAgentEvent(
+      {
+        kind: "booking_approved",
+        shopId: claimed.shop_id,
+        customerName: proposal.customer_name,
+        customerEmail: proposal.email,
+        customerPhone: proposal.phone || null,
+        customerId: customerResult.customer.id,
+        serviceName: proposal.service,
+        isoStartTime: start.toISOString(),
+        timezone: proposal.timezone,
+        appointmentId: null,
+      },
+      supabase
+    )
+  } catch (err) {
+    console.warn("[approvals] booking_approved dispatch failed:", err)
   }
 
   return {

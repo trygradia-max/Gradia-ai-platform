@@ -549,6 +549,233 @@ async function executeStaleCustomerSms(
   }
 }
 
+// ---------- event-driven recipe handlers ----------
+
+// Lazy-imports kept inline so this module doesn't grab the email
+// drafter unless an event recipe actually runs.
+import type { AgentEvent } from "@/lib/agent-events"
+import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
+import { sendEmailApprovalRequest as _sendEmailApprovalRequest } from "@/lib/slack"
+
+async function executePaymentReceivedThankYouSms(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  event: AgentEvent
+): Promise<AgentRunOutcome> {
+  if (event.kind !== "payment_received") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "wrong event kind",
+    }
+  }
+  if (!shop.twilio_phone_number) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Twilio number not connected",
+    }
+  }
+  if (!event.customerPhone) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "no phone on file for the paying customer",
+    }
+  }
+
+  const intent =
+    agent.config.action.intent_summary?.trim() ||
+    "Thank them for paying and let them know we appreciate the business."
+
+  const draft = await draftCustomSmsForCustomer({
+    shopName: shop.name,
+    customerName: event.customerName ?? "there",
+    vehicle: null,
+    service: null,
+    intent: `${intent}\n\nContext: They just paid $${(event.amountCents / 100).toFixed(2)}.`,
+  }).catch(() => null)
+  if (!draft) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "drafter returned no message",
+    }
+  }
+
+  const reason = `Custom agent · ${agent.name}`
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "send_sms",
+      payload: {
+        to_phone: event.customerPhone,
+        body: draft,
+        customer_name: event.customerName,
+        customer_id: event.customerId,
+        reason,
+        source: "custom_agent_event",
+        custom_agent_id: agent.id,
+        event_kind: event.kind,
+        stripe_invoice_id: event.stripeInvoiceId,
+      },
+      requested_by: agent.owner_id,
+    })
+    .select("id")
+    .single()
+  if (pendingErr || !pending) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `pending insert failed: ${pendingErr?.message ?? "unknown"}`,
+    }
+  }
+
+  try {
+    await sendSmsApprovalRequest({
+      pendingActionId: pending.id,
+      toPhone: event.customerPhone,
+      customerName: event.customerName,
+      body: draft,
+      reason,
+    })
+  } catch (err) {
+    console.error("[agent-runtime] thank-you Slack send failed:", err)
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats: { proposed_sms: 1 },
+  }
+}
+
+async function executeBookingApprovedPrepEmail(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  event: AgentEvent
+): Promise<AgentRunOutcome> {
+  if (event.kind !== "booking_approved") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "wrong event kind",
+    }
+  }
+  if (!shop.aurinko_access_token_enc) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Gmail not connected via Aurinko",
+    }
+  }
+  if (!event.customerEmail) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "no email on file for the booked customer",
+    }
+  }
+
+  const intent =
+    agent.config.action.intent_summary?.trim() ||
+    "Send a brief pre-appointment note with anything they should know before we see them."
+
+  const whenText = (() => {
+    try {
+      return new Date(event.isoStartTime).toLocaleString(undefined, {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: event.timezone ?? undefined,
+      })
+    } catch {
+      return event.isoStartTime
+    }
+  })()
+
+  const draft = await draftCustomEmailForCustomer({
+    shopName: shop.name,
+    customerName: event.customerName,
+    service: event.serviceName,
+    when: whenText,
+    intent,
+  }).catch(() => null)
+  if (!draft) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "drafter returned no email",
+    }
+  }
+
+  const reason = `Custom agent · ${agent.name}`
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "send_email",
+      payload: {
+        to_email: event.customerEmail,
+        subject: draft.subject,
+        body: draft.body,
+        customer_name: event.customerName,
+        customer_id: event.customerId,
+        reason,
+        source: "custom_agent_event",
+        custom_agent_id: agent.id,
+        event_kind: event.kind,
+        appointment_id: event.appointmentId,
+      },
+      requested_by: agent.owner_id,
+    })
+    .select("id")
+    .single()
+  if (pendingErr || !pending) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `pending insert failed: ${pendingErr?.message ?? "unknown"}`,
+    }
+  }
+
+  try {
+    await _sendEmailApprovalRequest({
+      pendingActionId: pending.id,
+      toEmail: event.customerEmail,
+      customerName: event.customerName,
+      subject: draft.subject,
+      body: draft.body,
+      reason,
+    })
+  } catch (err) {
+    console.error("[agent-runtime] prep-email Slack send failed:", err)
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats: { proposed_email: 1 },
+  }
+}
+
 // ---------- recipe dispatch ----------
 
 type RecipeHandler = (
@@ -557,10 +784,54 @@ type RecipeHandler = (
   agent: CustomAgentRow
 ) => Promise<AgentRunOutcome>
 
+type EventRecipeHandler = (
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  event: AgentEvent
+) => Promise<AgentRunOutcome>
+
 const RECIPE_HANDLERS: Record<string, RecipeHandler> = {
   lead_followup_sms: executeLeadFollowupSms,
   appointment_reminder_email: executeAppointmentReminderEmail,
   stale_customer_sms: executeStaleCustomerSms,
+}
+
+const EVENT_RECIPE_HANDLERS: Record<string, EventRecipeHandler> = {
+  payment_received_thank_you_sms: executePaymentReceivedThankYouSms,
+  booking_approved_prep_email: executeBookingApprovedPrepEmail,
+}
+
+/**
+ * Entry point used by agent-events.dispatchAgentEvent. Looks up the
+ * matching handler by recipe id and runs it. Errors swallowed —
+ * caller logs.
+ */
+export async function runEventRecipe(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  event: AgentEvent
+): Promise<AgentRunOutcome> {
+  const recipeId = agent.config.recipe?.id
+  if (!recipeId) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "no recipe on this agent",
+    }
+  }
+  const handler = EVENT_RECIPE_HANDLERS[recipeId]
+  if (!handler) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `unknown event recipe: ${recipeId}`,
+    }
+  }
+  return handler(supabase, shop, agent, event)
 }
 
 async function loadShop(

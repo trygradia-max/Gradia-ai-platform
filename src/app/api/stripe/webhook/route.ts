@@ -19,6 +19,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { dispatchAgentEvent } from "@/lib/agent-events"
 import {
   sendPaymentFailedNotice,
   sendPaymentReceivedNotice,
@@ -204,6 +205,48 @@ export async function POST(request: Request) {
     }
   } catch (err) {
     console.error("[stripe webhook] Slack notice failed:", err)
+  }
+
+  // Fan out payment_received to event-driven custom agents (e.g.,
+  // the thank-you SMS recipe). Best-effort — failures must not
+  // affect the webhook ack to Stripe.
+  if (eventType === "invoice.paid" && shopId) {
+    let customerPhone: string | null = null
+    const customerId =
+      (interaction as { customer_id?: string | null } | null)?.customer_id ??
+      null
+    if (customerId) {
+      const { data: customerRow } = await supabase
+        .from("customers")
+        .select("phone")
+        .eq("id", customerId)
+        .maybeSingle()
+      customerPhone = (customerRow as { phone: string | null } | null)?.phone ?? null
+    }
+
+    const paidAtIso =
+      typeof invoice.status_transitions?.paid_at === "number"
+        ? new Date(invoice.status_transitions.paid_at * 1000).toISOString()
+        : new Date().toISOString()
+
+    try {
+      await dispatchAgentEvent(
+        {
+          kind: "payment_received",
+          shopId,
+          customerName: invoice.customer_name ?? null,
+          customerEmail: invoice.customer_email ?? null,
+          customerPhone,
+          customerId,
+          amountCents: amount,
+          stripeInvoiceId: invoice.id ?? null,
+          paidAtIso,
+        },
+        supabase
+      )
+    } catch (err) {
+      console.warn("[stripe webhook] payment_received dispatch failed:", err)
+    }
   }
 
   revalidatePath("/dashboard")

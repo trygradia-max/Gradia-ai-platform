@@ -185,6 +185,11 @@ export type AgentRecipeId =
   | "lead_followup_sms"
   | "appointment_reminder_email"
   | "stale_customer_sms"
+  | "payment_received_thank_you_sms"
+  | "booking_approved_prep_email"
+
+/** Events that can fire event-driven custom agents. */
+export type AgentEventKind = "payment_received" | "booking_approved"
 
 export type LeadFollowupSmsParams = {
   status: LeadStatus
@@ -206,6 +211,13 @@ export type StaleCustomerSmsParams = {
   cooldown_days: number
 }
 
+/** No filter params today — params kept for future extension (delay,
+ *  minimum amount threshold, etc.) */
+export type PaymentReceivedParams = Record<string, never>
+
+/** Same — empty params, future-proof shape. */
+export type BookingApprovedParams = Record<string, never>
+
 export type AgentRecipe =
   | { id: "lead_followup_sms"; params: LeadFollowupSmsParams }
   | {
@@ -213,6 +225,11 @@ export type AgentRecipe =
       params: AppointmentReminderEmailParams
     }
   | { id: "stale_customer_sms"; params: StaleCustomerSmsParams }
+  | {
+      id: "payment_received_thank_you_sms"
+      params: PaymentReceivedParams
+    }
+  | { id: "booking_approved_prep_email"; params: BookingApprovedParams }
 
 export type AgentSchedule = {
   cadence: "hourly" | "daily" | "weekly"
