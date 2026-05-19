@@ -172,3 +172,41 @@ export type PaymentRow = {
   paid_at: string
   created_at: string
 }
+
+/**
+ * Shape of the planned agent config Claude produces for custom agents.
+ * Intentionally descriptive (not a machine-executable DSL yet) — the
+ * runtime executor will tighten this into something it can dispatch.
+ */
+export type AgentConfig = {
+  name: string
+  short_description: string
+  trigger: {
+    kind: "schedule" | "event"
+    schedule_summary?: string
+    event_summary?: string
+  }
+  audience: {
+    entity: "leads" | "customers" | "appointments" | "interactions"
+    filters_summary: string[]
+  }
+  action: {
+    kind: "draft_sms" | "draft_email" | "log_note" | "flag_for_review"
+    intent_summary: string
+  }
+  prerequisites_needed: string[]
+  human_in_the_loop_note: string
+}
+
+export type CustomAgentRow = {
+  id: string
+  shop_id: string
+  owner_id: string
+  name: string
+  description: string | null
+  problem_text: string
+  config: AgentConfig
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}

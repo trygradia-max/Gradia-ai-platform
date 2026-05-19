@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
-import type { ShopRow } from "@/lib/types/database"
+import type { CustomAgentRow, ShopRow } from "@/lib/types/database"
 
 export type AgentStatus = "active" | "needs_setup" | "off"
 
@@ -252,4 +252,18 @@ export async function getAgentsForCurrentShop(): Promise<Agent[]> {
   const shop = data as ShopRow | null
   if (!shop) return []
   return buildAgents(shop)
+}
+
+export async function listCustomAgentsForCurrentShop(): Promise<
+  CustomAgentRow[]
+> {
+  const shop = await requireShop()
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("custom_agents")
+    .select("*")
+    .eq("shop_id", shop.id)
+    .order("updated_at", { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data as CustomAgentRow[] | null) ?? []
 }
