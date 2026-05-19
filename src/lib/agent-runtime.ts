@@ -1,0 +1,403 @@
+/**
+ * Custom-agent runtime. Dispatches enabled agents matching their
+ * cadence to recipe-specific executors. Recipes are coded handlers
+ * with known semantics; the planner is constrained to pick from this
+ * catalog when it emits a `recipe` block on the config.
+ *
+ * Only `lead_followup_sms` ships in this chunk. Future recipes plug
+ * in alongside via `RECIPE_HANDLERS`.
+ *
+ * Every outbound recipe respects HITL — actions stage `send_sms` /
+ * `send_email` pending_actions, never send directly.
+ */
+
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+import { findCustomerByChannel } from "@/lib/customers"
+import { sendSmsApprovalRequest } from "@/lib/slack"
+import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
+import type {
+  AgentConfig,
+  CustomAgentRow,
+  LeadRow,
+  ShopRow,
+} from "@/lib/types/database"
+
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+const MIN_GAP_MS: Record<"hourly" | "daily" | "weekly", number> = {
+  hourly: 50 * 60 * 1000, // 50 min
+  daily: 23 * HOUR_MS,
+  weekly: 6 * DAY_MS,
+}
+
+export type AgentRunOutcome = {
+  agentId: string
+  agentName: string
+  fired: boolean
+  /** Why we didn't fire, when fired === false. */
+  reason?: string
+  /** Per-recipe counters (e.g., { proposed_sms: 3, skipped_already_contacted: 1 }). */
+  stats?: Record<string, number>
+}
+
+function isCadenceWindowOpen(
+  schedule: AgentConfig["schedule"],
+  now: Date
+): { open: boolean; reason?: string } {
+  if (!schedule) return { open: false, reason: "no schedule" }
+  if (schedule.cadence === "hourly") return { open: true }
+  const hour = now.getUTCHours()
+  const expectedHour = schedule.hour_of_day ?? 14
+  if (hour !== expectedHour) {
+    return {
+      open: false,
+      reason: `hour ${hour} ≠ ${expectedHour} (UTC) — waits for window`,
+    }
+  }
+  if (schedule.cadence === "weekly") {
+    const expectedDow = schedule.day_of_week ?? 1
+    if (now.getUTCDay() !== expectedDow) {
+      return {
+        open: false,
+        reason: `weekday ${now.getUTCDay()} ≠ ${expectedDow} — wrong day`,
+      }
+    }
+  }
+  return { open: true }
+}
+
+function shouldFireOnSchedule(
+  agent: CustomAgentRow,
+  now: Date
+): { fire: boolean; reason?: string } {
+  const schedule = agent.config.schedule
+  if (!schedule) return { fire: false, reason: "no schedule on config" }
+
+  const window = isCadenceWindowOpen(schedule, now)
+  if (!window.open) return { fire: false, reason: window.reason }
+
+  if (agent.last_fired_at) {
+    const elapsed = now.getTime() - new Date(agent.last_fired_at).getTime()
+    if (elapsed < MIN_GAP_MS[schedule.cadence]) {
+      return {
+        fire: false,
+        reason: `fired recently (${Math.round(elapsed / 60_000)}m ago)`,
+      }
+    }
+  }
+  return { fire: true }
+}
+
+async function stampFired(
+  supabase: SupabaseClient,
+  agentId: string,
+  shopId: string
+): Promise<void> {
+  await supabase
+    .from("custom_agents")
+    .update({ last_fired_at: new Date().toISOString() })
+    .eq("id", agentId)
+    .eq("shop_id", shopId)
+}
+
+// ---------- recipe: lead_followup_sms ----------
+
+async function executeLeadFollowupSms(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow
+): Promise<AgentRunOutcome> {
+  const stats = { matched: 0, proposed_sms: 0, skipped_no_phone: 0, skipped_recent_inbound: 0 }
+  const recipe = agent.config.recipe
+  if (!recipe || recipe.id !== "lead_followup_sms") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "recipe missing or wrong id",
+    }
+  }
+  if (!shop.twilio_phone_number) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Twilio number not connected",
+    }
+  }
+
+  const { status, min_lead_age_days, no_inbound_within_days } = recipe.params
+
+  const now = Date.now()
+  const ageCutoffIso = new Date(now - min_lead_age_days * DAY_MS).toISOString()
+  const recentInboundCutoffIso = new Date(
+    now - no_inbound_within_days * DAY_MS
+  ).toISOString()
+
+  const { data: leadRows, error: leadErr } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("shop_id", shop.id)
+    .eq("status", status)
+    .lte("created_at", ageCutoffIso)
+    .order("created_at", { ascending: true })
+    .limit(50)
+
+  if (leadErr) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `lead query failed: ${leadErr.message}`,
+    }
+  }
+  const leads = (leadRows as LeadRow[] | null) ?? []
+  stats.matched = leads.length
+
+  for (const lead of leads) {
+    if (!lead.phone?.trim()) {
+      stats.skipped_no_phone += 1
+      continue
+    }
+
+    // Skip when the customer reached out recently — we don't want to
+    // pester someone mid-conversation.
+    const { data: recentInbound } = await supabase
+      .from("interactions")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("role", "customer")
+      .gte("occurred_at", recentInboundCutoffIso)
+      .or(
+        lead.customer_id
+          ? `customer_id.eq.${lead.customer_id}`
+          : `metadata->>from_phone.eq.${lead.phone}`
+      )
+      .limit(1)
+
+    if (recentInbound && recentInbound.length > 0) {
+      stats.skipped_recent_inbound += 1
+      continue
+    }
+
+    const draft = await draftCustomSmsForCustomer({
+      shopName: shop.name,
+      customerName: lead.customer_name,
+      vehicle: lead.car_info,
+      service: lead.pin_notes,
+      intent: agent.config.action.intent_summary,
+    }).catch(() => null)
+
+    if (!draft) continue
+
+    const reason = `Custom agent · ${agent.name}`
+
+    // Look up the customer FK if we have it from the lead.
+    const customer = lead.customer_id
+      ? await findCustomerByChannel(supabase, shop.id, { phone: lead.phone })
+      : null
+
+    const { data: pending, error: pendingErr } = await supabase
+      .from("pending_actions")
+      .insert({
+        shop_id: shop.id,
+        action_type: "send_sms",
+        payload: {
+          to_phone: lead.phone,
+          body: draft,
+          customer_name: lead.customer_name,
+          customer_id: customer?.id ?? lead.customer_id ?? null,
+          reason,
+          source: "custom_agent",
+          custom_agent_id: agent.id,
+          lead_id: lead.id,
+        },
+        requested_by: agent.owner_id,
+      })
+      .select("id")
+      .single()
+
+    if (pendingErr || !pending) {
+      console.error("[agent-runtime] pending insert failed:", pendingErr)
+      continue
+    }
+
+    try {
+      await sendSmsApprovalRequest({
+        pendingActionId: pending.id,
+        toPhone: lead.phone,
+        customerName: lead.customer_name,
+        body: draft,
+        reason,
+      })
+    } catch (err) {
+      console.error("[agent-runtime] Slack send failed:", err)
+    }
+    stats.proposed_sms += 1
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats,
+  }
+}
+
+// ---------- recipe dispatch ----------
+
+type RecipeHandler = (
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow
+) => Promise<AgentRunOutcome>
+
+const RECIPE_HANDLERS: Record<string, RecipeHandler> = {
+  lead_followup_sms: executeLeadFollowupSms,
+}
+
+async function loadShop(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<ShopRow | null> {
+  const { data } = await supabase
+    .from("shops")
+    .select("*")
+    .eq("id", shopId)
+    .maybeSingle()
+  return (data as ShopRow | null) ?? null
+}
+
+/**
+ * One-shot fire of a single agent. Used by the "Run now" button.
+ * Bypasses the cadence check — the operator explicitly asked.
+ */
+export async function runCustomAgent(
+  supabase: SupabaseClient,
+  agent: CustomAgentRow
+): Promise<AgentRunOutcome> {
+  const recipeId = agent.config.recipe?.id
+  if (!recipeId) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "no runnable recipe on this plan",
+    }
+  }
+  const handler = RECIPE_HANDLERS[recipeId]
+  if (!handler) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `unknown recipe id: ${recipeId}`,
+    }
+  }
+  const shop = await loadShop(supabase, agent.shop_id)
+  if (!shop) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "shop not found",
+    }
+  }
+  const outcome = await handler(supabase, shop, agent)
+  if (outcome.fired) await stampFired(supabase, agent.id, agent.shop_id)
+  return outcome
+}
+
+/**
+ * Cron tick. Iterates every enabled custom agent and fires the ones
+ * whose schedule is open AND haven't fired within their minimum gap.
+ * Errors per-agent are caught so one bad recipe can't poison the rest.
+ */
+export async function runScheduledAgents(
+  supabase: SupabaseClient
+): Promise<{ considered: number; fired: number; outcomes: AgentRunOutcome[] }> {
+  const now = new Date()
+  const { data, error } = await supabase
+    .from("custom_agents")
+    .select("*")
+    .eq("enabled", true)
+  if (error) {
+    throw new Error(`runScheduledAgents query failed: ${error.message}`)
+  }
+  const agents = (data as CustomAgentRow[] | null) ?? []
+
+  const outcomes: AgentRunOutcome[] = []
+  let fired = 0
+
+  // Cache shop loads — many shops may have multiple agents.
+  const shopCache = new Map<string, ShopRow | null>()
+  async function getShop(shopId: string): Promise<ShopRow | null> {
+    if (!shopCache.has(shopId)) {
+      shopCache.set(shopId, await loadShop(supabase, shopId))
+    }
+    return shopCache.get(shopId) ?? null
+  }
+
+  for (const agent of agents) {
+    try {
+      const recipeId = agent.config.recipe?.id
+      if (!recipeId) {
+        outcomes.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "no recipe",
+        })
+        continue
+      }
+      const handler = RECIPE_HANDLERS[recipeId]
+      if (!handler) {
+        outcomes.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: `unknown recipe: ${recipeId}`,
+        })
+        continue
+      }
+      const decision = shouldFireOnSchedule(agent, now)
+      if (!decision.fire) {
+        outcomes.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: decision.reason,
+        })
+        continue
+      }
+      const shop = await getShop(agent.shop_id)
+      if (!shop) {
+        outcomes.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "shop missing",
+        })
+        continue
+      }
+      const outcome = await handler(supabase, shop, agent)
+      if (outcome.fired) {
+        await stampFired(supabase, agent.id, agent.shop_id)
+        fired += 1
+      }
+      outcomes.push(outcome)
+    } catch (err) {
+      console.error("[agent-runtime] agent crashed:", agent.id, err)
+      outcomes.push({
+        agentId: agent.id,
+        agentName: agent.name,
+        fired: false,
+        reason: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  return { considered: agents.length, fired, outcomes }
+}
+

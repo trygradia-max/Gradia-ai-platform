@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { planAgentFromProblem } from "@/lib/agent-planner"
+import { runCustomAgent, type AgentRunOutcome } from "@/lib/agent-runtime"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { AgentConfig, CustomAgentRow } from "@/lib/types/database"
@@ -91,6 +92,39 @@ export async function deleteCustomAgent(
 
   revalidatePath("/agents")
   return { ok: true }
+}
+
+export type RunNowResult =
+  | { ok: true; outcome: AgentRunOutcome }
+  | { ok: false; error: string }
+
+/**
+ * "Run now" — manually fire a single agent regardless of cadence. The
+ * operator already explicitly clicked, so we bypass the schedule
+ * window check. Useful for verifying a saved plan actually does
+ * something before flipping the enabled toggle.
+ */
+export async function runCustomAgentNow(
+  agentId: string
+): Promise<RunNowResult> {
+  await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from("custom_agents")
+    .select("*")
+    .eq("id", agentId)
+    .eq("shop_id", shop.id)
+    .single()
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Agent not found." }
+  }
+
+  const outcome = await runCustomAgent(supabase, data as CustomAgentRow)
+  revalidatePath("/agents")
+  revalidatePath("/approvals")
+  return { ok: true, outcome }
 }
 
 export type SetEnabledResult =

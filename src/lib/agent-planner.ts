@@ -98,6 +98,67 @@ const planSchema = z.object({
     .describe(
       "One sentence reminding the operator about the HITL gate for this specific agent. Default: 'Every outbound message still lands as a Slack approval card before it actually sends.'"
     ),
+  recipe: z
+    .object({
+      id: z
+        .enum(["lead_followup_sms"])
+        .describe(
+          "Only fill this when the problem cleanly maps to a runnable recipe. The only recipe today is 'lead_followup_sms' — finds leads in a given status, older than N days, with no inbound activity in the last M days, drafts an SMS for our approval. If the problem doesn't fit, OMIT this field entirely."
+        ),
+      params: z
+        .object({
+          status: z
+            .enum(["new", "quoted", "booked"])
+            .describe(
+              "Lead status to target. 'quoted' is most common for follow-ups; 'new' for re-engagement; 'booked' rare."
+            ),
+          min_lead_age_days: z
+            .number()
+            .int()
+            .min(1)
+            .max(180)
+            .describe(
+              "Only target leads created at least this many days ago."
+            ),
+          no_inbound_within_days: z
+            .number()
+            .int()
+            .min(1)
+            .max(180)
+            .describe(
+              "Skip leads where the customer reached out to us in the last N days."
+            ),
+        })
+        .describe("Filter parameters for the lead audience query."),
+    })
+    .optional()
+    .describe(
+      "Machine-executable mapping. OMIT entirely if the problem doesn't fit our recipe catalog — the plan still saves but won't actually run."
+    ),
+  schedule: z
+    .object({
+      cadence: z.enum(["hourly", "daily", "weekly"]),
+      hour_of_day: z
+        .number()
+        .int()
+        .min(0)
+        .max(23)
+        .optional()
+        .describe(
+          "For daily/weekly: 0-23 UTC. Default to 14 (~9am ET / 6am PT) if unspecified."
+        ),
+      day_of_week: z
+        .number()
+        .int()
+        .min(0)
+        .max(6)
+        .optional()
+        .describe(
+          "For weekly cadence: 0=Sunday … 6=Saturday. Pick Monday (1) if unspecified."
+        ),
+    })
+    .optional()
+    .describe("Machine-executable schedule. Required when recipe is present."),
 })
 
 export type PlanResult =

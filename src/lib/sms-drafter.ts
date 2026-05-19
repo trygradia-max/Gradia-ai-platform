@@ -245,6 +245,80 @@ const reminderPrompt = ChatPromptTemplate.fromMessages([
   ["human", REMINDER_HUMAN],
 ])
 
+// ---------- custom-agent SMS drafter ----------
+
+const CUSTOM_TOOL = "draft_custom_sms"
+
+const customSchema = z
+  .object({
+    reply: z
+      .string()
+      .min(1)
+      .max(320)
+      .describe(
+        "SMS body signed as '— Gradia at {shop_name}'. Under 160 chars ideally. Honors the operator's intent."
+      ),
+  })
+  .describe(
+    "Short, warm message matching the operator's stated intent. No prices, no commitments, signed as us."
+  )
+
+const CUSTOM_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. The shop owner set up a custom agent that fires on a schedule. For each customer/lead the agent matches, write one short SMS the owner will approve before it sends.
+
+Tone rules:
+- Speak as "we" and "us" — never "I".
+- Warm, specific, brief. The owner is approving on their phone between jobs.
+- Match the stated intent exactly. If the intent says "follow up gently," don't push hard. If it says "thank them for paying," lead with that.
+
+Hard rules:
+- Never quote a price.
+- Never confirm a specific time. Suggest one if the intent calls for it; never lock it in.
+- Always sign with: — Gradia at {shop_name}
+- Aim for under 160 characters total. Cap at 320.`
+
+const CUSTOM_HUMAN = `Draft a custom-agent SMS via the ${CUSTOM_TOOL} tool.
+
+Shop name: {shop_name}
+Customer name: {customer_name}
+Vehicle (if known): {vehicle}
+Service / context (if known): {service}
+
+--- INTENT (from our owner) ---
+{intent}`
+
+const customPrompt = ChatPromptTemplate.fromMessages([
+  ["system", CUSTOM_SYSTEM],
+  ["human", CUSTOM_HUMAN],
+])
+
+export async function draftCustomSmsForCustomer(input: {
+  shopName: string
+  customerName: string
+  vehicle: string | null
+  service: string | null
+  intent: string
+}): Promise<string | null> {
+  const llm = new ChatAnthropic({
+    model: CLAUDE_MODEL,
+    temperature: 0.4,
+    maxTokens: 400,
+    apiKey: anthropicKey(),
+  }).withStructuredOutput(customSchema, { name: CUSTOM_TOOL })
+
+  const chain = customPrompt.pipe(llm)
+  const raw = await chain.invoke({
+    shop_name: input.shopName.trim() || "the shop",
+    customer_name: firstName(input.customerName) || "there",
+    vehicle: input.vehicle?.trim() || "(not specified)",
+    service: input.service?.trim() || "(not specified)",
+    intent: input.intent.trim() || "send a brief friendly check-in",
+  })
+
+  const parsed = customSchema.parse(raw)
+  const reply = parsed.reply.trim()
+  return reply || null
+}
+
 export async function draftAppointmentReminderSms(input: {
   shopName: string
   customerName: string

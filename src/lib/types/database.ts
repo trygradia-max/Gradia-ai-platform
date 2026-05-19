@@ -175,9 +175,33 @@ export type PaymentRow = {
 
 /**
  * Shape of the planned agent config Claude produces for custom agents.
- * Intentionally descriptive (not a machine-executable DSL yet) — the
- * runtime executor will tighten this into something it can dispatch.
+ *
+ * The descriptive fields are human-readable. The optional `recipe` +
+ * `schedule` fields are machine-executable — present when the planner
+ * matched the problem to a known recipe. Without them the plan is
+ * saved but flagged as not-runnable in the UI.
  */
+export type AgentRecipeId = "lead_followup_sms"
+
+export type LeadFollowupSmsParams = {
+  status: LeadStatus
+  min_lead_age_days: number
+  no_inbound_within_days: number
+}
+
+export type AgentRecipe = {
+  id: "lead_followup_sms"
+  params: LeadFollowupSmsParams
+}
+
+export type AgentSchedule = {
+  cadence: "hourly" | "daily" | "weekly"
+  /** 0-23, defaults to 10 when honored. Used for daily + weekly. */
+  hour_of_day?: number
+  /** 0-6, Sunday=0. Used for weekly. */
+  day_of_week?: number
+}
+
 export type AgentConfig = {
   name: string
   short_description: string
@@ -196,6 +220,8 @@ export type AgentConfig = {
   }
   prerequisites_needed: string[]
   human_in_the_loop_note: string
+  recipe?: AgentRecipe
+  schedule?: AgentSchedule
 }
 
 export type CustomAgentRow = {
@@ -207,6 +233,7 @@ export type CustomAgentRow = {
   problem_text: string
   config: AgentConfig
   enabled: boolean
+  last_fired_at: string | null
   created_at: string
   updated_at: string
 }
