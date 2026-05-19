@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+  Bot,
   Calendar,
   Contact,
   Inbox,
@@ -29,6 +30,7 @@ import {
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chat", label: "Ask Gradia", icon: MessageCircle },
+  { href: "/agents", label: "Agents", icon: Bot },
   { href: "/approvals", label: "Approvals", icon: Inbox },
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/leads", label: "Leads", icon: Users },
