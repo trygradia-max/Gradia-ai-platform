@@ -1,15 +1,23 @@
 /**
- * BI chat endpoint. Takes the full conversation history + the new
- * user message, runs the agent (which can call any of the read-only
- * BI tools), returns the assistant's reply.
+ * BI chat endpoint — streams the agent's events as Server-Sent Events.
  *
- * Non-streaming for the first chunk — JSON in, JSON out. Streaming
- * is a follow-up once we want incremental rendering of long answers.
+ * Event types (each line: `data: <json>\n\n`):
+ *   - text_delta  — append `text` to the in-progress assistant message
+ *   - tool_start  — model decided to call a tool (`name`)
+ *   - tool_end    — tool finished (`name`, `ok`)
+ *   - done        — turn complete
+ *   - error       — fatal; show as toast
+ *
+ * The client uses fetch + ReadableStream to consume.
  */
 
 import { z } from "zod"
 
-import { runBiAgent, type ChatMessage } from "@/lib/bi-agent"
+import {
+  streamBiAgent,
+  type AgentEvent,
+  type ChatMessage,
+} from "@/lib/bi-agent"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -26,8 +34,19 @@ const bodySchema = z.object({
   messages: z.array(messageSchema).min(1).max(40),
 })
 
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  // Disable proxy buffering so deltas reach the browser as they arrive.
+  "X-Accel-Buffering": "no",
+}
+
+function sseLine(event: AgentEvent): string {
+  return `data: ${JSON.stringify(event)}\n\n`
+}
+
 export async function POST(request: Request) {
-  // Auth gate — only logged-in operators with a shop can ask Gradia.
   try {
     await requireUser()
   } catch {
@@ -47,14 +66,12 @@ export async function POST(request: Request) {
     return Response.json(
       {
         ok: false,
-        error:
-          parsed.error.issues[0]?.message ?? "Invalid chat input.",
+        error: parsed.error.issues[0]?.message ?? "Invalid chat input.",
       },
       { status: 400 }
     )
   }
 
-  // Last message must be a fresh user turn (the model speaks next).
   const history: ChatMessage[] = parsed.data.messages
   if (history[history.length - 1]?.role !== "user") {
     return Response.json(
@@ -65,28 +82,35 @@ export async function POST(request: Request) {
 
   const supabase = await createClient()
 
-  try {
-    const result = await runBiAgent({
-      supabase,
-      shopId: shop.id,
-      history,
-    })
-    return Response.json({
-      ok: true,
-      reply: result.text,
-      toolsUsed: result.toolsUsed,
-    })
-  } catch (err) {
-    console.error("[bi/chat] agent failed:", err)
-    return Response.json(
-      {
-        ok: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : "We hit a snag thinking that one through. Try again?",
-      },
-      { status: 500 }
-    )
-  }
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const event of streamBiAgent({
+          supabase,
+          shopId: shop.id,
+          history,
+        })) {
+          controller.enqueue(encoder.encode(sseLine(event)))
+        }
+      } catch (err) {
+        console.error("[bi/chat] stream failed:", err)
+        controller.enqueue(
+          encoder.encode(
+            sseLine({
+              type: "error",
+              message:
+                err instanceof Error
+                  ? err.message
+                  : "We hit a snag thinking that through.",
+            })
+          )
+        )
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, { headers: SSE_HEADERS })
 }

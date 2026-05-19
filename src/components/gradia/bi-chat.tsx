@@ -11,7 +11,18 @@ import { Textarea } from "@/components/ui/textarea"
 type Message = {
   role: "user" | "assistant"
   content: string
+  /** Only set on the assistant message currently being filled. */
+  pending?: boolean
+  /** Status line shown while a tool is running (e.g. "Looking up leads…"). */
+  status?: string | null
 }
+
+type AgentEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "tool_start"; name: string }
+  | { type: "tool_end"; name: string; ok: boolean }
+  | { type: "done" }
+  | { type: "error"; message: string }
 
 const SUGGESTED_QUESTIONS = [
   "How many leads came in this week?",
@@ -24,6 +35,19 @@ const INITIAL_GREETING: Message = {
   role: "assistant",
   content:
     "Hey — ask us about our leads, customers, schedule, or anything that's come through. We'll dig through what we have and give you the straight answer.",
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  count_leads: "Counting leads",
+  recent_leads: "Pulling recent leads",
+  customer_count: "Counting customers",
+  channel_volume: "Tallying channel volume",
+  upcoming_appointments: "Checking the calendar",
+  search_memory: "Searching our notes",
+}
+
+function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? `Running ${name}`
 }
 
 export function BiChat() {
@@ -43,17 +67,24 @@ export function BiChat() {
     const trimmed = content.trim()
     if (!trimmed || pending) return
 
-    const next: Message[] = [
-      ...messages,
-      { role: "user", content: trimmed },
-    ]
-    setMessages(next)
     setInput("")
     setPending(true)
 
-    // Strip the initial greeting before sending — the server agent doesn't
-    // need it for context and it just bloats every turn.
-    const wireHistory = next.filter((m) => m !== INITIAL_GREETING)
+    // Capture conversation state synchronously so the wire payload
+    // doesn't race the async setMessages update.
+    const userMessage: Message = { role: "user", content: trimmed }
+    const placeholder: Message = {
+      role: "assistant",
+      content: "",
+      pending: true,
+      status: "Digging through it…",
+    }
+    const baselineMessages = [...messages, userMessage]
+    setMessages([...baselineMessages, placeholder])
+
+    const wireHistory = baselineMessages
+      .filter((m) => m !== INITIAL_GREETING)
+      .map((m) => ({ role: m.role, content: m.content }))
 
     try {
       const res = await fetch("/api/bi/chat", {
@@ -61,23 +92,117 @@ export function BiChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: wireHistory }),
       })
-      const data = (await res.json()) as
-        | { ok: true; reply: string; toolsUsed: string[] }
-        | { ok: false; error: string }
 
-      if (!data.ok) {
-        toast.error(data.error)
-        setMessages(next)
+      if (!res.ok || !res.body) {
+        const errBody = await res.text()
+        toast.error(errBody || `Server error (${res.status})`)
+        setMessages(baselineMessages)
         return
       }
 
-      setMessages([
-        ...next,
-        { role: "assistant", content: data.reply },
-      ])
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let assistantText = ""
+      let currentStatus: string | null = "Thinking…"
+      let receivedError: string | null = null
+
+      const flush = () => {
+        setMessages((prev) => {
+          const next = [...prev]
+          const lastIdx = next.length - 1
+          const last = next[lastIdx]
+          if (last && last.role === "assistant" && last.pending) {
+            next[lastIdx] = {
+              ...last,
+              content: assistantText,
+              status: assistantText ? null : currentStatus,
+            }
+          }
+          return next
+        })
+      }
+
+      readLoop: while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        let sep = buffer.indexOf("\n\n")
+        while (sep !== -1) {
+          const eventChunk = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          const dataLine = eventChunk
+            .split("\n")
+            .find((line) => line.startsWith("data:"))
+          if (!dataLine) {
+            sep = buffer.indexOf("\n\n")
+            continue
+          }
+          let event: AgentEvent
+          try {
+            event = JSON.parse(dataLine.slice(5).trim()) as AgentEvent
+          } catch {
+            sep = buffer.indexOf("\n\n")
+            continue
+          }
+
+          if (event.type === "text_delta") {
+            assistantText += event.text
+            currentStatus = null
+            flush()
+          } else if (event.type === "tool_start") {
+            currentStatus = `${toolLabel(event.name)}…`
+            flush()
+          } else if (event.type === "tool_end") {
+            currentStatus = assistantText ? null : "Writing it up…"
+            flush()
+          } else if (event.type === "done") {
+            currentStatus = null
+            flush()
+            break readLoop
+          } else if (event.type === "error") {
+            receivedError = event.message
+            break readLoop
+          }
+
+          sep = buffer.indexOf("\n\n")
+        }
+      }
+
+      // Finalize the assistant message — clear pending state.
+      setMessages((prev) => {
+        const next = [...prev]
+        const lastIdx = next.length - 1
+        const last = next[lastIdx]
+        if (last && last.role === "assistant" && last.pending) {
+          if (receivedError && !assistantText) {
+            // Drop the empty placeholder; the toast surfaces the error.
+            next.pop()
+          } else {
+            next[lastIdx] = {
+              role: "assistant",
+              content:
+                assistantText ||
+                receivedError ||
+                "We've got nothing to add.",
+            }
+          }
+        }
+        return next
+      })
+
+      if (receivedError && !assistantText) {
+        toast.error(receivedError)
+      }
     } catch (err) {
-      console.error("[bi-chat] fetch failed:", err)
+      console.error("[bi-chat] stream failed:", err)
       toast.error("We couldn't reach the server — try again.")
+      setMessages((prev) => {
+        const next = [...prev]
+        if (next[next.length - 1]?.pending) next.pop()
+        return next
+      })
     } finally {
       setPending(false)
     }
@@ -117,31 +242,33 @@ export function BiChat() {
                     <Sparkles className="size-3.5" />
                   </div>
                 ) : null}
-                <div
-                  className={
-                    msg.role === "user"
-                      ? "max-w-[80%] whitespace-pre-line rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground"
-                      : "max-w-[80%] whitespace-pre-line text-sm leading-relaxed text-foreground"
-                  }
-                >
-                  {msg.content}
+                <div className="max-w-[80%]">
+                  {msg.content ? (
+                    <div
+                      className={
+                        msg.role === "user"
+                          ? "whitespace-pre-line rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground"
+                          : "whitespace-pre-line text-sm leading-relaxed text-foreground"
+                      }
+                    >
+                      {msg.content}
+                      {msg.pending ? (
+                        <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-primary/40" />
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {msg.role === "assistant" && msg.status ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2
+                        className="size-3.5 animate-spin"
+                        aria-hidden
+                      />
+                      {msg.status}
+                    </div>
+                  ) : null}
                 </div>
               </li>
             ))}
-            {pending ? (
-              <li className="flex items-start gap-3">
-                <div
-                  className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/30"
-                  aria-hidden
-                >
-                  <Sparkles className="size-3.5" />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  Digging through it…
-                </div>
-              </li>
-            ) : null}
           </ul>
         </div>
 
