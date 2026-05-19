@@ -11,7 +11,13 @@ import {
 } from "lucide-react"
 
 import { CustomerMergeDialog } from "@/components/gradia/customer-merge-dialog"
+import { HeatBadge } from "@/components/gradia/heat-badge"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
+import {
+  buildHeatContext,
+  computeHeatScore,
+  type HeatScore,
+} from "@/lib/scoring"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
@@ -90,13 +96,29 @@ export default async function CustomerDetailPage({
   const shop = shopRow as Pick<ShopRow, "twilio_phone_number"> | null
   const canSms = Boolean(shop?.twilio_phone_number && customer.phone)
 
+  // Heat of the customer's hottest active lead. Operator looks at this
+  // first ("should I prioritize this person right now?").
+  let hottest: HeatScore | null = null
+  if (leads.length > 0) {
+    const activeLeads = leads.filter((l) => l.status !== "booked")
+    const target = activeLeads.length > 0 ? activeLeads : leads
+    const context = await buildHeatContext(supabase, shopCtx.id, target)
+    for (const lead of target) {
+      const score = computeHeatScore(lead, context)
+      if (!hottest || score.score > hottest.score) hottest = score
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {customer.name?.trim() || "Unknown customer"}
-          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {customer.name?.trim() || "Unknown customer"}
+            </h1>
+            {hottest ? <HeatBadge heat={hottest} showScore /> : null}
+          </div>
           <p className="text-sm text-muted-foreground">
             Everything we know — and every touchpoint, across every channel.
           </p>

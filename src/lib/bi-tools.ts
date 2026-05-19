@@ -20,7 +20,16 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
 import { searchCustomerMemory } from "@/lib/memory"
-import type { InteractionChannel, LeadStatus } from "@/lib/types/database"
+import {
+  buildHeatContext,
+  computeHeatScore,
+  type HeatLabel,
+} from "@/lib/scoring"
+import type {
+  InteractionChannel,
+  LeadRow,
+  LeadStatus,
+} from "@/lib/types/database"
 
 function isoDaysBack(days: number): string {
   const d = new Date()
@@ -114,6 +123,22 @@ const revenueSchema = z.object({
     .optional()
     .describe(
       "Revenue from invoices paid in the last N days. Omit for all-time total."
+    ),
+})
+
+const topHeatSchema = z.object({
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(8)
+    .describe("How many of the hottest leads to return, hottest first."),
+  min_label: z
+    .enum(["hot", "warm", "cold"])
+    .optional()
+    .describe(
+      "Lowest temperature to include. Omit for all leads. 'hot' returns only hot leads, 'warm' returns hot + warm."
     ),
 })
 
@@ -223,6 +248,54 @@ async function upcomingAppointments(
     window: `next ${params.days_ahead} days`,
     appointments: data ?? [],
   }
+}
+
+function meetsHeatThreshold(
+  label: HeatLabel,
+  min: HeatLabel | undefined
+): boolean {
+  if (!min) return true
+  const order: HeatLabel[] = ["cold", "warm", "hot"]
+  return order.indexOf(label) >= order.indexOf(min)
+}
+
+async function topHeatLeads(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: z.infer<typeof topHeatSchema>
+) {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("shop_id", shopId)
+    .neq("status", "booked")
+    .order("created_at", { ascending: false })
+    .limit(100)
+  if (error) throw new Error(`top_heat_leads: ${error.message}`)
+  const leads = (data as LeadRow[] | null) ?? []
+  if (leads.length === 0) {
+    return { matches: [], window: "active leads (excluding booked)" }
+  }
+
+  const context = await buildHeatContext(supabase, shopId, leads)
+  const scored = leads
+    .map((lead) => ({ lead, heat: computeHeatScore(lead, context) }))
+    .filter((r) => meetsHeatThreshold(r.heat.label, params.min_label))
+    .sort((a, b) => b.heat.score - a.heat.score)
+    .slice(0, params.limit)
+    .map((r) => ({
+      lead_id: r.lead.id,
+      customer_name: r.lead.customer_name,
+      phone: r.lead.phone,
+      status: r.lead.status,
+      car_info: r.lead.car_info,
+      pin_notes: r.lead.pin_notes,
+      created_at: r.lead.created_at,
+      heat_score: r.heat.score,
+      heat_label: r.heat.label,
+    }))
+
+  return { matches: scored, window: "active leads (excluding booked)" }
 }
 
 async function revenueInWindow(
@@ -352,6 +425,14 @@ export const BI_TOOLS: BiToolDefinition[] = [
     schema: revenueSchema,
     handler: (supabase, shopId, params) =>
       revenueInWindow(supabase, shopId, revenueSchema.parse(params)),
+  },
+  {
+    name: "top_heat_leads",
+    description:
+      "List our hottest active leads ranked by Heat Score (0–100). Use for 'what's hot right now', 'who should I call back first', 'show me the warm leads'. Excludes booked leads — those are already won. Score honestly reflects what we've seen (lead age, status, activity, response history, repeat-customer signal); it's a heuristic, not an ML prediction.",
+    schema: topHeatSchema,
+    handler: (supabase, shopId, params) =>
+      topHeatLeads(supabase, shopId, topHeatSchema.parse(params)),
   },
 ]
 

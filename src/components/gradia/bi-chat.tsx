@@ -56,6 +56,7 @@ const TOOL_LABELS: Record<string, string> = {
   upcoming_appointments: "Checking the calendar",
   search_memory: "Searching our notes",
   revenue_in_window: "Tallying revenue",
+  top_heat_leads: "Scoring our hottest leads",
 }
 
 function toolLabel(name: string): string {

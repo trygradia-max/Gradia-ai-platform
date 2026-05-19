@@ -1,9 +1,9 @@
-import { listLeadsForCurrentShop } from "@/lib/data/leads"
+import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 
 export default async function LeadsPage() {
-  const leads = await listLeadsForCurrentShop()
+  const leads = await listScoredLeadsForCurrentShop()
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">

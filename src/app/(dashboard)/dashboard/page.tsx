@@ -1,4 +1,4 @@
-import { listLeadsForCurrentShop } from "@/lib/data/leads"
+import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
 import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
@@ -6,7 +6,7 @@ import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 
 export default async function DashboardPage() {
-  const leads = await listLeadsForCurrentShop()
+  const leads = await listScoredLeadsForCurrentShop()
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
