@@ -35,11 +35,19 @@ type StripeInvoice = {
   number?: string | null
   hosted_invoice_url?: string | null
   status?: string
+  currency?: string | null
+  description?: string | null
   customer_email?: string | null
   customer_name?: string | null
   amount_paid?: number
   amount_due?: number
   total?: number
+  status_transitions?: {
+    paid_at?: number | null
+  } | null
+  lines?: {
+    data?: Array<{ description?: string | null }>
+  } | null
 }
 
 type StripeEvent = {
@@ -75,25 +83,25 @@ export async function POST(request: Request) {
 
   const supabase = createServiceClient()
 
-  // Match the original outbound interaction we recorded when the
-  // charge was approved. Stripe events on Connect arrive with the
-  // connected `account` set on the envelope; we keep the lookup
-  // scoped that way for safety.
-  let interactionQuery = supabase
-    .from("interactions")
-    .select("id, shop_id, customer_id, metadata")
-    .eq("metadata->>stripe_invoice_id", invoice.id)
+  // Resolve the connected account → shop up front. We'll reuse it for
+  // both the interaction lookup AND the payments mirror insert.
+  let shopId: string | null = null
   if (event.account) {
-    // Limit to this account's shop. shops.stripe_account_id is unique
-    // per account, so this resolves to one shop.
     const { data: shopRow } = await supabase
       .from("shops")
       .select("id")
       .eq("stripe_account_id", event.account)
       .maybeSingle()
-    const shopId = (shopRow as { id: string } | null)?.id
-    if (shopId) interactionQuery = interactionQuery.eq("shop_id", shopId)
+    shopId = (shopRow as { id: string } | null)?.id ?? null
   }
+
+  // Match the original outbound interaction we recorded when the
+  // charge was approved.
+  let interactionQuery = supabase
+    .from("interactions")
+    .select("id, shop_id, customer_id, metadata")
+    .eq("metadata->>stripe_invoice_id", invoice.id)
+  if (shopId) interactionQuery = interactionQuery.eq("shop_id", shopId)
 
   const { data: interaction, error: lookupErr } =
     await interactionQuery.maybeSingle()
@@ -136,6 +144,44 @@ export async function POST(request: Request) {
       "[stripe webhook] no matching interaction for invoice:",
       invoice.id
     )
+  }
+
+  // Mirror paid invoices into the local payments table so BI chat +
+  // future dashboard tiles can answer money questions cheaply. We
+  // skip payment_failed — no money landed. Unique on (shop_id,
+  // stripe_invoice_id) so Stripe retries no-op via onConflict.
+  if (eventType === "invoice.paid" && shopId && amount > 0) {
+    const description =
+      invoice.description?.trim() ||
+      invoice.lines?.data?.[0]?.description?.trim() ||
+      null
+    const paidAtIso =
+      typeof invoice.status_transitions?.paid_at === "number"
+        ? new Date(invoice.status_transitions.paid_at * 1000).toISOString()
+        : new Date().toISOString()
+
+    const { error: paymentErr } = await supabase
+      .from("payments")
+      .upsert(
+        {
+          shop_id: shopId,
+          customer_id:
+            (interaction as { customer_id?: string | null } | null)
+              ?.customer_id ?? null,
+          amount_cents: amount,
+          currency: (invoice.currency ?? "usd").toLowerCase(),
+          description,
+          stripe_account_id: event.account ?? null,
+          stripe_invoice_id: invoice.id,
+          stripe_invoice_number: invoice.number ?? null,
+          hosted_invoice_url: invoice.hosted_invoice_url ?? null,
+          paid_at: paidAtIso,
+        },
+        { onConflict: "shop_id,stripe_invoice_id", ignoreDuplicates: false }
+      )
+    if (paymentErr) {
+      console.error("[stripe webhook] payments upsert failed:", paymentErr)
+    }
   }
 
   try {

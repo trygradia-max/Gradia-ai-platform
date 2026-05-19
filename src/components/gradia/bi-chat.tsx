@@ -55,6 +55,7 @@ const TOOL_LABELS: Record<string, string> = {
   channel_volume: "Tallying channel volume",
   upcoming_appointments: "Checking the calendar",
   search_memory: "Searching our notes",
+  revenue_in_window: "Tallying revenue",
 }
 
 function toolLabel(name: string): string {

@@ -157,3 +157,18 @@ export type BiMessageRow = {
   content: string
   created_at: string
 }
+
+export type PaymentRow = {
+  id: string
+  shop_id: string
+  customer_id: string | null
+  amount_cents: number
+  currency: string
+  description: string | null
+  stripe_account_id: string | null
+  stripe_invoice_id: string
+  stripe_invoice_number: string | null
+  hosted_invoice_url: string | null
+  paid_at: string
+  created_at: string
+}

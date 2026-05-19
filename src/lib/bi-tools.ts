@@ -105,6 +105,18 @@ const searchMemorySchema = z.object({
   limit: z.number().int().min(1).max(20).default(5),
 })
 
+const revenueSchema = z.object({
+  days_back: z
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .optional()
+    .describe(
+      "Revenue from invoices paid in the last N days. Omit for all-time total."
+    ),
+})
+
 // ---------- handlers ----------
 
 async function countLeads(
@@ -213,6 +225,33 @@ async function upcomingAppointments(
   }
 }
 
+async function revenueInWindow(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: z.infer<typeof revenueSchema>
+) {
+  let q = supabase
+    .from("payments")
+    .select("amount_cents, paid_at")
+    .eq("shop_id", shopId)
+  if (params.days_back) {
+    q = q.gte("paid_at", isoDaysBack(params.days_back))
+  }
+  const { data, error } = await q
+  if (error) throw new Error(`revenue_in_window: ${error.message}`)
+  const rows = (data as { amount_cents: number; paid_at: string }[] | null) ?? []
+  const totalCents = rows.reduce((sum, r) => sum + (r.amount_cents ?? 0), 0)
+  return {
+    total_cents: totalCents,
+    total_usd: (totalCents / 100).toFixed(2),
+    invoice_count: rows.length,
+    window:
+      params.days_back !== undefined
+        ? `last ${params.days_back} days`
+        : "all time",
+  }
+}
+
 async function searchMemory(
   supabase: SupabaseClient,
   shopId: string,
@@ -305,6 +344,14 @@ export const BI_TOOLS: BiToolDefinition[] = [
     schema: searchMemorySchema,
     handler: (supabase, shopId, params) =>
       searchMemory(supabase, shopId, searchMemorySchema.parse(params)),
+  },
+  {
+    name: "revenue_in_window",
+    description:
+      "Total paid revenue over a window. Use for 'how much did we make this month', 'revenue this week', 'how much have we collected'. Only counts invoices customers actually paid — not invoices we've sent and are still pending.",
+    schema: revenueSchema,
+    handler: (supabase, shopId, params) =>
+      revenueInWindow(supabase, shopId, revenueSchema.parse(params)),
   },
 ]
 
