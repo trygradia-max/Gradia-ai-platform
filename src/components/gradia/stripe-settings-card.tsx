@@ -1,9 +1,17 @@
 "use client"
 
 import * as React from "react"
-import { Check, CreditCard, Loader2, Plug, TriangleAlert } from "lucide-react"
+import {
+  Check,
+  CreditCard,
+  Download,
+  Loader2,
+  Plug,
+  TriangleAlert,
+} from "lucide-react"
 import { toast } from "sonner"
 
+import { backfillStripePayments } from "@/app/actions/payments"
 import { disconnectStripe } from "@/app/actions/shop"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -62,7 +70,9 @@ export function StripeSettingsCard({
   stripeConfigured: boolean
   callbackStatus: CallbackStatus | null
 }) {
-  const [pending, setPending] = React.useState(false)
+  const [pending, setPending] = React.useState<
+    null | "disconnect" | "backfill"
+  >(null)
   const [localConnected, setLocalConnected] = React.useState(connected)
   const [localChargesEnabled, setLocalChargesEnabled] =
     React.useState(chargesEnabled)
@@ -85,9 +95,9 @@ export function StripeSettingsCard({
       )
     )
       return
-    setPending(true)
+    setPending("disconnect")
     const result = await disconnectStripe()
-    setPending(false)
+    setPending(null)
     if (!result.ok) {
       toast.error(result.error)
       return
@@ -95,6 +105,23 @@ export function StripeSettingsCard({
     setLocalConnected(false)
     setLocalChargesEnabled(false)
     toast.success("Stripe disconnected.")
+  }
+
+  async function handleBackfill() {
+    setPending("backfill")
+    const result = await backfillStripePayments()
+    setPending(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    if (result.processed === 0) {
+      toast.message("Nothing new to sync — we're already caught up.")
+    } else {
+      toast.success(
+        `Synced ${result.processed} paid invoice${result.processed === 1 ? "" : "s"} from Stripe.`
+      )
+    }
   }
 
   return (
@@ -131,13 +158,29 @@ export function StripeSettingsCard({
                 : "Stripe needs a bit more from us — re-open onboarding to finish (usually identity / bank details)."}
             </p>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {localChargesEnabled ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBackfill}
+                  disabled={pending !== null}
+                  className="gap-2"
+                >
+                  {pending === "backfill" ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Download className="size-4" aria-hidden />
+                  )}
+                  Sync history
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleDisconnect}
-                disabled={pending}
+                disabled={pending !== null}
               >
-                {pending ? (
+                {pending === "disconnect" ? (
                   <>
                     <Loader2 className="size-4 animate-spin" aria-hidden />
                     Disconnecting
@@ -156,6 +199,14 @@ export function StripeSettingsCard({
                 </a>
               ) : null}
             </div>
+            {localChargesEnabled ? (
+              <p className="text-xs text-muted-foreground">
+                Sync history pulls paid Stripe invoices into our local
+                mirror so our dashboard tiles and BI chat can see what
+                we&apos;ve already collected. Idempotent — safe to run
+                more than once.
+              </p>
+            ) : null}
           </>
         ) : (
           <>

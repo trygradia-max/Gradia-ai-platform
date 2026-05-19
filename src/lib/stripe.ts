@@ -266,6 +266,57 @@ export async function chargeCustomerViaInvoice(input: {
   })
 }
 
+// ---------- Listing paid invoices (backfill) ----------
+
+export type StripePaidInvoice = {
+  id: string
+  number: string | null
+  hosted_invoice_url: string | null
+  currency: string | null
+  description: string | null
+  amount_paid: number
+  customer: string | null
+  status_transitions: { paid_at: number | null } | null
+  lines: { data?: Array<{ description?: string | null }> } | null
+}
+
+type StripeListPage<T> = {
+  data: T[]
+  has_more: boolean
+}
+
+/**
+ * Iterates every paid invoice on the connected account, page by page.
+ * Stripe caps page size at 100; we follow has_more / starting_after
+ * until exhausted. Backfill callers typically have at most a few
+ * hundred historical invoices.
+ */
+export async function* iteratePaidInvoices(
+  stripeAccount: string
+): AsyncGenerator<StripePaidInvoice, void, void> {
+  let startingAfter: string | undefined
+  for (;;) {
+    const body: Record<string, string | number | boolean | undefined> = {
+      status: "paid",
+      limit: 100,
+    }
+    if (startingAfter) body.starting_after = startingAfter
+
+    const page = await stripeFetch<StripeListPage<StripePaidInvoice>>({
+      method: "GET",
+      path: "/invoices",
+      body,
+      stripeAccount,
+    })
+
+    for (const inv of page.data) {
+      yield inv
+    }
+    if (!page.has_more || page.data.length === 0) break
+    startingAfter = page.data[page.data.length - 1].id
+  }
+}
+
 // ---------- Webhook signature verification ----------
 
 /**
