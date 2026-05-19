@@ -4,13 +4,39 @@
  * Server actions for the /chat surface. The actual message persistence
  * happens inside the streaming route (where we also have the user
  * session for RLS); this file just covers explicit operator gestures
- * like "start a fresh thread."
+ * like "start a fresh thread" and the sheet that lists past threads.
  */
 
 import { revalidatePath } from "next/cache"
 
+import {
+  listConversationsForCurrentShop,
+  type ConversationSummary,
+} from "@/lib/data/bi-conversations"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+
+export type ListConversationsResult =
+  | { ok: true; items: ConversationSummary[] }
+  | { ok: false; error: string }
+
+/**
+ * Used by the chat-history sheet — fetches the recent threads when
+ * the drawer opens. RLS scopes everything per shop.
+ */
+export async function listChatConversations(): Promise<ListConversationsResult> {
+  try {
+    await requireUser()
+    const items = await listConversationsForCurrentShop()
+    return { ok: true, items }
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Couldn't load conversations.",
+    }
+  }
+}
 
 export type StartNewConversationResult =
   | { ok: true }

@@ -1,9 +1,11 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Loader2, Plus, Send, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
+import { BiChatHistorySheet } from "@/components/gradia/bi-chat-history-sheet"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -60,6 +62,7 @@ function toolLabel(name: string): string {
 }
 
 export function BiChat({ initial }: { initial: InitialChatState }) {
+  const router = useRouter()
   const [conversationId, setConversationId] = React.useState<string | null>(
     initial.conversationId
   )
@@ -71,6 +74,10 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
   const [input, setInput] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const scrollRef = React.useRef<HTMLDivElement | null>(null)
+
+  // Parent passes a `key` based on the active conversation so the
+  // component remounts on route switch (idiomatic React reset, no
+  // setState-in-effect needed).
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -86,6 +93,9 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
     setConversationId(null)
     setMessages([])
     setInput("")
+    // Drop the ?c=<id> param so a reload doesn't snap back to the
+    // previous thread. router.replace keeps it cheap (no history entry).
+    router.replace("/chat")
   }
 
   async function send(content: string) {
@@ -249,21 +259,26 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
   return (
     <Card className="border-border/80">
       <CardContent className="grid gap-4 p-0">
-        <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5 sm:px-6">
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5 sm:px-6">
           <span className="text-xs uppercase tracking-widest text-muted-foreground">
             Chat
           </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={startNewChat}
-            disabled={pending || isEmpty}
-            className="gap-1.5 text-xs"
-          >
-            <Plus className="size-3.5" aria-hidden />
-            New chat
-          </Button>
+          <div className="flex items-center gap-1">
+            <BiChatHistorySheet
+              currentConversationId={conversationId}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={startNewChat}
+              disabled={pending || isEmpty}
+              className="gap-1.5 text-xs"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              New chat
+            </Button>
+          </div>
         </div>
 
         <div

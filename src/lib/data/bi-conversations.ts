@@ -23,6 +23,26 @@ function deriveTitle(firstUserMessage: string): string {
   return `${trimmed.slice(0, TITLE_MAX - 1).trim()}…`
 }
 
+const CONVERSATION_LIST_LIMIT = 50
+
+export type ConversationSummary = Pick<
+  BiConversationRow,
+  "id" | "title" | "updated_at" | "created_at"
+>
+
+async function loadConversationMessages(
+  conversation: BiConversationRow
+): Promise<BiMessageRow[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("bi_messages")
+    .select("*")
+    .eq("conversation_id", conversation.id)
+    .order("created_at", { ascending: true })
+  if (error) throw new Error(error.message)
+  return (data as BiMessageRow[] | null) ?? []
+}
+
 export async function getLatestConversationWithMessages(): Promise<
   | { conversation: BiConversationRow; messages: BiMessageRow[] }
   | null
@@ -41,18 +61,45 @@ export async function getLatestConversationWithMessages(): Promise<
   if (convErr) throw new Error(convErr.message)
   if (!convRow) return null
   const conversation = convRow as BiConversationRow
+  const messages = await loadConversationMessages(conversation)
+  return { conversation, messages }
+}
 
-  const { data: msgRows, error: msgErr } = await supabase
-    .from("bi_messages")
+export async function getConversationByIdWithMessages(
+  conversationId: string
+): Promise<
+  | { conversation: BiConversationRow; messages: BiMessageRow[] }
+  | null
+> {
+  const shop = await requireShop()
+  const supabase = await createClient()
+
+  const { data: convRow, error: convErr } = await supabase
+    .from("bi_conversations")
     .select("*")
-    .eq("conversation_id", conversation.id)
-    .order("created_at", { ascending: true })
-  if (msgErr) throw new Error(msgErr.message)
+    .eq("id", conversationId)
+    .eq("shop_id", shop.id)
+    .maybeSingle()
+  if (convErr) throw new Error(convErr.message)
+  if (!convRow) return null
+  const conversation = convRow as BiConversationRow
+  const messages = await loadConversationMessages(conversation)
+  return { conversation, messages }
+}
 
-  return {
-    conversation,
-    messages: (msgRows as BiMessageRow[] | null) ?? [],
-  }
+export async function listConversationsForCurrentShop(): Promise<
+  ConversationSummary[]
+> {
+  const shop = await requireShop()
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("bi_conversations")
+    .select("id, title, updated_at, created_at")
+    .eq("shop_id", shop.id)
+    .order("updated_at", { ascending: false })
+    .limit(CONVERSATION_LIST_LIMIT)
+  if (error) throw new Error(error.message)
+  return (data as ConversationSummary[] | null) ?? []
 }
 
 /**

@@ -1,12 +1,33 @@
+import { redirect } from "next/navigation"
+
 import { BiChat, type InitialChatState } from "@/components/gradia/bi-chat"
-import { getLatestConversationWithMessages } from "@/lib/data/bi-conversations"
+import {
+  getConversationByIdWithMessages,
+  getLatestConversationWithMessages,
+} from "@/lib/data/bi-conversations"
 import { requireShop } from "@/lib/shop"
 
 export const dynamic = "force-dynamic"
 
-export default async function ChatPage() {
+export default async function ChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ c?: string }>
+}) {
   await requireShop()
-  const loaded = await getLatestConversationWithMessages()
+  const params = await searchParams
+  const requestedId = params.c?.trim() ?? null
+
+  const loaded = requestedId
+    ? await getConversationByIdWithMessages(requestedId)
+    : await getLatestConversationWithMessages()
+
+  // If the requested conversation doesn't exist (deleted in another
+  // tab, or stale link), drop the query param and fall back to the
+  // latest. Keeps the URL honest.
+  if (requestedId && !loaded) {
+    redirect("/chat")
+  }
 
   const initialState: InitialChatState = loaded
     ? {
@@ -27,7 +48,10 @@ export default async function ChatPage() {
           people are asking about. Plain English in, straight answers out.
         </p>
       </div>
-      <BiChat initial={initialState} />
+      <BiChat
+        key={initialState.conversationId ?? "fresh"}
+        initial={initialState}
+      />
     </div>
   )
 }
