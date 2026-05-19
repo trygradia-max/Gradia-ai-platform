@@ -2,6 +2,7 @@ import { listLeadsForCurrentShop } from "@/lib/data/leads"
 import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
+import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 
 export default async function DashboardPage() {
@@ -20,6 +21,7 @@ export default async function DashboardPage() {
         </div>
         <AddLeadDialog />
       </div>
+      <RevenueTiles />
       <WhisperButton />
       <AiLeadSection />
       <LiveLeadFeed leads={leads} />
