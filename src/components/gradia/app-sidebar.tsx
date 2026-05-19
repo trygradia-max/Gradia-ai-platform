@@ -7,6 +7,7 @@ import {
   Contact,
   Inbox,
   LayoutDashboard,
+  MessageCircle,
   Settings,
   Sparkles,
   Users,
@@ -27,6 +28,7 @@ import {
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/chat", label: "Ask Gradia", icon: MessageCircle },
   { href: "/approvals", label: "Approvals", icon: Inbox },
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/leads", label: "Leads", icon: Users },
