@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Send, Sparkles } from "lucide-react"
+import { Loader2, Plus, Send, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,15 @@ type AgentEvent =
   | { type: "done" }
   | { type: "error"; message: string }
 
+type WireEvent =
+  | AgentEvent
+  | { type: "conversation_id"; id: string }
+
+export type InitialChatState = {
+  conversationId: string | null
+  messages: Pick<Message, "role" | "content">[]
+}
+
 const SUGGESTED_QUESTIONS = [
   "How many leads came in this week?",
   "What's on the books in the next 7 days?",
@@ -31,7 +40,7 @@ const SUGGESTED_QUESTIONS = [
   "How are leads split across voice, email, and SMS this month?",
 ]
 
-const INITIAL_GREETING: Message = {
+const GREETING: Message = {
   role: "assistant",
   content:
     "Hey — ask us about our leads, customers, schedule, or anything that's come through. We'll dig through what we have and give you the straight answer.",
@@ -50,8 +59,15 @@ function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? `Running ${name}`
 }
 
-export function BiChat() {
-  const [messages, setMessages] = React.useState<Message[]>([INITIAL_GREETING])
+export function BiChat({ initial }: { initial: InitialChatState }) {
+  const [conversationId, setConversationId] = React.useState<string | null>(
+    initial.conversationId
+  )
+  const [messages, setMessages] = React.useState<Message[]>(
+    initial.messages.length > 0
+      ? initial.messages.map((m) => ({ role: m.role, content: m.content }))
+      : []
+  )
   const [input, setInput] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const scrollRef = React.useRef<HTMLDivElement | null>(null)
@@ -63,6 +79,15 @@ export function BiChat() {
     })
   }, [messages])
 
+  const isEmpty = messages.length === 0
+
+  function startNewChat() {
+    if (pending) return
+    setConversationId(null)
+    setMessages([])
+    setInput("")
+  }
+
   async function send(content: string) {
     const trimmed = content.trim()
     if (!trimmed || pending) return
@@ -70,8 +95,6 @@ export function BiChat() {
     setInput("")
     setPending(true)
 
-    // Capture conversation state synchronously so the wire payload
-    // doesn't race the async setMessages update.
     const userMessage: Message = { role: "user", content: trimmed }
     const placeholder: Message = {
       role: "assistant",
@@ -82,15 +105,19 @@ export function BiChat() {
     const baselineMessages = [...messages, userMessage]
     setMessages([...baselineMessages, placeholder])
 
-    const wireHistory = baselineMessages
-      .filter((m) => m !== INITIAL_GREETING)
-      .map((m) => ({ role: m.role, content: m.content }))
+    const wireHistory = baselineMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }))
 
     try {
       const res = await fetch("/api/bi/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: wireHistory }),
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          messages: wireHistory,
+        }),
       })
 
       if (!res.ok || !res.body) {
@@ -139,15 +166,17 @@ export function BiChat() {
             sep = buffer.indexOf("\n\n")
             continue
           }
-          let event: AgentEvent
+          let event: WireEvent
           try {
-            event = JSON.parse(dataLine.slice(5).trim()) as AgentEvent
+            event = JSON.parse(dataLine.slice(5).trim()) as WireEvent
           } catch {
             sep = buffer.indexOf("\n\n")
             continue
           }
 
-          if (event.type === "text_delta") {
+          if (event.type === "conversation_id") {
+            setConversationId(event.id)
+          } else if (event.type === "text_delta") {
             assistantText += event.text
             currentStatus = null
             flush()
@@ -170,14 +199,12 @@ export function BiChat() {
         }
       }
 
-      // Finalize the assistant message — clear pending state.
       setMessages((prev) => {
         const next = [...prev]
         const lastIdx = next.length - 1
         const last = next[lastIdx]
         if (last && last.role === "assistant" && last.pending) {
           if (receivedError && !assistantText) {
-            // Drop the empty placeholder; the toast surfaces the error.
             next.pop()
           } else {
             next[lastIdx] = {
@@ -217,15 +244,34 @@ export function BiChat() {
     void send(q)
   }
 
+  const displayedMessages = isEmpty ? [GREETING] : messages
+
   return (
     <Card className="border-border/80">
       <CardContent className="grid gap-4 p-0">
+        <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5 sm:px-6">
+          <span className="text-xs uppercase tracking-widest text-muted-foreground">
+            Chat
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={startNewChat}
+            disabled={pending || isEmpty}
+            className="gap-1.5 text-xs"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            New chat
+          </Button>
+        </div>
+
         <div
           ref={scrollRef}
-          className="max-h-[60vh] min-h-[40vh] overflow-y-auto px-4 py-5 sm:px-6"
+          className="max-h-[55vh] min-h-[38vh] overflow-y-auto px-4 py-5 sm:px-6"
         >
           <ul className="grid gap-4">
-            {messages.map((msg, i) => (
+            {displayedMessages.map((msg, i) => (
               <li
                 key={i}
                 className={
@@ -272,7 +318,7 @@ export function BiChat() {
           </ul>
         </div>
 
-        {messages.length === 1 ? (
+        {isEmpty ? (
           <div className="flex flex-wrap gap-2 px-4 pb-1 sm:px-6">
             {SUGGESTED_QUESTIONS.map((q) => (
               <button

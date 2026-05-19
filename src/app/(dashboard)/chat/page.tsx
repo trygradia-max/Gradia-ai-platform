@@ -1,11 +1,22 @@
-import { BiChat } from "@/components/gradia/bi-chat"
+import { BiChat, type InitialChatState } from "@/components/gradia/bi-chat"
+import { getLatestConversationWithMessages } from "@/lib/data/bi-conversations"
 import { requireShop } from "@/lib/shop"
 
 export const dynamic = "force-dynamic"
 
 export default async function ChatPage() {
-  // Gate on having a shop so the agent has a scope to query.
   await requireShop()
+  const loaded = await getLatestConversationWithMessages()
+
+  const initialState: InitialChatState = loaded
+    ? {
+        conversationId: loaded.conversation.id,
+        messages: loaded.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      }
+    : { conversationId: null, messages: [] }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -16,7 +27,7 @@ export default async function ChatPage() {
           people are asking about. Plain English in, straight answers out.
         </p>
       </div>
-      <BiChat />
+      <BiChat initial={initialState} />
     </div>
   )
 }

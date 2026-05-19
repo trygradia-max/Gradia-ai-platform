@@ -137,3 +137,23 @@ export type MatchedInteraction = {
   occurred_at: string
   similarity: number
 }
+
+export type BiMessageRole = "user" | "assistant"
+
+export type BiConversationRow = {
+  id: string
+  shop_id: string
+  owner_id: string
+  title: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type BiMessageRow = {
+  id: string
+  conversation_id: string
+  shop_id: string
+  role: BiMessageRole
+  content: string
+  created_at: string
+}

@@ -1,14 +1,23 @@
 /**
- * BI chat endpoint — streams the agent's events as Server-Sent Events.
+ * BI chat endpoint — streams the agent's events as Server-Sent Events
+ * AND persists each turn to bi_conversations / bi_messages.
  *
- * Event types (each line: `data: <json>\n\n`):
- *   - text_delta  — append `text` to the in-progress assistant message
- *   - tool_start  — model decided to call a tool (`name`)
- *   - tool_end    — tool finished (`name`, `ok`)
- *   - done        — turn complete
- *   - error       — fatal; show as toast
+ * Wire protocol (each line: `data: <json>\n\n`):
+ *   - conversation_id  — fired once at the start so the client can
+ *                        store the lazily-created conversation id
+ *   - text_delta       — append `text` to the in-progress assistant message
+ *   - tool_start       — model decided to call a tool (`name`)
+ *   - tool_end         — tool finished (`name`, `ok`)
+ *   - done             — turn complete; assistant message persisted
+ *   - error            — fatal; show as toast
  *
- * The client uses fetch + ReadableStream to consume.
+ * Persistence rules:
+ *   - Conversation created lazily on the first user message.
+ *   - User message inserted BEFORE the agent runs so it's always
+ *     captured even if the stream errors mid-turn.
+ *   - Assistant message inserted on `done`. On `error` after partial
+ *     text, the partial is persisted with a sentinel suffix; on
+ *     `error` with no text, nothing assistant-side is persisted.
  */
 
 import { z } from "zod"
@@ -18,6 +27,10 @@ import {
   type AgentEvent,
   type ChatMessage,
 } from "@/lib/bi-agent"
+import {
+  appendMessage,
+  ensureConversation,
+} from "@/lib/data/bi-conversations"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -31,6 +44,7 @@ const messageSchema = z.object({
 })
 
 const bodySchema = z.object({
+  conversation_id: z.string().uuid().nullable().optional(),
   messages: z.array(messageSchema).min(1).max(40),
 })
 
@@ -38,17 +52,19 @@ const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
   "Cache-Control": "no-cache, no-transform",
   Connection: "keep-alive",
-  // Disable proxy buffering so deltas reach the browser as they arrive.
   "X-Accel-Buffering": "no",
 }
 
-function sseLine(event: AgentEvent): string {
+type WireEvent = AgentEvent | { type: "conversation_id"; id: string }
+
+function sseLine(event: WireEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
 
 export async function POST(request: Request) {
+  let user
   try {
-    await requireUser()
+    user = await requireUser()
   } catch {
     return new Response("Sign in first.", { status: 401 })
   }
@@ -73,7 +89,8 @@ export async function POST(request: Request) {
   }
 
   const history: ChatMessage[] = parsed.data.messages
-  if (history[history.length - 1]?.role !== "user") {
+  const lastMessage = history[history.length - 1]
+  if (lastMessage?.role !== "user") {
     return Response.json(
       { ok: false, error: "Last message must be from the user." },
       { status: 400 }
@@ -82,30 +99,91 @@ export async function POST(request: Request) {
 
   const supabase = await createClient()
 
+  // Resolve / create the conversation BEFORE streaming so we know the
+  // ID to emit on the wire and so the user's turn lands even if the
+  // agent errors out.
+  let conversationId: string
+  try {
+    const conversation = await ensureConversation({
+      supabase,
+      shopId: shop.id,
+      ownerId: user.id,
+      conversationId: parsed.data.conversation_id ?? null,
+      firstUserMessage: lastMessage.content,
+    })
+    conversationId = conversation.id
+  } catch (err) {
+    return Response.json(
+      {
+        ok: false,
+        error:
+          err instanceof Error ? err.message : "Couldn't start the conversation.",
+      },
+      { status: 500 }
+    )
+  }
+
+  // Persist the user message up front.
+  await appendMessage({
+    supabase,
+    conversationId,
+    shopId: shop.id,
+    role: "user",
+    content: lastMessage.content,
+  })
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // Surface the conversation id immediately so the client can
+      // persist it for follow-up turns.
+      controller.enqueue(
+        encoder.encode(
+          sseLine({ type: "conversation_id", id: conversationId })
+        )
+      )
+
+      let assistantText = ""
+
       try {
         for await (const event of streamBiAgent({
           supabase,
           shopId: shop.id,
           history,
         })) {
+          if (event.type === "text_delta") assistantText += event.text
           controller.enqueue(encoder.encode(sseLine(event)))
+        }
+
+        if (assistantText.trim()) {
+          await appendMessage({
+            supabase,
+            conversationId,
+            shopId: shop.id,
+            role: "assistant",
+            content: assistantText.trim(),
+          })
         }
       } catch (err) {
         console.error("[bi/chat] stream failed:", err)
+        const message =
+          err instanceof Error
+            ? err.message
+            : "We hit a snag thinking that through."
         controller.enqueue(
-          encoder.encode(
-            sseLine({
-              type: "error",
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "We hit a snag thinking that through.",
-            })
-          )
+          encoder.encode(sseLine({ type: "error", message }))
         )
+        // If we had partial text before the error, persist it so the
+        // operator can see what we did get on reload.
+        if (assistantText.trim()) {
+          await appendMessage({
+            supabase,
+            conversationId,
+            shopId: shop.id,
+            role: "assistant",
+            content: `${assistantText.trim()}\n\n(We hit a snag before finishing — ${message})`,
+          })
+        }
       } finally {
         controller.close()
       }
