@@ -99,14 +99,10 @@ const planSchema = z.object({
       "One sentence reminding the operator about the HITL gate for this specific agent. Default: 'Every outbound message still lands as a Slack approval card before it actually sends.'"
     ),
   recipe: z
-    .object({
-      id: z
-        .enum(["lead_followup_sms"])
-        .describe(
-          "Only fill this when the problem cleanly maps to a runnable recipe. The only recipe today is 'lead_followup_sms' — finds leads in a given status, older than N days, with no inbound activity in the last M days, drafts an SMS for our approval. If the problem doesn't fit, OMIT this field entirely."
-        ),
-      params: z
-        .object({
+    .discriminatedUnion("id", [
+      z.object({
+        id: z.literal("lead_followup_sms"),
+        params: z.object({
           status: z
             .enum(["new", "quoted", "booked"])
             .describe(
@@ -128,12 +124,54 @@ const planSchema = z.object({
             .describe(
               "Skip leads where the customer reached out to us in the last N days."
             ),
-        })
-        .describe("Filter parameters for the lead audience query."),
-    })
+        }),
+      }),
+      z.object({
+        id: z.literal("appointment_reminder_email"),
+        params: z.object({
+          hours_before: z
+            .number()
+            .int()
+            .min(1)
+            .max(168)
+            .describe(
+              "How many hours before the appointment to send. 24 is the canonical day-before reminder."
+            ),
+          window_hours: z
+            .number()
+            .int()
+            .min(1)
+            .max(24)
+            .describe(
+              "Half-width of the matching window. With hours_before=24 + window_hours=1, appointments 23–25h out qualify each tick. Pair this with hourly cadence so nothing slips through."
+            ),
+        }),
+      }),
+      z.object({
+        id: z.literal("stale_customer_sms"),
+        params: z.object({
+          inactive_days: z
+            .number()
+            .int()
+            .min(7)
+            .max(365)
+            .describe(
+              "Customer's last interaction must be at least this many days ago. 30–90 is typical for re-engagement."
+            ),
+          cooldown_days: z
+            .number()
+            .int()
+            .min(7)
+            .max(365)
+            .describe(
+              "Don't re-message the same customer about staleness more than once per this many days."
+            ),
+        }),
+      }),
+    ])
     .optional()
     .describe(
-      "Machine-executable mapping. OMIT entirely if the problem doesn't fit our recipe catalog — the plan still saves but won't actually run."
+      "Machine-executable mapping. Pick ONE recipe id that fits the problem:\n• 'lead_followup_sms' — leads in a given status, older than N days, no inbound recently → drafts an SMS.\n• 'appointment_reminder_email' — drafts an email reminder ~N hours before a booked appointment. Pair with hourly cadence.\n• 'stale_customer_sms' — drafts an SMS to customers whose last interaction is N+ days ago.\nOMIT entirely if no recipe fits — the plan still saves but won't run."
     ),
   schedule: z
     .object({

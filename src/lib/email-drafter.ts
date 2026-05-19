@@ -84,6 +84,104 @@ function anthropicKey(): string {
 
 const MAX_BODY_CHARS = 8_000
 
+// ---------- appointment reminder email drafter ----------
+
+const REMINDER_TOOL = "draft_appointment_reminder_email"
+
+const reminderSchema = z
+  .object({
+    subject: z
+      .string()
+      .min(3)
+      .max(180)
+      .describe(
+        "Reminder subject line. Reference the day or the service to make it scannable."
+      ),
+    body: z
+      .string()
+      .min(8)
+      .max(1500)
+      .describe(
+        "Plain-text reminder body signed '— Gradia at {shop_name}'. 3-5 sentences."
+      ),
+  })
+  .describe(
+    "Appointment reminder email for the day before. Warm, scannable, never confirms a new commitment."
+  )
+
+const REMINDER_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a reminder email about an upcoming appointment. The shop owner will approve before it sends.
+
+Rules:
+- Speak as "we" and "us".
+- Restate the service + day + time so the customer can verify on a glance.
+- One optional next step ("anything we should know in advance, just hit reply").
+- Don't change the booking. Don't quote a price.
+- Plain text, no HTML or markdown.
+- Sign with: — Gradia at {shop_name}`
+
+const REMINDER_HUMAN = `Draft the reminder via the ${REMINDER_TOOL} tool.
+
+Shop name: {shop_name}
+Customer first name: {first_name}
+Service: {service}
+When (customer's local time): {when_text}
+Vehicle (if known): {vehicle}`
+
+const reminderPrompt = ChatPromptTemplate.fromMessages([
+  ["system", REMINDER_SYSTEM],
+  ["human", REMINDER_HUMAN],
+])
+
+function firstName(full: string): string {
+  return full.trim().split(/\s+/)[0] || full
+}
+
+function formatWhen(iso: string, timezone: string | null): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const opts: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone ?? undefined,
+    timeZoneName: timezone ? "short" : undefined,
+  }
+  return new Intl.DateTimeFormat("en-US", opts).format(d)
+}
+
+export async function draftAppointmentReminderEmail(input: {
+  shopName: string
+  customerName: string
+  service: string | null
+  isoStartTime: string
+  timezone: string | null
+  vehicle: string | null
+}): Promise<EmailDraft | null> {
+  const llm = new ChatAnthropic({
+    model: CLAUDE_MODEL,
+    temperature: 0.4,
+    maxTokens: 1024,
+    apiKey: anthropicKey(),
+  }).withStructuredOutput(reminderSchema, { name: REMINDER_TOOL })
+
+  const chain = reminderPrompt.pipe(llm)
+  const raw = await chain.invoke({
+    shop_name: input.shopName.trim() || "the shop",
+    first_name: firstName(input.customerName) || "there",
+    service: input.service?.trim() || "your detail",
+    when_text: formatWhen(input.isoStartTime, input.timezone),
+    vehicle: input.vehicle?.trim() || "(not specified)",
+  })
+
+  const parsed = reminderSchema.parse(raw)
+  const subject = parsed.subject.trim()
+  const body = parsed.body.trim()
+  if (!subject || !body) return null
+  return { subject, body }
+}
+
 export async function draftEmailReply(input: {
   shopName: string
   from: string

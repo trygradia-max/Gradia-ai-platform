@@ -14,11 +14,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { findCustomerByChannel } from "@/lib/customers"
-import { sendSmsApprovalRequest } from "@/lib/slack"
+import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
+import {
+  sendEmailApprovalRequest,
+  sendSmsApprovalRequest,
+} from "@/lib/slack"
 import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
 import type {
   AgentConfig,
+  AppointmentRow,
   CustomAgentRow,
+  CustomerRow,
   LeadRow,
   ShopRow,
 } from "@/lib/types/database"
@@ -245,6 +251,304 @@ async function executeLeadFollowupSms(
   }
 }
 
+// ---------- recipe: appointment_reminder_email ----------
+
+async function executeAppointmentReminderEmail(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow
+): Promise<AgentRunOutcome> {
+  const stats = {
+    matched: 0,
+    proposed_email: 0,
+    skipped_no_email: 0,
+    skipped_already_reminded: 0,
+  }
+  const recipe = agent.config.recipe
+  if (!recipe || recipe.id !== "appointment_reminder_email") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "recipe missing or wrong id",
+    }
+  }
+  if (!shop.aurinko_access_token_enc) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Gmail not connected via Aurinko",
+    }
+  }
+
+  const { hours_before, window_hours } = recipe.params
+  const now = Date.now()
+  const targetMs = now + hours_before * HOUR_MS
+  const lowerIso = new Date(targetMs - window_hours * HOUR_MS).toISOString()
+  const upperIso = new Date(targetMs + window_hours * HOUR_MS).toISOString()
+
+  const { data: apptRows, error: apptErr } = await supabase
+    .from("appointments")
+    .select("*, customer:customers(id, name, email, phone)")
+    .eq("shop_id", shop.id)
+    .gte("scheduled_at", lowerIso)
+    .lte("scheduled_at", upperIso)
+    .order("scheduled_at", { ascending: true })
+    .limit(50)
+  if (apptErr) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `appointment query failed: ${apptErr.message}`,
+    }
+  }
+  type JoinedAppt = AppointmentRow & {
+    customer: Pick<CustomerRow, "id" | "name" | "email" | "phone"> | null
+  }
+  const appts = (apptRows as JoinedAppt[] | null) ?? []
+  stats.matched = appts.length
+
+  for (const appt of appts) {
+    const email = appt.customer?.email?.trim()
+    if (!email) {
+      stats.skipped_no_email += 1
+      continue
+    }
+
+    // Dedup by payload->appointment_id on existing pending send_emails
+    // for this shop. Stripe-style upsert isn't an option (no unique
+    // index) so we do a cheap exists-check.
+    const { data: existing } = await supabase
+      .from("pending_actions")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("action_type", "send_email")
+      .eq("payload->>appointment_id", appt.id)
+      .limit(1)
+    if (existing && existing.length > 0) {
+      stats.skipped_already_reminded += 1
+      continue
+    }
+
+    const draft = await draftAppointmentReminderEmail({
+      shopName: shop.name,
+      customerName: appt.customer?.name ?? "there",
+      service: appt.service_name,
+      isoStartTime: appt.scheduled_at,
+      timezone: appt.timezone,
+      vehicle: null,
+    }).catch(() => null)
+    if (!draft) continue
+
+    const reason = appt.service_name?.trim()
+      ? `Reminder · ${appt.service_name.trim()}`
+      : "Appointment reminder"
+
+    const { data: pending, error: pendingErr } = await supabase
+      .from("pending_actions")
+      .insert({
+        shop_id: shop.id,
+        action_type: "send_email",
+        payload: {
+          to_email: email,
+          subject: draft.subject,
+          body: draft.body,
+          customer_name: appt.customer?.name ?? null,
+          customer_id: appt.customer?.id ?? null,
+          reason,
+          source: "custom_agent",
+          custom_agent_id: agent.id,
+          appointment_id: appt.id,
+        },
+        requested_by: agent.owner_id,
+      })
+      .select("id")
+      .single()
+
+    if (pendingErr || !pending) {
+      console.error("[agent-runtime] email pending insert failed:", pendingErr)
+      continue
+    }
+
+    try {
+      await sendEmailApprovalRequest({
+        pendingActionId: pending.id,
+        toEmail: email,
+        customerName: appt.customer?.name ?? null,
+        subject: draft.subject,
+        body: draft.body,
+        reason,
+      })
+    } catch (err) {
+      console.error("[agent-runtime] Slack send failed:", err)
+    }
+    stats.proposed_email += 1
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats,
+  }
+}
+
+// ---------- recipe: stale_customer_sms ----------
+
+async function executeStaleCustomerSms(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow
+): Promise<AgentRunOutcome> {
+  const stats = {
+    matched: 0,
+    proposed_sms: 0,
+    skipped_no_phone: 0,
+    skipped_cooldown: 0,
+  }
+  const recipe = agent.config.recipe
+  if (!recipe || recipe.id !== "stale_customer_sms") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "recipe missing or wrong id",
+    }
+  }
+  if (!shop.twilio_phone_number) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Twilio number not connected",
+    }
+  }
+
+  const { inactive_days, cooldown_days } = recipe.params
+  const inactiveCutoffIso = new Date(
+    Date.now() - inactive_days * DAY_MS
+  ).toISOString()
+  const cooldownCutoffIso = new Date(
+    Date.now() - cooldown_days * DAY_MS
+  ).toISOString()
+
+  // Step 1: find customers whose last interaction is older than the
+  // inactivity threshold. Aggregating MAX(occurred_at) per customer in
+  // Postgres is the right call here; from JS we do a select-order-cap.
+  // For pilot scale (< few thousand customers/shop) this is fine.
+  const { data: customerRows } = await supabase
+    .from("customers")
+    .select("id, name, phone")
+    .eq("shop_id", shop.id)
+    .not("phone", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(500)
+  const candidates = (customerRows as Pick<CustomerRow, "id" | "name" | "phone">[] | null) ?? []
+  if (candidates.length === 0) {
+    return { agentId: agent.id, agentName: agent.name, fired: true, stats }
+  }
+
+  // Step 2: for each candidate, find max(occurred_at) on interactions
+  // and the most recent outbound SMS we sent. Done as a single batch
+  // query per condition.
+  const ids = candidates.map((c) => c.id)
+  const { data: recentRows } = await supabase
+    .from("interactions")
+    .select("customer_id, occurred_at")
+    .eq("shop_id", shop.id)
+    .in("customer_id", ids)
+    .gt("occurred_at", inactiveCutoffIso)
+  const recentSet = new Set(
+    ((recentRows as { customer_id: string | null }[] | null) ?? [])
+      .map((r) => r.customer_id)
+      .filter((id): id is string => Boolean(id))
+  )
+
+  const { data: cooldownRows } = await supabase
+    .from("interactions")
+    .select("customer_id, occurred_at, role, channel, metadata")
+    .eq("shop_id", shop.id)
+    .eq("role", "gradia")
+    .eq("channel", "sms")
+    .in("customer_id", ids)
+    .gt("occurred_at", cooldownCutoffIso)
+  const cooldownSet = new Set(
+    ((cooldownRows as { customer_id: string | null }[] | null) ?? [])
+      .map((r) => r.customer_id)
+      .filter((id): id is string => Boolean(id))
+  )
+
+  for (const customer of candidates) {
+    if (recentSet.has(customer.id)) continue // not actually stale
+    if (!customer.phone) {
+      stats.skipped_no_phone += 1
+      continue
+    }
+    if (cooldownSet.has(customer.id)) {
+      stats.skipped_cooldown += 1
+      continue
+    }
+    stats.matched += 1
+
+    const draft = await draftCustomSmsForCustomer({
+      shopName: shop.name,
+      customerName: customer.name ?? "there",
+      vehicle: null,
+      service: null,
+      intent: agent.config.action.intent_summary,
+    }).catch(() => null)
+    if (!draft) continue
+
+    const reason = `Custom agent · ${agent.name}`
+
+    const { data: pending, error: pendingErr } = await supabase
+      .from("pending_actions")
+      .insert({
+        shop_id: shop.id,
+        action_type: "send_sms",
+        payload: {
+          to_phone: customer.phone,
+          body: draft,
+          customer_name: customer.name,
+          customer_id: customer.id,
+          reason,
+          source: "custom_agent",
+          custom_agent_id: agent.id,
+        },
+        requested_by: agent.owner_id,
+      })
+      .select("id")
+      .single()
+
+    if (pendingErr || !pending) {
+      console.error("[agent-runtime] stale-sms pending insert failed:", pendingErr)
+      continue
+    }
+
+    try {
+      await sendSmsApprovalRequest({
+        pendingActionId: pending.id,
+        toPhone: customer.phone,
+        customerName: customer.name,
+        body: draft,
+        reason,
+      })
+    } catch (err) {
+      console.error("[agent-runtime] Slack send failed:", err)
+    }
+    stats.proposed_sms += 1
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats,
+  }
+}
+
 // ---------- recipe dispatch ----------
 
 type RecipeHandler = (
@@ -255,6 +559,8 @@ type RecipeHandler = (
 
 const RECIPE_HANDLERS: Record<string, RecipeHandler> = {
   lead_followup_sms: executeLeadFollowupSms,
+  appointment_reminder_email: executeAppointmentReminderEmail,
+  stale_customer_sms: executeStaleCustomerSms,
 }
 
 async function loadShop(

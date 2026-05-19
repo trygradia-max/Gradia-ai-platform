@@ -181,7 +181,10 @@ export type PaymentRow = {
  * matched the problem to a known recipe. Without them the plan is
  * saved but flagged as not-runnable in the UI.
  */
-export type AgentRecipeId = "lead_followup_sms"
+export type AgentRecipeId =
+  | "lead_followup_sms"
+  | "appointment_reminder_email"
+  | "stale_customer_sms"
 
 export type LeadFollowupSmsParams = {
   status: LeadStatus
@@ -189,10 +192,27 @@ export type LeadFollowupSmsParams = {
   no_inbound_within_days: number
 }
 
-export type AgentRecipe = {
-  id: "lead_followup_sms"
-  params: LeadFollowupSmsParams
+export type AppointmentReminderEmailParams = {
+  /** Target appointments whose start time is roughly this many hours away. */
+  hours_before: number
+  /** Half-width of the window around hours_before, in hours. */
+  window_hours: number
 }
+
+export type StaleCustomerSmsParams = {
+  /** Customer last had any interaction at least this many days ago. */
+  inactive_days: number
+  /** Don't re-message a customer if we already SMS'd them in the last N days. */
+  cooldown_days: number
+}
+
+export type AgentRecipe =
+  | { id: "lead_followup_sms"; params: LeadFollowupSmsParams }
+  | {
+      id: "appointment_reminder_email"
+      params: AppointmentReminderEmailParams
+    }
+  | { id: "stale_customer_sms"; params: StaleCustomerSmsParams }
 
 export type AgentSchedule = {
   cadence: "hourly" | "daily" | "weekly"
