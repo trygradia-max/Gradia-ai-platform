@@ -18,6 +18,7 @@ import {
   runCustomAgentNow,
   setCustomAgentEnabled,
 } from "@/app/actions/custom-agents"
+import { AgentRunsSheet } from "@/components/gradia/agent-runs-sheet"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -179,6 +180,7 @@ export function CustomAgentCard({ agent }: { agent: CustomAgentRow }) {
           </div>
         </div>
         <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-1">
+          <AgentRunsSheet agentId={agent.id} agentName={agent.name} />
           <Button
             type="button"
             variant="ghost"

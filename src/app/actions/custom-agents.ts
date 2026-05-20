@@ -4,10 +4,15 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { planAgentFromProblem } from "@/lib/agent-planner"
+import { listAgentRunsForShop } from "@/lib/agent-runs"
 import { runCustomAgent, type AgentRunOutcome } from "@/lib/agent-runtime"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
-import type { AgentConfig, CustomAgentRow } from "@/lib/types/database"
+import type {
+  AgentConfig,
+  CustomAgentRow,
+  CustomAgentRunRow,
+} from "@/lib/types/database"
 
 export type PlanAgentResult =
   | { ok: true; config: AgentConfig }
@@ -125,6 +130,33 @@ export async function runCustomAgentNow(
   revalidatePath("/agents")
   revalidatePath("/approvals")
   return { ok: true, outcome }
+}
+
+export type ListAgentRunsResult =
+  | { ok: true; runs: CustomAgentRunRow[] }
+  | { ok: false; error: string }
+
+export async function listAgentRuns(
+  agentId: string
+): Promise<ListAgentRunsResult> {
+  try {
+    await requireUser()
+    const shop = await requireShop()
+    const supabase = await createClient()
+    const runs = await listAgentRunsForShop(supabase, {
+      agentId,
+      shopId: shop.id,
+    })
+    return { ok: true, runs }
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Couldn't load activity.",
+    }
+  }
 }
 
 export type SetEnabledResult =

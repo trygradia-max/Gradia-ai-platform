@@ -13,6 +13,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
 import {
@@ -813,25 +814,47 @@ export async function runEventRecipe(
   agent: CustomAgentRow,
   event: AgentEvent
 ): Promise<AgentRunOutcome> {
+  const triggerSource: TriggerSource = `event:${event.kind}`
   const recipeId = agent.config.recipe?.id
   if (!recipeId) {
-    return {
+    const outcome: AgentRunOutcome = {
       agentId: agent.id,
       agentName: agent.name,
       fired: false,
       reason: "no recipe on this agent",
     }
+    await recordAgentRun(supabase, {
+      agentId: agent.id,
+      shopId: shop.id,
+      triggerSource,
+      outcome,
+    })
+    return outcome
   }
   const handler = EVENT_RECIPE_HANDLERS[recipeId]
   if (!handler) {
-    return {
+    const outcome: AgentRunOutcome = {
       agentId: agent.id,
       agentName: agent.name,
       fired: false,
       reason: `unknown event recipe: ${recipeId}`,
     }
+    await recordAgentRun(supabase, {
+      agentId: agent.id,
+      shopId: shop.id,
+      triggerSource,
+      outcome,
+    })
+    return outcome
   }
-  return handler(supabase, shop, agent, event)
+  const outcome = await handler(supabase, shop, agent, event)
+  await recordAgentRun(supabase, {
+    agentId: agent.id,
+    shopId: shop.id,
+    triggerSource,
+    outcome,
+  })
+  return outcome
 }
 
 async function loadShop(
@@ -854,36 +877,50 @@ export async function runCustomAgent(
   supabase: SupabaseClient,
   agent: CustomAgentRow
 ): Promise<AgentRunOutcome> {
+  const triggerSource: TriggerSource = "manual"
+
+  async function recordAndReturn(
+    outcome: AgentRunOutcome
+  ): Promise<AgentRunOutcome> {
+    await recordAgentRun(supabase, {
+      agentId: agent.id,
+      shopId: agent.shop_id,
+      triggerSource,
+      outcome,
+    })
+    return outcome
+  }
+
   const recipeId = agent.config.recipe?.id
   if (!recipeId) {
-    return {
+    return recordAndReturn({
       agentId: agent.id,
       agentName: agent.name,
       fired: false,
       reason: "no runnable recipe on this plan",
-    }
+    })
   }
   const handler = RECIPE_HANDLERS[recipeId]
   if (!handler) {
-    return {
+    return recordAndReturn({
       agentId: agent.id,
       agentName: agent.name,
       fired: false,
       reason: `unknown recipe id: ${recipeId}`,
-    }
+    })
   }
   const shop = await loadShop(supabase, agent.shop_id)
   if (!shop) {
-    return {
+    return recordAndReturn({
       agentId: agent.id,
       agentName: agent.name,
       fired: false,
       reason: "shop not found",
-    }
+    })
   }
   const outcome = await handler(supabase, shop, agent)
   if (outcome.fired) await stampFired(supabase, agent.id, agent.shop_id)
-  return outcome
+  return recordAndReturn(outcome)
 }
 
 /**
@@ -920,41 +957,72 @@ export async function runScheduledAgents(
     try {
       const recipeId = agent.config.recipe?.id
       if (!recipeId) {
-        outcomes.push({
+        const outcome: AgentRunOutcome = {
           agentId: agent.id,
           agentName: agent.name,
           fired: false,
           reason: "no recipe",
+        }
+        outcomes.push(outcome)
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
         })
         continue
       }
       const handler = RECIPE_HANDLERS[recipeId]
       if (!handler) {
-        outcomes.push({
+        const outcome: AgentRunOutcome = {
           agentId: agent.id,
           agentName: agent.name,
           fired: false,
           reason: `unknown recipe: ${recipeId}`,
+        }
+        outcomes.push(outcome)
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
         })
         continue
       }
       const decision = shouldFireOnSchedule(agent, now)
       if (!decision.fire) {
-        outcomes.push({
+        const outcome: AgentRunOutcome = {
           agentId: agent.id,
           agentName: agent.name,
           fired: false,
           reason: decision.reason,
+        }
+        outcomes.push(outcome)
+        // recordAgentRun filters out the noisy "schedule not open" /
+        // "fired recently" cases via shouldRecordOutcome — no-op for
+        // those, persists meaningful skips like "no schedule on config".
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
         })
         continue
       }
       const shop = await getShop(agent.shop_id)
       if (!shop) {
-        outcomes.push({
+        const outcome: AgentRunOutcome = {
           agentId: agent.id,
           agentName: agent.name,
           fired: false,
           reason: "shop missing",
+        }
+        outcomes.push(outcome)
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
         })
         continue
       }
@@ -964,13 +1032,26 @@ export async function runScheduledAgents(
         fired += 1
       }
       outcomes.push(outcome)
+      await recordAgentRun(supabase, {
+        agentId: agent.id,
+        shopId: agent.shop_id,
+        triggerSource: "schedule",
+        outcome,
+      })
     } catch (err) {
       console.error("[agent-runtime] agent crashed:", agent.id, err)
-      outcomes.push({
+      const outcome: AgentRunOutcome = {
         agentId: agent.id,
         agentName: agent.name,
         fired: false,
         reason: err instanceof Error ? err.message : String(err),
+      }
+      outcomes.push(outcome)
+      await recordAgentRun(supabase, {
+        agentId: agent.id,
+        shopId: agent.shop_id,
+        triggerSource: "schedule",
+        outcome,
       })
     }
   }

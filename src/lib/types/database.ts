@@ -274,3 +274,15 @@ export type CustomAgentRow = {
   created_at: string
   updated_at: string
 }
+
+export type CustomAgentRunRow = {
+  id: string
+  agent_id: string
+  shop_id: string
+  /** "manual" | "schedule" | "event:payment_received" | "event:booking_approved" */
+  trigger_source: string
+  fired: boolean
+  reason: string | null
+  stats: Record<string, number> | null
+  created_at: string
+}
