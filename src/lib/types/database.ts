@@ -14,6 +14,10 @@ export type ShopRow = {
   twilio_phone_number: string | null
   stripe_account_id: string | null
   stripe_charges_enabled: boolean
+  instagram_business_account_id: string | null
+  instagram_page_id: string | null
+  instagram_page_access_token_enc: string | null
+  instagram_account_handle: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string

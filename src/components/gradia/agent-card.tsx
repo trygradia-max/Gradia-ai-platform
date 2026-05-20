@@ -1,5 +1,6 @@
 import Link from "next/link"
 import {
+  Aperture,
   Brain,
   CalendarDays,
   Check,
@@ -23,6 +24,7 @@ const ICONS = {
   phone: Phone,
   mail: Mail,
   sms: MessageSquare,
+  instagram: Aperture,
   calendar: CalendarDays,
   billing: CreditCard,
   memory: Brain,

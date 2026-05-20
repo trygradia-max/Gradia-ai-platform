@@ -2,6 +2,7 @@ import { headers } from "next/headers"
 import { Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
+import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
@@ -71,12 +72,17 @@ export default async function SettingsPage({
   const baseUrl = await resolveWebhookBaseUrl()
   const webhookUrl = `${baseUrl}/api/vapi/webhook`
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`
+  const metaWebhookUrl = `${baseUrl}/api/meta/webhook`
   const webhookSecretConfigured = Boolean(
     process.env.VAPI_WEBHOOK_SECRET?.trim()
   )
   const aurinkoConfigured = Boolean(
     process.env.AURINKO_CLIENT_ID?.trim() &&
       process.env.AURINKO_CLIENT_SECRET?.trim()
+  )
+  const metaConfigured = Boolean(
+    process.env.META_APP_SECRET?.trim() &&
+      process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()
   )
   const twilioConfigured = Boolean(
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
@@ -146,6 +152,14 @@ export default async function SettingsPage({
         chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
         stripeConfigured={stripeConfigured}
         callbackStatus={stripeStatus}
+      />
+
+      <InstagramSettingsCard
+        initialPageId={shop?.instagram_page_id ?? null}
+        initialBusinessAccountId={shop?.instagram_business_account_id ?? null}
+        initialHandle={shop?.instagram_account_handle ?? null}
+        webhookUrl={metaWebhookUrl}
+        metaConfigured={metaConfigured}
       />
 
       <Card className="border-border/80">

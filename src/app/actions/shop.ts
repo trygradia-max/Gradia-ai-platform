@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { deleteSubscription } from "@/lib/aurinko"
-import { tryDecryptSecret } from "@/lib/crypto"
+import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
 import { createClient } from "@/lib/supabase/server"
 import { getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
@@ -246,6 +246,123 @@ export async function disconnectSms(): Promise<DisconnectSmsResult> {
   const { data, error } = await supabase
     .from("shops")
     .update({ twilio_phone_number: null })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not disconnect." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+const saveInstagramSchema = z.object({
+  instagram_business_account_id: z
+    .string()
+    .trim()
+    .min(1, "Business account ID is required.")
+    .max(80),
+  instagram_page_id: z
+    .string()
+    .trim()
+    .min(1, "Facebook Page ID is required.")
+    .max(80),
+  instagram_page_access_token: z
+    .string()
+    .trim()
+    .min(20, "Page access token looks too short."),
+  instagram_account_handle: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .nullable(),
+})
+
+export type SaveInstagramResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function saveInstagramCredentials(
+  input: z.infer<typeof saveInstagramSchema>
+): Promise<SaveInstagramResult> {
+  const parsed = saveInstagramSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input.",
+    }
+  }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  let encryptedToken: string | null
+  try {
+    encryptedToken = encryptSecret(parsed.data.instagram_page_access_token)
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Encryption failed: ${err.message}`
+          : "Encryption failed.",
+    }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      instagram_business_account_id: parsed.data.instagram_business_account_id,
+      instagram_page_id: parsed.data.instagram_page_id,
+      instagram_page_access_token_enc: encryptedToken,
+      instagram_account_handle:
+        parsed.data.instagram_account_handle?.replace(/^@/, "") || null,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    if (error?.code === "23505") {
+      return {
+        ok: false,
+        error: "Another shop is already connected to that Facebook Page.",
+      }
+    }
+    return { ok: false, error: error?.message ?? "Could not save." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+export type DisconnectInstagramResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function disconnectInstagram(): Promise<DisconnectInstagramResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      instagram_business_account_id: null,
+      instagram_page_id: null,
+      instagram_page_access_token_enc: null,
+      instagram_account_handle: null,
+    })
     .eq("id", existing.id)
     .select("*")
     .single()
