@@ -64,6 +64,14 @@ type EmailPayload = {
   source?: string
 }
 
+type InstagramDmPayload = {
+  recipient_id?: string
+  body?: string
+  customer_name?: string | null
+  reason?: string | null
+  source?: string
+}
+
 export default async function PendingProposalPage({
   params,
 }: {
@@ -271,6 +279,23 @@ function buildEditorProps(
         type: "send_email",
         to_email: p.to_email ?? "",
         subject: p.subject ?? "",
+        body: p.body ?? "",
+        customer_name: p.customer_name ?? null,
+        reason: p.reason ?? null,
+      },
+    }
+  }
+
+  if (pending.action_type === "send_instagram_dm") {
+    const p = pending.payload as InstagramDmPayload
+    return {
+      pendingId: pending.id,
+      source: typeof p.source === "string" ? p.source : null,
+      submittedAt: pending.created_at,
+      status,
+      initial: {
+        type: "send_instagram_dm",
+        recipient_id: p.recipient_id ?? "",
         body: p.body ?? "",
         customer_name: p.customer_name ?? null,
         reason: p.reason ?? null,

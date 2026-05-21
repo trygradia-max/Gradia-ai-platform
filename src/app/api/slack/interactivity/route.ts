@@ -9,6 +9,8 @@ import {
   chargeEditRequestedBlocks,
   emailApprovedBlocks,
   emailEditRequestedBlocks,
+  instagramDmApprovedBlocks,
+  instagramDmEditRequestedBlocks,
   leadApprovedBlocks,
   leadEditRequestedBlocks,
   noteApprovedBlocks,
@@ -171,6 +173,20 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
+    } else if (result.actionType === "send_instagram_dm") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `IG DM sent · ${proposal.customer_name ?? proposal.recipient_id}`,
+        instagramDmApprovedBlocks({
+          pendingActionId: pendingId,
+          recipientId: proposal.recipient_id,
+          customerName: proposal.customer_name,
+          body: proposal.body,
+          reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
     } else {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -271,6 +287,20 @@ export async function POST(request: Request) {
           toEmail: proposal.to_email,
           customerName: proposal.customer_name,
           subject: proposal.subject,
+          body: proposal.body,
+          reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "send_instagram_dm") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · IG DM to ${proposal.customer_name ?? proposal.recipient_id}`,
+        instagramDmEditRequestedBlocks({
+          pendingActionId: pendingId,
+          recipientId: proposal.recipient_id,
+          customerName: proposal.customer_name,
           body: proposal.body,
           reason: proposal.reason,
           approverSlackId: payload.user.id,

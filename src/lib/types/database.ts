@@ -82,6 +82,7 @@ export type PendingActionType =
   | "send_sms"
   | "charge_customer"
   | "send_email"
+  | "send_instagram_dm"
 
 export type PendingActionStatus =
   | "pending"

@@ -22,6 +22,7 @@ import {
   classifyInstagramDm,
   type InstagramClassification,
 } from "@/lib/instagram-classifier"
+import { draftInstagramReply } from "@/lib/instagram-drafter"
 import { recordInteraction } from "@/lib/memory"
 import {
   extractMessageEvents,
@@ -29,7 +30,10 @@ import {
   type MetaMessageEvent,
   type MetaWebhookPayload,
 } from "@/lib/meta"
-import { sendLeadApprovalRequest } from "@/lib/slack"
+import {
+  sendInstagramDmApprovalRequest,
+  sendLeadApprovalRequest,
+} from "@/lib/slack"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -164,7 +168,74 @@ async function handleMessage(
   if (!classification || !classification.is_lead) return false
 
   await proposeLead(supabase, shop, event, customerId, classification)
+  // Best-effort auto-draft reply. Drafter or Slack failures don't
+  // block the lead proposal that just landed.
+  try {
+    await proposeDraftReply(supabase, shop, event, customerId, classification)
+  } catch (err) {
+    console.warn("[meta webhook] auto-draft reply failed:", err)
+  }
   return true
+}
+
+async function proposeDraftReply(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  event: MetaMessageEvent,
+  customerId: string | null,
+  classification: InstagramClassification
+): Promise<void> {
+  const draft = await draftInstagramReply({
+    shopName: shop.name,
+    customerName: classification.customer_name,
+    vehicle: classification.vehicle,
+    service: classification.service,
+    body: event.text ?? "",
+  })
+  if (!draft) return
+
+  const customerName = classification.customer_name?.trim() || null
+  const reason = classification.service?.trim()
+    ? `Reply to IG inquiry about ${classification.service.trim()}`
+    : "Reply to inbound IG DM"
+
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "send_instagram_dm",
+      payload: {
+        recipient_id: event.senderId,
+        body: draft,
+        customer_name: customerName,
+        customer_id: customerId,
+        reason,
+        source: "instagram_auto_draft",
+        meta_inbound_message_id: event.messageId,
+      },
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+  if (pendingErr || !pending) {
+    console.error(
+      "[meta webhook] send_instagram_dm pending_action insert failed:",
+      pendingErr
+    )
+    return
+  }
+
+  try {
+    await sendInstagramDmApprovalRequest({
+      pendingActionId: pending.id,
+      recipientId: event.senderId,
+      customerName,
+      body: draft,
+      reason,
+    })
+  } catch (err) {
+    console.error("[meta webhook] IG draft Slack send failed:", err)
+  }
 }
 
 async function proposeLead(

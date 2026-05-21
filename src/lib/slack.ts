@@ -1005,6 +1005,160 @@ export async function sendSmsApprovalRequest(
   )
 }
 
+export type InstagramDmApprovalPayload = {
+  pendingActionId: string
+  recipientId: string
+  customerName: string | null
+  body: string
+  reason: string | null
+}
+
+function instagramFieldBlocks(p: InstagramDmApprovalPayload): Block[] {
+  return [
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*To*\n${dashOr(
+            p.customerName ? `${p.customerName} (IG ${p.recipientId})` : `IG ${p.recipientId}`,
+            "Unknown"
+          )}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Reason*\n${dashOr(p.reason, "Not specified")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Message*\n${dashOr(p.body, "(empty)")}`,
+      },
+    },
+  ]
+}
+
+function instagramApprovalRequestBlocks(
+  p: InstagramDmApprovalPayload
+): Block[] {
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Approval needed: Outbound IG DM",
+        emoji: true,
+      },
+    },
+    ...instagramFieldBlocks(p),
+    {
+      type: "actions",
+      block_id: "instagram_dm_approval",
+      elements: [
+        {
+          type: "button",
+          action_id: "approve_lead",
+          text: { type: "plain_text", text: "Approve & send", emoji: true },
+          style: "primary",
+          value: p.pendingActionId,
+        },
+        {
+          type: "button",
+          action_id: "edit_lead",
+          text: { type: "plain_text", text: "Edit", emoji: true },
+          value: p.pendingActionId,
+        },
+      ],
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Gradia · sends from our connected IG page the moment you approve",
+        },
+      ],
+    },
+  ]
+}
+
+export async function sendInstagramDmApprovalRequest(
+  p: InstagramDmApprovalPayload
+): Promise<void> {
+  const preview = p.body.slice(0, 60).replace(/\s+/g, " ")
+  await postWebhook(
+    `Approval needed · IG DM to ${p.customerName ?? p.recipientId}: ${preview}`,
+    instagramApprovalRequestBlocks(p)
+  )
+}
+
+export function instagramDmApprovedBlocks(p: {
+  pendingActionId: string
+  recipientId: string
+  customerName: string | null
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "IG DM sent", emoji: true },
+    },
+    ...instagramFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      recipientId: p.recipientId,
+      customerName: p.customerName,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Approved by <@${p.approverSlackId}> · on its way · <${dashboardUrl()}|Open Gradia>`,
+        },
+      ],
+    },
+  ]
+}
+
+export function instagramDmEditRequestedBlocks(p: {
+  pendingActionId: string
+  recipientId: string
+  customerName: string | null
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    ...instagramFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      recipientId: p.recipientId,
+      customerName: p.customerName,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
+        },
+      ],
+    },
+  ]
+}
+
 export function smsApprovedBlocks(p: {
   pendingActionId: string
   toPhone: string

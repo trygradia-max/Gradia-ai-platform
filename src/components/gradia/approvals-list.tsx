@@ -62,6 +62,13 @@ type EmailProposal = {
   reason: string | null
 }
 
+type InstagramDmProposal = {
+  recipient_id: string
+  body: string
+  customer_name: string | null
+  reason: string | null
+}
+
 function formatMoney(cents: number): string {
   const dollars = cents / 100
   return new Intl.NumberFormat("en-US", {
@@ -149,6 +156,7 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
         const isSms = item.action_type === "send_sms"
         const isCharge = item.action_type === "charge_customer"
         const isEmail = item.action_type === "send_email"
+        const isInstagramDm = item.action_type === "send_instagram_dm"
 
         return (
           <li key={item.id}>
@@ -172,9 +180,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                               ? renderEmailHeader(
                                   item.payload as unknown as EmailProposal
                                 )
-                              : renderLeadHeader(
-                                  item.payload as unknown as LeadProposal
-                                )}
+                              : isInstagramDm
+                                ? renderInstagramHeader(
+                                    item.payload as unknown as InstagramDmProposal
+                                  )
+                                : renderLeadHeader(
+                                    item.payload as unknown as LeadProposal
+                                  )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {isNote ? (
@@ -191,6 +203,9 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                     ) : null}
                     {isEmail ? (
                       <Badge variant="secondary">Email</Badge>
+                    ) : null}
+                    {isInstagramDm ? (
+                      <Badge variant="secondary">IG DM</Badge>
                     ) : null}
                     <Badge variant={isEditRequested ? "outline" : "default"}>
                       {isEditRequested ? "Edit needed" : "Pending"}
@@ -215,9 +230,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                           ? renderEmailBody(
                               item.payload as unknown as EmailProposal
                             )
-                          : renderLeadBody(
-                              item.payload as unknown as LeadProposal
-                            )}
+                          : isInstagramDm
+                            ? renderInstagramBody(
+                                item.payload as unknown as InstagramDmProposal
+                              )
+                            : renderLeadBody(
+                                item.payload as unknown as LeadProposal
+                              )}
                 <p className="text-xs text-muted-foreground">
                   Caught {formatRelative(item.created_at)}
                 </p>
@@ -399,6 +418,28 @@ function renderEmailBody(proposal: EmailProposal) {
   return (
     <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {preview}
+    </p>
+  )
+}
+
+function renderInstagramHeader(proposal: InstagramDmProposal) {
+  const target =
+    proposal.customer_name?.trim() ||
+    (proposal.recipient_id ? `IG ${proposal.recipient_id}` : "Unknown")
+  return (
+    <>
+      <p className="text-base font-medium">To {target}</p>
+      <p className="text-xs text-muted-foreground">
+        {proposal.reason ?? "Outbound IG DM"}
+      </p>
+    </>
+  )
+}
+
+function renderInstagramBody(proposal: InstagramDmProposal) {
+  return (
+    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+      {proposal.body}
     </p>
   )
 }

@@ -83,6 +83,74 @@ export function verifyMetaSignature(input: {
  * obvious echoes (messages our own page sent — they show up here
  * too via the page subscription).
  */
+
+// ---------- outbound: Meta Send API ----------
+
+const GRAPH_API_BASE = "https://graph.facebook.com/v22.0"
+
+export class MetaSendError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+    this.name = "MetaSendError"
+  }
+}
+
+export type MetaSendResult = {
+  messageId: string | null
+  recipientId: string
+}
+
+/**
+ * Sends an Instagram DM via the connected page.
+ * Endpoint: POST /v22.0/me/messages?access_token=PAGE_TOKEN
+ * Body: { recipient: { id: <page-scoped sender id> }, message: { text } }
+ *
+ * Caller is responsible for HITL — this is the raw API wrapper used
+ * by the approval engine after a send_instagram_dm pending_action
+ * is approved. 24h window restrictions apply on Meta's side; pilot
+ * approvals happen well within that.
+ */
+export async function sendInstagramDirectMessage(input: {
+  pageAccessToken: string
+  recipientId: string
+  text: string
+}): Promise<MetaSendResult> {
+  const text = input.text.trim()
+  if (!text) throw new MetaSendError(400, "Empty message body")
+  if (!input.recipientId.trim()) {
+    throw new MetaSendError(400, "Missing recipient (page-scoped sender id)")
+  }
+  if (!input.pageAccessToken.trim()) {
+    throw new MetaSendError(500, "Missing page access token")
+  }
+
+  const url = `${GRAPH_API_BASE}/me/messages?access_token=${encodeURIComponent(input.pageAccessToken)}`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      recipient: { id: input.recipientId.trim() },
+      message: { text },
+    }),
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    throw new MetaSendError(res.status, `IG send failed: ${raw.slice(0, 300)}`)
+  }
+  let parsed: { message_id?: string; recipient_id?: string }
+  try {
+    parsed = JSON.parse(raw) as { message_id?: string; recipient_id?: string }
+  } catch {
+    throw new MetaSendError(500, "IG send response was not JSON")
+  }
+  return {
+    messageId: parsed.message_id ?? null,
+    recipientId: parsed.recipient_id ?? input.recipientId,
+  }
+}
+
 export function extractMessageEvents(
   payload: MetaWebhookPayload
 ): {
