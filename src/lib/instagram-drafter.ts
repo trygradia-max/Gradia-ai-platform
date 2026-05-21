@@ -38,8 +38,9 @@ Tone rules:
 - Casual but specific. No corporate filler.
 
 Hard rules:
-- Never quote a price. If they asked about pricing, say something like "happy to send a quick quote once we know the year/make."
+- Never quote a price unless the shop knowledge below explicitly states one. If they asked about pricing and knowledge is silent, say "happy to send a quick quote once we know the year/make."
 - Never confirm a specific time. Suggest one or ask one question.
+- If the shop knowledge mentions a policy that applies (deposit, weather, hours, etc.), weave it in naturally — don't invent policies that aren't there.
 - Always sign with: — Gradia at {shop_name}`
 
 const REPLY_HUMAN = `Draft a reply via the ${REPLY_TOOL} tool.
@@ -48,6 +49,9 @@ Shop name: {shop_name}
 Customer (if known): {customer_name}
 Vehicle (if mentioned): {vehicle}
 Service (if mentioned): {service}
+
+--- SHOP KNOWLEDGE (cite only if relevant) ---
+{knowledge}
 
 --- THEIR DM ---
 {body}`
@@ -71,6 +75,7 @@ export async function draftInstagramReply(input: {
   vehicle: string
   service: string
   body: string
+  knowledge?: string
 }): Promise<string | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -85,6 +90,7 @@ export async function draftInstagramReply(input: {
     customer_name: input.customerName.trim() || "(unknown)",
     vehicle: input.vehicle.trim() || "(not specified)",
     service: input.service.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no knowledge yet — keep it generic)",
     body: input.body.trim().slice(0, MAX_BODY_CHARS) || "(empty body)",
   })
   const parsed = replySchema.parse(raw)

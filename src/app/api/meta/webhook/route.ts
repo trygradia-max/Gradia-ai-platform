@@ -24,6 +24,10 @@ import {
 } from "@/lib/instagram-classifier"
 import { draftFacebookReply } from "@/lib/facebook-drafter"
 import { draftInstagramReply } from "@/lib/instagram-drafter"
+import {
+  formatKnowledgeForPrompt,
+  searchShopKnowledge,
+} from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
 import {
   extractMessageEvents,
@@ -211,12 +215,29 @@ async function proposeDraftReply(
   classification: InstagramClassification,
   channel: "instagram" | "facebook"
 ): Promise<void> {
+  // Pull relevant shop knowledge so the drafter cites real policies
+  // instead of inventing them. Silent fallback on RAG failure.
+  const knowledgeQuery = [
+    classification.summary,
+    classification.service,
+    event.text,
+  ]
+    .filter((s): s is string => Boolean(s?.trim()))
+    .join(" ")
+  const matches = knowledgeQuery
+    ? await searchShopKnowledge(supabase, shop.id, knowledgeQuery, {
+        limit: 3,
+      })
+    : []
+  const knowledge = formatKnowledgeForPrompt(matches)
+
   const drafterInput = {
     shopName: shop.name,
     customerName: classification.customer_name,
     vehicle: classification.vehicle,
     service: classification.service,
     body: event.text ?? "",
+    knowledge,
   }
   const draft =
     channel === "instagram"

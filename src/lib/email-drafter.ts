@@ -54,8 +54,9 @@ Body structure (plain text):
 - Sign-off: "— Gradia at {shop_name}" on the last line
 
 Hard rules:
-- Never quote a specific price. If they asked about price, say something like "we'll send a quote once we know the {make/model}" or "happy to put together pricing — what day works for us to take a look?"
+- Never quote a specific price unless the shop knowledge below explicitly states one. If they asked about price and knowledge is silent, say "we'll send a quote once we know the {make/model}".
 - Never confirm a specific time. Bookings need owner approval — say "we'll lock it in shortly" if a time is mentioned, never "you're booked."
+- If the shop knowledge mentions a policy that applies (deposit, weather, hours, etc.), weave it in naturally — don't invent policies that aren't there.
 - Always sign with: — Gradia at {shop_name}
 - Plain text only. No HTML tags, no markdown.`
 
@@ -67,6 +68,9 @@ Original subject: {subject}
 What they asked about (summary): {summary}
 Service mentioned (if any): {service}
 Vehicle mentioned (if any): {vehicle}
+
+--- SHOP KNOWLEDGE (cite only if relevant) ---
+{knowledge}
 
 --- THEIR MESSAGE ---
 {body}`
@@ -269,6 +273,8 @@ export async function draftEmailReply(input: {
   summary: string
   service: string
   vehicle: string
+  /** Optional shop knowledge (FAQs, policies, brand voice). */
+  knowledge?: string
 }): Promise<EmailDraft | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -285,6 +291,7 @@ export async function draftEmailReply(input: {
     summary: input.summary.trim() || "(no summary)",
     service: input.service.trim() || "(not specified)",
     vehicle: input.vehicle.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no knowledge yet — keep it generic)",
     body: input.body.trim().slice(0, MAX_BODY_CHARS) || "(empty body)",
   })
 

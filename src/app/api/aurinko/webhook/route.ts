@@ -34,6 +34,10 @@ import { findOrCreateCustomer } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
 import { draftEmailReply } from "@/lib/email-drafter"
+import {
+  formatKnowledgeForPrompt,
+  searchShopKnowledge,
+} from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
 import {
   sendEmailApprovalRequest,
@@ -220,6 +224,23 @@ async function proposeDraftEmailReply(
   customerId: string | null,
   classification: EmailClassification | null
 ): Promise<void> {
+  // Best-effort RAG against shop knowledge so drafted replies cite
+  // real policies. Empty / failed search degrades to generic drafting.
+  const knowledgeQuery = [
+    classification?.summary,
+    classification?.service,
+    message.subject,
+    message.bodyPlain,
+  ]
+    .filter((s): s is string => Boolean(s?.trim()))
+    .join(" ")
+  const matches = knowledgeQuery
+    ? await searchShopKnowledge(supabase, shop.id, knowledgeQuery, {
+        limit: 3,
+      })
+    : []
+  const knowledge = formatKnowledgeForPrompt(matches)
+
   const draft = await draftEmailReply({
     shopName: shop.name,
     from: senderEmail,
@@ -228,6 +249,7 @@ async function proposeDraftEmailReply(
     summary: classification?.summary ?? "",
     service: classification?.service ?? "",
     vehicle: classification?.vehicle ?? "",
+    knowledge,
   })
   if (!draft) return
 
