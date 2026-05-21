@@ -1,12 +1,17 @@
+import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
 import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
 import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
+import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 
 export default async function DashboardPage() {
-  const leads = await listScoredLeadsForCurrentShop()
+  const [leads, channels] = await Promise.all([
+    listScoredLeadsForCurrentShop(),
+    getChannelStatusForCurrentShop(),
+  ])
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
@@ -21,6 +26,7 @@ export default async function DashboardPage() {
         </div>
         <AddLeadDialog />
       </div>
+      <ChannelConnectionCard channels={channels} />
       <RevenueTiles />
       <WhisperButton />
       <AiLeadSection />

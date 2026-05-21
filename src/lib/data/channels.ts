@@ -1,0 +1,175 @@
+import { requireShop } from "@/lib/shop"
+import { createClient } from "@/lib/supabase/server"
+import type { ShopRow } from "@/lib/types/database"
+
+export type ChannelId =
+  | "voice"
+  | "email"
+  | "sms"
+  | "calendar"
+  | "payments"
+  | "instagram"
+  | "facebook"
+
+export type ChannelStatus = "connected" | "partial" | "off"
+
+export type ChannelSummary = {
+  id: ChannelId
+  label: string
+  description: string
+  status: ChannelStatus
+  /** Short next-step hint shown when status !== "connected". */
+  hint: string | null
+  /** Where the operator goes to do something about it. */
+  href: string
+}
+
+/**
+ * Snapshot of every integration's wiring state for the current shop.
+ * Drives the dashboard "Connect your channels" widget and is cheap
+ * to compute — one SELECT, then derivations.
+ */
+export async function getChannelStatusForCurrentShop(): Promise<
+  ChannelSummary[]
+> {
+  const shopCtx = await requireShop()
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("shops")
+    .select("*")
+    .eq("id", shopCtx.id)
+    .single()
+  const shop = (data as ShopRow | null) ?? null
+
+  return [
+    voiceSummary(shop),
+    emailSummary(shop),
+    smsSummary(shop),
+    calendarSummary(shop),
+    paymentsSummary(shop),
+    instagramSummary(shop),
+    facebookSummary(shop),
+  ]
+}
+
+function voiceSummary(shop: ShopRow | null): ChannelSummary {
+  const connected = Boolean(shop?.vapi_assistant_id)
+  return {
+    id: "voice",
+    label: "Voice receptionist",
+    description: "Vapi-powered phone agent that captures leads, quotes services, and books appointments.",
+    status: connected ? "connected" : "off",
+    hint: connected
+      ? null
+      : "Paste your Vapi assistant ID + provision a phone number.",
+    href: "/settings",
+  }
+}
+
+function emailSummary(shop: ShopRow | null): ChannelSummary {
+  const connected = Boolean(
+    shop?.aurinko_access_token_enc && shop?.aurinko_account_id
+  )
+  return {
+    id: "email",
+    label: "Email receptionist",
+    description: "Gmail inbox piped through Aurinko — every inquiry becomes a Slack approval card.",
+    status: connected ? "connected" : "off",
+    hint: connected ? null : "Connect Gmail via OAuth in Settings.",
+    href: "/settings",
+  }
+}
+
+function smsSummary(shop: ShopRow | null): ChannelSummary {
+  const connected = Boolean(shop?.twilio_phone_number)
+  return {
+    id: "sms",
+    label: "SMS receptionist",
+    description: "Inbound + outbound SMS through Twilio, with delivery-status callbacks.",
+    status: connected ? "connected" : "off",
+    hint: connected
+      ? null
+      : "Add your Twilio number + point its webhook at Gradia.",
+    href: "/settings",
+  }
+}
+
+function calendarSummary(shop: ShopRow | null): ChannelSummary {
+  // Calendar piggybacks on the Aurinko OAuth — same scope grant.
+  const connected = Boolean(
+    shop?.aurinko_access_token_enc && shop?.aurinko_account_id
+  )
+  return {
+    id: "calendar",
+    label: "Calendar",
+    description: "Google Calendar via Aurinko — bookings land here automatically.",
+    status: connected ? "connected" : "off",
+    hint: connected
+      ? null
+      : "Connects automatically when you connect Gmail above.",
+    href: "/settings",
+  }
+}
+
+function paymentsSummary(shop: ShopRow | null): ChannelSummary {
+  if (!shop?.stripe_account_id) {
+    return {
+      id: "payments",
+      label: "Payments",
+      description: "Stripe Connect — invoice customers from inside Gradia.",
+      status: "off",
+      hint: "Finish Stripe Connect onboarding.",
+      href: "/settings",
+    }
+  }
+  if (!shop.stripe_charges_enabled) {
+    return {
+      id: "payments",
+      label: "Payments",
+      description: "Stripe Connect — invoice customers from inside Gradia.",
+      status: "partial",
+      hint: "Stripe needs more info before charges can run.",
+      href: "/settings",
+    }
+  }
+  return {
+    id: "payments",
+    label: "Payments",
+    description: "Stripe Connect — invoice customers from inside Gradia.",
+    status: "connected",
+    hint: null,
+    href: "/settings",
+  }
+}
+
+function instagramSummary(shop: ShopRow | null): ChannelSummary {
+  const connected = Boolean(
+    shop?.instagram_page_id && shop?.instagram_page_access_token_enc
+  )
+  return {
+    id: "instagram",
+    label: "Instagram DMs",
+    description: "Inbound IG DMs auto-drafted with HITL approval; outbound from approvals queue.",
+    status: connected ? "connected" : "off",
+    hint: connected
+      ? null
+      : "Paste your IG Business Account + Page Access Token.",
+    href: "/settings",
+  }
+}
+
+function facebookSummary(shop: ShopRow | null): ChannelSummary {
+  const connected = Boolean(
+    shop?.facebook_page_id && shop?.facebook_page_access_token_enc
+  )
+  return {
+    id: "facebook",
+    label: "Facebook DMs",
+    description: "Page Messenger DMs with the same HITL flow as Instagram.",
+    status: connected ? "connected" : "off",
+    hint: connected
+      ? null
+      : "Paste your Facebook Page ID + Page Access Token.",
+    href: "/settings",
+  }
+}
