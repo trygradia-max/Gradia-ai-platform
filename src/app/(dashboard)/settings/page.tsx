@@ -4,6 +4,7 @@ import { Shield } from "lucide-react"
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
 import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
+import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
@@ -57,10 +58,20 @@ const KNOWN_STRIPE_STATUSES = new Set([
   "link_failed",
 ])
 
+const KNOWN_JOBBER_STATUSES = new Set([
+  "ok",
+  "denied",
+  "missing_params",
+  "state_mismatch",
+  "token_exchange_failed",
+  "account_fetch_failed",
+  "save_failed",
+])
+
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string; stripe?: string }>
+  searchParams: Promise<{ email?: string; stripe?: string; jobber?: string }>
 }) {
   const shopCtx = await requireShop()
   const supabase = await createClient()
@@ -96,6 +107,10 @@ export default async function SettingsPage({
     process.env.STRIPE_SECRET_KEY?.trim() &&
       process.env.STRIPE_CONNECT_CLIENT_ID?.trim()
   )
+  const jobberConfigured = Boolean(
+    process.env.JOBBER_CLIENT_ID?.trim() &&
+      process.env.JOBBER_CLIENT_SECRET?.trim()
+  )
 
   const params = await searchParams
   const rawEmailStatus = params.email ?? null
@@ -122,6 +137,19 @@ export default async function SettingsPage({
           | "fetch_failed"
           | "account_create_failed"
           | "link_failed")
+      : null
+
+  const rawJobberStatus = params.jobber ?? null
+  const jobberStatus =
+    rawJobberStatus && KNOWN_JOBBER_STATUSES.has(rawJobberStatus)
+      ? (rawJobberStatus as
+          | "ok"
+          | "denied"
+          | "missing_params"
+          | "state_mismatch"
+          | "token_exchange_failed"
+          | "account_fetch_failed"
+          | "save_failed")
       : null
 
   return (
@@ -171,6 +199,12 @@ export default async function SettingsPage({
         initialPageName={shop?.facebook_page_name ?? null}
         webhookUrl={metaWebhookUrl}
         metaConfigured={metaConfigured}
+      />
+
+      <JobberSettingsCard
+        initialAccountName={shop?.jobber_account_name ?? null}
+        jobberConfigured={jobberConfigured}
+        callbackStatus={jobberStatus}
       />
 
       <KnowledgeSettingsCard initialEntries={knowledgeEntries} />

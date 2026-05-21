@@ -21,6 +21,11 @@ export type ShopRow = {
   facebook_page_id: string | null
   facebook_page_access_token_enc: string | null
   facebook_page_name: string | null
+  jobber_account_id: string | null
+  jobber_account_name: string | null
+  jobber_access_token_enc: string | null
+  jobber_refresh_token_enc: string | null
+  jobber_token_expires_at: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string

@@ -416,6 +416,39 @@ export async function saveFacebookCredentials(
   return { ok: true, shop: data as ShopRow }
 }
 
+export type DisconnectJobberResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function disconnectJobber(): Promise<DisconnectJobberResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      jobber_account_id: null,
+      jobber_account_name: null,
+      jobber_access_token_enc: null,
+      jobber_refresh_token_enc: null,
+      jobber_token_expires_at: null,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not disconnect." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
 export type DisconnectFacebookResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }
