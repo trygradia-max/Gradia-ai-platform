@@ -52,6 +52,7 @@ import type { InteractionRole } from "@/lib/types/database"
 import {
   captureLead,
   lookupCustomerHistory,
+  lookupShopPolicy,
   proposeBooking,
   quoteService,
   type VapiCallContext,
@@ -215,6 +216,10 @@ async function handleFunctionCall(
     case "lookup_customer_history":
       return Response.json({
         result: await lookupCustomerHistory(supabase, shopId, params, ctx),
+      })
+    case "lookup_shop_policy":
+      return Response.json({
+        result: await lookupShopPolicy(supabase, shopId, params, ctx),
       })
     default:
       return Response.json({ result: `Unknown function: ${fn.name}` })

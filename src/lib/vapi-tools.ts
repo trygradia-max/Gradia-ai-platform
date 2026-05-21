@@ -9,6 +9,8 @@
  *   - propose_booking       — log a quoted booking request (HITL via Slack)
  *   - quote_service         — read the shop's service menu
  *   - lookup_customer_history — recall recent touchpoints across channels
+ *   - lookup_shop_policy    — RAG over the shop knowledge base (FAQs,
+ *                              deposits, weather, hours)
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -16,6 +18,7 @@ import { revalidatePath } from "next/cache"
 
 import { findCustomerByChannel } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
+import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
 import {
   sendBookingApprovalRequest,
@@ -576,4 +579,48 @@ export async function lookupCustomerHistory(
   }
 
   return parts.join(" ")
+}
+
+// ---------- lookup_shop_policy ----------
+
+/**
+ * RAG over the shop knowledge base. Caller asks "what's your
+ * deposit policy?" / "are you open Sundays?" / "do you do PPF?" and
+ * we pull the most-relevant entries the owner pasted in /settings.
+ * Returns a short TTS-friendly answer that quotes the policy
+ * verbatim where it makes sense — voice agents shouldn't paraphrase
+ * the owner's actual words.
+ */
+export async function lookupShopPolicy(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  _ctx: VapiCallContext
+): Promise<string> {
+  void _ctx
+  const query = readParam(params, "question", "query", "topic")
+  if (!query) {
+    return "Sure — what specifically did you want to check on?"
+  }
+
+  const matches = await searchShopKnowledge(supabase, shopId, query, {
+    limit: 2,
+  })
+
+  if (matches.length === 0) {
+    return "I don't have that one written down yet — let me grab the owner so we get you the right answer."
+  }
+
+  // Speak the top match in the owner's own words. If we have two
+  // matches close in similarity, mention both compactly.
+  const top = matches[0]
+  const second = matches[1]
+  if (
+    second &&
+    second.similarity > 0.55 &&
+    second.similarity >= top.similarity - 0.08
+  ) {
+    return `On ${top.source_name.toLowerCase()}: ${top.content} And on ${second.source_name.toLowerCase()}: ${second.content}`
+  }
+  return `On ${top.source_name.toLowerCase()}: ${top.content}`
 }

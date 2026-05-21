@@ -87,7 +87,7 @@ on — the webhook acknowledges and ignores them.
 
 ---
 
-## 2. Declare the 4 tools
+## 2. Declare the 5 tools
 
 Vapi calls these "functions." Add each one in the assistant's **Tools
 / Functions** section. Names must match exactly — the webhook
@@ -172,6 +172,33 @@ Recalls cross-channel history for a caller.
   }
 }
 ```
+
+### `lookup_shop_policy`
+RAG over the owner's pasted knowledge base (deposits, weather
+cancellations, hours, what we DON'T offer, brand voice, etc.).
+Quotes back the policy in the owner's own words instead of
+paraphrasing.
+
+```json
+{
+  "name": "lookup_shop_policy",
+  "description": "Look up shop policies, FAQs, deposit rules, hours, weather cancellation policy, services we don't offer, etc. Use whenever the caller asks 'how does X work at your shop' or anything not on the service menu. Returns the owner's exact wording — quote it back rather than paraphrasing.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string", "description": "What the caller is asking about (deposits, weather policy, hours, etc.)" }
+    },
+    "required": ["question"]
+  }
+}
+```
+
+Add to the system prompt:
+
+> For pricing, use `quote_service`. For anything else about how the
+> shop runs — deposits, weather, hours, what we don't do — use
+> `lookup_shop_policy`. Quote what it returns; never invent a
+> policy.
 
 ---
 
