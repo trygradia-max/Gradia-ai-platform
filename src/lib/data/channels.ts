@@ -1,4 +1,4 @@
-import { requireShop } from "@/lib/shop"
+import { getOptionalShop, requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -22,6 +22,33 @@ export type ChannelSummary = {
   hint: string | null
   /** Where the operator goes to do something about it. */
   href: string
+}
+
+export type ChannelProgress = {
+  connected: number
+  total: number
+  /** First "off" channel, useful for "Next: connect X" CTAs. */
+  nextLabel: string | null
+}
+
+/**
+ * Lightweight progress count for the layout-level "Setup X/7" pill.
+ * Returns null when there's no shop yet (pre-onboarding) so the pill
+ * can hide cleanly. Same SELECT as getChannelStatusForCurrentShop —
+ * Next.js dedups within a single render so the dashboard page calling
+ * both isn't a double round-trip.
+ */
+export async function getChannelProgressForCurrentShop(): Promise<ChannelProgress | null> {
+  const shop = await getOptionalShop()
+  if (!shop) return null
+  const channels = await getChannelStatusForCurrentShop()
+  const connected = channels.filter((c) => c.status === "connected").length
+  const firstOff = channels.find((c) => c.status !== "connected")
+  return {
+    connected,
+    total: channels.length,
+    nextLabel: firstOff?.label ?? null,
+  }
 }
 
 /**

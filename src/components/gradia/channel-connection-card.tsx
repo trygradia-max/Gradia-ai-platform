@@ -40,7 +40,7 @@ export function ChannelConnectionCard({
   const total = channels.length
 
   return (
-    <Card className="border-border/80">
+    <Card id="channels" className="scroll-mt-20 border-border/80">
       <CardHeader className="space-y-1 pb-3">
         <CardTitle className="text-base font-medium">
           Channels
