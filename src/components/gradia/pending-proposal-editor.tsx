@@ -810,54 +810,56 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
           </>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+          {/* Primary action first on mobile so it lands under the
+              thumb without scrolling past secondary actions. */}
           <Button
             type="button"
-            variant="destructive"
-            onClick={handleDiscard}
+            onClick={handleApprove}
             disabled={anyPending}
-            className="gap-2"
+            className="order-1 h-11 gap-2 sm:order-3 sm:h-9"
           >
-            {pending === "discard" ? (
+            {pending === "approve" ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
             ) : (
-              <Trash2 className="size-4" aria-hidden />
+              <Check className="size-4" aria-hidden />
             )}
-            Discard
+            Save &amp; approve
           </Button>
-          <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSave}
+            disabled={anyPending}
+            className="order-2 h-11 gap-2 sm:order-2 sm:h-9"
+          >
+            {pending === "save" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : null}
+            Save
+          </Button>
+          <div className="order-3 grid grid-cols-2 gap-2 sm:order-1 sm:flex sm:items-center sm:gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDiscard}
+              disabled={anyPending}
+              className="h-11 gap-2 sm:h-9"
+            >
+              {pending === "discard" ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Trash2 className="size-4" aria-hidden />
+              )}
+              Discard
+            </Button>
             <Link
               href="/approvals"
-              className={buttonVariants({ variant: "ghost" })}
+              className={`${buttonVariants({ variant: "ghost" })} h-11 sm:h-9`}
               aria-disabled={anyPending}
             >
               Cancel
             </Link>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSave}
-              disabled={anyPending}
-              className="gap-2"
-            >
-              {pending === "save" ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : null}
-              Save
-            </Button>
-            <Button
-              type="button"
-              onClick={handleApprove}
-              disabled={anyPending}
-              className="gap-2"
-            >
-              {pending === "approve" ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : (
-                <Check className="size-4" aria-hidden />
-              )}
-              Save &amp; approve
-            </Button>
           </div>
         </div>
         <p className="text-xs text-muted-foreground">

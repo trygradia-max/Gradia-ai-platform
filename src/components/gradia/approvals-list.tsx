@@ -259,35 +259,37 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                 <p className="text-xs text-muted-foreground">
                   Caught {formatRelative(item.created_at)}
                 </p>
-                <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
                   <Button
                     onClick={() => handleDecision(item.id, "approve")}
                     disabled={anyBusy}
-                    className="gap-2 transition-transform duration-200 active:scale-[0.99]"
+                    className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99] sm:h-9 sm:flex-none"
                   >
                     {approveBusy ? (
                       <Loader2 className="size-4 animate-spin" aria-hidden />
                     ) : null}
                     Approve
                   </Button>
-                  <Link
-                    href={`/approvals/${item.id}`}
-                    className={buttonVariants({ variant: "outline" })}
-                    aria-disabled={anyBusy}
-                  >
-                    Edit
-                  </Link>
-                  <Button
-                    onClick={() => handleDecision(item.id, "reject")}
-                    disabled={anyBusy}
-                    variant="outline"
-                    className="gap-2 transition-transform duration-200 active:scale-[0.99]"
-                  >
-                    {rejectBusy ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                    ) : null}
-                    Reject
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2 sm:contents">
+                    <Link
+                      href={`/approvals/${item.id}`}
+                      className={`${buttonVariants({ variant: "outline" })} h-11 sm:h-9`}
+                      aria-disabled={anyBusy}
+                    >
+                      Edit
+                    </Link>
+                    <Button
+                      onClick={() => handleDecision(item.id, "reject")}
+                      disabled={anyBusy}
+                      variant="outline"
+                      className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99] sm:h-9"
+                    >
+                      {rejectBusy ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                      ) : null}
+                      Reject
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -388,7 +390,7 @@ function renderSmsHeader(proposal: SmsProposal) {
 
 function renderSmsBody(proposal: SmsProposal) {
   return (
-    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {proposal.body}
     </p>
   )
@@ -435,7 +437,7 @@ function renderEmailBody(proposal: EmailProposal) {
     ? `${proposal.body.slice(0, 240).trim()}…`
     : proposal.body
   return (
-    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {preview}
     </p>
   )
@@ -447,7 +449,7 @@ function renderInstagramHeader(proposal: InstagramDmProposal) {
     (proposal.recipient_id ? `IG ${proposal.recipient_id}` : "Unknown")
   return (
     <>
-      <p className="text-base font-medium">To {target}</p>
+      <p className="break-words text-base font-medium">To {target}</p>
       <p className="text-xs text-muted-foreground">
         {proposal.reason ?? "Outbound IG DM"}
       </p>
@@ -457,7 +459,7 @@ function renderInstagramHeader(proposal: InstagramDmProposal) {
 
 function renderInstagramBody(proposal: InstagramDmProposal) {
   return (
-    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {proposal.body}
     </p>
   )
@@ -469,7 +471,7 @@ function renderFacebookHeader(proposal: FacebookDmProposal) {
     (proposal.recipient_id ? `FB ${proposal.recipient_id}` : "Unknown")
   return (
     <>
-      <p className="text-base font-medium">To {target}</p>
+      <p className="break-words text-base font-medium">To {target}</p>
       <p className="text-xs text-muted-foreground">
         {proposal.reason ?? "Outbound FB DM"}
       </p>
@@ -479,7 +481,7 @@ function renderFacebookHeader(proposal: FacebookDmProposal) {
 
 function renderFacebookBody(proposal: FacebookDmProposal) {
   return (
-    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {proposal.body}
     </p>
   )
