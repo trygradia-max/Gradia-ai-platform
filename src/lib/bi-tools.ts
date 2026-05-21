@@ -305,18 +305,33 @@ async function revenueInWindow(
 ) {
   let q = supabase
     .from("payments")
-    .select("amount_cents, paid_at")
+    .select("amount_cents, refunded_amount_cents, paid_at")
     .eq("shop_id", shopId)
   if (params.days_back) {
     q = q.gte("paid_at", isoDaysBack(params.days_back))
   }
   const { data, error } = await q
   if (error) throw new Error(`revenue_in_window: ${error.message}`)
-  const rows = (data as { amount_cents: number; paid_at: string }[] | null) ?? []
-  const totalCents = rows.reduce((sum, r) => sum + (r.amount_cents ?? 0), 0)
+  const rows =
+    (data as {
+      amount_cents: number
+      refunded_amount_cents: number | null
+      paid_at: string
+    }[] | null) ?? []
+  const totalCents = rows.reduce(
+    (sum, r) =>
+      sum + Math.max(0, (r.amount_cents ?? 0) - (r.refunded_amount_cents ?? 0)),
+    0
+  )
+  const refundedCents = rows.reduce(
+    (sum, r) => sum + (r.refunded_amount_cents ?? 0),
+    0
+  )
   return {
     total_cents: totalCents,
     total_usd: (totalCents / 100).toFixed(2),
+    refunded_cents: refundedCents,
+    refunded_usd: (refundedCents / 100).toFixed(2),
     invoice_count: rows.length,
     window:
       params.days_back !== undefined

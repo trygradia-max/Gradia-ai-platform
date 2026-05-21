@@ -63,7 +63,8 @@ In Stripe Dashboard → **Developers → Webhooks → Add endpoint**:
 - **Endpoint URL:** `https://gradia-ai-platform.vercel.app/api/stripe/webhook`
 - **Listen to:** *Events on Connected accounts* (this is the key
   toggle — without it, events fire only for the platform account)
-- **Events to send:** `invoice.paid`, `invoice.payment_failed`
+- **Events to send:** `invoice.paid`, `invoice.payment_failed`,
+  `charge.refunded`
 
 Copy the endpoint's **Signing secret** (`whsec_...`) into the
 `STRIPE_WEBHOOK_SECRET` env above. Stripe will send a test event on
@@ -160,15 +161,17 @@ the Slack card → land on `/approvals/[id]` → add the email →
   we want to, add `application_fee_amount` on the invoice create
   call in `src/lib/stripe.ts`.
 - **Paid-status webhook live.** `/api/stripe/webhook` receives
-  `invoice.paid` and `invoice.payment_failed` events for every
-  connected account (Stripe routes Connect events through the
-  platform's webhook with `account` set). Signature verified per
-  Stripe spec (`Stripe-Signature` header, HMAC-SHA256 on
+  `invoice.paid`, `invoice.payment_failed`, and `charge.refunded`
+  events for every connected account (Stripe routes Connect events
+  through the platform's webhook with `account` set). Signature
+  verified per Stripe spec (`Stripe-Signature` header, HMAC-SHA256 on
   `${timestamp}.${rawBody}`, 5-min tolerance). Each event posts a
-  Slack notice ("Paid · Smith · $450" or "Payment failed · …") and
-  updates the originating interaction's metadata with
-  `stripe_payment_status` so a "Paid" badge can surface on the
-  customer detail timeline in a follow-up. Set
+  Slack notice ("Paid · Smith · $450" / "Payment failed · …" /
+  "Refunded · …") and updates the originating interaction's metadata
+  with `stripe_payment_status` (and `stripe_refund_status` when
+  applicable) so badges can surface on the customer detail timeline
+  in a follow-up. Refunds also net the local `payments` mirror so
+  revenue tiles + BI chat stop over-reporting. Set
   `STRIPE_WEBHOOK_SECRET` in Vercel env.
 - **No `/customers` view in Gradia.** Editing the customer's email
   on the charge card before approving works fine, but ongoing

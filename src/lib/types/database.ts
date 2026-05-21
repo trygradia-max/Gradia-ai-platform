@@ -175,6 +175,8 @@ export type PaymentRow = {
   stripe_invoice_number: string | null
   hosted_invoice_url: string | null
   paid_at: string
+  refunded_amount_cents: number
+  refunded_at: string | null
   created_at: string
 }
 

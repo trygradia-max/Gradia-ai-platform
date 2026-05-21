@@ -6,6 +6,7 @@
  * the event envelope. We act on:
  *   - invoice.paid             → log + Slack "Paid" notice
  *   - invoice.payment_failed   → log + Slack "Payment failed" notice
+ *   - charge.refunded          → net the refund off our local mirror
  *
  * Other events are ack'd with 200 and ignored. Stripe replays on
  * non-2xx, so silently ignoring is fine; we'll add handlers later
@@ -23,6 +24,7 @@ import { dispatchAgentEvent } from "@/lib/agent-events"
 import {
   sendPaymentFailedNotice,
   sendPaymentReceivedNotice,
+  sendPaymentRefundedNotice,
 } from "@/lib/slack"
 import { verifyStripeSignature } from "@/lib/stripe"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -51,11 +53,24 @@ type StripeInvoice = {
   } | null
 }
 
+type StripeCharge = {
+  id?: string
+  invoice?: string | null
+  amount?: number
+  amount_refunded?: number
+  refunded?: boolean
+  currency?: string | null
+  billing_details?: {
+    name?: string | null
+    email?: string | null
+  } | null
+}
+
 type StripeEvent = {
   id?: string
   type?: string
   account?: string
-  data?: { object?: StripeInvoice }
+  data?: { object?: StripeInvoice | StripeCharge }
 }
 
 export async function POST(request: Request) {
@@ -73,11 +88,16 @@ export async function POST(request: Request) {
   }
 
   const eventType = event.type ?? ""
+
+  if (eventType === "charge.refunded") {
+    return handleChargeRefunded(event)
+  }
+
   if (eventType !== "invoice.paid" && eventType !== "invoice.payment_failed") {
     return Response.json({ ok: true, ignored: eventType || "unknown" })
   }
 
-  const invoice = event.data?.object
+  const invoice = event.data?.object as StripeInvoice | undefined
   if (!invoice?.id) {
     return Response.json({ ok: true, ignored: "no invoice id" })
   }
@@ -247,6 +267,129 @@ export async function POST(request: Request) {
     } catch (err) {
       console.warn("[stripe webhook] payment_received dispatch failed:", err)
     }
+  }
+
+  revalidatePath("/dashboard")
+  return Response.json({ ok: true })
+}
+
+async function handleChargeRefunded(event: StripeEvent): Promise<Response> {
+  const charge = event.data?.object as StripeCharge | undefined
+  const invoiceId = charge?.invoice ?? null
+  const amountRefunded =
+    typeof charge?.amount_refunded === "number" ? charge.amount_refunded : 0
+
+  if (!invoiceId || amountRefunded <= 0) {
+    return Response.json({ ok: true, ignored: "no invoice id or no refund" })
+  }
+
+  const supabase = createServiceClient()
+
+  let shopId: string | null = null
+  if (event.account) {
+    const { data: shopRow } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("stripe_account_id", event.account)
+      .maybeSingle()
+    shopId = (shopRow as { id: string } | null)?.id ?? null
+  }
+
+  let q = supabase
+    .from("payments")
+    .select(
+      "id, shop_id, amount_cents, refunded_amount_cents, stripe_invoice_number, hosted_invoice_url, description"
+    )
+    .eq("stripe_invoice_id", invoiceId)
+  if (shopId) q = q.eq("shop_id", shopId)
+  const { data: paymentRow, error: paymentErr } = await q.maybeSingle()
+
+  if (paymentErr) {
+    console.error("[stripe webhook] refund lookup failed:", paymentErr)
+    return Response.json({ ok: true })
+  }
+  if (!paymentRow) {
+    console.warn(
+      "[stripe webhook] no payments row for refunded invoice:",
+      invoiceId
+    )
+    return Response.json({ ok: true, ignored: "no local payment" })
+  }
+
+  const payment = paymentRow as {
+    id: string
+    shop_id: string
+    amount_cents: number
+    refunded_amount_cents: number
+    stripe_invoice_number: string | null
+    hosted_invoice_url: string | null
+    description: string | null
+  }
+  // Clamp to gross so the CHECK constraint is happy if Stripe ever
+  // sends amount_refunded > amount_paid (e.g. tip refunds we don't
+  // track). Won't happen in our flow, but defensive is cheap.
+  const clampedRefund = Math.min(amountRefunded, payment.amount_cents)
+  const fullyRefunded = clampedRefund >= payment.amount_cents
+
+  if (clampedRefund === payment.refunded_amount_cents) {
+    // Already mirrored; Stripe is retrying or this is a duplicate event.
+    return Response.json({ ok: true, idempotent: true })
+  }
+
+  const { error: updateErr } = await supabase
+    .from("payments")
+    .update({
+      refunded_amount_cents: clampedRefund,
+      refunded_at: new Date().toISOString(),
+    })
+    .eq("id", payment.id)
+
+  if (updateErr) {
+    console.error("[stripe webhook] payments refund update failed:", updateErr)
+  }
+
+  // Mirror onto the originating interaction so the customer timeline
+  // shows it.
+  const { data: interactionRow } = await supabase
+    .from("interactions")
+    .select("id, metadata")
+    .eq("metadata->>stripe_invoice_id", invoiceId)
+    .eq("shop_id", payment.shop_id)
+    .maybeSingle()
+  if (interactionRow) {
+    const meta =
+      ((interactionRow as { metadata: Record<string, unknown> | null }).metadata) ??
+      {}
+    const nextMeta: Record<string, unknown> = {
+      ...meta,
+      stripe_refund_amount: clampedRefund,
+      stripe_refund_status: fullyRefunded ? "refunded" : "partially_refunded",
+      stripe_refund_at: new Date().toISOString(),
+    }
+    const { error: interactionErr } = await supabase
+      .from("interactions")
+      .update({ metadata: nextMeta })
+      .eq("id", (interactionRow as { id: string }).id)
+    if (interactionErr) {
+      console.error(
+        "[stripe webhook] refund interaction update failed:",
+        interactionErr
+      )
+    }
+  }
+
+  try {
+    await sendPaymentRefundedNotice({
+      customerName: charge?.billing_details?.name ?? null,
+      customerEmail: charge?.billing_details?.email ?? null,
+      refundedAmountCents: clampedRefund,
+      grossAmountCents: payment.amount_cents,
+      fullyRefunded,
+      invoiceNumber: payment.stripe_invoice_number,
+      invoiceUrl: payment.hosted_invoice_url,
+    })
+  } catch (err) {
+    console.error("[stripe webhook] refund Slack notice failed:", err)
   }
 
   revalidatePath("/dashboard")

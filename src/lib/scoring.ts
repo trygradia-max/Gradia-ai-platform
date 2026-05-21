@@ -167,7 +167,7 @@ export async function buildHeatContext(
       .in("customer_id", customerIds),
     supabase
       .from("payments")
-      .select("customer_id")
+      .select("customer_id, amount_cents, refunded_amount_cents")
       .eq("shop_id", shopId)
       .in("customer_id", customerIds),
   ])
@@ -184,8 +184,14 @@ export async function buildHeatContext(
   }
 
   const paidSet = new Set<string>()
-  for (const row of (paymentsRes.data as { customer_id: string | null }[] | null) ?? []) {
-    if (row.customer_id) paidSet.add(row.customer_id)
+  for (const row of (paymentsRes.data as {
+    customer_id: string | null
+    amount_cents: number | null
+    refunded_amount_cents: number | null
+  }[] | null) ?? []) {
+    if (!row.customer_id) continue
+    const net = (row.amount_cents ?? 0) - (row.refunded_amount_cents ?? 0)
+    if (net > 0) paidSet.add(row.customer_id)
   }
 
   return {

@@ -717,6 +717,70 @@ export async function sendPaymentFailedNotice(input: {
   await postWebhook(`Payment failed · ${target} · ${amount}`, blocks)
 }
 
+export async function sendPaymentRefundedNotice(input: {
+  customerName: string | null
+  customerEmail: string | null
+  refundedAmountCents: number
+  grossAmountCents: number
+  fullyRefunded: boolean
+  invoiceNumber: string | null
+  invoiceUrl: string | null
+}): Promise<void> {
+  const target =
+    input.customerName?.trim() ||
+    input.customerEmail?.trim() ||
+    "a customer"
+  const refund = formatMoney(input.refundedAmountCents)
+  const gross = formatMoney(input.grossAmountCents)
+  const heading = input.fullyRefunded
+    ? `Refunded · ${refund}`
+    : `Partial refund · ${refund} of ${gross}`
+  const blocks: Block[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: heading,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*Customer*\n${escapeMrkdwn(target)}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Invoice*\n${dashOr(input.invoiceNumber, "unnamed")}`,
+        },
+      ],
+    },
+  ]
+  if (input.invoiceUrl) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `<${input.invoiceUrl}|Open the invoice in Stripe>`,
+      },
+    })
+  }
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: input.fullyRefunded
+          ? "Gradia · funds returned to the customer"
+          : "Gradia · partial refund applied",
+      },
+    ],
+  })
+  await postWebhook(`${heading} · ${target}`, blocks)
+}
+
 export function chargeEditRequestedBlocks(p: {
   pendingActionId: string
   customerName: string
