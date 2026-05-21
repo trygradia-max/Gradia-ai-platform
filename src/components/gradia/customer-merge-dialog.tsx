@@ -204,7 +204,12 @@ export function CustomerMergeDialog({
         <DialogFooter className="gap-2 sm:gap-2">
           <DialogClose
             render={
-              <Button variant="ghost" type="button" disabled={merging} />
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={merging}
+                className="h-11 sm:h-9"
+              />
             }
           >
             Cancel
@@ -214,7 +219,7 @@ export function CustomerMergeDialog({
             variant="destructive"
             onClick={handleConfirm}
             disabled={!selected || merging}
-            className="gap-2"
+            className="h-11 gap-2 sm:h-9"
           >
             {merging ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />

@@ -113,14 +113,14 @@ export function AgentBuilder() {
               maxLength={2000}
               disabled={planning}
             />
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <p className="text-xs text-muted-foreground sm:order-1">
                 {problem.length} / 2000
               </p>
               <Button
                 type="submit"
                 disabled={planning || !problem.trim()}
-                className="gap-2"
+                className="h-11 gap-2 sm:order-2 sm:h-9"
               >
                 {planning ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -221,12 +221,13 @@ export function AgentBuilder() {
               {plan.human_in_the_loop_note}
             </p>
 
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={handleReset}
                 disabled={saving}
+                className="h-11 sm:h-9"
               >
                 Revise
               </Button>
@@ -234,7 +235,7 @@ export function AgentBuilder() {
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="gap-2"
+                className="h-11 gap-2 sm:h-9"
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />

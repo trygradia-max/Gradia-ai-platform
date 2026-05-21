@@ -151,14 +151,14 @@ export function AddLeadDialog() {
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
-              className="transition-colors duration-200"
+              className="h-11 transition-colors duration-200 sm:h-9"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={pending}
-              className="transition-transform duration-200 active:scale-[0.99]"
+              className="h-11 transition-transform duration-200 active:scale-[0.99] sm:h-9"
             >
               {pending ? "Saving…" : "Save lead"}
             </Button>
