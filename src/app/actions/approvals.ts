@@ -3,8 +3,14 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { executeApproval, executeRejection } from "@/lib/approvals"
+import {
+  executeApproval,
+  executeRejection,
+  type ApprovalResult,
+  type DecisionResult,
+} from "@/lib/approvals"
 import { requireShop, requireUser } from "@/lib/shop"
+import { dashboardDecidedBlocks, updateSlackForPending } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
 import type { LeadStatus, PendingActionRow } from "@/lib/types/database"
 
@@ -21,6 +27,12 @@ export async function approveFromDashboard(
 
   if (!result.ok) {
     return { ok: false, error: result.error }
+  }
+
+  // Best-effort Slack card refresh — never block the dashboard
+  // response on it.
+  if (result.status === "executed") {
+    void notifySlackApproved(pendingId, user.email ?? null, result)
   }
 
   revalidatePath("/dashboard")
@@ -40,8 +52,126 @@ export async function rejectFromDashboard(
     return { ok: false, error: result.error }
   }
 
+  if (result.status === "claimed") {
+    void notifySlackRejected(pendingId, user.email ?? null, result)
+  }
+
   revalidatePath("/approvals")
   return { ok: true, alreadyDecided: result.status === "already_decided" }
+}
+
+async function notifySlackApproved(
+  pendingId: string,
+  approverEmail: string | null,
+  result: Extract<ApprovalResult, { ok: true }>
+): Promise<void> {
+  if (result.status !== "executed") return
+  try {
+    await updateSlackForPending({
+      pendingActionId: pendingId,
+      text: `Approved · ${approvedSummary(result)}`,
+      blocks: dashboardDecidedBlocks({
+        headline: approvedHeadline(result),
+        summary: approvedSummary(result),
+        approverEmail,
+      }),
+    })
+  } catch (err) {
+    console.warn("[approvals] Slack update on approve failed:", err)
+  }
+}
+
+async function notifySlackRejected(
+  pendingId: string,
+  approverEmail: string | null,
+  result: Extract<DecisionResult, { ok: true }>
+): Promise<void> {
+  if (result.status !== "claimed") return
+  try {
+    await updateSlackForPending({
+      pendingActionId: pendingId,
+      text: `Dropped · ${rejectedSummary(result)}`,
+      blocks: dashboardDecidedBlocks({
+        headline: "Dropped",
+        summary: rejectedSummary(result),
+        approverEmail,
+      }),
+    })
+  } catch (err) {
+    console.warn("[approvals] Slack update on reject failed:", err)
+  }
+}
+
+function approvedHeadline(
+  result: Extract<ApprovalResult, { ok: true; status: "executed" }>
+): string {
+  switch (result.actionType) {
+    case "create_lead":
+      return "Lead approved"
+    case "add_note":
+      return "Note saved"
+    case "book_appointment":
+      return "Booking confirmed"
+    case "send_sms":
+      return "SMS sent"
+    case "send_email":
+      return "Email sent"
+    case "send_instagram_dm":
+      return "IG DM sent"
+    case "send_facebook_dm":
+      return "FB DM sent"
+    case "charge_customer":
+      return "Invoice sent"
+  }
+}
+
+function approvedSummary(
+  result: Extract<ApprovalResult, { ok: true; status: "executed" }>
+): string {
+  switch (result.actionType) {
+    case "create_lead":
+      return result.proposal.customer_name || "new lead"
+    case "add_note":
+      return (
+        result.proposal.customer_name?.trim() ||
+        result.proposal.content.slice(0, 60)
+      )
+    case "book_appointment":
+      return `${result.proposal.customer_name} · ${result.proposal.iso_start_time}`
+    case "send_sms":
+      return `${result.proposal.customer_name ?? result.proposal.to_phone}`
+    case "send_email":
+      return `${result.proposal.customer_name ?? result.proposal.to_email}`
+    case "send_instagram_dm":
+      return `${result.proposal.customer_name ?? result.proposal.recipient_id}`
+    case "send_facebook_dm":
+      return `${result.proposal.customer_name ?? result.proposal.recipient_id}`
+    case "charge_customer":
+      return `${result.proposal.customer_name || result.proposal.customer_email}`
+  }
+}
+
+function rejectedSummary(
+  result: Extract<DecisionResult, { ok: true; status: "claimed" }>
+): string {
+  switch (result.actionType) {
+    case "create_lead":
+      return result.proposal.customer_name || "lead proposal"
+    case "add_note":
+      return "note"
+    case "book_appointment":
+      return `booking for ${result.proposal.customer_name}`
+    case "send_sms":
+      return `SMS to ${result.proposal.customer_name ?? result.proposal.to_phone}`
+    case "send_email":
+      return `email to ${result.proposal.customer_name ?? result.proposal.to_email}`
+    case "send_instagram_dm":
+      return `IG DM to ${result.proposal.customer_name ?? result.proposal.recipient_id}`
+    case "send_facebook_dm":
+      return `FB DM to ${result.proposal.customer_name ?? result.proposal.recipient_id}`
+    case "charge_customer":
+      return `charge ${result.proposal.customer_name || result.proposal.customer_email}`
+  }
 }
 
 // ---------- Edit / save-and-approve ----------

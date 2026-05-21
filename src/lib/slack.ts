@@ -157,8 +157,33 @@ function approvalRequestBlocks(p: LeadApprovalPayload): Block[] {
 
 async function postWebhook(
   text: string,
-  blocks: Block[]
+  blocks: Block[],
+  opts?: { pendingActionId?: string }
 ): Promise<void> {
+  // Prefer chat.postMessage when a bot token + default channel are
+  // configured — it returns a message ts so dashboard-side decisions
+  // can later chat.update the card instead of leaving it stale.
+  // Falls back to the incoming-webhook path for shops that haven't
+  // upgraded.
+  const botToken = process.env.SLACK_BOT_TOKEN?.trim()
+  const channelId = process.env.SLACK_DEFAULT_CHANNEL_ID?.trim()
+  if (botToken && channelId) {
+    const result = await chatPostMessage({
+      botToken,
+      channelId,
+      text,
+      blocks,
+    })
+    if (result && opts?.pendingActionId) {
+      await storeSlackRef({
+        pendingActionId: opts.pendingActionId,
+        channelId: result.channel,
+        ts: result.ts,
+      })
+    }
+    return
+  }
+
   const webhookUrl = process.env.SLACK_WEBHOOK_URL?.trim()
   if (!webhookUrl) {
     return
@@ -180,6 +205,159 @@ async function postWebhook(
   }
 }
 
+async function chatPostMessage(input: {
+  botToken: string
+  channelId: string
+  text: string
+  blocks: Block[]
+}): Promise<{ ts: string; channel: string } | null> {
+  try {
+    const res = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json;charset=utf-8",
+        Authorization: `Bearer ${input.botToken}`,
+      },
+      body: JSON.stringify({
+        channel: input.channelId,
+        text: input.text,
+        blocks: input.blocks,
+      }),
+    })
+    const json = (await res.json()) as {
+      ok?: boolean
+      error?: string
+      ts?: string
+      channel?: string
+    }
+    if (!json.ok || !json.ts || !json.channel) {
+      console.error("[slack] chat.postMessage failed:", json.error ?? json)
+      return null
+    }
+    return { ts: json.ts, channel: json.channel }
+  } catch (err) {
+    console.error("[slack] chat.postMessage threw:", err)
+    return null
+  }
+}
+
+async function storeSlackRef(input: {
+  pendingActionId: string
+  channelId: string
+  ts: string
+}): Promise<void> {
+  // Lazy import to keep slack.ts free of supabase coupling for callers
+  // that just want webhook posts (BI chat, Stripe paid notices, etc.).
+  const { createServiceClient } = await import("@/lib/supabase/service")
+  const supabase = createServiceClient()
+  const { error } = await supabase
+    .from("pending_actions")
+    .update({
+      slack_channel: input.channelId,
+      slack_message_ts: input.ts,
+    })
+    .eq("id", input.pendingActionId)
+  if (error) {
+    console.error("[slack] failed to store slack ref:", error)
+  }
+}
+
+/**
+ * Minimal "decided" card we swap onto the original approval message
+ * when the operator decides from the Gradia dashboard. We don't try
+ * to echo every field here — the rich per-type "approved" blocks
+ * still get rendered when the decision happens via the Slack
+ * interactivity route. Dashboard decisions just collapse the original
+ * card to a status header + "Open Gradia" link so it stops looking
+ * like there's still work to do.
+ */
+export function dashboardDecidedBlocks(input: {
+  headline: string
+  summary: string
+  approverEmail?: string | null
+}): Block[] {
+  const who = input.approverEmail?.trim() || "an operator"
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: input.headline,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: escapeMrkdwn(input.summary),
+      },
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Decided by ${escapeMrkdwn(who)} via the dashboard · <${dashboardUrl()}|Open Gradia>`,
+        },
+      ],
+    },
+  ]
+}
+
+/**
+ * Updates the Slack card we originally posted for a pending action.
+ * No-op when SLACK_BOT_TOKEN isn't set or the pending row has no
+ * slack_message_ts (because it was posted via incoming webhook).
+ *
+ * Used by the dashboard approve/reject/edit flows so cards don't go
+ * stale when an operator decides outside Slack.
+ */
+export async function updateSlackForPending(input: {
+  pendingActionId: string
+  text: string
+  blocks: Block[]
+}): Promise<void> {
+  const botToken = process.env.SLACK_BOT_TOKEN?.trim()
+  if (!botToken) return
+
+  const { createServiceClient } = await import("@/lib/supabase/service")
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from("pending_actions")
+    .select("slack_channel, slack_message_ts")
+    .eq("id", input.pendingActionId)
+    .maybeSingle()
+  const row =
+    (data as {
+      slack_channel: string | null
+      slack_message_ts: string | null
+    } | null) ?? null
+  if (!row?.slack_channel || !row.slack_message_ts) return
+
+  try {
+    const res = await fetch("https://slack.com/api/chat.update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json;charset=utf-8",
+        Authorization: `Bearer ${botToken}`,
+      },
+      body: JSON.stringify({
+        channel: row.slack_channel,
+        ts: row.slack_message_ts,
+        text: input.text,
+        blocks: input.blocks,
+      }),
+    })
+    const json = (await res.json()) as { ok?: boolean; error?: string }
+    if (!json.ok) {
+      console.error("[slack] chat.update failed:", json.error ?? json)
+    }
+  } catch (err) {
+    console.error("[slack] chat.update threw:", err)
+  }
+}
+
 /**
  * Posts an Approve / Edit card via incoming webhook.
  * No-ops when SLACK_WEBHOOK_URL is unset. Throws only on Slack HTTP failures.
@@ -189,7 +367,8 @@ export async function sendLeadApprovalRequest(
 ): Promise<void> {
   await postWebhook(
     `Approval needed · ${p.customerName.trim() || "new lead"}`,
-    approvalRequestBlocks(p)
+    approvalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -274,7 +453,8 @@ export async function sendNoteApprovalRequest(
   const preview = p.content.slice(0, 60).replace(/\s+/g, " ")
   await postWebhook(
     `Approval needed · note: ${preview}`,
-    noteApprovalRequestBlocks(p)
+    noteApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -411,7 +591,8 @@ export async function sendBookingApprovalRequest(
 ): Promise<void> {
   await postWebhook(
     `Booking request · ${p.customerName.trim() || "new lead"}`,
-    bookingApprovalRequestBlocks(p)
+    bookingApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -551,7 +732,8 @@ export async function sendChargeApprovalRequest(
 ): Promise<void> {
   await postWebhook(
     `Approval needed · charge ${p.customerName.trim() || p.customerEmail} ${formatMoney(p.amountCents)}`,
-    chargeApprovalRequestBlocks(p)
+    chargeApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -909,7 +1091,8 @@ export async function sendEmailApprovalRequest(
 ): Promise<void> {
   await postWebhook(
     `Approval needed · email to ${p.customerName ?? p.toEmail}: ${truncate(p.subject, 60)}`,
-    emailApprovalRequestBlocks(p)
+    emailApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -1065,7 +1248,8 @@ export async function sendSmsApprovalRequest(
   const preview = p.body.slice(0, 60).replace(/\s+/g, " ")
   await postWebhook(
     `Approval needed · SMS to ${p.customerName ?? p.toPhone}: ${preview}`,
-    smsApprovalRequestBlocks(p)
+    smsApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -1155,7 +1339,8 @@ export async function sendInstagramDmApprovalRequest(
   const preview = p.body.slice(0, 60).replace(/\s+/g, " ")
   await postWebhook(
     `Approval needed · IG DM to ${p.customerName ?? p.recipientId}: ${preview}`,
-    instagramApprovalRequestBlocks(p)
+    instagramApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
@@ -1309,7 +1494,8 @@ export async function sendFacebookDmApprovalRequest(
   const preview = p.body.slice(0, 60).replace(/\s+/g, " ")
   await postWebhook(
     `Approval needed · FB DM to ${p.customerName ?? p.recipientId}: ${preview}`,
-    facebookApprovalRequestBlocks(p)
+    facebookApprovalRequestBlocks(p),
+    { pendingActionId: p.pendingActionId }
   )
 }
 
