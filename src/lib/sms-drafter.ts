@@ -45,8 +45,9 @@ Tone rules:
 - Acknowledge what they asked about specifically when the summary tells you what they want.
 
 Hard rules:
-- Never quote a price. We don't have our menu in scope here — if they asked about price, say "we'll send pricing in a sec" or similar.
+- Never quote a price unless the shop knowledge below explicitly states one. When in doubt, say "we'll send pricing in a sec".
 - Never confirm a specific time or commitment. The owner approves first; promising anything now is a lie.
+- If the shop knowledge mentions a policy that applies (deposit, weather, hours, etc.), weave it in naturally — don't invent policies that aren't there.
 - Always sign with: — Gradia at {shop_name}
 - Aim for under 160 characters total. If you need more, cap at 320.`
 
@@ -57,6 +58,9 @@ Their phone: {from}
 What they asked about (summary): {summary}
 Service mentioned (if any): {service}
 Vehicle mentioned (if any): {vehicle}
+
+--- SHOP KNOWLEDGE (cite only if relevant) ---
+{knowledge}
 
 --- THEIR MESSAGE ---
 {body}`
@@ -81,6 +85,8 @@ export async function draftSmsReply(input: {
   summary: string
   service: string
   vehicle: string
+  /** Optional shop knowledge snippet (FAQs, policies, brand voice). */
+  knowledge?: string
 }): Promise<string | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -96,6 +102,7 @@ export async function draftSmsReply(input: {
     summary: input.summary.trim() || "(no summary)",
     service: input.service.trim() || "(not specified)",
     vehicle: input.vehicle.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no knowledge yet — keep it generic)",
     body: input.body.trim().slice(0, MAX_BODY_CHARS) || "(empty body)",
   })
 

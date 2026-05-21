@@ -26,6 +26,10 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { findOrCreateCustomer, normalizePhone } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
+import {
+  formatKnowledgeForPrompt,
+  searchShopKnowledge,
+} from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
 import {
   sendLeadApprovalRequest,
@@ -190,6 +194,23 @@ async function proposeDraftReply(
   customerId: string | null,
   classification: SmsClassification
 ): Promise<void> {
+  // Ground the draft in any shop knowledge that overlaps with the
+  // inquiry. Best-effort — RAG failures fall through to a generic
+  // draft instead of blocking the auto-reply.
+  const knowledgeQuery = [
+    classification.summary,
+    classification.service,
+    sms.body,
+  ]
+    .filter((s): s is string => Boolean(s?.trim()))
+    .join(" ")
+  const matches = knowledgeQuery
+    ? await searchShopKnowledge(supabase, shop.id, knowledgeQuery, {
+        limit: 3,
+      })
+    : []
+  const knowledge = formatKnowledgeForPrompt(matches)
+
   const draft = await draftSmsReply({
     shopName: shop.name,
     from: fromPhone,
@@ -197,6 +218,7 @@ async function proposeDraftReply(
     summary: classification.summary,
     service: classification.service,
     vehicle: classification.vehicle,
+    knowledge,
   })
   if (!draft) return
 

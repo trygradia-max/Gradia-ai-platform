@@ -167,6 +167,22 @@ export type BiMessageRow = {
   created_at: string
 }
 
+export type ShopKnowledgeRow = {
+  id: string
+  shop_id: string
+  source_name: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export type ShopKnowledgeMatch = {
+  id: string
+  source_name: string
+  content: string
+  similarity: number
+}
+
 export type PaymentRow = {
   id: string
   shop_id: string

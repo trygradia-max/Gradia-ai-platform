@@ -4,6 +4,7 @@ import { Shield } from "lucide-react"
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
 import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
+import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
@@ -13,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { listShopKnowledge } from "@/lib/knowledge"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -70,6 +72,7 @@ export default async function SettingsPage({
     .single()
 
   const shop = (data as ShopRow | null) ?? null
+  const knowledgeEntries = await listShopKnowledge(supabase, shopCtx.id)
   const baseUrl = await resolveWebhookBaseUrl()
   const webhookUrl = `${baseUrl}/api/vapi/webhook`
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`
@@ -169,6 +172,8 @@ export default async function SettingsPage({
         webhookUrl={metaWebhookUrl}
         metaConfigured={metaConfigured}
       />
+
+      <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
 
       <Card className="border-border/80">
         <CardHeader className="flex flex-row items-center gap-3 space-y-0">

@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
+import { searchShopKnowledge } from "@/lib/knowledge"
 import { searchCustomerMemory } from "@/lib/memory"
 import {
   buildHeatContext,
@@ -112,6 +113,17 @@ const searchMemorySchema = z.object({
       "Free-text question to search across customer touchpoints. Used for 'what did Sam ask about?', 'who mentioned ceramic this week?', etc."
     ),
   limit: z.number().int().min(1).max(20).default(5),
+})
+
+const searchKnowledgeSchema = z.object({
+  query: z
+    .string()
+    .min(2)
+    .max(400)
+    .describe(
+      "Free-text question to look up in the shop's knowledge base (FAQs, policies, brand voice, deposit rules, etc.). Use when the owner asks about how the shop operates rather than what customers have done."
+    ),
+  limit: z.number().int().min(1).max(10).default(4),
 })
 
 const revenueSchema = z.object({
@@ -365,6 +377,17 @@ async function searchMemory(
   }
 }
 
+async function searchKnowledge(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: z.infer<typeof searchKnowledgeSchema>
+) {
+  const matches = await searchShopKnowledge(supabase, shopId, params.query, {
+    limit: params.limit,
+  })
+  return { query: params.query, matches }
+}
+
 // ---------- registry ----------
 
 export type BiToolHandler = (
@@ -432,6 +455,14 @@ export const BI_TOOLS: BiToolDefinition[] = [
     schema: searchMemorySchema,
     handler: (supabase, shopId, params) =>
       searchMemory(supabase, shopId, searchMemorySchema.parse(params)),
+  },
+  {
+    name: "search_knowledge",
+    description:
+      "Semantic search over the shop's own knowledge base — FAQs, policies, deposit rules, brand voice, hours, services we DON'T offer. Use when the question is about how the shop runs (vs what customers have done). Returns the most relevant entries with their similarity score.",
+    schema: searchKnowledgeSchema,
+    handler: (supabase, shopId, params) =>
+      searchKnowledge(supabase, shopId, searchKnowledgeSchema.parse(params)),
   },
   {
     name: "revenue_in_window",
