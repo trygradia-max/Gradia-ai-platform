@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
-import type { CustomAgentRow, ShopRow } from "@/lib/types/database"
+import type {
+  CustomAgentRow,
+  CustomAgentRunRow,
+  ShopRow,
+} from "@/lib/types/database"
 
 export type AgentStatus = "active" | "needs_setup" | "off"
 
@@ -312,4 +316,34 @@ export async function listCustomAgentsForCurrentShop(): Promise<
     .order("updated_at", { ascending: false })
   if (error) throw new Error(error.message)
   return (data as CustomAgentRow[] | null) ?? []
+}
+
+/**
+ * Most-recent agent_runs row per agent_id, for inline "Last run" badges
+ * on agent cards. Single query, then we keep the first row per agent
+ * in JS — at pilot scale (≤200 runs/shop) this is dramatically cheaper
+ * than a SELECT-per-agent fan-out.
+ */
+export async function getLatestRunsByAgent(
+  agentIds: string[]
+): Promise<Map<string, CustomAgentRunRow>> {
+  const map = new Map<string, CustomAgentRunRow>()
+  if (agentIds.length === 0) return map
+  const shop = await requireShop()
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("agent_runs")
+    .select("*")
+    .eq("shop_id", shop.id)
+    .in("agent_id", agentIds)
+    .order("created_at", { ascending: false })
+    .limit(agentIds.length * 20) // cap so a hot agent can't crowd out others
+  if (error) {
+    console.error("[agents] getLatestRunsByAgent failed:", error)
+    return map
+  }
+  for (const row of (data as CustomAgentRunRow[] | null) ?? []) {
+    if (!map.has(row.agent_id)) map.set(row.agent_id, row)
+  }
+  return map
 }

@@ -6,6 +6,7 @@ import { CustomAgentCard } from "@/components/gradia/custom-agent-card"
 import { buttonVariants } from "@/components/ui/button"
 import {
   getAgentsForCurrentShop,
+  getLatestRunsByAgent,
   listCustomAgentsForCurrentShop,
 } from "@/lib/data/agents"
 
@@ -16,6 +17,7 @@ export default async function AgentsPage() {
     getAgentsForCurrentShop(),
     listCustomAgentsForCurrentShop(),
   ])
+  const lastRuns = await getLatestRunsByAgent(customAgents.map((a) => a.id))
   const activeCount = agents.filter((a) => a.status === "active").length
 
   return (
@@ -83,7 +85,11 @@ export default async function AgentsPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {customAgents.map((agent) => (
-              <CustomAgentCard key={agent.id} agent={agent} />
+              <CustomAgentCard
+                key={agent.id}
+                agent={agent}
+                lastRun={lastRuns.get(agent.id) ?? null}
+              />
             ))}
           </div>
         )}

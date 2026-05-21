@@ -4,12 +4,14 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
   Bot,
+  CheckCircle2,
   Clock,
   Loader2,
   Play,
   Send,
   Target,
   Trash2,
+  XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -26,7 +28,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import type { AgentConfig, CustomAgentRow } from "@/lib/types/database"
+import type {
+  AgentConfig,
+  CustomAgentRow,
+  CustomAgentRunRow,
+} from "@/lib/types/database"
 
 const ACTION_LABEL: Record<AgentConfig["action"]["kind"], string> = {
   draft_sms: "Drafts an SMS for approval",
@@ -35,7 +41,38 @@ const ACTION_LABEL: Record<AgentConfig["action"]["kind"], string> = {
   flag_for_review: "Flags for review",
 }
 
-export function CustomAgentCard({ agent }: { agent: CustomAgentRow }) {
+function relativeAgo(iso: string): string {
+  const then = new Date(iso).getTime()
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000))
+  if (seconds < 60) return "just now"
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  if (days === 1) return "yesterday"
+  if (days < 14) return `${days} days ago`
+  const weeks = Math.round(days / 7)
+  return `${weeks} wk${weeks === 1 ? "" : "s"} ago`
+}
+
+function statsSummary(stats: Record<string, number> | null): string | null {
+  if (!stats) return null
+  const parts: string[] = []
+  for (const [k, v] of Object.entries(stats)) {
+    if (typeof v !== "number") continue
+    parts.push(`${v} ${k.replace(/_/g, " ")}`)
+  }
+  return parts.length > 0 ? parts.join(" · ") : null
+}
+
+export function CustomAgentCard({
+  agent,
+  lastRun,
+}: {
+  agent: CustomAgentRow
+  lastRun: CustomAgentRunRow | null
+}) {
   const router = useRouter()
   const [pending, setPending] = React.useState<
     null | "delete" | "run" | "toggle"
@@ -179,6 +216,36 @@ export function CustomAgentCard({ agent }: { agent: CustomAgentRow }) {
             </div>
           </div>
         </div>
+        {lastRun ? (
+          <div className="rounded-md border border-border/60 bg-muted/15 px-3 py-2">
+            <div className="flex items-start gap-2">
+              {lastRun.fired ? (
+                <CheckCircle2
+                  className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden
+                />
+              ) : (
+                <XCircle
+                  className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <span>Last run</span>
+                  <span className="tabular-nums normal-case tracking-normal">
+                    {relativeAgo(lastRun.created_at)}
+                  </span>
+                </div>
+                <p className="text-sm">
+                  {lastRun.fired
+                    ? (statsSummary(lastRun.stats) ?? "Fired.")
+                    : (lastRun.reason ?? "Skipped — nothing matched.")}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-1">
           <AgentRunsSheet agentId={agent.id} agentName={agent.name} />
           <Button
