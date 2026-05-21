@@ -88,12 +88,12 @@ export function CustomersTable({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="min-w-[160px] pl-6">Name</TableHead>
-                <TableHead>Phone</TableHead>
+                <TableHead className="min-w-[140px] pl-4 sm:pl-6">Name</TableHead>
+                <TableHead className="hidden sm:table-cell">Phone</TableHead>
                 <TableHead className="hidden md:table-cell">Email</TableHead>
                 <TableHead className="hidden lg:table-cell">Channels</TableHead>
                 <TableHead className="text-right">Leads</TableHead>
-                <TableHead className="pr-6 text-right">Last heard</TableHead>
+                <TableHead className="pr-4 text-right sm:pr-6">Last heard</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -114,15 +114,20 @@ export function CustomersTable({
                     key={c.id}
                     className="cursor-pointer transition-colors duration-150 hover:bg-muted/40"
                   >
-                    <TableCell className="max-w-[200px] pl-6 font-medium">
+                    <TableCell className="max-w-[200px] pl-4 font-medium sm:pl-6">
                       <Link
                         href={`/customers/${c.id}`}
-                        className="block truncate"
+                        className="block"
                       >
-                        {c.name?.trim() || "Unknown"}
+                        <span className="block truncate">
+                          {c.name?.trim() || "Unknown"}
+                        </span>
+                        <span className="block truncate text-xs tabular-nums font-normal text-muted-foreground sm:hidden">
+                          {c.phone ?? "—"}
+                        </span>
                       </Link>
                     </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
+                    <TableCell className="hidden tabular-nums text-muted-foreground sm:table-cell">
                       {c.phone ?? "—"}
                     </TableCell>
                     <TableCell className="hidden max-w-[240px] truncate text-muted-foreground md:table-cell">
@@ -134,7 +139,7 @@ export function CustomersTable({
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {c.lead_count}
                     </TableCell>
-                    <TableCell className="pr-6 text-right text-muted-foreground tabular-nums">
+                    <TableCell className="pr-4 text-right text-muted-foreground tabular-nums sm:pr-6">
                       {formatRelative(c.last_seen_at)}
                     </TableCell>
                   </TableRow>

@@ -73,7 +73,7 @@ export function SmsQuickReply({
             <Button
               type="submit"
               disabled={pending || !body.trim()}
-              className="gap-2"
+              className="h-11 w-full gap-2 sm:h-9 sm:w-auto"
             >
               {pending ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />

@@ -70,13 +70,13 @@ export function LiveLeadFeed({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="min-w-[120px] pl-6">Customer</TableHead>
-              <TableHead>Phone</TableHead>
+              <TableHead className="min-w-[120px] pl-4 sm:pl-6">Customer</TableHead>
+              <TableHead className="hidden sm:table-cell">Phone</TableHead>
               <TableHead className="hidden md:table-cell">Vehicle</TableHead>
               <TableHead className="hidden lg:table-cell">Notes</TableHead>
               {hasHeat ? <TableHead>Heat</TableHead> : null}
               <TableHead>Status</TableHead>
-              <TableHead className="pr-6 text-right">When</TableHead>
+              <TableHead className="pr-4 text-right sm:pr-6">When</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -97,10 +97,13 @@ export function LiveLeadFeed({
                     key={lead.id}
                     className="transition-colors duration-150"
                   >
-                    <TableCell className="max-w-[180px] pl-6 font-medium">
-                      {lead.customer_name}
+                    <TableCell className="max-w-[180px] pl-4 font-medium sm:pl-6">
+                      <p className="truncate">{lead.customer_name}</p>
+                      <p className="tabular-nums text-xs text-muted-foreground sm:hidden">
+                        {lead.phone}
+                      </p>
                     </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
+                    <TableCell className="hidden tabular-nums text-muted-foreground sm:table-cell">
                       {lead.phone}
                     </TableCell>
                     <TableCell className="hidden max-w-[220px] truncate text-muted-foreground md:table-cell">
@@ -119,7 +122,7 @@ export function LiveLeadFeed({
                         {statusLabel[lead.status]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="pr-6 text-right text-muted-foreground tabular-nums">
+                    <TableCell className="pr-4 text-right text-muted-foreground tabular-nums sm:pr-6">
                       {formatWhen(lead.created_at)}
                     </TableCell>
                   </TableRow>
