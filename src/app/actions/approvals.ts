@@ -126,6 +126,18 @@ const instagramDmPatchSchema = z.object({
   reason: z.string().trim().max(200).nullable(),
 })
 
+const facebookDmPatchSchema = z.object({
+  type: z.literal("send_facebook_dm"),
+  recipient_id: z
+    .string()
+    .trim()
+    .min(1, "Recipient ID is required.")
+    .max(120),
+  body: z.string().trim().min(1, "Message can't be empty.").max(900),
+  customer_name: z.string().trim().max(200).nullable(),
+  reason: z.string().trim().max(200).nullable(),
+})
+
 const patchSchema = z.discriminatedUnion("type", [
   leadPatchSchema,
   notePatchSchema,
@@ -134,6 +146,7 @@ const patchSchema = z.discriminatedUnion("type", [
   chargePatchSchema,
   emailPatchSchema,
   instagramDmPatchSchema,
+  facebookDmPatchSchema,
 ])
 
 export type ProposalPatch = z.infer<typeof patchSchema>
@@ -244,12 +257,20 @@ export async function updatePendingProposal(
                     customer_name: parsed.data.customer_name,
                     reason: parsed.data.reason,
                   }
-                : {
-                    ...current.payload,
-                    content: parsed.data.content,
-                    customer_name: parsed.data.customer_name,
-                    phone: parsed.data.phone,
-                  }
+                : parsed.data.type === "send_facebook_dm"
+                  ? {
+                      ...current.payload,
+                      recipient_id: parsed.data.recipient_id,
+                      body: parsed.data.body,
+                      customer_name: parsed.data.customer_name,
+                      reason: parsed.data.reason,
+                    }
+                  : {
+                      ...current.payload,
+                      content: parsed.data.content,
+                      customer_name: parsed.data.customer_name,
+                      phone: parsed.data.phone,
+                    }
 
   const { data: updated, error: updateErr } = await supabase
     .from("pending_actions")

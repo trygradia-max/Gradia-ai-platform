@@ -151,6 +151,52 @@ export async function sendInstagramDirectMessage(input: {
   }
 }
 
+/**
+ * Sends a Facebook Page DM. Same Graph endpoint as IG
+ * (POST /me/messages) — only the access token differs (FB Page token
+ * vs the IG-linked Page token). Kept as a separate function so the
+ * approval engine can dispatch on the action type without branching
+ * on channel inside one wrapper.
+ */
+export async function sendFacebookPageMessage(input: {
+  pageAccessToken: string
+  recipientId: string
+  text: string
+}): Promise<MetaSendResult> {
+  const text = input.text.trim()
+  if (!text) throw new MetaSendError(400, "Empty message body")
+  if (!input.recipientId.trim()) {
+    throw new MetaSendError(400, "Missing recipient (PSID)")
+  }
+  if (!input.pageAccessToken.trim()) {
+    throw new MetaSendError(500, "Missing FB page access token")
+  }
+
+  const url = `${GRAPH_API_BASE}/me/messages?access_token=${encodeURIComponent(input.pageAccessToken)}`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      recipient: { id: input.recipientId.trim() },
+      message: { text },
+    }),
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    throw new MetaSendError(res.status, `FB send failed: ${raw.slice(0, 300)}`)
+  }
+  let parsed: { message_id?: string; recipient_id?: string }
+  try {
+    parsed = JSON.parse(raw) as { message_id?: string; recipient_id?: string }
+  } catch {
+    throw new MetaSendError(500, "FB send response was not JSON")
+  }
+  return {
+    messageId: parsed.message_id ?? null,
+    recipientId: parsed.recipient_id ?? input.recipientId,
+  }
+}
+
 export function extractMessageEvents(
   payload: MetaWebhookPayload
 ): {

@@ -22,6 +22,7 @@ import {
   classifyInstagramDm,
   type InstagramClassification,
 } from "@/lib/instagram-classifier"
+import { draftFacebookReply } from "@/lib/facebook-drafter"
 import { draftInstagramReply } from "@/lib/instagram-drafter"
 import { recordInteraction } from "@/lib/memory"
 import {
@@ -31,6 +32,7 @@ import {
   type MetaWebhookPayload,
 } from "@/lib/meta"
 import {
+  sendFacebookDmApprovalRequest,
   sendInstagramDmApprovalRequest,
   sendLeadApprovalRequest,
 } from "@/lib/slack"
@@ -88,23 +90,37 @@ export async function POST(request: Request) {
 
   let proposed = 0
   for (const { pageId, events } of buckets) {
-    const { data: shopRow, error: shopErr } = await supabase
+    let channel: "instagram" | "facebook" = "instagram"
+    const { data: igRow, error: igErr } = await supabase
       .from("shops")
       .select("*")
       .eq("instagram_page_id", pageId)
       .maybeSingle()
-    if (shopErr) {
-      console.error("[meta webhook] shop lookup failed:", shopErr)
+    if (igErr) {
+      console.error("[meta webhook] IG shop lookup failed:", igErr)
       continue
     }
-    const shop = (shopRow as ShopRow | null) ?? null
+    let shop = (igRow as ShopRow | null) ?? null
+    if (!shop) {
+      const { data: fbRow, error: fbErr } = await supabase
+        .from("shops")
+        .select("*")
+        .eq("facebook_page_id", pageId)
+        .maybeSingle()
+      if (fbErr) {
+        console.error("[meta webhook] FB shop lookup failed:", fbErr)
+        continue
+      }
+      shop = (fbRow as ShopRow | null) ?? null
+      if (shop) channel = "facebook"
+    }
     if (!shop) {
       console.warn("[meta webhook] no shop matched page_id", { pageId })
       continue
     }
     for (const event of events) {
       try {
-        const fired = await handleMessage(supabase, shop, event)
+        const fired = await handleMessage(supabase, shop, event, channel)
         if (fired) proposed += 1
       } catch (err) {
         console.error("[meta webhook] handle failed:", err)
@@ -123,15 +139,17 @@ export async function POST(request: Request) {
 async function handleMessage(
   supabase: SupabaseClient,
   shop: ShopRow,
-  event: MetaMessageEvent
+  event: MetaMessageEvent,
+  channel: "instagram" | "facebook"
 ): Promise<boolean> {
   // Use the page-scoped sender id as the dedup key on customers.
-  // We don't get the @handle in the webhook; resolving it requires
-  // an extra Graph API call. For pilot we store the opaque sender id
-  // and live with it — the dedup property is what we need.
+  // For IG that's the IG sender id; for FB that's the PSID. We store
+  // them on different customer columns so a shop using both channels
+  // doesn't accidentally merge an IG sender with a Messenger PSID.
   const senderKey = event.senderId
   const customerResult = await findOrCreateCustomer(supabase, shop.id, {
-    instagramHandle: senderKey,
+    instagramHandle: channel === "instagram" ? senderKey : null,
+    facebookId: channel === "facebook" ? senderKey : null,
   })
   const customerId = customerResult.ok ? customerResult.customer.id : null
 
@@ -139,7 +157,7 @@ async function handleMessage(
   await recordInteraction(supabase, {
     shopId: shop.id,
     customerId,
-    channel: "instagram",
+    channel,
     role: "customer",
     content: body,
     metadata: {
@@ -167,11 +185,18 @@ async function handleMessage(
 
   if (!classification || !classification.is_lead) return false
 
-  await proposeLead(supabase, shop, event, customerId, classification)
+  await proposeLead(supabase, shop, event, customerId, classification, channel)
   // Best-effort auto-draft reply. Drafter or Slack failures don't
   // block the lead proposal that just landed.
   try {
-    await proposeDraftReply(supabase, shop, event, customerId, classification)
+    await proposeDraftReply(
+      supabase,
+      shop,
+      event,
+      customerId,
+      classification,
+      channel
+    )
   } catch (err) {
     console.warn("[meta webhook] auto-draft reply failed:", err)
   }
@@ -183,34 +208,45 @@ async function proposeDraftReply(
   shop: ShopRow,
   event: MetaMessageEvent,
   customerId: string | null,
-  classification: InstagramClassification
+  classification: InstagramClassification,
+  channel: "instagram" | "facebook"
 ): Promise<void> {
-  const draft = await draftInstagramReply({
+  const drafterInput = {
     shopName: shop.name,
     customerName: classification.customer_name,
     vehicle: classification.vehicle,
     service: classification.service,
     body: event.text ?? "",
-  })
+  }
+  const draft =
+    channel === "instagram"
+      ? await draftInstagramReply(drafterInput)
+      : await draftFacebookReply(drafterInput)
   if (!draft) return
 
   const customerName = classification.customer_name?.trim() || null
+  const channelLabel = channel === "instagram" ? "IG" : "FB"
   const reason = classification.service?.trim()
-    ? `Reply to IG inquiry about ${classification.service.trim()}`
-    : "Reply to inbound IG DM"
+    ? `Reply to ${channelLabel} inquiry about ${classification.service.trim()}`
+    : `Reply to inbound ${channelLabel} DM`
+
+  const actionType =
+    channel === "instagram" ? "send_instagram_dm" : "send_facebook_dm"
+  const source =
+    channel === "instagram" ? "instagram_auto_draft" : "facebook_auto_draft"
 
   const { data: pending, error: pendingErr } = await supabase
     .from("pending_actions")
     .insert({
       shop_id: shop.id,
-      action_type: "send_instagram_dm",
+      action_type: actionType,
       payload: {
         recipient_id: event.senderId,
         body: draft,
         customer_name: customerName,
         customer_id: customerId,
         reason,
-        source: "instagram_auto_draft",
+        source,
         meta_inbound_message_id: event.messageId,
       },
       requested_by: shop.owner_id,
@@ -219,22 +255,30 @@ async function proposeDraftReply(
     .single()
   if (pendingErr || !pending) {
     console.error(
-      "[meta webhook] send_instagram_dm pending_action insert failed:",
+      `[meta webhook] ${actionType} pending_action insert failed:`,
       pendingErr
     )
     return
   }
 
+  const slackPayload = {
+    pendingActionId: pending.id,
+    recipientId: event.senderId,
+    customerName,
+    body: draft,
+    reason,
+  }
   try {
-    await sendInstagramDmApprovalRequest({
-      pendingActionId: pending.id,
-      recipientId: event.senderId,
-      customerName,
-      body: draft,
-      reason,
-    })
+    if (channel === "instagram") {
+      await sendInstagramDmApprovalRequest(slackPayload)
+    } else {
+      await sendFacebookDmApprovalRequest(slackPayload)
+    }
   } catch (err) {
-    console.error("[meta webhook] IG draft Slack send failed:", err)
+    console.error(
+      `[meta webhook] ${channelLabel} draft Slack send failed:`,
+      err
+    )
   }
 }
 
@@ -243,10 +287,13 @@ async function proposeLead(
   shop: ShopRow,
   event: MetaMessageEvent,
   customerId: string | null,
-  classification: InstagramClassification
+  classification: InstagramClassification,
+  channel: "instagram" | "facebook"
 ): Promise<void> {
+  const channelLabel = channel === "instagram" ? "IG" : "FB"
   const customerName =
-    classification.customer_name?.trim() || `IG ${event.senderId}`
+    classification.customer_name?.trim() ||
+    `${channelLabel} ${event.senderId}`
   const phone = classification.phone?.trim() || ""
   const vehicle = classification.vehicle?.trim() || null
   const service = classification.service?.trim() || null
@@ -257,9 +304,12 @@ async function proposeLead(
     summary,
     service ? `Requested: ${service}` : null,
     bodyPreview ? `Said: "${bodyPreview}"` : null,
-    `IG sender: ${event.senderId}`,
+    `${channelLabel} sender: ${event.senderId}`,
   ].filter((s): s is string => Boolean(s))
   const pinNotes = pinNotesParts.join(" — ") || null
+
+  const senderIdKey =
+    channel === "instagram" ? "instagram_sender_id" : "facebook_sender_id"
 
   const { data: pending, error: pendingErr } = await supabase
     .from("pending_actions")
@@ -272,9 +322,9 @@ async function proposeLead(
         car_info: vehicle,
         pin_notes: pinNotes,
         status: "new",
-        source: "instagram",
+        source: channel,
         meta_message_id: event.messageId,
-        instagram_sender_id: event.senderId,
+        [senderIdKey]: event.senderId,
       },
       requested_by: shop.owner_id,
     })
@@ -290,7 +340,7 @@ async function proposeLead(
     supabase,
     shop.id,
     customerId,
-    "instagram"
+    channel
   )
 
   try {

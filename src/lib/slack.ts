@@ -1223,6 +1223,160 @@ export function instagramDmEditRequestedBlocks(p: {
   ]
 }
 
+export type FacebookDmApprovalPayload = {
+  pendingActionId: string
+  recipientId: string
+  customerName: string | null
+  body: string
+  reason: string | null
+}
+
+function facebookFieldBlocks(p: FacebookDmApprovalPayload): Block[] {
+  return [
+    {
+      type: "section",
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*To*\n${dashOr(
+            p.customerName ? `${p.customerName} (FB ${p.recipientId})` : `FB ${p.recipientId}`,
+            "Unknown"
+          )}`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*Reason*\n${dashOr(p.reason, "Not specified")}`,
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Message*\n${dashOr(p.body, "(empty)")}`,
+      },
+    },
+  ]
+}
+
+function facebookApprovalRequestBlocks(
+  p: FacebookDmApprovalPayload
+): Block[] {
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Approval needed: Outbound FB DM",
+        emoji: true,
+      },
+    },
+    ...facebookFieldBlocks(p),
+    {
+      type: "actions",
+      block_id: "facebook_dm_approval",
+      elements: [
+        {
+          type: "button",
+          action_id: "approve_lead",
+          text: { type: "plain_text", text: "Approve & send", emoji: true },
+          style: "primary",
+          value: p.pendingActionId,
+        },
+        {
+          type: "button",
+          action_id: "edit_lead",
+          text: { type: "plain_text", text: "Edit", emoji: true },
+          value: p.pendingActionId,
+        },
+      ],
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Gradia · sends from our connected Facebook page the moment you approve",
+        },
+      ],
+    },
+  ]
+}
+
+export async function sendFacebookDmApprovalRequest(
+  p: FacebookDmApprovalPayload
+): Promise<void> {
+  const preview = p.body.slice(0, 60).replace(/\s+/g, " ")
+  await postWebhook(
+    `Approval needed · FB DM to ${p.customerName ?? p.recipientId}: ${preview}`,
+    facebookApprovalRequestBlocks(p)
+  )
+}
+
+export function facebookDmApprovedBlocks(p: {
+  pendingActionId: string
+  recipientId: string
+  customerName: string | null
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "FB DM sent", emoji: true },
+    },
+    ...facebookFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      recipientId: p.recipientId,
+      customerName: p.customerName,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Approved by <@${p.approverSlackId}> · on its way · <${dashboardUrl()}|Open Gradia>`,
+        },
+      ],
+    },
+  ]
+}
+
+export function facebookDmEditRequestedBlocks(p: {
+  pendingActionId: string
+  recipientId: string
+  customerName: string | null
+  body: string
+  reason: string | null
+  approverSlackId: string
+}): Block[] {
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "Edit requested", emoji: true },
+    },
+    ...facebookFieldBlocks({
+      pendingActionId: p.pendingActionId,
+      recipientId: p.recipientId,
+      customerName: p.customerName,
+      body: p.body,
+      reason: p.reason,
+    }),
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<@${p.approverSlackId}> requested edits — <${pendingActionUrl(p.pendingActionId)}|open the editor in Gradia>.`,
+        },
+      ],
+    },
+  ]
+}
+
 export function smsApprovedBlocks(p: {
   pendingActionId: string
   toPhone: string

@@ -2,6 +2,7 @@ import { headers } from "next/headers"
 import { Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
+import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
 import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
@@ -158,6 +159,13 @@ export default async function SettingsPage({
         initialPageId={shop?.instagram_page_id ?? null}
         initialBusinessAccountId={shop?.instagram_business_account_id ?? null}
         initialHandle={shop?.instagram_account_handle ?? null}
+        webhookUrl={metaWebhookUrl}
+        metaConfigured={metaConfigured}
+      />
+
+      <FacebookSettingsCard
+        initialPageId={shop?.facebook_page_id ?? null}
+        initialPageName={shop?.facebook_page_name ?? null}
         webhookUrl={metaWebhookUrl}
         metaConfigured={metaConfigured}
       />

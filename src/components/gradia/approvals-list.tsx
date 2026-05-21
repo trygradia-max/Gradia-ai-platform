@@ -69,6 +69,13 @@ type InstagramDmProposal = {
   reason: string | null
 }
 
+type FacebookDmProposal = {
+  recipient_id: string
+  body: string
+  customer_name: string | null
+  reason: string | null
+}
+
 function formatMoney(cents: number): string {
   const dollars = cents / 100
   return new Intl.NumberFormat("en-US", {
@@ -157,6 +164,7 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
         const isCharge = item.action_type === "charge_customer"
         const isEmail = item.action_type === "send_email"
         const isInstagramDm = item.action_type === "send_instagram_dm"
+        const isFacebookDm = item.action_type === "send_facebook_dm"
 
         return (
           <li key={item.id}>
@@ -184,9 +192,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                                 ? renderInstagramHeader(
                                     item.payload as unknown as InstagramDmProposal
                                   )
-                                : renderLeadHeader(
-                                    item.payload as unknown as LeadProposal
-                                  )}
+                                : isFacebookDm
+                                  ? renderFacebookHeader(
+                                      item.payload as unknown as FacebookDmProposal
+                                    )
+                                  : renderLeadHeader(
+                                      item.payload as unknown as LeadProposal
+                                    )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {isNote ? (
@@ -206,6 +218,9 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                     ) : null}
                     {isInstagramDm ? (
                       <Badge variant="secondary">IG DM</Badge>
+                    ) : null}
+                    {isFacebookDm ? (
+                      <Badge variant="secondary">FB DM</Badge>
                     ) : null}
                     <Badge variant={isEditRequested ? "outline" : "default"}>
                       {isEditRequested ? "Edit needed" : "Pending"}
@@ -234,9 +249,13 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                             ? renderInstagramBody(
                                 item.payload as unknown as InstagramDmProposal
                               )
-                            : renderLeadBody(
-                                item.payload as unknown as LeadProposal
-                              )}
+                            : isFacebookDm
+                              ? renderFacebookBody(
+                                  item.payload as unknown as FacebookDmProposal
+                                )
+                              : renderLeadBody(
+                                  item.payload as unknown as LeadProposal
+                                )}
                 <p className="text-xs text-muted-foreground">
                   Caught {formatRelative(item.created_at)}
                 </p>
@@ -437,6 +456,28 @@ function renderInstagramHeader(proposal: InstagramDmProposal) {
 }
 
 function renderInstagramBody(proposal: InstagramDmProposal) {
+  return (
+    <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+      {proposal.body}
+    </p>
+  )
+}
+
+function renderFacebookHeader(proposal: FacebookDmProposal) {
+  const target =
+    proposal.customer_name?.trim() ||
+    (proposal.recipient_id ? `FB ${proposal.recipient_id}` : "Unknown")
+  return (
+    <>
+      <p className="text-base font-medium">To {target}</p>
+      <p className="text-xs text-muted-foreground">
+        {proposal.reason ?? "Outbound FB DM"}
+      </p>
+    </>
+  )
+}
+
+function renderFacebookBody(proposal: FacebookDmProposal) {
   return (
     <p className="whitespace-pre-line rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
       {proposal.body}

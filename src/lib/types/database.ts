@@ -18,6 +18,9 @@ export type ShopRow = {
   instagram_page_id: string | null
   instagram_page_access_token_enc: string | null
   instagram_account_handle: string | null
+  facebook_page_id: string | null
+  facebook_page_access_token_enc: string | null
+  facebook_page_name: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -83,6 +86,7 @@ export type PendingActionType =
   | "charge_customer"
   | "send_email"
   | "send_instagram_dm"
+  | "send_facebook_dm"
 
 export type PendingActionStatus =
   | "pending"

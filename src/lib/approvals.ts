@@ -17,7 +17,10 @@ import { createCalendarEvent, sendEmailMessage } from "@/lib/aurinko"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
-import { sendInstagramDirectMessage } from "@/lib/meta"
+import {
+  sendFacebookPageMessage,
+  sendInstagramDirectMessage,
+} from "@/lib/meta"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { chargeCustomerViaInvoice, type StripeInvoice } from "@/lib/stripe"
@@ -96,6 +99,16 @@ export type InstagramDmProposal = {
   reason: string | null
 }
 
+export type FacebookDmProposal = {
+  /** PSID (page-scoped sender id) we DM back. Same value we stored as
+   *  the customer's facebook_id on inbound. */
+  recipient_id: string
+  body: string
+  customer_name: string | null
+  customer_id: string | null
+  reason: string | null
+}
+
 type ClaimedAction = {
   id: string
   shop_id: string
@@ -150,6 +163,13 @@ export type ApprovalSuccess =
       proposal: InstagramDmProposal
       messageId: string | null
     }
+  | {
+      status: "executed"
+      actionType: "send_facebook_dm"
+      resultId: string
+      proposal: FacebookDmProposal
+      messageId: string | null
+    }
   | { status: "already_decided" }
 
 export type ApprovalResult =
@@ -175,6 +195,11 @@ export type DecisionSuccess =
       status: "claimed"
       actionType: "send_instagram_dm"
       proposal: InstagramDmProposal
+    }
+  | {
+      status: "claimed"
+      actionType: "send_facebook_dm"
+      proposal: FacebookDmProposal
     }
   | { status: "already_decided" }
 
@@ -369,6 +394,8 @@ export async function executeApproval(
       return executeSendEmail(supabase, claimed)
     case "send_instagram_dm":
       return executeSendInstagramDm(supabase, claimed)
+    case "send_facebook_dm":
+      return executeSendFacebookDm(supabase, claimed)
     default:
       await rollbackClaim(supabase, claimed.id)
       return {
@@ -935,6 +962,85 @@ async function executeSendInstagramDm(
   }
 }
 
+async function executeSendFacebookDm(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as FacebookDmProposal
+
+  if (!proposal.recipient_id?.trim() || !proposal.body?.trim()) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: "FB DM needs both recipient and body." }
+  }
+
+  const shop = await loadShopWithToken(supabase, claimed.shop_id)
+  const pageToken = tryDecryptSecret(shop?.facebook_page_access_token_enc)
+  if (!shop || !pageToken) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Connect Facebook in /settings before approving DMs.",
+    }
+  }
+
+  let sentId: string | null
+  try {
+    const sent = await sendFacebookPageMessage({
+      pageAccessToken: pageToken,
+      recipientId: proposal.recipient_id,
+      text: proposal.body,
+    })
+    sentId = sent.messageId
+  } catch (err) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? `Meta: ${err.message}` : "FB DM send failed.",
+    }
+  }
+
+  // recipient_id IS the PSID we stored as customers.facebook_id on inbound.
+  let customerId = proposal.customer_id
+  if (!customerId) {
+    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
+      facebookId: proposal.recipient_id,
+    })
+    if (customer) customerId = customer.id
+  }
+
+  const interaction = await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId,
+    channel: "facebook",
+    role: "gradia",
+    content: proposal.body,
+    metadata: {
+      direction: "outbound",
+      meta_message_id: sentId,
+      recipient_id: proposal.recipient_id,
+      pending_action_id: claimed.id,
+      reason: proposal.reason ?? null,
+    },
+  })
+
+  const resultId = interaction.ok ? interaction.id : (sentId ?? claimed.id)
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: resultId })
+    .eq("id", claimed.id)
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "send_facebook_dm",
+    resultId,
+    proposal,
+    messageId: sentId,
+  }
+}
+
 function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
   switch (claimed.action_type) {
     case "create_lead":
@@ -985,6 +1091,13 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         status: "claimed",
         actionType: "send_instagram_dm",
         proposal: claimed.payload as unknown as InstagramDmProposal,
+      }
+    case "send_facebook_dm":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "send_facebook_dm",
+        proposal: claimed.payload as unknown as FacebookDmProposal,
       }
     default:
       return {

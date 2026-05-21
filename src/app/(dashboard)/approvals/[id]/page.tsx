@@ -72,6 +72,14 @@ type InstagramDmPayload = {
   source?: string
 }
 
+type FacebookDmPayload = {
+  recipient_id?: string
+  body?: string
+  customer_name?: string | null
+  reason?: string | null
+  source?: string
+}
+
 export default async function PendingProposalPage({
   params,
 }: {
@@ -295,6 +303,23 @@ function buildEditorProps(
       status,
       initial: {
         type: "send_instagram_dm",
+        recipient_id: p.recipient_id ?? "",
+        body: p.body ?? "",
+        customer_name: p.customer_name ?? null,
+        reason: p.reason ?? null,
+      },
+    }
+  }
+
+  if (pending.action_type === "send_facebook_dm") {
+    const p = pending.payload as FacebookDmPayload
+    return {
+      pendingId: pending.id,
+      source: typeof p.source === "string" ? p.source : null,
+      submittedAt: pending.created_at,
+      status,
+      initial: {
+        type: "send_facebook_dm",
         recipient_id: p.recipient_id ?? "",
         body: p.body ?? "",
         customer_name: p.customer_name ?? null,

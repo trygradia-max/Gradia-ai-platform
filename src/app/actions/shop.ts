@@ -343,6 +343,110 @@ export async function saveInstagramCredentials(
   return { ok: true, shop: data as ShopRow }
 }
 
+const saveFacebookSchema = z.object({
+  facebook_page_id: z
+    .string()
+    .trim()
+    .min(1, "Facebook Page ID is required.")
+    .max(80),
+  facebook_page_access_token: z
+    .string()
+    .trim()
+    .min(20, "Page access token looks too short."),
+  facebook_page_name: z.string().trim().max(120).optional().nullable(),
+})
+
+export type SaveFacebookResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function saveFacebookCredentials(
+  input: z.infer<typeof saveFacebookSchema>
+): Promise<SaveFacebookResult> {
+  const parsed = saveFacebookSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input.",
+    }
+  }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  let encryptedToken: string | null
+  try {
+    encryptedToken = encryptSecret(parsed.data.facebook_page_access_token)
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Encryption failed: ${err.message}`
+          : "Encryption failed.",
+    }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      facebook_page_id: parsed.data.facebook_page_id,
+      facebook_page_access_token_enc: encryptedToken,
+      facebook_page_name: parsed.data.facebook_page_name?.trim() || null,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    if (error?.code === "23505") {
+      return {
+        ok: false,
+        error: "Another shop is already connected to that Facebook Page.",
+      }
+    }
+    return { ok: false, error: error?.message ?? "Could not save." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+export type DisconnectFacebookResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function disconnectFacebook(): Promise<DisconnectFacebookResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      facebook_page_id: null,
+      facebook_page_access_token_enc: null,
+      facebook_page_name: null,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not disconnect." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
 export type DisconnectInstagramResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }

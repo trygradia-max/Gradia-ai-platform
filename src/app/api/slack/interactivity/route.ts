@@ -9,6 +9,8 @@ import {
   chargeEditRequestedBlocks,
   emailApprovedBlocks,
   emailEditRequestedBlocks,
+  facebookDmApprovedBlocks,
+  facebookDmEditRequestedBlocks,
   instagramDmApprovedBlocks,
   instagramDmEditRequestedBlocks,
   leadApprovedBlocks,
@@ -187,6 +189,20 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
+    } else if (result.actionType === "send_facebook_dm") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `FB DM sent · ${proposal.customer_name ?? proposal.recipient_id}`,
+        facebookDmApprovedBlocks({
+          pendingActionId: pendingId,
+          recipientId: proposal.recipient_id,
+          customerName: proposal.customer_name,
+          body: proposal.body,
+          reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
     } else {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -298,6 +314,20 @@ export async function POST(request: Request) {
         payload.response_url,
         `Edit requested · IG DM to ${proposal.customer_name ?? proposal.recipient_id}`,
         instagramDmEditRequestedBlocks({
+          pendingActionId: pendingId,
+          recipientId: proposal.recipient_id,
+          customerName: proposal.customer_name,
+          body: proposal.body,
+          reason: proposal.reason,
+          approverSlackId: payload.user.id,
+        })
+      )
+    } else if (result.actionType === "send_facebook_dm") {
+      const { proposal } = result
+      await replaceOriginalMessage(
+        payload.response_url,
+        `Edit requested · FB DM to ${proposal.customer_name ?? proposal.recipient_id}`,
+        facebookDmEditRequestedBlocks({
           pendingActionId: pendingId,
           recipientId: proposal.recipient_id,
           customerName: proposal.customer_name,

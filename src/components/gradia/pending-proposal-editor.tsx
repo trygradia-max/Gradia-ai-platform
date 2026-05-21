@@ -87,6 +87,14 @@ type InstagramDmInitial = {
   reason: string | null
 }
 
+type FacebookDmInitial = {
+  type: "send_facebook_dm"
+  recipient_id: string
+  body: string
+  customer_name: string | null
+  reason: string | null
+}
+
 export type PendingProposalEditorProps = {
   pendingId: string
   source: string | null
@@ -100,6 +108,7 @@ export type PendingProposalEditorProps = {
     | ChargeInitial
     | EmailInitial
     | InstagramDmInitial
+    | FacebookDmInitial
 }
 
 function toLocalInputValue(iso: string): string {
@@ -139,6 +148,10 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
     kind === "send_instagram_dm"
       ? (props.initial as InstagramDmInitial)
       : null
+  const fbInit =
+    kind === "send_facebook_dm"
+      ? (props.initial as FacebookDmInitial)
+      : null
 
   const [customerName, setCustomerName] = React.useState(
     leadInit?.customer_name ??
@@ -147,6 +160,7 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
       chargeInit?.customer_name ??
       emailInit?.customer_name ??
       igInit?.customer_name ??
+      fbInit?.customer_name ??
       noteInit?.customer_name ??
       ""
   )
@@ -161,6 +175,11 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
   )
   const [igBody, setIgBody] = React.useState(igInit?.body ?? "")
   const [igReason, setIgReason] = React.useState(igInit?.reason ?? "")
+  const [fbRecipient, setFbRecipient] = React.useState(
+    fbInit?.recipient_id ?? ""
+  )
+  const [fbBody, setFbBody] = React.useState(fbInit?.body ?? "")
+  const [fbReason, setFbReason] = React.useState(fbInit?.reason ?? "")
   const [chargeEmail, setChargeEmail] = React.useState(
     chargeInit?.customer_email ?? ""
   )
@@ -259,6 +278,15 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
         reason: igReason.trim() ? igReason : null,
       }
     }
+    if (kind === "send_facebook_dm") {
+      return {
+        type: "send_facebook_dm",
+        recipient_id: fbRecipient.trim(),
+        body: fbBody,
+        customer_name: customerName.trim() ? customerName : null,
+        reason: fbReason.trim() ? fbReason : null,
+      }
+    }
     return {
       type: "add_note",
       content: noteContent,
@@ -328,7 +356,9 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
                       ? "Edit email draft"
                       : kind === "send_instagram_dm"
                         ? "Edit IG DM draft"
-                        : "Edit note proposal"}
+                        : kind === "send_facebook_dm"
+                          ? "Edit FB DM draft"
+                          : "Edit note proposal"}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
             Source: {props.source ?? "unknown"} ·{" "}
@@ -689,6 +719,55 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
                 id="ig-reason"
                 value={igReason}
                 onChange={(e) => setIgReason(e.target.value)}
+                placeholder="e.g. Reply to ceramic inquiry"
+                autoComplete="off"
+              />
+            </div>
+          </>
+        ) : kind === "send_facebook_dm" ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="fb-recipient">FB recipient ID (PSID)</Label>
+                <Input
+                  id="fb-recipient"
+                  value={fbRecipient}
+                  onChange={(e) => setFbRecipient(e.target.value)}
+                  placeholder="Page-scoped sender id"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="customer-name">Customer (optional)</Label>
+                <Input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="e.g. Sam Rivera"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="fb-body">Message</Label>
+              <Textarea
+                id="fb-body"
+                value={fbBody}
+                onChange={(e) => setFbBody(e.target.value)}
+                placeholder="Hey — thanks for reaching out…"
+                rows={5}
+              />
+              <p className="text-xs text-muted-foreground">
+                {fbBody.length} / 900 characters
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="fb-reason">Why we&apos;re sending</Label>
+              <Input
+                id="fb-reason"
+                value={fbReason}
+                onChange={(e) => setFbReason(e.target.value)}
                 placeholder="e.g. Reply to ceramic inquiry"
                 autoComplete="off"
               />
