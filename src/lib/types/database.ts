@@ -295,5 +295,6 @@ export type CustomAgentRunRow = {
   fired: boolean
   reason: string | null
   stats: Record<string, number> | null
+  pending_action_ids: string[]
   created_at: string
 }

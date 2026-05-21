@@ -332,7 +332,7 @@ export async function getLatestRunsByAgent(
   const shop = await requireShop()
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from("agent_runs")
+    .from("custom_agent_runs")
     .select("*")
     .eq("shop_id", shop.id)
     .in("agent_id", agentIds)

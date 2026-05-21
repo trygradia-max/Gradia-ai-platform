@@ -54,6 +54,7 @@ export async function recordAgentRun(
     fired: input.outcome.fired,
     reason: input.outcome.reason ?? null,
     stats: input.outcome.stats ?? null,
+    pending_action_ids: input.outcome.pendingActionIds ?? [],
   })
   if (error) {
     console.error("[agent-runs] insert failed:", error)

@@ -46,6 +46,10 @@ export type AgentRunOutcome = {
   reason?: string
   /** Per-recipe counters (e.g., { proposed_sms: 3, skipped_already_contacted: 1 }). */
   stats?: Record<string, number>
+  /** Pending action ids this run produced — surfaced as deep links in
+   *  the run-history UI so operators can jump straight to the
+   *  generated approvals. */
+  pendingActionIds?: string[]
 }
 
 function isCadenceWindowOpen(
@@ -116,6 +120,7 @@ async function executeLeadFollowupSms(
   agent: CustomAgentRow
 ): Promise<AgentRunOutcome> {
   const stats = { matched: 0, proposed_sms: 0, skipped_no_phone: 0, skipped_recent_inbound: 0 }
+  const pendingActionIds: string[] = []
   const recipe = agent.config.recipe
   if (!recipe || recipe.id !== "lead_followup_sms") {
     return {
@@ -242,6 +247,7 @@ async function executeLeadFollowupSms(
       console.error("[agent-runtime] Slack send failed:", err)
     }
     stats.proposed_sms += 1
+    pendingActionIds.push(pending.id)
   }
 
   return {
@@ -249,6 +255,7 @@ async function executeLeadFollowupSms(
     agentName: agent.name,
     fired: true,
     stats,
+    pendingActionIds,
   }
 }
 
@@ -265,6 +272,7 @@ async function executeAppointmentReminderEmail(
     skipped_no_email: 0,
     skipped_already_reminded: 0,
   }
+  const pendingActionIds: string[] = []
   const recipe = agent.config.recipe
   if (!recipe || recipe.id !== "appointment_reminder_email") {
     return {
@@ -386,6 +394,7 @@ async function executeAppointmentReminderEmail(
       console.error("[agent-runtime] Slack send failed:", err)
     }
     stats.proposed_email += 1
+    pendingActionIds.push(pending.id)
   }
 
   return {
@@ -393,6 +402,7 @@ async function executeAppointmentReminderEmail(
     agentName: agent.name,
     fired: true,
     stats,
+    pendingActionIds,
   }
 }
 
@@ -409,6 +419,7 @@ async function executeStaleCustomerSms(
     skipped_no_phone: 0,
     skipped_cooldown: 0,
   }
+  const pendingActionIds: string[] = []
   const recipe = agent.config.recipe
   if (!recipe || recipe.id !== "stale_customer_sms") {
     return {
@@ -540,6 +551,7 @@ async function executeStaleCustomerSms(
       console.error("[agent-runtime] Slack send failed:", err)
     }
     stats.proposed_sms += 1
+    pendingActionIds.push(pending.id)
   }
 
   return {
@@ -547,6 +559,7 @@ async function executeStaleCustomerSms(
     agentName: agent.name,
     fired: true,
     stats,
+    pendingActionIds,
   }
 }
 
@@ -656,6 +669,7 @@ async function executePaymentReceivedThankYouSms(
     agentName: agent.name,
     fired: true,
     stats: { proposed_sms: 1 },
+    pendingActionIds: [pending.id],
   }
 }
 
@@ -774,6 +788,7 @@ async function executeBookingApprovedPrepEmail(
     agentName: agent.name,
     fired: true,
     stats: { proposed_email: 1 },
+    pendingActionIds: [pending.id],
   }
 }
 

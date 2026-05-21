@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   Activity,
+  ArrowUpRight,
   CheckCircle2,
   Clock,
   Loader2,
@@ -164,6 +166,31 @@ export function AgentRunsSheet({
                             {run.reason ?? "Skipped."}
                           </p>
                         )}
+                        {run.pending_action_ids?.length ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {run.pending_action_ids
+                              .slice(0, 4)
+                              .map((pid, i) => (
+                                <Link
+                                  key={pid}
+                                  href={`/approvals/${pid}`}
+                                  className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
+                                  onClick={() => setOpen(false)}
+                                >
+                                  Approval {i + 1}
+                                  <ArrowUpRight
+                                    className="size-3"
+                                    aria-hidden
+                                  />
+                                </Link>
+                              ))}
+                            {run.pending_action_ids.length > 4 ? (
+                              <span className="text-[11px] text-muted-foreground">
+                                +{run.pending_action_ids.length - 4} more
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </li>
