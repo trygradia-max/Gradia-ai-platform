@@ -5,6 +5,7 @@ import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
 import { CoOwnerCard } from "@/components/gradia/co-owner-card"
+import { WelcomeModal } from "@/components/gradia/welcome-modal"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { WhisperButton } from "@/components/gradia/whisper-button"
@@ -16,8 +17,16 @@ export default async function DashboardPage() {
     getCoOwnerSuggestions(),
   ])
 
+  const connectedCount = channels.filter(
+    (c) => c.status === "connected"
+  ).length
+
   return (
     <div className="mx-auto max-w-6xl space-y-10">
+      <WelcomeModal
+        connectedCount={connectedCount}
+        totalChannels={channels.length}
+      />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">

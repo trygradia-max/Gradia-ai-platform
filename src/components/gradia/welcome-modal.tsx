@@ -1,0 +1,182 @@
+"use client"
+
+import * as React from "react"
+import Link from "next/link"
+import {
+  ArrowRight,
+  CreditCard,
+  Globe,
+  Mail,
+  MessageSquare,
+  Phone,
+  Sparkles,
+} from "lucide-react"
+
+import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
+const DISMISS_KEY = "gradia.welcome.v1.dismissed"
+
+function readDismissed(): boolean {
+  if (typeof window === "undefined") return true
+  try {
+    return window.localStorage.getItem(DISMISS_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function subscribeToDismiss(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {}
+  window.addEventListener("storage", callback)
+  return () => window.removeEventListener("storage", callback)
+}
+
+const STEPS = [
+  {
+    icon: Phone,
+    label: "Voice receptionist",
+    detail: "Vapi takes calls, books, and quotes — when you're under a car.",
+    href: "/settings#voice",
+  },
+  {
+    icon: Mail,
+    label: "Email + Calendar",
+    detail: "Gmail via Aurinko. One OAuth covers inbound replies + bookings.",
+    href: "/settings#email",
+  },
+  {
+    icon: MessageSquare,
+    label: "SMS",
+    detail: "Twilio number with auto-drafts on inbound + delivery callbacks.",
+    href: "/settings#sms",
+  },
+  {
+    icon: CreditCard,
+    label: "Payments",
+    detail: "Stripe Connect. Whisper 'charge Smith $450' from your phone.",
+    href: "/settings#payments",
+  },
+  {
+    icon: Globe,
+    label: "DMs (IG + Facebook)",
+    detail: "Inbound messages get auto-drafted replies for your approval.",
+    href: "/settings#instagram",
+  },
+] as const
+
+/**
+ * One-time welcome modal that shows on the first /dashboard visit
+ * for a shop that hasn't connected anything yet. Dismissal is stored
+ * in localStorage so we never nag a shop that already saw it. The
+ * channel connection card on the page underneath stays the source
+ * of truth — this is just the on-ramp moment.
+ */
+export function WelcomeModal({
+  connectedCount,
+  totalChannels,
+}: {
+  connectedCount: number
+  totalChannels: number
+}) {
+  // Read localStorage synchronously via useSyncExternalStore so the
+  // initial render already knows whether to show — avoids the lint
+  // ban on setState-in-effect and feels snappier (no flicker).
+  const dismissed = React.useSyncExternalStore(
+    subscribeToDismiss,
+    () => readDismissed(),
+    () => true // SSR: pretend it's been dismissed, hydration corrects.
+  )
+  const [manuallyClosed, setManuallyClosed] = React.useState(false)
+  const open = connectedCount === 0 && !dismissed && !manuallyClosed
+
+  function handleClose(next: boolean) {
+    if (!next) {
+      setManuallyClosed(true)
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(DISMISS_KEY, "1")
+          // Notify other tabs / subscribers so the store re-reads.
+          window.dispatchEvent(new Event("storage"))
+        } catch {}
+      }
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
+            <Sparkles className="size-4" aria-hidden />
+          </div>
+          <DialogTitle>Welcome to Gradia</DialogTitle>
+          <DialogDescription>
+            We&apos;re your AI office — every inquiry across voice, email,
+            SMS, and DMs becomes a Slack approval card. Connect the
+            channels below and we&apos;ll start catching leads with you.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ul className="grid gap-2">
+          {STEPS.map((step) => {
+            const Icon = step.icon
+            return (
+              <li key={step.label}>
+                <Link
+                  href={step.href}
+                  onClick={() => handleClose(false)}
+                  className="group flex items-start gap-3 rounded-md border border-border/60 bg-muted/15 px-3 py-2.5 transition hover:bg-muted/30"
+                >
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background">
+                    <Icon className="size-4 text-primary" aria-hidden />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{step.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {step.detail}
+                    </p>
+                  </div>
+                  <ArrowRight
+                    className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+                    aria-hidden
+                  />
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => handleClose(false)}
+            className="h-11 sm:h-9"
+          >
+            I&apos;ll set up later
+          </Button>
+          <Link
+            href="/settings#voice"
+            onClick={() => handleClose(false)}
+            className={`${buttonVariants({ variant: "default" })} h-11 sm:h-9`}
+          >
+            Start connecting
+          </Link>
+        </DialogFooter>
+
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">
+          {connectedCount} of {totalChannels} live · we&apos;ll keep this
+          out of your way once you&apos;re going.
+        </p>
+      </DialogContent>
+    </Dialog>
+  )
+}
