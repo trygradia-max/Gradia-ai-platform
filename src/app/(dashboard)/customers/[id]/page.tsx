@@ -205,6 +205,7 @@ function IdentityCard({ customer }: { customer: { phone: string | null; email: s
 type StatusBadge = {
   label: string
   tone: "good" | "bad" | "neutral"
+  hint?: string | null
 }
 
 function pickStatusBadge(it: InteractionRow): StatusBadge | null {
@@ -215,15 +216,31 @@ function pickStatusBadge(it: InteractionRow): StatusBadge | null {
       typeof meta.twilio_status === "string"
         ? meta.twilio_status.toLowerCase()
         : ""
+    const errorCode =
+      meta.twilio_error_code != null ? String(meta.twilio_error_code) : null
     if (status === "delivered") return { label: "Delivered", tone: "good" }
     if (status === "failed" || status === "undelivered") {
-      return { label: "Failed", tone: "bad" }
+      return {
+        label: "Failed",
+        tone: "bad",
+        hint: errorCode ? `Twilio error ${errorCode}` : null,
+      }
     }
     if (status === "sent") return { label: "Sent", tone: "neutral" }
     if (status === "queued") return { label: "Queued", tone: "neutral" }
   }
   // Charges land as channel=note with Stripe metadata.
   if (it.channel === "note" && typeof meta.stripe_invoice_id === "string") {
+    const refundStatus =
+      typeof meta.stripe_refund_status === "string"
+        ? meta.stripe_refund_status.toLowerCase()
+        : ""
+    if (refundStatus === "refunded") {
+      return { label: "Refunded", tone: "bad" }
+    }
+    if (refundStatus === "partially_refunded") {
+      return { label: "Partial refund", tone: "bad" }
+    }
     const status =
       typeof meta.stripe_payment_status === "string"
         ? meta.stripe_payment_status.toLowerCase()
@@ -248,6 +265,7 @@ function renderStatusBadge(it: InteractionRow): React.ReactNode {
         : "bg-muted text-muted-foreground"
   return (
     <span
+      title={badge.hint ?? undefined}
       className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${className}`}
     >
       {badge.label}
