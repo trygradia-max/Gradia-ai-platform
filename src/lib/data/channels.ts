@@ -89,7 +89,7 @@ function voiceSummary(shop: ShopRow | null): ChannelSummary {
     hint: connected
       ? null
       : "Paste your Vapi assistant ID + provision a phone number.",
-    href: "/settings",
+    href: "/settings#voice",
   }
 }
 
@@ -103,7 +103,7 @@ function emailSummary(shop: ShopRow | null): ChannelSummary {
     description: "Gmail inbox piped through Aurinko — every inquiry becomes a Slack approval card.",
     status: connected ? "connected" : "off",
     hint: connected ? null : "Connect Gmail via OAuth in Settings.",
-    href: "/settings",
+    href: "/settings#email",
   }
 }
 
@@ -117,12 +117,13 @@ function smsSummary(shop: ShopRow | null): ChannelSummary {
     hint: connected
       ? null
       : "Add your Twilio number + point its webhook at Gradia.",
-    href: "/settings",
+    href: "/settings#sms",
   }
 }
 
 function calendarSummary(shop: ShopRow | null): ChannelSummary {
-  // Calendar piggybacks on the Aurinko OAuth — same scope grant.
+  // Calendar piggybacks on the Aurinko OAuth — same scope grant, so
+  // the deep-link points at the email card.
   const connected = Boolean(
     shop?.aurinko_access_token_enc && shop?.aurinko_account_id
   )
@@ -134,7 +135,7 @@ function calendarSummary(shop: ShopRow | null): ChannelSummary {
     hint: connected
       ? null
       : "Connects automatically when you connect Gmail above.",
-    href: "/settings",
+    href: "/settings#email",
   }
 }
 
@@ -146,7 +147,7 @@ function paymentsSummary(shop: ShopRow | null): ChannelSummary {
       description: "Stripe Connect — invoice customers from inside Gradia.",
       status: "off",
       hint: "Finish Stripe Connect onboarding.",
-      href: "/settings",
+      href: "/settings#payments",
     }
   }
   if (!shop.stripe_charges_enabled) {
@@ -156,7 +157,7 @@ function paymentsSummary(shop: ShopRow | null): ChannelSummary {
       description: "Stripe Connect — invoice customers from inside Gradia.",
       status: "partial",
       hint: "Stripe needs more info before charges can run.",
-      href: "/settings",
+      href: "/settings#payments",
     }
   }
   return {
@@ -165,7 +166,7 @@ function paymentsSummary(shop: ShopRow | null): ChannelSummary {
     description: "Stripe Connect — invoice customers from inside Gradia.",
     status: "connected",
     hint: null,
-    href: "/settings",
+    href: "/settings#payments",
   }
 }
 
@@ -181,7 +182,7 @@ function instagramSummary(shop: ShopRow | null): ChannelSummary {
     hint: connected
       ? null
       : "Paste your IG Business Account + Page Access Token.",
-    href: "/settings",
+    href: "/settings#instagram",
   }
 }
 
@@ -197,6 +198,6 @@ function facebookSummary(shop: ShopRow | null): ChannelSummary {
     hint: connected
       ? null
       : "Paste your Facebook Page ID + Page Access Token.",
-    href: "/settings",
+    href: "/settings#facebook",
   }
 }

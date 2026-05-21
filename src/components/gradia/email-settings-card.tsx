@@ -71,7 +71,7 @@ export function EmailSettingsCard({
   }
 
   return (
-    <Card className="border-border/80">
+    <Card id="email" className="scroll-mt-20 border-border/80">
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <Mail className="size-5 text-primary" aria-hidden />
