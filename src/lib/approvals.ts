@@ -16,6 +16,7 @@ import { dispatchAgentEvent } from "@/lib/agent-events"
 import { createCalendarEvent, sendEmailMessage } from "@/lib/aurinko"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
+import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
 import { recordInteraction } from "@/lib/memory"
 import {
   sendFacebookPageMessage,
@@ -292,6 +293,19 @@ async function executeCreateLead(
     .update({ result_id: created.id })
     .eq("id", claimed.id)
 
+  // Best-effort Jobber push. Never blocks the approval.
+  try {
+    await pushLeadToJobber({
+      supabase,
+      shopId: claimed.shop_id,
+      customerId: customerResult.customer.id,
+      customerName: proposal.customer_name,
+      phone: proposal.phone || null,
+    })
+  } catch (err) {
+    console.warn("[approvals] Jobber lead push failed:", err)
+  }
+
   return {
     ok: true,
     status: "executed",
@@ -504,17 +518,23 @@ async function executeBookAppointment(
     return { ok: false, error: leadErr?.message ?? "Lead insert failed" }
   }
 
-  await supabase.from("appointments").insert({
-    shop_id: claimed.shop_id,
-    lead_id: lead.id,
-    customer_id: customerResult.customer.id,
-    scheduled_at: start.toISOString(),
-    duration_minutes: durationMinutes,
-    service_name: proposal.service,
-    aurinko_calendar_id: calendarId,
-    aurinko_event_id: calendarEventId,
-    timezone: proposal.timezone,
-  })
+  const { data: appointment } = await supabase
+    .from("appointments")
+    .insert({
+      shop_id: claimed.shop_id,
+      lead_id: lead.id,
+      customer_id: customerResult.customer.id,
+      scheduled_at: start.toISOString(),
+      duration_minutes: durationMinutes,
+      service_name: proposal.service,
+      aurinko_calendar_id: calendarId,
+      aurinko_event_id: calendarEventId,
+      timezone: proposal.timezone,
+    })
+    .select("id")
+    .single()
+  const appointmentId =
+    (appointment as { id: string } | null)?.id ?? null
 
   await supabase
     .from("pending_actions")
@@ -530,6 +550,28 @@ async function executeBookAppointment(
       "[approvals] booking confirmation draft failed (booking still succeeded):",
       err
     )
+  }
+
+  // Best-effort Jobber push — find-or-create the client + create a
+  // request with the agreed time. Failures never roll back the
+  // booking; logs only.
+  if (appointmentId) {
+    try {
+      await pushBookingToJobber({
+        supabase,
+        shopId: claimed.shop_id,
+        appointmentId,
+        customerId: customerResult.customer.id,
+        customerName: proposal.customer_name,
+        phone: proposal.phone || null,
+        email: proposal.email ?? null,
+        service: proposal.service,
+        isoStartTime: start.toISOString(),
+        carInfo: proposal.car_info,
+      })
+    } catch (err) {
+      console.warn("[approvals] Jobber booking push failed:", err)
+    }
   }
 
   // Fan out booking_approved to any enabled event-driven custom agents

@@ -2,6 +2,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import {
   AtSign,
+  Briefcase,
   CalendarDays,
   Globe,
   Mail,
@@ -154,7 +155,7 @@ export default async function CustomerDetailPage({
   )
 }
 
-function IdentityCard({ customer }: { customer: { phone: string | null; email: string | null; instagram_handle: string | null; facebook_id: string | null } }) {
+function IdentityCard({ customer }: { customer: { phone: string | null; email: string | null; instagram_handle: string | null; facebook_id: string | null; jobber_client_id: string | null } }) {
   const rows: { icon: React.ReactNode; label: string; value: string | null }[] = [
     { icon: <Phone className="size-4" aria-hidden />, label: "Phone", value: customer.phone },
     { icon: <Mail className="size-4" aria-hidden />, label: "Email", value: customer.email },
@@ -169,6 +170,13 @@ function IdentityCard({ customer }: { customer: { phone: string | null; email: s
       value: customer.facebook_id,
     },
   ]
+  if (customer.jobber_client_id) {
+    rows.push({
+      icon: <Briefcase className="size-4" aria-hidden />,
+      label: "Jobber",
+      value: "Synced",
+    })
+  }
   return (
     <Card className="border-border/80">
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">

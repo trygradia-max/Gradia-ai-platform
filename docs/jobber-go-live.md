@@ -4,15 +4,27 @@ Most working detailers use Jobber for invoicing and scheduling.
 Gradia sits on top instead of replacing it — approved leads and
 bookings push into the shop's Jobber account as clients + requests.
 
-## What ships today (session 1)
+## What ships today
 
 - OAuth (authorization code) wired end-to-end.
 - Tokens encrypted at rest via `ENCRYPTION_KEY`; refresh tokens
   auto-rotate when access tokens expire (~1h).
 - `/settings#jobber` card with Connect / Disconnect.
-- `lib/jobber.ts` exposes `jobberGraphQL` for any future mutation.
-- **Not yet wired**: the push-on-approval side. Booking approval
-  doesn't write to Jobber yet — that's session 2.
+- `lib/jobber.ts`: `findClient`, `createClient`, `findOrCreateClient`,
+  `createRequest`, `fetchAccountInfo`, raw `jobberGraphQL` caller.
+- `lib/jobber-push.ts`: orchestration helpers called from the
+  approval engine. Best-effort throughout — Jobber failures log
+  but never roll back a Gradia-side approval.
+- **`create_lead` approval** → find-or-create Jobber Client (by
+  phone, falling back to email), mirror the Jobber client id onto
+  `customers.jobber_client_id` so we don't create duplicates on
+  the next push.
+- **`book_appointment` approval** → same client find-or-create,
+  then create a Jobber Request titled `"{service} — {customer}"`
+  with the agreed time as `preferredStartAt`. Mirror the request
+  id onto `appointments.jobber_request_id`.
+- Customer detail (`/customers/[id]`) shows a "Synced" Jobber row
+  on the identity card when `jobber_client_id` is set.
 
 ## Operator steps
 
@@ -72,11 +84,17 @@ If the refresh itself fails (revoked token, etc.), the helper
 throws `JobberError(401)` and the caller should treat that as
 "tell the operator to reconnect."
 
-## Known limitations (session 1)
+## Known limitations
 
-- We only `select` `account { id name }` after connect — no other
-  GraphQL is wired yet.
-- No inbound webhooks from Jobber. The shop's Jobber dashboard
-  remains the source of truth for job state.
+- One-way push (Gradia → Jobber) only. No inbound webhooks yet, so
+  changes the shop makes in Jobber don't flow back. The shop's
+  Jobber dashboard remains the source of truth for job state.
 - Single-account-per-shop. A shop running multiple Jobber accounts
   picks one.
+- Client matching uses `searchTerm` against phone or email — first
+  match wins. Best-effort; if a shop has multiple Jobber clients
+  sharing the same phone, the first one Jobber returns gets the
+  push.
+- Requests, not Jobs, are what we create. Requests are Jobber's
+  intake/quote-pending entity. The shop converts to a Job + Quote
+  inside Jobber when they're ready.

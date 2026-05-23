@@ -52,6 +52,7 @@ export type CustomerRow = {
   email: string | null
   instagram_handle: string | null
   facebook_id: string | null
+  jobber_client_id: string | null
   created_at: string
   updated_at: string
 }
@@ -79,6 +80,7 @@ export type AppointmentRow = {
   aurinko_event_id: string | null
   timezone: string | null
   reminder_pending_action_id: string | null
+  jobber_request_id: string | null
   created_at: string
   updated_at: string
 }

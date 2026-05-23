@@ -265,3 +265,185 @@ export async function fetchAccountInfo(
   }
   return { id: data.account.id, name: data.account.name }
 }
+
+// ---------- client + request mutations ----------
+
+export type JobberClientInput = {
+  firstName?: string | null
+  lastName?: string | null
+  companyName?: string | null
+  email?: string | null
+  phone?: string | null
+}
+
+export type JobberClient = {
+  id: string
+  name: string
+}
+
+/**
+ * Splits a single "Sam Rivera" name into first/last for Jobber's
+ * preferred shape. Jobber accepts companyName for unnamed leads —
+ * we fall back to that when we only have a phone.
+ */
+export function nameToClientInput(
+  fullName: string | null | undefined,
+  fallback: string
+): { firstName: string | null; lastName: string | null; companyName: string | null } {
+  const trimmed = (fullName ?? "").trim()
+  if (!trimmed) {
+    return { firstName: null, lastName: null, companyName: fallback || "Lead" }
+  }
+  const parts = trimmed.split(/\s+/)
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: null, companyName: null }
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+    companyName: null,
+  }
+}
+
+/**
+ * Looks for an existing Jobber client by phone OR email. Returns the
+ * first match (Jobber lets duplicates exist, but for our flow we just
+ * want "did anyone with this number already get filed?"). Returns null
+ * when nothing matches — caller should then createClient.
+ *
+ * Note: Jobber's search uses the `searchTerm` filter which scans
+ * across name/email/phone. We pass the most specific identifier we
+ * have.
+ */
+export async function findClient(input: {
+  accessToken: string
+  phone?: string | null
+  email?: string | null
+}): Promise<JobberClient | null> {
+  const term = (input.phone ?? input.email ?? "").trim()
+  if (!term) return null
+  type Resp = {
+    clients: {
+      nodes: { id: string; name: string }[]
+    }
+  }
+  const data = await jobberGraphQL<Resp>({
+    accessToken: input.accessToken,
+    query: `query Find($term: String!) {
+      clients(first: 3, searchTerm: $term) {
+        nodes { id name }
+      }
+    }`,
+    variables: { term },
+  })
+  return data.clients?.nodes?.[0] ?? null
+}
+
+type ClientCreateResp = {
+  clientCreate: {
+    client: { id: string; name: string } | null
+    userErrors: { message: string; path?: string[] }[]
+  }
+}
+
+export async function createClient(input: {
+  accessToken: string
+  clientInput: JobberClientInput
+}): Promise<JobberClient> {
+  const data = await jobberGraphQL<ClientCreateResp>({
+    accessToken: input.accessToken,
+    query: `mutation Create($input: ClientCreateInput!) {
+      clientCreate(input: $input) {
+        client { id name }
+        userErrors { message path }
+      }
+    }`,
+    variables: { input: input.clientInput },
+  })
+  const errs = data.clientCreate.userErrors
+  if (errs.length > 0 || !data.clientCreate.client) {
+    throw new JobberError(
+      400,
+      errs[0]?.message ?? "Jobber clientCreate returned no client."
+    )
+  }
+  return data.clientCreate.client
+}
+
+/**
+ * Find-or-create. Caller passes any identifiers we have; we look up
+ * by phone (preferred) or email, and create if nothing matched.
+ */
+export async function findOrCreateClient(input: {
+  accessToken: string
+  clientInput: JobberClientInput
+  fallbackName: string
+}): Promise<JobberClient> {
+  const found = await findClient({
+    accessToken: input.accessToken,
+    phone: input.clientInput.phone,
+    email: input.clientInput.email,
+  })
+  if (found) return found
+  return createClient({
+    accessToken: input.accessToken,
+    clientInput: input.clientInput,
+  })
+}
+
+type RequestCreateResp = {
+  requestCreate: {
+    request: { id: string } | null
+    userErrors: { message: string; path?: string[] }[]
+  }
+}
+
+export type JobberRequestInput = {
+  clientId: string
+  title: string
+  /** Free-text customer-facing summary. */
+  description?: string | null
+  /** ISO datetime; surfaced as "preferred start" on the Jobber side. */
+  scheduledAt?: string | null
+}
+
+/**
+ * Creates a Jobber Request (their intake/quote-pending entity).
+ * Used after an operator approves a book_appointment in Gradia so
+ * the shop has the visit in their primary CRM, not just our
+ * dashboard + Aurinko calendar.
+ */
+export async function createRequest(input: {
+  accessToken: string
+  requestInput: JobberRequestInput
+}): Promise<{ id: string }> {
+  const data = await jobberGraphQL<RequestCreateResp>({
+    accessToken: input.accessToken,
+    query: `mutation CreateReq($input: RequestCreateInput!) {
+      requestCreate(input: $input) {
+        request { id }
+        userErrors { message path }
+      }
+    }`,
+    variables: {
+      input: {
+        clientId: input.requestInput.clientId,
+        title: input.requestInput.title,
+        ...(input.requestInput.description
+          ? { description: input.requestInput.description }
+          : {}),
+        ...(input.requestInput.scheduledAt
+          ? { preferredStartAt: input.requestInput.scheduledAt }
+          : {}),
+      },
+    },
+  })
+  const errs = data.requestCreate.userErrors
+  if (errs.length > 0 || !data.requestCreate.request) {
+    throw new JobberError(
+      400,
+      errs[0]?.message ?? "Jobber requestCreate returned no request."
+    )
+  }
+  return data.requestCreate.request
+}
