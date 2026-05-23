@@ -177,6 +177,9 @@ export default async function SettingsPage({
         initialPhoneNumber={shop?.twilio_phone_number ?? null}
         webhookUrl={smsWebhookUrl}
         twilioConfigured={twilioConfigured}
+        byoConnected={Boolean(
+          shop?.twilio_account_sid_enc && shop?.twilio_auth_token_enc
+        )}
       />
 
       <StripeSettingsCard

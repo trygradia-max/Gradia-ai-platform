@@ -13,6 +13,8 @@ export type ShopRow = {
   aurinko_access_token_enc: string | null
   aurinko_subscription_id: string | null
   twilio_phone_number: string | null
+  twilio_account_sid_enc: string | null
+  twilio_auth_token_enc: string | null
   stripe_account_id: string | null
   stripe_charges_enabled: boolean
   instagram_business_account_id: string | null

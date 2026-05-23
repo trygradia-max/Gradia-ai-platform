@@ -29,7 +29,11 @@ import {
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { chargeCustomerViaInvoice, type StripeInvoice } from "@/lib/stripe"
-import { defaultStatusCallbackUrl, sendOutboundSms } from "@/lib/twilio"
+import {
+  defaultStatusCallbackUrl,
+  resolveTwilioCredentials,
+  sendOutboundSms,
+} from "@/lib/twilio"
 import type {
   LeadStatus,
   PendingActionStatus,
@@ -710,7 +714,8 @@ async function executeSendSms(
       from: shop.twilio_phone_number,
       to: proposal.to_phone,
       body: proposal.body,
-      statusCallback: defaultStatusCallbackUrl(),
+      statusCallback: defaultStatusCallbackUrl(claimed.shop_id),
+      creds: resolveTwilioCredentials(shop),
     })
   } catch (err) {
     await rollbackClaim(supabase, claimed.id)

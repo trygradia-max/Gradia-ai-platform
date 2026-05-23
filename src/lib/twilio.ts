@@ -61,22 +61,66 @@ export function parseInboundSms(form: URLSearchParams): {
   }
 }
 
-function authToken(): string | null {
+function envAuthToken(): string | null {
   return process.env.TWILIO_AUTH_TOKEN?.trim() || null
 }
 
+function envAccountSid(): string | null {
+  return process.env.TWILIO_ACCOUNT_SID?.trim() || null
+}
+
+import { tryDecryptSecret } from "@/lib/crypto"
+import type { ShopRow } from "@/lib/types/database"
+
+export type TwilioCredentials = {
+  accountSid: string
+  authToken: string
+}
+
 /**
- * Verifies the X-Twilio-Signature header. Returns false if the auth
- * token isn't configured (fail closed). The URL must be the public
- * URL Twilio actually called — pass the value derived from the
- * request, accounting for any proxy / Vercel host rewriting.
+ * Resolves the Twilio credentials to use for a given shop. BYO
+ * credentials (encrypted on the shop row) win when present;
+ * otherwise we fall back to the pilot-mode global env account.
+ * Returns null when no credentials are available anywhere — callers
+ * should treat that as "Twilio not configured."
+ */
+export function resolveTwilioCredentials(
+  shop:
+    | Pick<ShopRow, "twilio_account_sid_enc" | "twilio_auth_token_enc">
+    | null
+    | undefined
+): TwilioCredentials | null {
+  const shopSid = tryDecryptSecret(shop?.twilio_account_sid_enc)
+  const shopToken = tryDecryptSecret(shop?.twilio_auth_token_enc)
+  if (shopSid && shopToken) {
+    return { accountSid: shopSid, authToken: shopToken }
+  }
+  const envSid = envAccountSid()
+  const envToken = envAuthToken()
+  if (envSid && envToken) {
+    return { accountSid: envSid, authToken: envToken }
+  }
+  return null
+}
+
+/**
+ * Verifies the X-Twilio-Signature header. Returns false if the
+ * auth token isn't configured (fail closed). The URL must be the
+ * public URL Twilio actually called — pass the value derived from
+ * the request, accounting for any proxy / Vercel host rewriting.
+ *
+ * When `creds` is provided, signature is verified against that auth
+ * token. Otherwise the env-global token is used (legacy single-tenant
+ * mode). Callers that resolve the shop after parsing the form should
+ * pass the per-shop creds in to keep BYO shops verifiable.
  */
 export function verifyTwilioSignature(input: {
   url: string
   form: URLSearchParams
   signature: string | null
+  creds?: TwilioCredentials | null
 }): boolean {
-  const token = authToken()
+  const token = input.creds?.authToken ?? envAuthToken()
   if (!token) return false
   if (!input.signature) return false
 
@@ -130,11 +174,14 @@ export type TwilioSendResult = {
  * sends without a callback still work, the status just freezes at
  * the initial value the create-response returned.
  */
-export function defaultStatusCallbackUrl(): string | null {
+export function defaultStatusCallbackUrl(shopId?: string): string | null {
   const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
   if (!configured) return null
   try {
-    return `${new URL(configured).origin}/api/twilio/sms/status`
+    const base = `${new URL(configured).origin}/api/twilio/sms/status`
+    return shopId
+      ? `${base}?shop=${encodeURIComponent(shopId)}`
+      : base
   } catch {
     return null
   }
@@ -155,9 +202,11 @@ export async function sendOutboundSms(input: {
   to: string
   body: string
   statusCallback?: string | null
+  /** Per-shop Twilio credentials. When absent, falls back to env. */
+  creds?: TwilioCredentials | null
 }): Promise<TwilioSendResult> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim()
-  const authToken = process.env.TWILIO_AUTH_TOKEN?.trim()
+  const accountSid = input.creds?.accountSid ?? envAccountSid()
+  const authToken = input.creds?.authToken ?? envAuthToken()
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing")
   }

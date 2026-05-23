@@ -4,7 +4,12 @@ import * as React from "react"
 import { Check, Loader2, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
 
-import { disconnectSms, saveTwilioNumber } from "@/app/actions/shop"
+import {
+  clearTwilioCredentials,
+  disconnectSms,
+  saveTwilioCredentials,
+  saveTwilioNumber,
+} from "@/app/actions/shop"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -19,19 +24,60 @@ export function SmsSettingsCard({
   initialPhoneNumber,
   webhookUrl,
   twilioConfigured,
+  byoConnected: initialByoConnected,
 }: {
   initialPhoneNumber: string | null
   webhookUrl: string
   twilioConfigured: boolean
+  byoConnected: boolean
 }) {
   const [phone, setPhone] = React.useState(initialPhoneNumber ?? "")
   const [savedValue, setSavedValue] = React.useState(initialPhoneNumber ?? "")
-  const [pending, setPending] = React.useState<null | "save" | "disconnect">(
-    null
-  )
+  const [pending, setPending] = React.useState<
+    null | "save" | "disconnect" | "save_byo" | "clear_byo"
+  >(null)
+  const [byoConnected, setByoConnected] = React.useState(initialByoConnected)
+  const [accountSid, setAccountSid] = React.useState("")
+  const [authToken, setAuthToken] = React.useState("")
 
   const isConnected = savedValue.trim().length > 0
   const isDirty = phone.trim() !== savedValue.trim()
+
+  async function handleSaveCredentials(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setPending("save_byo")
+    const result = await saveTwilioCredentials({
+      twilio_account_sid: accountSid.trim(),
+      twilio_auth_token: authToken.trim(),
+    })
+    setPending(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setByoConnected(true)
+    setAccountSid("")
+    setAuthToken("")
+    toast.success("Twilio credentials saved — your account is now used for this shop.")
+  }
+
+  async function handleClearCredentials() {
+    if (
+      !confirm(
+        "Clear your Twilio credentials? Outbound SMS will fall back to Gradia's pilot account until you set them again."
+      )
+    )
+      return
+    setPending("clear_byo")
+    const result = await clearTwilioCredentials()
+    setPending(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setByoConnected(false)
+    toast.success("Cleared — falling back to Gradia's pilot account.")
+  }
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -164,6 +210,92 @@ export function SmsSettingsCard({
             </Button>
           </div>
         </form>
+
+        <div className="space-y-3 rounded-lg border border-dashed border-border/60 bg-muted/15 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Use your own Twilio account</p>
+              <p className="text-xs text-muted-foreground">
+                Recommended past the pilot — your own deliverability,
+                A2P registration, and Twilio bill. Encrypted at rest.
+              </p>
+            </div>
+            {byoConnected ? (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                <Check className="size-3" aria-hidden />
+                BYO
+              </span>
+            ) : null}
+          </div>
+
+          <form className="grid gap-3" onSubmit={handleSaveCredentials}>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="twilio-sid">Account SID</Label>
+                <Input
+                  id="twilio-sid"
+                  value={accountSid}
+                  onChange={(e) => setAccountSid(e.target.value)}
+                  placeholder="AC…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={pending !== null}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="twilio-token">
+                  Auth Token {byoConnected ? "(re-paste to update)" : ""}
+                </Label>
+                <Input
+                  id="twilio-token"
+                  value={authToken}
+                  onChange={(e) => setAuthToken(e.target.value)}
+                  placeholder="••••••••"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={pending !== null}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {byoConnected ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleClearCredentials}
+                  disabled={pending !== null}
+                  className="h-11 sm:h-9"
+                >
+                  {pending === "clear_byo" ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : null}
+                  Clear
+                </Button>
+              ) : null}
+              <Button
+                type="submit"
+                disabled={
+                  pending !== null ||
+                  !accountSid.trim() ||
+                  !authToken.trim()
+                }
+                className="h-11 min-w-32 sm:h-9"
+              >
+                {pending === "save_byo" ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    Saving
+                  </>
+                ) : byoConnected ? (
+                  "Update credentials"
+                ) : (
+                  "Save credentials"
+                )}
+              </Button>
+            </div>
+          </form>
+        </div>
       </CardContent>
     </Card>
   )

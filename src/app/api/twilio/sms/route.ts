@@ -42,6 +42,7 @@ import type { ShopRow } from "@/lib/types/database"
 import {
   EMPTY_TWIML_RESPONSE,
   parseInboundSms,
+  resolveTwilioCredentials,
   verifyTwilioSignature,
   type TwilioInboundSms,
 } from "@/lib/twilio"
@@ -86,10 +87,11 @@ export async function POST(request: Request) {
   const url = await resolvePublicUrl(request)
   const signature = request.headers.get("x-twilio-signature")
 
-  if (!verifyTwilioSignature({ url, form, signature })) {
-    return new Response("Invalid signature", { status: 401 })
-  }
-
+  // BYO Twilio: each shop can sign with their own auth token. We
+  // must resolve the shop *before* verifying so we use the right
+  // token. The peek at the `To` field is unverified, but we re-
+  // verify the full payload before doing anything; mismatched
+  // signatures still reject.
   const { parsed: sms } = parseInboundSms(form)
   if (!sms.from || !sms.to) {
     return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
@@ -116,6 +118,11 @@ export async function POST(request: Request) {
       { to: sms.to }
     )
     return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+  }
+
+  const creds = resolveTwilioCredentials(shop)
+  if (!verifyTwilioSignature({ url, form, signature, creds })) {
+    return new Response("Invalid signature", { status: 401 })
   }
 
   try {

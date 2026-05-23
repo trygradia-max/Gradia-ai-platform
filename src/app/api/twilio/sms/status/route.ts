@@ -26,9 +26,12 @@ import { headers } from "next/headers"
 import {
   EMPTY_TWIML_RESPONSE,
   parseInboundSms,
+  resolveTwilioCredentials,
   verifyTwilioSignature,
+  type TwilioCredentials,
 } from "@/lib/twilio"
 import { createServiceClient } from "@/lib/supabase/service"
+import type { ShopRow } from "@/lib/types/database"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -62,7 +65,27 @@ export async function POST(request: Request) {
   const publicUrl = await resolvePublicUrl(request)
   const signature = request.headers.get("x-twilio-signature")
 
-  if (!verifyTwilioSignature({ url: publicUrl, form, signature })) {
+  // sendOutboundSms appends `?shop=<id>` to the status callback URL
+  // so we can pick the right auth token to verify BYO-Twilio shops.
+  // Falls back to env globals when the query param is missing
+  // (legacy global-account shops, or pre-BYO sends).
+  const shopId = new URL(request.url).searchParams.get("shop")
+  const supabase = createServiceClient()
+  let creds: TwilioCredentials | null = null
+  if (shopId) {
+    const { data } = await supabase
+      .from("shops")
+      .select("twilio_account_sid_enc, twilio_auth_token_enc")
+      .eq("id", shopId)
+      .maybeSingle()
+    creds = resolveTwilioCredentials(
+      data as Pick<ShopRow, "twilio_account_sid_enc" | "twilio_auth_token_enc"> | null
+    )
+  } else {
+    creds = resolveTwilioCredentials(null)
+  }
+
+  if (!verifyTwilioSignature({ url: publicUrl, form, signature, creds })) {
     return new Response("Invalid signature", { status: 401 })
   }
 
@@ -77,8 +100,6 @@ export async function POST(request: Request) {
     return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
   }
   const errorCode = (raw.ErrorCode ?? "").trim() || null
-
-  const supabase = createServiceClient()
 
   // Read-modify-write the JSON metadata. We match on the message SID
   // via the existing GIN-friendly jsonb operator; if the row hasn't

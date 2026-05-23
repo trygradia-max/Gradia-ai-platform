@@ -197,6 +197,107 @@ export async function saveTwilioNumber(
   return { ok: true, shop: data as ShopRow }
 }
 
+const saveTwilioCredentialsSchema = z.object({
+  twilio_account_sid: z
+    .string()
+    .trim()
+    .refine(
+      (v) => /^AC[0-9a-fA-F]{32}$/.test(v),
+      "Account SID should look like AC… (34 chars)."
+    ),
+  twilio_auth_token: z.string().trim().min(32, "Auth token looks too short."),
+})
+
+export type SaveTwilioCredentialsResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+/**
+ * Stores per-shop Twilio account credentials (BYO model). Both are
+ * encrypted at rest with ENCRYPTION_KEY. Set both to null to clear
+ * back to the env-global fallback.
+ */
+export async function saveTwilioCredentials(
+  input: z.infer<typeof saveTwilioCredentialsSchema>
+): Promise<SaveTwilioCredentialsResult> {
+  const parsed = saveTwilioCredentialsSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid credentials.",
+    }
+  }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  let sidEnc: string | null
+  let tokenEnc: string | null
+  try {
+    sidEnc = encryptSecret(parsed.data.twilio_account_sid)
+    tokenEnc = encryptSecret(parsed.data.twilio_auth_token)
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Encryption failed: ${err.message}`
+          : "Encryption failed.",
+    }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      twilio_account_sid_enc: sidEnc,
+      twilio_auth_token_enc: tokenEnc,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not save." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
+export type ClearTwilioCredentialsResult =
+  | { ok: true; shop: ShopRow }
+  | { ok: false; error: string }
+
+export async function clearTwilioCredentials(): Promise<ClearTwilioCredentialsResult> {
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) {
+    return { ok: false, error: "Finish onboarding first." }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({
+      twilio_account_sid_enc: null,
+      twilio_auth_token_enc: null,
+    })
+    .eq("id", existing.id)
+    .select("*")
+    .single()
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not clear." }
+  }
+
+  revalidatePath("/settings")
+  return { ok: true, shop: data as ShopRow }
+}
+
 export type DisconnectStripeResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }
@@ -248,7 +349,11 @@ export async function disconnectSms(): Promise<DisconnectSmsResult> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("shops")
-    .update({ twilio_phone_number: null })
+    .update({
+      twilio_phone_number: null,
+      twilio_account_sid_enc: null,
+      twilio_auth_token_enc: null,
+    })
     .eq("id", existing.id)
     .select("*")
     .single()

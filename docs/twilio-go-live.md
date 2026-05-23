@@ -19,14 +19,29 @@ type for nurture and replies) is its own follow-up task.
 
 ## 1. Create / pick the Twilio account
 
-Pilot model: **one global Twilio account** owns all of Gradia's SMS
-numbers. Each shop just owns one number on that account — no
-per-shop auth tokens stored anywhere. Avoids the multi-tenant secrets
-work for now.
+Two supported modes:
+
+**Pilot mode (global account)** — one Twilio account owns numbers for
+multiple shops; only the env-level `TWILIO_ACCOUNT_SID` /
+`TWILIO_AUTH_TOKEN` are stored. Each shop just configures the number
+they own on that account. Quickest path to first pilot.
+
+**BYO mode (per-shop credentials)** — each shop plugs in their own
+Twilio account SID + auth token via `/settings#sms`. Encrypted at
+rest with `ENCRYPTION_KEY`. Send + signature verification + status
+callbacks all auto-detect BYO creds and use them when present;
+otherwise they fall back to the env globals. This is the model for
+scale: independent A2P 10DLC registrations, independent
+deliverability reputation, the shop owns their own Twilio bill.
+
+Outbound sends in BYO mode pass `?shop=<id>` on the status callback
+URL so the status route can pick the right auth token to verify
+delivery callbacks against.
 
 1. Sign up at <https://www.twilio.com/console> if needed.
 2. Note the **Account SID** and **Auth Token** from the console
-   homepage. These are the global credentials.
+   homepage. These are the global credentials (or the BYO shop's
+   credentials, depending on mode).
 
 ---
 
