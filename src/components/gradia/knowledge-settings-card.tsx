@@ -1,11 +1,13 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { BookOpen, Loader2, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
   deleteKnowledgeEntry,
+  saveKnowledgeBulkEntry,
   saveKnowledgeEntry,
 } from "@/app/actions/knowledge"
 import { Button } from "@/components/ui/button"
@@ -20,7 +22,21 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { ShopKnowledgeRow } from "@/lib/types/database"
 
-const MAX_CONTENT = 4_000
+const MAX_CONTENT = 80_000
+const SINGLE_ENTRY_CAP = 4_000
+
+/**
+ * Rough chunk preview that mirrors lib/knowledge.ts's chunker so the
+ * UI can show "will be split into N pieces" without a server round
+ * trip. Conservative: counts paragraph breaks ÷ target size.
+ */
+function previewChunkCount(text: string): number {
+  const t = text.trim()
+  if (!t) return 0
+  if (t.length <= SINGLE_ENTRY_CAP) return 1
+  const paragraphs = t.split(/\n{2,}/).filter((p) => p.trim().length > 0)
+  return Math.max(paragraphs.length, Math.ceil(t.length / 900))
+}
 
 const EXAMPLES = [
   { name: "Deposits", body: "We take a 25% deposit at booking, the rest on completion. Deposits are refundable up to 24 hours before the appointment." },
@@ -33,14 +49,40 @@ export function KnowledgeSettingsCard({
 }: {
   initialEntries: ShopKnowledgeRow[]
 }) {
+  const router = useRouter()
   const [entries, setEntries] = React.useState(initialEntries)
   const [sourceName, setSourceName] = React.useState("")
   const [content, setContent] = React.useState("")
   const [pending, setPending] = React.useState<null | "save" | string>(null)
 
+  const chunkCount = previewChunkCount(content)
+  const willChunk = chunkCount > 1
+
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setPending("save")
+
+    // Auto-chunk longer content. The server still validates; this is
+    // just routing.
+    if (content.trim().length > SINGLE_ENTRY_CAP) {
+      const result = await saveKnowledgeBulkEntry({ sourceName, content })
+      setPending(null)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      setSourceName("")
+      setContent("")
+      toast.success(
+        `Saved ${result.inserted} chunk${result.inserted === 1 ? "" : "s"} — drafters can cite this now.`
+      )
+      // The server `revalidatePath("/settings")` will repaint with the
+      // new rows on the next navigation; for the optimistic count we
+      // just bump the heading by refetching on revalidate.
+      router.refresh()
+      return
+    }
+
     const result = await saveKnowledgeEntry({
       sourceName,
       content,
@@ -122,13 +164,21 @@ export function KnowledgeSettingsCard({
               onChange={(e) =>
                 setContent(e.target.value.slice(0, MAX_CONTENT))
               }
-              placeholder="Tell us the rule, the policy, the brand-voice note — one fact per entry."
-              rows={5}
+              placeholder="One fact per entry, or paste a longer doc and we'll auto-chunk it for you."
+              rows={willChunk ? 10 : 5}
               disabled={pending === "save"}
             />
-            <p className="text-xs text-muted-foreground">
-              {content.length} / {MAX_CONTENT.toLocaleString()}
-            </p>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {content.length.toLocaleString()} /{" "}
+                {MAX_CONTENT.toLocaleString()}
+              </span>
+              {willChunk ? (
+                <span className="text-foreground">
+                  Will split into ~{chunkCount} chunks on save.
+                </span>
+              ) : null}
+            </div>
           </div>
           {entries.length === 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -157,7 +207,7 @@ export function KnowledgeSettingsCard({
               ) : (
                 <Plus className="size-4" aria-hidden />
               )}
-              Add entry
+              {willChunk ? `Add document (${chunkCount} chunks)` : "Add entry"}
             </Button>
           </div>
         </form>

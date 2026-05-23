@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 
 import {
   addShopKnowledge,
+  addShopKnowledgeBulk,
   deleteShopKnowledge,
   type AddKnowledgeInput,
 } from "@/lib/knowledge"
@@ -24,6 +25,22 @@ export async function saveKnowledgeEntry(
   if (!result.ok) return result
   revalidatePath("/settings")
   return result
+}
+
+export type SaveKnowledgeBulkResult =
+  | { ok: true; inserted: number }
+  | { ok: false; error: string }
+
+export async function saveKnowledgeBulkEntry(
+  input: AddKnowledgeInput
+): Promise<SaveKnowledgeBulkResult> {
+  await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+  const result = await addShopKnowledgeBulk(supabase, shop.id, input)
+  if (!result.ok) return result
+  revalidatePath("/settings")
+  return { ok: true, inserted: result.inserted }
 }
 
 export type DeleteKnowledgeResult =
