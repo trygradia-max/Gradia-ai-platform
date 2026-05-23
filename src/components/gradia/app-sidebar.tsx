@@ -26,6 +26,8 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { ShopSwitcher } from "@/components/gradia/shop-switcher"
+import type { ShopContext } from "@/lib/shop"
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -38,7 +40,13 @@ const nav = [
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
-export function AppSidebar() {
+export function AppSidebar({
+  shops = [],
+  activeShopId,
+}: {
+  shops?: ShopContext[]
+  activeShopId?: string
+} = {}) {
   const pathname = usePathname()
 
   return (
@@ -46,7 +54,7 @@ export function AppSidebar() {
       collapsible="icon"
       className="border-r border-sidebar-border/80 transition-[width] duration-200 ease-out"
     >
-      <SidebarHeader className="border-b border-sidebar-border/60 p-4">
+      <SidebarHeader className="space-y-2 border-b border-sidebar-border/60 p-4">
         <div className="flex items-center gap-2">
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30 transition-colors duration-200">
             <Sparkles className="size-4" aria-hidden />
@@ -58,6 +66,9 @@ export function AppSidebar() {
             <span className="text-xs text-muted-foreground">Our AI office</span>
           </div>
         </div>
+        {shops.length > 1 && activeShopId ? (
+          <ShopSwitcher shops={shops} activeShopId={activeShopId} />
+        ) : null}
       </SidebarHeader>
       <SidebarContent className="px-2 py-4">
         <SidebarGroup>

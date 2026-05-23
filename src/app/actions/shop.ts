@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 import { z } from "zod"
 
 import {
@@ -9,13 +10,57 @@ import {
 } from "@/lib/aurinko"
 import { encryptSecret } from "@/lib/crypto"
 import { createClient } from "@/lib/supabase/server"
-import { getOptionalShop, requireUser } from "@/lib/shop"
+import { ACTIVE_SHOP_COOKIE, getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
+
+export type SetActiveShopResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
+/**
+ * Pins the user's active shop in a cookie. requireShop() will read it
+ * on every subsequent request and resolve to this shop instead of the
+ * default oldest-shop fallback. Verifies ownership before setting so
+ * a forged shopId can't escape RLS.
+ */
+export async function setActiveShop(
+  shopId: string
+): Promise<SetActiveShopResult> {
+  const user = await requireUser()
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from("shops")
+    .select("id")
+    .eq("id", shopId)
+    .eq("owner_id", user.id)
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!data) return { ok: false, error: "Shop not found or not yours." }
+
+  const cookieStore = await cookies()
+  cookieStore.set({
+    name: ACTIVE_SHOP_COOKIE,
+    value: shopId,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+  })
+  // Revalidate everything — shop-scoped data is everywhere.
+  revalidatePath("/", "layout")
+  return { ok: true }
+}
 
 const saveShopSchema = z.object({
   name: z.string().min(1, "Shop name is required").max(120),
   location: z.string().max(200).nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
+  /** When true, always insert a new shop row (used by the "add
+   *  another shop" path from the sidebar switcher). Without this,
+   *  saveShop updates the user's currently-pinned shop. */
+  createNew: z.boolean().optional(),
 })
 
 export type SaveShopResult =
@@ -44,7 +89,7 @@ export async function saveShop(
 
   const user = await requireUser()
   const supabase = await createClient()
-  const existing = await getOptionalShop()
+  const existing = parsed.data.createNew ? null : await getOptionalShop()
 
   const fields = {
     name: parsed.data.name.trim(),
@@ -77,6 +122,20 @@ export async function saveShop(
   if (error || !data) {
     return { ok: false, error: error?.message ?? "Could not create shop." }
   }
+
+  // First shop ever (or freshly-created additional shop) → pin it as
+  // active so requireShop resolves to this one immediately, no manual
+  // switch needed.
+  const cookieStore = await cookies()
+  cookieStore.set({
+    name: ACTIVE_SHOP_COOKIE,
+    value: (data as ShopRow).id,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  })
 
   revalidatePath("/", "layout")
   return { ok: true, shop: data as ShopRow }

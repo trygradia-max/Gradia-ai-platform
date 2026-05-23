@@ -50,10 +50,14 @@ export function OnboardingWizard({
   initialShop,
   initialServices,
   initialStep,
+  forceCreate = false,
 }: {
   initialShop: ShopRow | null
   initialServices: ServiceRow[]
   initialStep: Step
+  /** "Add another shop" path — insert a new shop row even if the user
+   *  already owns one. */
+  forceCreate?: boolean
 }) {
   const router = useRouter()
   const [step, setStep] = React.useState<Step>(initialStep)
@@ -76,6 +80,7 @@ export function OnboardingWizard({
         {step === 1 ? (
           <ShopStep
             shop={shop}
+            forceCreate={forceCreate}
             onSaved={(saved) => {
               setShop(saved)
               setStep(2)
@@ -159,9 +164,11 @@ function dotClass(active: boolean, complete: boolean): string {
 
 function ShopStep({
   shop,
+  forceCreate,
   onSaved,
 }: {
   shop: ShopRow | null
+  forceCreate: boolean
   onSaved: (shop: ShopRow) => void
 }) {
   const [pending, setPending] = React.useState(false)
@@ -176,7 +183,12 @@ function ShopStep({
     const phone = String(fd.get("phone") ?? "").trim() || null
 
     setPending(true)
-    const result = await saveShop({ name, location, phone })
+    const result = await saveShop({
+      name,
+      location,
+      phone,
+      createNew: forceCreate,
+    })
     setPending(false)
 
     if (!result.ok) {

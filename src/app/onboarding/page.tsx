@@ -5,16 +5,28 @@ import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ new?: string }>
+}) {
   await requireUser()
   const supabase = await createClient()
+  const { new: isNew } = await searchParams
+  const startFresh = isNew === "1"
 
-  const { data: shopRow } = await supabase
-    .from("shops")
-    .select("*")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle()
+  // For "add another shop" we deliberately ignore any existing shop
+  // and start the wizard from step 1 with a blank canvas. RLS is
+  // fine with the user having multiple rows in shops; the active
+  // cookie + the switcher pick which one is "selected" later.
+  const { data: shopRow } = startFresh
+    ? { data: null }
+    : await supabase
+        .from("shops")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
 
   const shop = (shopRow as ShopRow | null) ?? null
 
@@ -38,6 +50,7 @@ export default async function OnboardingPage() {
         initialShop={shop}
         initialServices={services}
         initialStep={initialStep}
+        forceCreate={startFresh}
       />
     </div>
   )
