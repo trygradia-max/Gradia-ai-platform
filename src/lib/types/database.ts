@@ -8,6 +8,7 @@ export type ShopRow = {
   phone: string | null
   vapi_assistant_id: string | null
   aurinko_account_id: number | null
+  aurinko_token_expires_at: string | null
   aurinko_account_email: string | null
   aurinko_access_token_enc: string | null
   aurinko_subscription_id: string | null

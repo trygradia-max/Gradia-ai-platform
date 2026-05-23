@@ -13,7 +13,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
-import { createCalendarEvent, sendEmailMessage } from "@/lib/aurinko"
+import {
+  createCalendarEvent,
+  getAccessTokenForShop as getAurinkoAccessTokenForShop,
+  sendEmailMessage,
+} from "@/lib/aurinko"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
@@ -446,7 +450,14 @@ async function executeBookAppointment(
   const end = new Date(start.getTime() + durationMinutes * 60_000)
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  let accessToken: string | null = null
+  if (shop) {
+    try {
+      accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+    } catch (err) {
+      console.warn("[approvals] Aurinko token refresh failed:", err)
+    }
+  }
   if (!shop || !accessToken) {
     await rollbackClaim(supabase, claimed.id)
     return {
@@ -853,7 +864,14 @@ async function executeSendEmail(
   }
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  let accessToken: string | null = null
+  if (shop) {
+    try {
+      accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+    } catch (err) {
+      console.warn("[approvals] Aurinko token refresh failed:", err)
+    }
+  }
   if (!shop || !accessToken) {
     await rollbackClaim(supabase, claimed.id)
     return {

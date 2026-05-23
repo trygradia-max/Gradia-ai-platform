@@ -19,8 +19,13 @@
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
+import type { ShopRow } from "@/lib/types/database"
 
 const AURINKO_API_BASE = "https://api.aurinko.io/v1"
+const REFRESH_BUFFER_MS = 60 * 1000 // refresh when within 60s of expiry
 
 export class AurinkoError extends Error {
   status: number
@@ -80,6 +85,22 @@ export function buildAuthorizeUrl(input: {
 export type AurinkoTokenResponse = {
   accountId: number
   accessToken: string
+  /** Absolute ISO expiry, or null when Aurinko didn't supply one. */
+  expiresAt: string | null
+}
+
+function readExpiry(parsed: unknown): string | null {
+  const obj = parsed as { expiresIn?: unknown; expires_in?: unknown }
+  const seconds =
+    typeof obj.expiresIn === "number"
+      ? obj.expiresIn
+      : typeof obj.expires_in === "number"
+        ? obj.expires_in
+        : null
+  if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) {
+    return null
+  }
+  return new Date(Date.now() + seconds * 1000).toISOString()
 }
 
 /**
@@ -112,7 +133,54 @@ export async function exchangeAuthCode(code: string): Promise<AurinkoTokenRespon
     throw new AurinkoError(500, "Token exchange missing accountId or accessToken")
   }
 
-  return { accountId: obj.accountId, accessToken: obj.accessToken }
+  return {
+    accountId: obj.accountId,
+    accessToken: obj.accessToken,
+    expiresAt: readExpiry(parsed),
+  }
+}
+
+/**
+ * Refreshes the access token for a previously-linked Aurinko account.
+ * Endpoint: POST /v1/auth/accessToken/{accountId} with the same Basic
+ * auth we use for code exchange. Aurinko's model is "app credentials
+ * + accountId = authority to mint a new token for that linked
+ * account" — no separate refresh_token to track.
+ */
+export async function refreshAccessToken(
+  accountId: number
+): Promise<{ accessToken: string; expiresAt: string | null }> {
+  const res = await fetch(
+    `${AURINKO_API_BASE}/auth/accessToken/${accountId}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: basicAuthHeader(),
+        Accept: "application/json",
+      },
+    }
+  )
+  const body = await res.text()
+  if (!res.ok) {
+    throw new AurinkoError(
+      res.status,
+      `Token refresh failed: ${body.slice(0, 200)}`
+    )
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    throw new AurinkoError(500, "Token refresh returned non-JSON")
+  }
+  const obj = parsed as { accessToken?: unknown }
+  if (typeof obj.accessToken !== "string") {
+    throw new AurinkoError(500, "Token refresh missing accessToken")
+  }
+  return {
+    accessToken: obj.accessToken,
+    expiresAt: readExpiry(parsed),
+  }
 }
 
 export type AurinkoAccount = {
@@ -505,4 +573,64 @@ export function verifyAurinkoSignature(input: {
   } catch {
     return false
   }
+}
+
+// ---------- per-shop token helper ----------
+
+type ShopForAurinkoToken = Pick<
+  ShopRow,
+  | "id"
+  | "aurinko_account_id"
+  | "aurinko_access_token_enc"
+  | "aurinko_token_expires_at"
+>
+
+/**
+ * Returns a usable Aurinko access token for the shop, refreshing
+ * transparently when the stored token is within REFRESH_BUFFER_MS
+ * of expiry. Persists the new token + expiry before returning so
+ * concurrent callers share the fresh one.
+ *
+ * Returns null when there's no token to start with — callers should
+ * treat that as "Aurinko not connected" rather than an error. Throws
+ * AurinkoError on refresh failure (revoked grant, etc.) so callers
+ * can prompt a reconnect.
+ */
+export async function getAccessTokenForShop(
+  supabase: SupabaseClient,
+  shop: ShopForAurinkoToken
+): Promise<string | null> {
+  const decrypted = tryDecryptSecret(shop.aurinko_access_token_enc)
+  if (!decrypted) return null
+  if (!shop.aurinko_account_id) return decrypted // pre-refresh-era shops
+
+  const expiresAtMs = shop.aurinko_token_expires_at
+    ? new Date(shop.aurinko_token_expires_at).getTime()
+    : 0
+  // No expiry recorded → assume long-lived; only refresh when the
+  // existing call fails. Treat 0 as "unknown, don't preemptively
+  // refresh" so we don't burn an extra round-trip on every send.
+  const stale =
+    expiresAtMs > 0 && expiresAtMs - Date.now() < REFRESH_BUFFER_MS
+  if (!stale) return decrypted
+
+  let next
+  try {
+    next = await refreshAccessToken(shop.aurinko_account_id)
+  } catch (err) {
+    console.warn("[aurinko] preemptive refresh failed:", err)
+    throw err
+  }
+
+  const { error } = await supabase
+    .from("shops")
+    .update({
+      aurinko_access_token_enc: encryptSecret(next.accessToken),
+      aurinko_token_expires_at: next.expiresAt,
+    })
+    .eq("id", shop.id)
+  if (error) {
+    console.error("[aurinko] failed to persist refreshed token:", error)
+  }
+  return next.accessToken
 }

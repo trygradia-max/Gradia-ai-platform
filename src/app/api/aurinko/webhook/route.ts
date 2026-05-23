@@ -25,11 +25,11 @@ import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import {
+  getAccessTokenForShop as getAurinkoAccessTokenForShop,
   getEmailMessage,
   verifyAurinkoSignature,
   type AurinkoMessage,
 } from "@/lib/aurinko"
-import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
@@ -97,7 +97,14 @@ export async function POST(request: Request) {
   }
 
   const shop = (shopRow as ShopRow | null) ?? null
-  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  let accessToken: string | null = null
+  if (shop) {
+    try {
+      accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+    } catch (err) {
+      console.warn("[aurinko webhook] token refresh failed:", err)
+    }
+  }
   if (!shop || !accessToken) {
     console.warn(
       "[aurinko webhook] no shop matched accountId, token missing, or decryption failed",

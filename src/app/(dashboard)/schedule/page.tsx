@@ -7,10 +7,10 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
+  getAccessTokenForShop as getAurinkoAccessTokenForShop,
   listCalendarEvents,
   type AurinkoCalendarEvent,
 } from "@/lib/aurinko"
-import { tryDecryptSecret } from "@/lib/crypto"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -82,7 +82,14 @@ export default async function SchedulePage() {
     .eq("id", shopCtx.id)
     .single()
   const shop = (data as ShopRow | null) ?? null
-  const accessToken = tryDecryptSecret(shop?.aurinko_access_token_enc)
+  let accessToken: string | null = null
+  if (shop) {
+    try {
+      accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+    } catch (err) {
+      console.warn("[schedule] Aurinko token refresh failed:", err)
+    }
+  }
   const notConnected = !accessToken
 
   return (

@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { deleteSubscription } from "@/lib/aurinko"
-import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
+import {
+  deleteSubscription,
+  getAccessTokenForShop as getAurinkoAccessTokenForShop,
+} from "@/lib/aurinko"
+import { encryptSecret } from "@/lib/crypto"
 import { createClient } from "@/lib/supabase/server"
 import { getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
@@ -532,20 +535,47 @@ export async function disconnectEmail(): Promise<DisconnectEmailResult> {
   const supabase = await createClient()
   const { data: current } = await supabase
     .from("shops")
-    .select("aurinko_access_token_enc, aurinko_subscription_id")
+    .select(
+      "id, aurinko_account_id, aurinko_access_token_enc, aurinko_token_expires_at, aurinko_subscription_id"
+    )
     .eq("id", existing.id)
     .single()
 
   const row = current as
     | {
+        id: string
+        aurinko_account_id: number | null
         aurinko_access_token_enc: string | null
+        aurinko_token_expires_at: string | null
         aurinko_subscription_id: string | null
       }
     | null
 
-  const accessToken = tryDecryptSecret(row?.aurinko_access_token_enc)
-  if (accessToken && row?.aurinko_subscription_id) {
-    await deleteSubscription(accessToken, row.aurinko_subscription_id)
+  if (row?.aurinko_subscription_id) {
+    let accessToken: string | null = null
+    try {
+      accessToken = await getAurinkoAccessTokenForShop(supabase, {
+        id: row.id,
+        aurinko_account_id: row.aurinko_account_id,
+        aurinko_access_token_enc: row.aurinko_access_token_enc,
+        aurinko_token_expires_at: row.aurinko_token_expires_at,
+      })
+    } catch (err) {
+      console.warn(
+        "[disconnect-email] token refresh failed (continuing anyway):",
+        err
+      )
+    }
+    if (accessToken) {
+      try {
+        await deleteSubscription(accessToken, row.aurinko_subscription_id)
+      } catch (err) {
+        console.warn(
+          "[disconnect-email] subscription delete failed (continuing):",
+          err
+        )
+      }
+    }
   }
 
   const { data, error } = await supabase
@@ -554,6 +584,7 @@ export async function disconnectEmail(): Promise<DisconnectEmailResult> {
       aurinko_account_id: null,
       aurinko_account_email: null,
       aurinko_access_token_enc: null,
+      aurinko_token_expires_at: null,
       aurinko_subscription_id: null,
     })
     .eq("id", existing.id)

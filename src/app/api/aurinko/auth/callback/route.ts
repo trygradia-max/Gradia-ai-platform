@@ -117,6 +117,7 @@ export async function GET(request: Request) {
       aurinko_account_id: account.id,
       aurinko_account_email: account.email,
       aurinko_access_token_enc: encryptedToken,
+      aurinko_token_expires_at: token.expiresAt,
       aurinko_subscription_id: subscription.id,
     })
     .eq("id", shop.id)
