@@ -32,35 +32,81 @@ export type ResolvedMcpAuth = {
   tokenId: string
 }
 
+/** Per-token daily request cap. Tunable by env in a later pass. */
+export const MCP_DAILY_REQUEST_CAP = 5000
+
+export type AuthResult =
+  | { ok: true; auth: ResolvedMcpAuth }
+  | { ok: false; status: 401; reason: "missing" | "invalid" | "revoked" }
+  | { ok: false; status: 429; resetInSeconds: number }
+
+function secondsUntilUtcMidnight(): number {
+  const now = new Date()
+  const tomorrow = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + 1,
+      0,
+      0,
+      0,
+      0
+    )
+  )
+  return Math.max(1, Math.ceil((tomorrow.getTime() - now.getTime()) / 1000))
+}
+
 /**
- * Validates a bearer header and returns the shop it's bound to.
- * Bumps last_used_at as a side-effect. Returns null when the
- * header is missing, malformed, or revoked — callers respond 401.
+ * Validates a bearer header, looks up the shop, enforces the
+ * per-token daily rate limit, and bumps usage counters. Returns
+ * a discriminated result the route handler can map to HTTP.
+ *
+ * The cap check + counter bump is race-tolerant by design — under
+ * heavy concurrency a token can over-spend by a handful. That's
+ * fine for a soft pilot limit.
  */
 export async function resolveMcpAuth(
   authorization: string | null
-): Promise<ResolvedMcpAuth | null> {
-  if (!authorization) return null
+): Promise<AuthResult> {
+  if (!authorization)
+    return { ok: false, status: 401, reason: "missing" }
   const [scheme, raw] = authorization.split(" ")
-  if (scheme?.toLowerCase() !== "bearer" || !raw) return null
+  if (scheme?.toLowerCase() !== "bearer" || !raw)
+    return { ok: false, status: 401, reason: "invalid" }
   const trimmed = raw.trim()
-  if (!trimmed.startsWith(TOKEN_PREFIX)) return null
+  if (!trimmed.startsWith(TOKEN_PREFIX))
+    return { ok: false, status: 401, reason: "invalid" }
 
   const supabase = createServiceClient()
   const hash = hashMcpToken(trimmed)
   const { data, error } = await supabase
     .from("mcp_tokens")
-    .select("id, shop_id, revoked_at")
+    .select("id, shop_id, revoked_at, requests_today, usage_date")
     .eq("token_hash", hash)
     .maybeSingle()
-  if (error || !data) return null
+  if (error || !data) return { ok: false, status: 401, reason: "invalid" }
 
   const row = data as {
     id: string
     shop_id: string
     revoked_at: string | null
+    requests_today: number
+    usage_date: string
   }
-  if (row.revoked_at) return null
+  if (row.revoked_at) return { ok: false, status: 401, reason: "revoked" }
+
+  // Reset the counter if we've crossed a UTC day boundary.
+  const today = new Date().toISOString().slice(0, 10)
+  const sameDay = row.usage_date === today
+  const nextCount = sameDay ? row.requests_today + 1 : 1
+
+  if (sameDay && row.requests_today >= MCP_DAILY_REQUEST_CAP) {
+    return {
+      ok: false,
+      status: 429,
+      resetInSeconds: secondsUntilUtcMidnight(),
+    }
+  }
 
   const { data: shopRow } = await supabase
     .from("shops")
@@ -70,18 +116,25 @@ export async function resolveMcpAuth(
   const shop = shopRow as
     | { id: string; name: string; owner_id: string }
     | null
-  if (!shop) return null
+  if (!shop) return { ok: false, status: 401, reason: "invalid" }
 
-  // Fire-and-forget last_used bump. Failure shouldn't block the call.
+  // Bump usage. Best-effort; failure shouldn't reject the request.
   void supabase
     .from("mcp_tokens")
-    .update({ last_used_at: new Date().toISOString() })
+    .update({
+      last_used_at: new Date().toISOString(),
+      requests_today: nextCount,
+      usage_date: today,
+    })
     .eq("id", row.id)
 
   return {
-    shopId: row.shop_id,
-    shopName: shop.name,
-    ownerId: shop.owner_id,
-    tokenId: row.id,
+    ok: true,
+    auth: {
+      shopId: row.shop_id,
+      shopName: shop.name,
+      ownerId: shop.owner_id,
+      tokenId: row.id,
+    },
   }
 }

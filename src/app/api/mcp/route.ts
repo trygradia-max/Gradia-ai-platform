@@ -20,8 +20,27 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 async function handle(request: Request): Promise<Response> {
-  const auth = await resolveMcpAuth(request.headers.get("authorization"))
-  if (!auth) {
+  const result = await resolveMcpAuth(request.headers.get("authorization"))
+  if (!result.ok) {
+    if (result.status === 429) {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          error: {
+            code: -32002,
+            message: "Daily request cap reached for this token",
+          },
+          id: null,
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(result.resetInSeconds),
+          },
+        }
+      )
+    }
     return new Response(
       JSON.stringify({
         jsonrpc: "2.0",
@@ -38,6 +57,7 @@ async function handle(request: Request): Promise<Response> {
     )
   }
 
+  const { auth } = result
   // Stateless: a fresh transport + server per request. We use the
   // service-role supabase client because the bearer token has
   // already established trust + scoped the shop_id; every tool

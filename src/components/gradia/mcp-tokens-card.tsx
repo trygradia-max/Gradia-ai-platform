@@ -48,6 +48,8 @@ export function McpTokensCard({
         created_at: new Date().toISOString(),
         last_used_at: null,
         revoked_at: null,
+        requests_today: 0,
+        usage_date: new Date().toISOString().slice(0, 10),
       },
       ...tokens,
     ])

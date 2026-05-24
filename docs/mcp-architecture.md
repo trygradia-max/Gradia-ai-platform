@@ -235,7 +235,7 @@ Estimated value: $800–$1,200
 
 ---
 
-## Gradia Internal MCP — **sessions 1 + 2 shipped 2026-05-23/24**
+## Gradia Internal MCP — **sessions 1–3 shipped 2026-05-23/24**
 
 The load-bearing piece for the agentic vision: exposes our domain
 primitives instead of raw external operations, so an agent can't
@@ -275,10 +275,22 @@ call.
 - `gradia://customers/recent` — last 25 customer rows
 - `gradia://leads/active` — non-booked leads, newest first
 
-**Coming in session 3.**
-- MCP prompts for the Builder / Co-owner personas
-- Resource templates (e.g. `gradia://customers/{id}/timeline`)
-- Per-call rate limits per token
+**Resource templates live (session 3).**
+- `gradia://customers/{id}` — single customer detail
+- `gradia://customers/{id}/timeline` — last 50 interactions across every channel for one customer
+
+**Prompts live (session 3).** Three pre-baked personas matching the
+"Three Personas" section above. Each one bakes in the workflow,
+tone, and hard rules so an external Claude can pick a persona and
+just go.
+- `builder` — Claude-Code-style. Reads broadly, batch-proposes outbound, every change in HITL.
+- `co_owner` — proactive partner. 1–3 next actions, focused single-tap proposals.
+- `accountant` — read-only BI. NEVER calls propose_*.
+
+**Rate limiting (session 3).** Per-token daily cap (default
+5000/day), tracked on `mcp_tokens.requests_today` + `usage_date`.
+Bumped on every authenticated request; resets at UTC midnight; over
+the cap returns 429 with `Retry-After`.
 
 This MCP is **the single most important piece** for making Gradia
 genuinely agentic and safe.

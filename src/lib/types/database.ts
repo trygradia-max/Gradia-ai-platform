@@ -185,6 +185,8 @@ export type McpTokenRow = {
   created_at: string
   last_used_at: string | null
   revoked_at: string | null
+  requests_today: number
+  usage_date: string
 }
 
 export type ShopKnowledgeRow = {

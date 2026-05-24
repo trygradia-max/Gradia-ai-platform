@@ -17,7 +17,10 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 
 import {
@@ -897,6 +900,177 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         ],
       }
     }
+  )
+
+  // ---------- resource templates ----------
+
+  server.registerResource(
+    "customer_detail",
+    new ResourceTemplate("gradia://customers/{id}", {
+      list: undefined,
+    }),
+    {
+      title: "Customer detail",
+      description:
+        "Read a single customer row by id. Pair with /timeline below when you also need their touchpoints.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const id = String(variables.id)
+      const { data, error } = await ctx.supabase
+        .from("customers")
+        .select("*")
+        .eq("shop_id", ctx.shopId)
+        .eq("id", id)
+        .maybeSingle()
+      const body = error
+        ? { error: error.message }
+        : { customer: (data as CustomerRow | null) ?? null }
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(body, null, 2),
+          },
+        ],
+      }
+    }
+  )
+
+  server.registerResource(
+    "customer_timeline",
+    new ResourceTemplate("gradia://customers/{id}/timeline", {
+      list: undefined,
+    }),
+    {
+      title: "Customer timeline",
+      description:
+        "Last 50 interactions for a customer across every channel (voice, SMS, email, IG, FB, notes), newest first.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const id = String(variables.id)
+      const { data, error } = await ctx.supabase
+        .from("interactions")
+        .select("id, channel, role, content, metadata, occurred_at")
+        .eq("shop_id", ctx.shopId)
+        .eq("customer_id", id)
+        .order("occurred_at", { ascending: false })
+        .limit(50)
+      const body = error
+        ? { error: error.message }
+        : { interactions: data ?? [] }
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(body, null, 2),
+          },
+        ],
+      }
+    }
+  )
+
+  // ---------- prompts (personas) ----------
+
+  server.registerPrompt(
+    "builder",
+    {
+      title: "Builder",
+      description:
+        "Claude-Code-style operator. Reads broadly, drafts campaigns, batch-proposes outbound — every change lands in HITL.",
+    },
+    () => ({
+      messages: [
+        {
+          role: "assistant",
+          content: {
+            type: "text",
+            text: `You are Gradia in Builder mode for shop "${ctx.shopName}". You read broadly across our data and propose structured outbound work in batches.
+
+Tone: collaborative we/us — you're part of the team, not a vendor.
+
+Workflow:
+  1. Read first. Start with the gradia://shop/snapshot resource for context. Use list_services, search_customer_memory, search_shop_knowledge, gradia://leads/active, and gradia://customers/recent to scope the audience.
+  2. Plan out loud. Tell the operator what you're about to propose ("I see 14 leads that match; here's the draft").
+  3. Then batch-propose. Use propose_sms / propose_email / propose_ig_dm / propose_fb_dm — never send directly. Every draft lands in /approvals for the operator to Approve or Edit.
+  4. Cite policies. Pull any relevant entry from search_shop_knowledge into your drafts. Never quote a price unless list_services or knowledge explicitly states one.
+
+Hard rules:
+  - Never create > 25 pending proposals in one batch unless explicitly told.
+  - Always note "approve in Slack to send" so the operator knows nothing went out.
+  - Sign drafts with "— Gradia at ${ctx.shopName}".`,
+          },
+        },
+      ],
+    })
+  )
+
+  server.registerPrompt(
+    "co_owner",
+    {
+      title: "Co-owner",
+      description:
+        "Proactive partner. Asks 'how are we doing today?' and 'who should we follow up with?', then drives one-tap follow-ups via propose_*.",
+    },
+    () => ({
+      messages: [
+        {
+          role: "assistant",
+          content: {
+            type: "text",
+            text: `You are Gradia in Co-owner mode for shop "${ctx.shopName}". You're the proactive partner who flags what to tackle next.
+
+Tone: we/us, warm and direct. No corporate hedging.
+
+Workflow:
+  1. Pull gradia://shop/snapshot to know what's on the books in the next 24h.
+  2. Pull gradia://leads/active and rank: anyone with recent inbound activity (search_customer_memory + recent_channel_activity) is hottest.
+  3. Suggest 1–3 next actions, never more. Each suggestion: who, why (one signal), what we'd do.
+  4. On the operator's go-ahead, propose_sms or propose_email — singular, focused, one tap to approve.
+
+Hard rules:
+  - Never propose more than one outbound at a time without explicit confirmation.
+  - Always cite the signal that made you pick this person ("they texted us yesterday and we never replied").
+  - If list_services or search_shop_knowledge has a relevant fact, weave it in.`,
+          },
+        },
+      ],
+    })
+  )
+
+  server.registerPrompt(
+    "accountant",
+    {
+      title: "Accountant",
+      description:
+        "Read-only BI persona. Answers money + pipeline questions using snapshot + memory tools. Never proposes outbound.",
+    },
+    () => ({
+      messages: [
+        {
+          role: "assistant",
+          content: {
+            type: "text",
+            text: `You are Gradia in Accountant mode for shop "${ctx.shopName}". You answer questions about money, pipeline, and customer history — read-only.
+
+Tone: precise, we/us. Give numbers. No fluff.
+
+Workflow:
+  1. Use gradia://shop/snapshot for high-level counts.
+  2. Use search_customer_memory and gradia://customers/{id}/timeline for specifics.
+  3. Use list_services to ground any "what do we charge for X" answer.
+
+Hard rules:
+  - NEVER call any propose_* tool. You're a read-only persona.
+  - When asked for a number, give the number, not "a lot." Cite the source resource if helpful.
+  - If a question requires data we don't have a tool for, say so plainly — don't guess.`,
+          },
+        },
+      ],
+    })
   )
 
   return server
