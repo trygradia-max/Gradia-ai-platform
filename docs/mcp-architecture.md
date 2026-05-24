@@ -235,7 +235,7 @@ Estimated value: $800–$1,200
 
 ---
 
-## Gradia Internal MCP — **session 1 shipped 2026-05-23**
+## Gradia Internal MCP — **sessions 1 + 2 shipped 2026-05-23/24**
 
 The load-bearing piece for the agentic vision: exposes our domain
 primitives instead of raw external operations, so an agent can't
@@ -251,7 +251,7 @@ Plaintext shown once at mint; SHA-256 stored in `mcp_tokens`. Mint +
 revoke from `/settings#mcp`. Last-used timestamp bumped on every
 call.
 
-**Tools live in session 1.**
+**Tools live (session 1 — read + memory).**
 - `propose_lead({...})` — stages `create_lead` pending_action + Slack
 - `find_customer_by_channel({phone | email | instagram_handle | facebook_id})` — runs through the normalizer + dedup
 - `find_or_create_customer({...})` — same plus insert when no match
@@ -262,12 +262,23 @@ call.
 - `list_services({})` — reads the shop's service menu
 - `normalize_phone({phone})` — helper for dedup-correct phones
 
-**Coming in session 2.**
+**Tools live (session 2 — every outbound HITL action).**
 - `propose_booking({...})` — stages `book_appointment` + Slack
-- `propose_sms / propose_email / propose_ig_dm / propose_fb_dm`
-- `propose_charge({...})` — Stripe invoice via HITL
-- Resources for live shop snapshots (customers, leads, appointments)
-- Prompts for the Builder / Co-owner personas
+- `propose_sms({...})` — `send_sms` + Slack
+- `propose_email({...})` — `send_email` + Slack
+- `propose_ig_dm({...})` — `send_instagram_dm` + Slack
+- `propose_fb_dm({...})` — `send_facebook_dm` + Slack
+- `propose_charge({...})` — `charge_customer` + Slack (Stripe invoice via HITL)
+
+**Resources live (session 2).**
+- `gradia://shop/snapshot` — totals + next 24h appointments in one read
+- `gradia://customers/recent` — last 25 customer rows
+- `gradia://leads/active` — non-booked leads, newest first
+
+**Coming in session 3.**
+- MCP prompts for the Builder / Co-owner personas
+- Resource templates (e.g. `gradia://customers/{id}/timeline`)
+- Per-call rate limits per token
 
 This MCP is **the single most important piece** for making Gradia
 genuinely agentic and safe.
