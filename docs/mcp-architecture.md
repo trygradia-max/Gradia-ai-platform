@@ -235,23 +235,42 @@ Estimated value: $800–$1,200
 
 ---
 
-## The Missing MCP — Gradia Internal
+## Gradia Internal MCP — **session 1 shipped 2026-05-23**
 
-A piece this brief doesn't yet describe but matters more than any of the above for the agentic vision:
+The load-bearing piece for the agentic vision: exposes our domain
+primitives instead of raw external operations, so an agent can't
+bypass HITL / dedup / memory writes / RLS no matter how it composes
+the calls.
 
-**The Gradia Internal MCP** exposes our domain primitives — not raw external operations:
+**Transport.** Stateless `WebStandardStreamableHTTPServerTransport`
+at `POST/GET/DELETE /api/mcp`. Web Standard fetch → works on Vercel
+serverless cleanly.
 
-- `proposeLead({...})` — routes through `pending_actions` + Slack HITL
-- `proposeBooking({...})` — same gate, structured payload for time + service
-- `findCustomerByChannel({phone | email | ...})` — uses our normalizer + dedup
-- `recordInteraction({...})` — embeds + persists to shared memory
-- `searchCustomerMemory({...})` — semantic search across all channels
-- `recentChannelActivity({...})` — "John also emailed 2 hours ago" cross-channel flag
-- `quoteServiceFromMenu({...})` — reads shop's service menu
+**Auth.** Per-shop bearer tokens (`Authorization: Bearer gri_…`).
+Plaintext shown once at mint; SHA-256 stored in `mcp_tokens`. Mint +
+revoke from `/settings#mcp`. Last-used timestamp bumped on every
+call.
 
-Without this layer, an agent calling Supabase MCP directly would bypass our HITL approval, customer dedup, memory writes, and RLS scoping. With it, those guarantees hold no matter what the agent decides to do.
+**Tools live in session 1.**
+- `propose_lead({...})` — stages `create_lead` pending_action + Slack
+- `find_customer_by_channel({phone | email | instagram_handle | facebook_id})` — runs through the normalizer + dedup
+- `find_or_create_customer({...})` — same plus insert when no match
+- `record_interaction({...})` — embeds + persists to shared memory
+- `search_customer_memory({...})` — pgvector semantic search
+- `search_shop_knowledge({...})` — RAG over the owner's pasted FAQs / policies
+- `recent_channel_activity({...})` — cross-channel "they also emailed" hint
+- `list_services({})` — reads the shop's service menu
+- `normalize_phone({phone})` — helper for dedup-correct phones
 
-This MCP is **the single most important piece** for making Gradia genuinely agentic and safe.
+**Coming in session 2.**
+- `propose_booking({...})` — stages `book_appointment` + Slack
+- `propose_sms / propose_email / propose_ig_dm / propose_fb_dm`
+- `propose_charge({...})` — Stripe invoice via HITL
+- Resources for live shop snapshots (customers, leads, appointments)
+- Prompts for the Builder / Co-owner personas
+
+This MCP is **the single most important piece** for making Gradia
+genuinely agentic and safe.
 
 ---
 

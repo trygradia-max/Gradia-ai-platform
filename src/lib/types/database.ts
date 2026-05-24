@@ -177,6 +177,16 @@ export type BiMessageRow = {
   created_at: string
 }
 
+export type McpTokenRow = {
+  id: string
+  shop_id: string
+  name: string
+  token_hash: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
 export type ShopKnowledgeRow = {
   id: string
   shop_id: string
