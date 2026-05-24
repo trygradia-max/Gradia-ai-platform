@@ -1,3 +1,5 @@
+import { cookies } from "next/headers"
+
 import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
 import { getCoOwnerSuggestions } from "@/lib/data/co-owner"
 import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
@@ -5,27 +7,34 @@ import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
 import { CoOwnerCard } from "@/components/gradia/co-owner-card"
-import { WelcomeModal } from "@/components/gradia/welcome-modal"
+import {
+  WelcomeModal,
+  WELCOME_DISMISSED_COOKIE,
+} from "@/components/gradia/welcome-modal"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 
 export default async function DashboardPage() {
-  const [leads, channels, suggestions] = await Promise.all([
+  const [leads, channels, suggestions, cookieStore] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     getChannelStatusForCurrentShop(),
     getCoOwnerSuggestions(),
+    cookies(),
   ])
 
   const connectedCount = channels.filter(
     (c) => c.status === "connected"
   ).length
+  const welcomeDismissed =
+    cookieStore.get(WELCOME_DISMISSED_COOKIE)?.value === "1"
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
       <WelcomeModal
         connectedCount={connectedCount}
         totalChannels={channels.length}
+        initialDismissed={welcomeDismissed}
       />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">

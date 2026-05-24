@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import {
   Check,
   CreditCard,
@@ -76,17 +77,20 @@ export function StripeSettingsCard({
   const [localConnected, setLocalConnected] = React.useState(connected)
   const [localChargesEnabled, setLocalChargesEnabled] =
     React.useState(chargesEnabled)
+  const router = useRouter()
   const toastedRef = React.useRef(false)
 
   React.useEffect(() => {
     if (toastedRef.current || !callbackStatus) return
     toastedRef.current = true
     const msg = CALLBACK_MESSAGES[callbackStatus]
-    if (!msg) return
-    if (msg.kind === "success") toast.success(msg.text)
-    else if (msg.kind === "info") toast.message(msg.text)
-    else toast.error(msg.text)
-  }, [callbackStatus])
+    if (msg) {
+      if (msg.kind === "success") toast.success(msg.text)
+      else if (msg.kind === "info") toast.message(msg.text)
+      else toast.error(msg.text)
+    }
+    router.replace("/settings#payments", { scroll: false })
+  }, [callbackStatus, router])
 
   async function handleDisconnect() {
     if (

@@ -82,18 +82,24 @@ export function CoOwnerCard({
       </CardHeader>
       <CardContent>
         <ul className="grid gap-2">
-          {suggestions.map((s, i) => (
-            <li key={i}>
-              <SuggestionRow
-                suggestion={s}
-                busy={
-                  s.kind !== "upcoming_appointment" && busyId === s.leadId
-                }
-                disabled={busyId !== null}
-                onDraft={handleDraft}
-              />
-            </li>
-          ))}
+          {suggestions.map((s) => {
+            const key =
+              s.kind === "upcoming_appointment"
+                ? `appt:${s.appointmentId}`
+                : `${s.kind}:${s.leadId}`
+            return (
+              <li key={key}>
+                <SuggestionRow
+                  suggestion={s}
+                  busy={
+                    s.kind !== "upcoming_appointment" && busyId === s.leadId
+                  }
+                  disabled={busyId !== null}
+                  onDraft={handleDraft}
+                />
+              </li>
+            )
+          })}
         </ul>
       </CardContent>
     </Card>

@@ -112,20 +112,24 @@ export function CustomersTable({
                 customers.map((c) => (
                   <TableRow
                     key={c.id}
-                    className="cursor-pointer transition-colors duration-150 hover:bg-muted/40"
+                    className="relative cursor-pointer transition-colors duration-150 hover:bg-muted/40 focus-within:bg-muted/40"
                   >
                     <TableCell className="max-w-[200px] pl-4 font-medium sm:pl-6">
+                      {/* Single overlay link covers the entire row so
+                          click-anywhere works without per-cell wrappers
+                          or a non-semantic onClick. Cells stay read-
+                          only / selectable for screen readers. */}
                       <Link
                         href={`/customers/${c.id}`}
-                        className="block"
-                      >
-                        <span className="block truncate">
-                          {c.name?.trim() || "Unknown"}
-                        </span>
-                        <span className="block truncate text-xs tabular-nums font-normal text-muted-foreground sm:hidden">
-                          {c.phone ?? "—"}
-                        </span>
-                      </Link>
+                        aria-label={`Open ${c.name?.trim() || "customer"}`}
+                        className="absolute inset-0 z-10 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                      />
+                      <span className="block truncate">
+                        {c.name?.trim() || "Unknown"}
+                      </span>
+                      <span className="block truncate text-xs tabular-nums font-normal text-muted-foreground sm:hidden">
+                        {c.phone ?? "—"}
+                      </span>
                     </TableCell>
                     <TableCell className="hidden tabular-nums text-muted-foreground sm:table-cell">
                       {c.phone ?? "—"}

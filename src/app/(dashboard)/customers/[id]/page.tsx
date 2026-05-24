@@ -177,6 +177,10 @@ function IdentityCard({ customer }: { customer: { phone: string | null; email: s
       value: "Synced",
     })
   }
+  // Drop empty rows so customers with only a phone don't get three
+  // rows of "—" filler. If literally nothing is linked, fall through
+  // to a single explanatory empty state below.
+  const filledRows = rows.filter((r) => r.value && r.value.trim().length > 0)
   return (
     <Card className="border-border/80">
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
@@ -190,8 +194,20 @@ function IdentityCard({ customer }: { customer: { phone: string | null; email: s
           </p>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2">
-        {rows.map((r) => (
+      <CardContent
+        className={
+          filledRows.length === 0
+            ? "py-6 text-center text-sm text-muted-foreground"
+            : "grid gap-3 sm:grid-cols-2"
+        }
+      >
+        {filledRows.length === 0 ? (
+          <p>
+            No channels linked yet — they&apos;ll show up here the first
+            time they call, text, or DM us.
+          </p>
+        ) : null}
+        {filledRows.map((r) => (
           <div
             key={r.label}
             className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm"
@@ -201,7 +217,7 @@ function IdentityCard({ customer }: { customer: { phone: string | null; email: s
               {r.label}
             </span>
             <span className="ml-auto truncate font-medium">
-              {r.value ?? "—"}
+              {r.value}
             </span>
           </div>
         ))}

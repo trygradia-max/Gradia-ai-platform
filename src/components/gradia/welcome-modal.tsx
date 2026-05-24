@@ -22,21 +22,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-const DISMISS_KEY = "gradia.welcome.v1.dismissed"
+export const WELCOME_DISMISSED_COOKIE = "gradia_welcome_v1_dismissed"
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365
 
-function readDismissed(): boolean {
-  if (typeof window === "undefined") return true
+function writeDismissedCookie(): void {
   try {
-    return window.localStorage.getItem(DISMISS_KEY) === "1"
-  } catch {
-    return false
-  }
-}
-
-function subscribeToDismiss(callback: () => void): () => void {
-  if (typeof window === "undefined") return () => {}
-  window.addEventListener("storage", callback)
-  return () => window.removeEventListener("storage", callback)
+    const secure = window.location.protocol === "https:" ? "; Secure" : ""
+    document.cookie = `${WELCOME_DISMISSED_COOKIE}=1; Path=/; Max-Age=${ONE_YEAR_SECONDS}; SameSite=Lax${secure}`
+  } catch {}
 }
 
 const STEPS = [
@@ -82,31 +75,22 @@ const STEPS = [
 export function WelcomeModal({
   connectedCount,
   totalChannels,
+  initialDismissed,
 }: {
   connectedCount: number
   totalChannels: number
+  /** Server-read cookie value — matches the SSR snapshot exactly so
+   *  there's no hydration flash when the modal "decides" whether to
+   *  open. */
+  initialDismissed: boolean
 }) {
-  // Read localStorage synchronously via useSyncExternalStore so the
-  // initial render already knows whether to show — avoids the lint
-  // ban on setState-in-effect and feels snappier (no flicker).
-  const dismissed = React.useSyncExternalStore(
-    subscribeToDismiss,
-    () => readDismissed(),
-    () => true // SSR: pretend it's been dismissed, hydration corrects.
-  )
-  const [manuallyClosed, setManuallyClosed] = React.useState(false)
-  const open = connectedCount === 0 && !dismissed && !manuallyClosed
+  const [manuallyClosed, setManuallyClosed] = React.useState(initialDismissed)
+  const open = connectedCount === 0 && !manuallyClosed
 
   function handleClose(next: boolean) {
     if (!next) {
       setManuallyClosed(true)
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.setItem(DISMISS_KEY, "1")
-          // Notify other tabs / subscribers so the store re-reads.
-          window.dispatchEvent(new Event("storage"))
-        } catch {}
-      }
+      writeDismissedCookie()
     }
   }
 

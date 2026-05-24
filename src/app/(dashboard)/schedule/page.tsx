@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { CalendarRange, Plug } from "lucide-react"
 
 import {
@@ -123,9 +124,9 @@ function NotConnectedCard() {
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Hook up Google Calendar in{" "}
-            <a className="underline" href="/settings">
+            <Link className="underline" href="/settings#email">
               Settings
-            </a>{" "}
+            </Link>{" "}
             and approved bookings will land here automatically.
           </p>
         </div>

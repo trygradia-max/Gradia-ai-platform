@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Briefcase, Check, Loader2, Plug } from "lucide-react"
 import { toast } from "sonner"
 
@@ -32,37 +33,43 @@ export function JobberSettingsCard({
   jobberConfigured: boolean
   callbackStatus?: JobberCallbackStatus
 }) {
+  const router = useRouter()
   const [accountName, setAccountName] = React.useState(initialAccountName)
   const [pending, setPending] = React.useState<null | "disconnect">(null)
+  const toastedRef = React.useRef(false)
   const isConnected = Boolean(accountName)
 
-  // Surface OAuth callback outcomes as toasts.
+  // Surface OAuth callback outcomes as toasts. Ref-guarded so a
+  // re-render doesn't fire it twice; URL stripped after so reload
+  // doesn't either.
   React.useEffect(() => {
-    if (!callbackStatus) return
+    if (toastedRef.current || !callbackStatus) return
+    toastedRef.current = true
     switch (callbackStatus) {
       case "ok":
         toast.success("Jobber connected.")
-        return
+        break
       case "denied":
         toast.error("Permission was denied on Jobber.")
-        return
+        break
       case "missing_params":
       case "state_mismatch":
         toast.error("Connection token mismatch — try again.")
-        return
+        break
       case "token_exchange_failed":
         toast.error("Jobber rejected the auth code — try again.")
-        return
+        break
       case "account_fetch_failed":
         toast.error(
           "Connected, but couldn't read account info. Try reconnecting."
         )
-        return
+        break
       case "save_failed":
         toast.error("Couldn't save the connection. Try again.")
-        return
+        break
     }
-  }, [callbackStatus])
+    router.replace("/settings#jobber", { scroll: false })
+  }, [callbackStatus, router])
 
   async function handleDisconnect() {
     if (

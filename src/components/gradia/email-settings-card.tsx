@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Check, Loader2, Mail, Plug } from "lucide-react"
 import { toast } from "sonner"
 
@@ -43,6 +44,7 @@ export function EmailSettingsCard({
   aurinkoConfigured: boolean
   callbackStatus: CallbackStatus | null
 }) {
+  const router = useRouter()
   const [accountEmail, setAccountEmail] = React.useState(initialAccountEmail)
   const [pending, setPending] = React.useState(false)
   const toastedRef = React.useRef(false)
@@ -51,10 +53,13 @@ export function EmailSettingsCard({
     if (toastedRef.current || !callbackStatus) return
     toastedRef.current = true
     const msg = CALLBACK_MESSAGES[callbackStatus]
-    if (!msg) return
-    if (msg.kind === "success") toast.success(msg.text)
-    else toast.error(msg.text)
-  }, [callbackStatus])
+    if (msg) {
+      if (msg.kind === "success") toast.success(msg.text)
+      else toast.error(msg.text)
+    }
+    // Strip the ?email=... param so a reload doesn't re-fire the toast.
+    router.replace("/settings#email", { scroll: false })
+  }, [callbackStatus, router])
 
   const isConnected = Boolean(accountEmail)
 

@@ -285,7 +285,7 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
 
         <div
           ref={scrollRef}
-          className="max-h-[55vh] min-h-[38vh] overflow-y-auto px-4 py-5 sm:px-6"
+          className="max-h-[55dvh] min-h-[38dvh] overflow-y-auto px-4 py-5 sm:px-6"
         >
           <ul className="grid gap-4">
             {displayedMessages.map((msg, i) => (
