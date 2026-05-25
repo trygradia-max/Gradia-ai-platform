@@ -3,7 +3,20 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Check, Loader2, Trash2 } from "lucide-react"
+import {
+  AtSign,
+  Calendar,
+  Check,
+  CreditCard,
+  Globe,
+  Loader2,
+  Mail,
+  MessageSquare,
+  StickyNote,
+  Trash2,
+  User,
+  type LucideIcon,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -12,8 +25,8 @@ import {
   updatePendingProposal,
   type ProposalPatch,
 } from "@/app/actions/approvals"
+import { MotionCard } from "@/components/gradia/motion/motion-card"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -26,6 +39,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type { LeadStatus } from "@/lib/types/database"
+import { cn } from "@/lib/utils"
 
 type LeadInitial = {
   type: "create_lead"
@@ -126,6 +140,110 @@ function fromLocalInputValue(local: string): string {
   const d = new Date(local)
   if (Number.isNaN(d.getTime())) return ""
   return d.toISOString()
+}
+
+type ProposalKind =
+  | "create_lead"
+  | "add_note"
+  | "book_appointment"
+  | "send_sms"
+  | "charge_customer"
+  | "send_email"
+  | "send_instagram_dm"
+  | "send_facebook_dm"
+
+type EditorMeta = {
+  icon: LucideIcon
+  eyebrow: string
+  title: string
+  /** What the approve button reads as for this action type. */
+  approveCta: string
+  tone: "lead" | "booking" | "outbound" | "money" | "note"
+}
+
+const EDITOR_META: Record<ProposalKind, EditorMeta> = {
+  create_lead: {
+    icon: User,
+    eyebrow: "Lead",
+    title: "Tweak the lead",
+    approveCta: "Save the lead",
+    tone: "lead",
+  },
+  add_note: {
+    icon: StickyNote,
+    eyebrow: "Note",
+    title: "Tweak the note",
+    approveCta: "Save the note",
+    tone: "note",
+  },
+  book_appointment: {
+    icon: Calendar,
+    eyebrow: "Booking",
+    title: "Tweak the booking",
+    approveCta: "Book it",
+    tone: "booking",
+  },
+  send_sms: {
+    icon: MessageSquare,
+    eyebrow: "SMS",
+    title: "Tweak the text",
+    approveCta: "Send the text",
+    tone: "outbound",
+  },
+  charge_customer: {
+    icon: CreditCard,
+    eyebrow: "Charge",
+    title: "Tweak the charge",
+    approveCta: "Charge it",
+    tone: "money",
+  },
+  send_email: {
+    icon: Mail,
+    eyebrow: "Email",
+    title: "Tweak the email",
+    approveCta: "Send the email",
+    tone: "outbound",
+  },
+  send_instagram_dm: {
+    icon: AtSign,
+    eyebrow: "IG DM",
+    title: "Tweak the DM",
+    approveCta: "Send the DM",
+    tone: "outbound",
+  },
+  send_facebook_dm: {
+    icon: Globe,
+    eyebrow: "FB DM",
+    title: "Tweak the DM",
+    approveCta: "Send the DM",
+    tone: "outbound",
+  },
+}
+
+const TONE_STYLE: Record<
+  EditorMeta["tone"],
+  { tile: string; rail: string }
+> = {
+  lead: {
+    tile: "bg-primary/12 text-primary ring-primary/25",
+    rail: "before:bg-gradient-to-b before:from-primary/40 before:via-primary/15 before:to-transparent",
+  },
+  booking: {
+    tile: "bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400",
+    rail: "before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+  },
+  outbound: {
+    tile: "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
+    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+  },
+  money: {
+    tile: "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
+    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+  },
+  note: {
+    tile: "bg-muted text-muted-foreground ring-border/60",
+    rail: "",
+  },
 }
 
 export function PendingProposalEditor(props: PendingProposalEditorProps) {
@@ -346,38 +464,61 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
   }
 
   const anyPending = pending !== null
+  const meta = EDITOR_META[kind as ProposalKind]
+  const tone = TONE_STYLE[meta.tone]
+  const Icon = meta.icon
 
   return (
-    <Card className="border-border/80">
+    <MotionCard
+      interactive={false}
+      className={cn(
+        "relative overflow-hidden p-5 sm:p-6",
+        // Tone-coded accent rail down the left edge — matches the
+        // approvals list card's color language so the operator carries
+        // the same context from list → edit.
+        tone.rail &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-['']",
+        tone.rail
+      )}
+    >
       {confirmDialog}
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-        <div className="space-y-1">
-          <CardTitle className="text-base font-medium">
-            {kind === "create_lead"
-              ? "Edit lead proposal"
-              : kind === "book_appointment"
-                ? "Edit booking request"
-                : kind === "send_sms"
-                  ? "Edit SMS draft"
-                  : kind === "charge_customer"
-                    ? "Edit charge"
-                    : kind === "send_email"
-                      ? "Edit email draft"
-                      : kind === "send_instagram_dm"
-                        ? "Edit IG DM draft"
-                        : kind === "send_facebook_dm"
-                          ? "Edit FB DM draft"
-                          : "Edit note proposal"}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Source: {props.source ?? "unknown"} ·{" "}
-            {props.status === "edit_requested"
-              ? "edits requested"
-              : "awaiting our review"}
-          </p>
+
+      <header className="flex flex-wrap items-start justify-between gap-3 pb-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <div
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1",
+              tone.tile
+            )}
+          >
+            <Icon className="size-[18px]" aria-hidden />
+          </div>
+          <div className="min-w-0 space-y-1">
+            <p className="label-eyebrow text-muted-foreground/70">
+              {meta.eyebrow}
+            </p>
+            <h2 className="font-display text-xl leading-tight tracking-tight text-foreground">
+              {meta.title}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {props.source ? (
+                <>
+                  Caught via{" "}
+                  <span className="text-foreground/80">{props.source}</span>
+                </>
+              ) : (
+                "Caught from inside the shop"
+              )}
+              <span className="text-muted-foreground/60"> · </span>
+              {props.status === "edit_requested"
+                ? "edits requested"
+                : "awaiting your yes"}
+            </p>
+          </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-5">
+      </header>
+
+      <div className="space-y-5">
         {kind === "create_lead" ? (
           <>
             <div className="grid gap-2">
@@ -819,63 +960,67 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
           </>
         )}
 
-        <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+        <div className="mt-2 flex flex-col gap-2 border-t border-border/40 pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
           {/* Primary action first on mobile so it lands under the
               thumb without scrolling past secondary actions. */}
           <Button
             type="button"
             onClick={handleApprove}
             disabled={anyPending}
-            className="order-1 h-11 gap-2 sm:order-3 sm:h-9"
+            size="lg"
+            className="order-1 h-11 gap-2 transition-transform duration-200 active:scale-[0.98] sm:order-3 sm:h-10 sm:px-5"
           >
             {pending === "approve" ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
             ) : (
               <Check className="size-4" aria-hidden />
             )}
-            Save &amp; approve
+            Save &amp; {meta.approveCta.toLowerCase()}
           </Button>
           <Button
             type="button"
             variant="outline"
             onClick={handleSave}
             disabled={anyPending}
-            className="order-2 h-11 gap-2 sm:order-2 sm:h-9"
+            className="order-2 h-11 gap-2 sm:order-2 sm:h-10"
           >
             {pending === "save" ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
             ) : null}
-            Save
+            Save the edits
           </Button>
           <div className="order-3 grid grid-cols-2 gap-2 sm:order-1 sm:flex sm:items-center sm:gap-2">
             <Button
               type="button"
-              variant="destructive"
+              variant="ghost"
               onClick={handleDiscard}
               disabled={anyPending}
-              className="h-11 gap-2 sm:h-9"
+              className="h-11 gap-2 text-muted-foreground transition-colors duration-200 hover:text-destructive sm:h-10"
             >
               {pending === "discard" ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />
               ) : (
                 <Trash2 className="size-4" aria-hidden />
               )}
-              Discard
+              Drop it
             </Button>
             <Link
               href="/approvals"
-              className={`${buttonVariants({ variant: "ghost" })} h-11 sm:h-9`}
+              className={cn(
+                buttonVariants({ variant: "ghost" }),
+                "h-11 sm:h-10"
+              )}
               aria-disabled={anyPending}
             >
-              Cancel
+              Back
             </Link>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="pt-1 text-xs text-muted-foreground">
           Caught {formatRelative(props.submittedAt)}
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </MotionCard>
   )
 }
 

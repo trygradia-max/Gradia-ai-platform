@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { ArrowLeft } from "lucide-react"
 
 import { PendingProposalEditor } from "@/components/gradia/pending-proposal-editor"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
@@ -8,6 +9,7 @@ import { normalizePhone } from "@/lib/customers"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { LeadStatus, PendingActionRow, ShopRow } from "@/lib/types/database"
+import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -107,20 +109,30 @@ export default async function PendingProposalPage({
 
   if (pending.status === "approved" || pending.status === "rejected") {
     return (
-      <div className="mx-auto w-full max-w-3xl space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Already decided
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          This one&apos;s already been {pending.status}. Nothing more for us
-          to do here.
-        </p>
-        <Link
-          href="/approvals"
-          className={buttonVariants({ variant: "default" })}
-        >
-          Back to approvals
-        </Link>
+      <div className="mx-auto w-full max-w-3xl space-y-8">
+        <BackLink />
+        <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center">
+          <p className="label-eyebrow mb-2 text-muted-foreground/70">
+            {pending.status === "approved" ? "Approved" : "Dropped"}
+          </p>
+          <p className="font-display text-2xl text-foreground sm:text-3xl">
+            <span className="italic">Already</span> decided.
+          </p>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+            {pending.status === "approved"
+              ? "This one's been approved — nothing more for us to do here."
+              : "This one's been dropped — gone for good."}
+          </p>
+          <Link
+            href="/approvals"
+            className={cn(
+              buttonVariants({ size: "lg" }),
+              "mt-6 inline-flex h-11 gap-2"
+            )}
+          >
+            Back to the queue
+          </Link>
+        </div>
       </div>
     )
   }
@@ -133,15 +145,23 @@ export default async function PendingProposalPage({
   )
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Review proposal
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Tweak the details before we save it — or drop it if it&apos;s noise.
-        </p>
-      </div>
+    <div className="mx-auto w-full max-w-3xl space-y-8">
+      <header className="space-y-3">
+        <BackLink />
+        <div className="space-y-2">
+          <p className="label-eyebrow text-muted-foreground/70">
+            Review proposal
+          </p>
+          <h1 className="font-display text-[clamp(1.875rem,4.5vw,2.5rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+            One pass, then it&apos;s <span className="italic">live</span>.
+          </h1>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Tweak whatever&apos;s off, then save — or drop it if it&apos;s
+            noise. Either way it comes off the queue.
+          </p>
+        </div>
+      </header>
+
       <PendingProposalEditor {...editorProps} />
       {quickReplyTarget ? (
         <SmsQuickReply
@@ -150,6 +170,21 @@ export default async function PendingProposalPage({
         />
       ) : null}
     </div>
+  )
+}
+
+function BackLink() {
+  return (
+    <Link
+      href="/approvals"
+      className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft
+        className="size-3.5 transition-transform duration-200 group-hover:-translate-x-0.5"
+        aria-hidden
+      />
+      Back to the queue
+    </Link>
   )
 }
 
