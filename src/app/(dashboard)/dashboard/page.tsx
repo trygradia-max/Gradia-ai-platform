@@ -1,5 +1,6 @@
 import { cookies } from "next/headers"
 
+import { dashboardEyebrow } from "@/lib/eyebrow"
 import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
 import { getCoOwnerSuggestions } from "@/lib/data/co-owner"
 import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
@@ -7,6 +8,7 @@ import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
 import { CoOwnerCard } from "@/components/gradia/co-owner-card"
+import { DashboardHero } from "@/components/gradia/dashboard-hero"
 import {
   WelcomeModal,
   WELCOME_DISMISSED_COOKIE,
@@ -14,8 +16,10 @@ import {
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { WhisperButton } from "@/components/gradia/whisper-button"
+import { requireShop } from "@/lib/shop"
 
 export default async function DashboardPage() {
+  const shop = await requireShop()
   const [leads, channels, suggestions, cookieStore] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     getChannelStatusForCurrentShop(),
@@ -30,29 +34,32 @@ export default async function DashboardPage() {
     cookieStore.get(WELCOME_DISMISSED_COOKIE)?.value === "1"
 
   return (
-    <div className="mx-auto max-w-6xl space-y-10">
+    <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-16">
       <WelcomeModal
         connectedCount={connectedCount}
         totalChannels={channels.length}
         initialDismissed={welcomeDismissed}
       />
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Today, together
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            What we&apos;ve caught, what&apos;s waiting on us, and what to tackle next.
-          </p>
-        </div>
-        <AddLeadDialog />
-      </div>
-      <CoOwnerCard suggestions={suggestions} />
-      <ChannelConnectionCard channels={channels} />
+
+      <DashboardHero
+        shopName={shop.name}
+        liveChannelCount={connectedCount}
+        totalChannels={channels.length}
+        eyebrow={dashboardEyebrow()}
+        rightSlot={<AddLeadDialog />}
+      />
+
       <RevenueTiles />
+
+      <CoOwnerCard suggestions={suggestions} />
+
       <WhisperButton />
+
       <AiLeadSection />
+
       <LiveLeadFeed leads={leads} />
+
+      <ChannelConnectionCard channels={channels} />
     </div>
   )
 }
