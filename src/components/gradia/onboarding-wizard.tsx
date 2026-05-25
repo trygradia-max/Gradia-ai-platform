@@ -3,6 +3,11 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+} from "framer-motion"
+import {
   ArrowLeft,
   ArrowRight,
   Check,
@@ -21,6 +26,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
+import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
+import { cn } from "@/lib/utils"
 import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
 type Step = 1 | 2 | 3
@@ -65,83 +72,104 @@ export function OnboardingWizard({
   const [services, setServices] =
     React.useState<ServiceRow[]>(initialServices)
 
+  const reduce = useReducedMotion()
+
   return (
-    <Card className="w-full max-w-xl border-border/80 shadow-xl">
-      <CardHeader className="space-y-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
+    <Card className="w-full max-w-xl overflow-hidden rounded-2xl border-border/60 bg-card/95 shadow-2xl shadow-black/40 ring-1 ring-foreground/5">
+      <CardHeader className="space-y-5 border-b border-border/40 pb-5">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25">
             <Sparkles className="size-4" aria-hidden />
           </div>
-          <span className="text-sm font-semibold tracking-tight">Gradia</span>
+          <span className="font-display text-base tracking-tight text-foreground">
+            Gradia
+          </span>
         </div>
-        <StepIndicator current={step} />
+        <StepIndicator current={step} reduce={reduce ?? false} />
       </CardHeader>
-      <CardContent className="space-y-6">
-        {step === 1 ? (
-          <ShopStep
-            shop={shop}
-            forceCreate={forceCreate}
-            onSaved={(saved) => {
-              setShop(saved)
-              setStep(2)
-            }}
-          />
-        ) : null}
-        {step === 2 ? (
-          <ServicesStep
-            services={services}
-            onAdded={(svc) => setServices((prev) => [...prev, svc])}
-            onDeleted={(id) =>
-              setServices((prev) => prev.filter((s) => s.id !== id))
-            }
-            onBack={() => setStep(1)}
-            onContinue={() => setStep(3)}
-          />
-        ) : null}
-        {step === 3 ? (
-          <ConfirmStep
-            shop={shop}
-            services={services}
-            onBack={() => setStep(2)}
-            onComplete={() => {
-              router.push("/dashboard")
-            }}
-          />
-        ) : null}
+      <CardContent className="space-y-6 pt-6">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={step}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, x: -16 }}
+            transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+          >
+            {step === 1 ? (
+              <ShopStep
+                shop={shop}
+                forceCreate={forceCreate}
+                onSaved={(saved) => {
+                  setShop(saved)
+                  setStep(2)
+                }}
+              />
+            ) : null}
+            {step === 2 ? (
+              <ServicesStep
+                services={services}
+                onAdded={(svc) => setServices((prev) => [...prev, svc])}
+                onDeleted={(id) =>
+                  setServices((prev) => prev.filter((s) => s.id !== id))
+                }
+                onBack={() => setStep(1)}
+                onContinue={() => setStep(3)}
+              />
+            ) : null}
+            {step === 3 ? (
+              <ConfirmStep
+                shop={shop}
+                services={services}
+                onBack={() => setStep(2)}
+                onComplete={() => {
+                  router.push("/dashboard")
+                }}
+              />
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
       </CardContent>
     </Card>
   )
 }
 
-function StepIndicator({ current }: { current: Step }) {
+const DOT_SPRING = { type: "spring" as const, stiffness: 400, damping: 32 }
+
+function StepIndicator({
+  current,
+  reduce,
+}: {
+  current: Step
+  reduce: boolean
+}) {
   const steps: Step[] = [1, 2, 3]
   return (
-    <div className="space-y-3">
-      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-        Step {current} of 3 · {STEP_LABELS[current]}
-      </p>
+    <div className="space-y-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="label-eyebrow text-muted-foreground/70">
+          Step {current} of 3
+        </p>
+        <p className="text-xs font-medium tracking-tight text-foreground">
+          {STEP_LABELS[current]}
+        </p>
+      </div>
       <div className="flex items-center gap-2">
         {steps.map((id, i) => {
           const isActive = id === current
           const isComplete = id < current
           return (
             <React.Fragment key={id}>
-              <div
-                className={dotClass(isActive, isComplete)}
-                aria-current={isActive ? "step" : undefined}
-              >
-                {isComplete ? (
-                  <Check className="size-3" aria-hidden />
-                ) : (
-                  <span className="text-[11px] font-semibold">{id}</span>
-                )}
-              </div>
+              <StepDot
+                id={id}
+                isActive={isActive}
+                isComplete={isComplete}
+                reduce={reduce}
+              />
               {i < steps.length - 1 ? (
-                <div
-                  className={`h-px flex-1 ${
-                    isComplete ? "bg-primary/60" : "bg-border"
-                  }`}
-                  aria-hidden
+                <StepConnector
+                  filled={isComplete}
+                  reduce={reduce}
                 />
               ) : null}
             </React.Fragment>
@@ -152,12 +180,94 @@ function StepIndicator({ current }: { current: Step }) {
   )
 }
 
-function dotClass(active: boolean, complete: boolean): string {
-  const base =
-    "flex size-7 shrink-0 items-center justify-center rounded-full transition-colors"
-  if (complete) return `${base} bg-primary text-primary-foreground`
-  if (active) return `${base} bg-primary/15 text-primary ring-1 ring-primary/40`
-  return `${base} bg-muted text-muted-foreground`
+function StepDot({
+  id,
+  isActive,
+  isComplete,
+  reduce,
+}: {
+  id: Step
+  isActive: boolean
+  isComplete: boolean
+  reduce: boolean
+}) {
+  return (
+    <motion.div
+      layout={!reduce}
+      transition={reduce ? { duration: 0 } : DOT_SPRING}
+      className={cn(
+        "relative flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors duration-200",
+        isComplete
+          ? "bg-primary text-primary-foreground"
+          : isActive
+            ? "bg-primary/12 text-primary ring-1 ring-primary/35"
+            : "bg-muted/60 text-muted-foreground"
+      )}
+      aria-current={isActive ? "step" : undefined}
+    >
+      {/* Active halo — pulses softly while the operator's on this step. */}
+      {isActive && !reduce ? (
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 rounded-full bg-primary/20"
+          animate={{ scale: [1, 1.25, 1], opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        />
+      ) : null}
+      <AnimatePresence mode="wait" initial={false}>
+        {isComplete ? (
+          <motion.span
+            key="check"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+            className="relative"
+          >
+            <Check className="size-3.5" aria-hidden />
+          </motion.span>
+        ) : (
+          <motion.span
+            key="number"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+            className="relative"
+          >
+            {id}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
+
+function StepConnector({
+  filled,
+  reduce,
+}: {
+  filled: boolean
+  reduce: boolean
+}) {
+  return (
+    <div
+      aria-hidden
+      className="relative h-px flex-1 overflow-hidden rounded-full bg-border"
+    >
+      <motion.span
+        initial={false}
+        animate={{ scaleX: filled ? 1 : 0 }}
+        transition={
+          reduce
+            ? { duration: 0 }
+            : { duration: 0.5, ease: EASE_OUT_EXPO }
+        }
+        style={{ originX: 0 }}
+        className="absolute inset-0 bg-primary/70"
+      />
+    </div>
+  )
 }
 
 // --- Step 1: Shop ---------------------------------------------------------
@@ -202,7 +312,7 @@ function ShopStep({
   return (
     <form className="grid gap-5" onSubmit={handleSubmit}>
       <div className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">Our shop</h2>
+        <h2 className="font-display text-2xl tracking-tight text-foreground">Our shop</h2>
         <p className="text-sm text-muted-foreground">
           Just the basics so we can quote, book, and follow up correctly.
         </p>
@@ -281,7 +391,7 @@ function ServicesStep({
   return (
     <div className="grid gap-5">
       <div className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">What we offer</h2>
+        <h2 className="font-display text-2xl tracking-tight text-foreground">What we offer</h2>
         <p className="text-sm text-muted-foreground">
           Our service menu — the AI uses this to quote and book accurately.
           We can edit anytime.
@@ -563,7 +673,7 @@ function ConfirmStep({
   return (
     <div className="grid gap-5">
       <div className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">Looking good</h2>
+        <h2 className="font-display text-2xl tracking-tight text-foreground">Looking good</h2>
         <p className="text-sm text-muted-foreground">
           Quick check before we open the dashboard.
         </p>

@@ -7,6 +7,7 @@ import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-ca
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
+import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
@@ -155,89 +156,132 @@ export default async function SettingsPage({
           | "save_failed")
       : null
 
+  const sections = [
+    { id: "voice", label: "Voice" },
+    { id: "email", label: "Email" },
+    { id: "sms", label: "SMS" },
+    { id: "payments", label: "Payments" },
+    { id: "instagram", label: "Instagram" },
+    { id: "facebook", label: "Facebook" },
+    { id: "jobber", label: "Jobber" },
+    { id: "knowledge", label: "Knowledge" },
+    { id: "developer", label: "Developer" },
+    { id: "soon", label: "More" },
+  ]
+
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Shop, integrations, and account.
+    <div className="mx-auto w-full max-w-3xl">
+      <header className="space-y-2 pt-2 pb-6">
+        <p className="label-eyebrow text-muted-foreground/70">Settings</p>
+        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+          The <span className="italic">wiring</span> behind the scenes.
+        </h1>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Shop, integrations, knowledge, and developer access — everything we
+          plug into to run the AI office.
         </p>
+      </header>
+
+      <SettingsSectionNav sections={sections} />
+
+      <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
+        <section id="voice">
+          <VoiceSettingsCard
+            initialAssistantId={shop?.vapi_assistant_id ?? null}
+            webhookUrl={webhookUrl}
+            webhookSecretConfigured={webhookSecretConfigured}
+          />
+        </section>
+
+        <section id="email">
+          <EmailSettingsCard
+            initialAccountEmail={shop?.aurinko_account_email ?? null}
+            aurinkoConfigured={aurinkoConfigured}
+            callbackStatus={emailStatus}
+          />
+        </section>
+
+        <section id="sms">
+          <SmsSettingsCard
+            initialPhoneNumber={shop?.twilio_phone_number ?? null}
+            webhookUrl={smsWebhookUrl}
+            twilioConfigured={twilioConfigured}
+            byoConnected={Boolean(
+              shop?.twilio_account_sid_enc && shop?.twilio_auth_token_enc
+            )}
+          />
+        </section>
+
+        <section id="payments">
+          <StripeSettingsCard
+            connected={Boolean(shop?.stripe_account_id)}
+            chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
+            stripeConfigured={stripeConfigured}
+            callbackStatus={stripeStatus}
+          />
+        </section>
+
+        <section id="instagram">
+          <InstagramSettingsCard
+            initialPageId={shop?.instagram_page_id ?? null}
+            initialBusinessAccountId={
+              shop?.instagram_business_account_id ?? null
+            }
+            initialHandle={shop?.instagram_account_handle ?? null}
+            webhookUrl={metaWebhookUrl}
+            metaConfigured={metaConfigured}
+          />
+        </section>
+
+        <section id="facebook">
+          <FacebookSettingsCard
+            initialPageId={shop?.facebook_page_id ?? null}
+            initialPageName={shop?.facebook_page_name ?? null}
+            webhookUrl={metaWebhookUrl}
+            metaConfigured={metaConfigured}
+          />
+        </section>
+
+        <section id="jobber">
+          <JobberSettingsCard
+            initialAccountName={shop?.jobber_account_name ?? null}
+            jobberConfigured={jobberConfigured}
+            callbackStatus={jobberStatus}
+          />
+        </section>
+
+        <section id="knowledge">
+          <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
+        </section>
+
+        <section id="developer">
+          <McpTokensCard initialTokens={mcpTokens} />
+        </section>
+
+        <section id="soon">
+          <Card className="border-border/60">
+            <CardHeader className="flex flex-row items-center gap-3 space-y-0">
+              <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
+                <Shield className="size-5 text-primary" aria-hidden />
+              </div>
+              <div>
+                <CardTitle className="font-display text-lg tracking-tight">
+                  More on the way
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Service menu, team, and billing controls land here next.
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
+                <li>Edit our service menu — prices, durations, descriptions.</li>
+                <li>Invite teammates and manage permissions.</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </section>
       </div>
-
-      <VoiceSettingsCard
-        initialAssistantId={shop?.vapi_assistant_id ?? null}
-        webhookUrl={webhookUrl}
-        webhookSecretConfigured={webhookSecretConfigured}
-      />
-
-      <EmailSettingsCard
-        initialAccountEmail={shop?.aurinko_account_email ?? null}
-        aurinkoConfigured={aurinkoConfigured}
-        callbackStatus={emailStatus}
-      />
-
-      <SmsSettingsCard
-        initialPhoneNumber={shop?.twilio_phone_number ?? null}
-        webhookUrl={smsWebhookUrl}
-        twilioConfigured={twilioConfigured}
-        byoConnected={Boolean(
-          shop?.twilio_account_sid_enc && shop?.twilio_auth_token_enc
-        )}
-      />
-
-      <StripeSettingsCard
-        connected={Boolean(shop?.stripe_account_id)}
-        chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
-        stripeConfigured={stripeConfigured}
-        callbackStatus={stripeStatus}
-      />
-
-      <InstagramSettingsCard
-        initialPageId={shop?.instagram_page_id ?? null}
-        initialBusinessAccountId={shop?.instagram_business_account_id ?? null}
-        initialHandle={shop?.instagram_account_handle ?? null}
-        webhookUrl={metaWebhookUrl}
-        metaConfigured={metaConfigured}
-      />
-
-      <FacebookSettingsCard
-        initialPageId={shop?.facebook_page_id ?? null}
-        initialPageName={shop?.facebook_page_name ?? null}
-        webhookUrl={metaWebhookUrl}
-        metaConfigured={metaConfigured}
-      />
-
-      <JobberSettingsCard
-        initialAccountName={shop?.jobber_account_name ?? null}
-        jobberConfigured={jobberConfigured}
-        callbackStatus={jobberStatus}
-      />
-
-      <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
-
-      <McpTokensCard initialTokens={mcpTokens} />
-
-      <Card className="border-border/80">
-        <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
-            <Shield className="size-5 text-primary" aria-hidden />
-          </div>
-          <div>
-            <CardTitle className="text-base font-medium">
-              More coming soon
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Service menu, team, and billing controls land here next.
-            </p>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
-            <li>Edit our service menu — prices, durations, descriptions.</li>
-            <li>Invite teammates and manage permissions.</li>
-          </ul>
-        </CardContent>
-      </Card>
     </div>
   )
 }
