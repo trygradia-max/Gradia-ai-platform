@@ -3,17 +3,41 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import {
+  AtSign,
+  Calendar,
+  CreditCard,
+  Globe,
+  Loader2,
+  Mail,
+  MessageSquare,
+  Pencil,
+  StickyNote,
+  User,
+  type LucideIcon,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import {
   approveFromDashboard,
   rejectFromDashboard,
 } from "@/app/actions/approvals"
-import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import type { LeadStatus, PendingActionRow } from "@/lib/types/database"
+import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
+import { MotionCard } from "@/components/gradia/motion/motion-card"
+import {
+  EASE_OUT_EXPO,
+  PageStagger,
+  StaggerItem,
+} from "@/components/gradia/motion/page-stagger"
+import { SectionHeader } from "@/components/gradia/motion/section-header"
+import type {
+  LeadStatus,
+  PendingActionRow,
+  PendingActionType,
+} from "@/lib/types/database"
+import { cn } from "@/lib/utils"
 
 type LeadProposal = {
   customer_name: string
@@ -77,11 +101,10 @@ type FacebookDmProposal = {
 }
 
 function formatMoney(cents: number): string {
-  const dollars = cents / 100
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-  }).format(dollars)
+  }).format(cents / 100)
 }
 
 function formatBookingWhen(iso: string, minutes: number): string {
@@ -109,18 +132,62 @@ function formatRelative(iso: string): string {
   return `${days} day${days === 1 ? "" : "s"} ago`
 }
 
+type ActionMeta = {
+  icon: LucideIcon
+  label: string
+  /** Color tone of the icon tile + accent rail. */
+  tone: "lead" | "booking" | "outbound" | "money" | "note"
+}
+
+const ACTION_META: Record<PendingActionType, ActionMeta> = {
+  create_lead: { icon: User, label: "Lead", tone: "lead" },
+  add_note: { icon: StickyNote, label: "Note", tone: "note" },
+  book_appointment: { icon: Calendar, label: "Booking", tone: "booking" },
+  send_sms: { icon: MessageSquare, label: "SMS", tone: "outbound" },
+  send_email: { icon: Mail, label: "Email", tone: "outbound" },
+  send_instagram_dm: { icon: AtSign, label: "IG DM", tone: "outbound" },
+  send_facebook_dm: { icon: Globe, label: "FB DM", tone: "outbound" },
+  charge_customer: { icon: CreditCard, label: "Charge", tone: "money" },
+}
+
+const TONE_STYLE: Record<
+  ActionMeta["tone"],
+  { tile: string; rail: string; pill: StatusPillTone }
+> = {
+  lead: {
+    tile: "bg-primary/12 text-primary ring-primary/25",
+    rail: "before:bg-gradient-to-b before:from-primary/40 before:via-primary/15 before:to-transparent",
+    pill: "accent",
+  },
+  booking: {
+    tile: "bg-emerald-500/12 text-emerald-500 ring-emerald-500/25 dark:text-emerald-400",
+    rail: "before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+    pill: "good",
+  },
+  outbound: {
+    tile: "bg-amber-500/12 text-amber-500 ring-amber-500/25 dark:text-amber-400",
+    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    pill: "warn",
+  },
+  money: {
+    tile: "bg-amber-500/12 text-amber-500 ring-amber-500/25 dark:text-amber-400",
+    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    pill: "warn",
+  },
+  note: {
+    tile: "bg-muted text-muted-foreground ring-border/60",
+    rail: "",
+    pill: "muted",
+  },
+}
+
 export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
   const router = useRouter()
+  const reduce = useReducedMotion()
   const [busyId, setBusyId] = React.useState<string | null>(null)
 
   if (items.length === 0) {
-    return (
-      <Card className="border-border/80">
-        <CardContent className="py-14 text-center text-sm text-muted-foreground">
-          All clear — nothing waiting on us right now.
-        </CardContent>
-      </Card>
-    )
+    return <EmptyState />
   }
 
   async function handleDecision(
@@ -141,183 +208,288 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
     }
 
     if (result.alreadyDecided) {
-      toast.message("Already decided — refreshing")
+      toast.message("Already decided — refreshing.")
     } else if (decision === "approve") {
-      toast.success("Saved")
+      toast.success("Approved — it's on its way.")
     } else {
-      toast.success("Dropped")
+      toast.success("Dropped. Nothing went out.")
     }
 
     router.refresh()
   }
 
   return (
-    <ul className="grid gap-4">
-      {items.map((item) => {
-        const isEditRequested = item.status === "edit_requested"
-        const approveBusy = busyId === `${item.id}:approve`
-        const rejectBusy = busyId === `${item.id}:reject`
-        const anyBusy = approveBusy || rejectBusy
-        const isNote = item.action_type === "add_note"
-        const isBooking = item.action_type === "book_appointment"
-        const isSms = item.action_type === "send_sms"
-        const isCharge = item.action_type === "charge_customer"
-        const isEmail = item.action_type === "send_email"
-        const isInstagramDm = item.action_type === "send_instagram_dm"
-        const isFacebookDm = item.action_type === "send_facebook_dm"
+    <PageStagger className="grid gap-3">
+      <AnimatePresence initial={false}>
+        {items.map((item) => {
+          const meta = ACTION_META[item.action_type]
+          const isEditRequested = item.status === "edit_requested"
+          const approveBusy = busyId === `${item.id}:approve`
+          const rejectBusy = busyId === `${item.id}:reject`
+          const anyBusy = approveBusy || rejectBusy
 
-        return (
-          <li key={item.id}>
-            <Card className="border-border/80 shadow-sm">
-              <CardHeader className="flex flex-col gap-3 pb-2">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    {isNote
-                      ? renderNoteHeader(item.payload as unknown as NoteProposal)
-                      : isBooking
-                        ? renderBookingHeader(
-                            item.payload as unknown as BookingProposal
-                          )
-                        : isSms
-                          ? renderSmsHeader(item.payload as unknown as SmsProposal)
-                          : isCharge
-                            ? renderChargeHeader(
-                                item.payload as unknown as ChargeProposal
-                              )
-                            : isEmail
-                              ? renderEmailHeader(
-                                  item.payload as unknown as EmailProposal
-                                )
-                              : isInstagramDm
-                                ? renderInstagramHeader(
-                                    item.payload as unknown as InstagramDmProposal
-                                  )
-                                : isFacebookDm
-                                  ? renderFacebookHeader(
-                                      item.payload as unknown as FacebookDmProposal
-                                    )
-                                  : renderLeadHeader(
-                                      item.payload as unknown as LeadProposal
-                                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {isNote ? (
-                      <Badge variant="secondary">Note</Badge>
-                    ) : null}
-                    {isBooking ? (
-                      <Badge variant="secondary">Booking</Badge>
-                    ) : null}
-                    {isSms ? (
-                      <Badge variant="secondary">SMS</Badge>
-                    ) : null}
-                    {isCharge ? (
-                      <Badge variant="secondary">Charge</Badge>
-                    ) : null}
-                    {isEmail ? (
-                      <Badge variant="secondary">Email</Badge>
-                    ) : null}
-                    {isInstagramDm ? (
-                      <Badge variant="secondary">IG DM</Badge>
-                    ) : null}
-                    {isFacebookDm ? (
-                      <Badge variant="secondary">FB DM</Badge>
-                    ) : null}
-                    <Badge variant={isEditRequested ? "outline" : "default"}>
-                      {isEditRequested ? "Edit needed" : "Pending"}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3 pb-4 pt-0">
-                {isNote
-                  ? renderNoteBody(item.payload as unknown as NoteProposal)
-                  : isBooking
-                    ? renderBookingBody(
-                        item.payload as unknown as BookingProposal
-                      )
-                    : isSms
-                      ? renderSmsBody(item.payload as unknown as SmsProposal)
-                      : isCharge
-                        ? renderChargeBody(
-                            item.payload as unknown as ChargeProposal
-                          )
-                        : isEmail
-                          ? renderEmailBody(
-                              item.payload as unknown as EmailProposal
-                            )
-                          : isInstagramDm
-                            ? renderInstagramBody(
-                                item.payload as unknown as InstagramDmProposal
-                              )
-                            : isFacebookDm
-                              ? renderFacebookBody(
-                                  item.payload as unknown as FacebookDmProposal
-                                )
-                              : renderLeadBody(
-                                  item.payload as unknown as LeadProposal
-                                )}
-                <p className="text-xs text-muted-foreground">
-                  Caught {formatRelative(item.created_at)}
-                </p>
-                <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-                  <Button
-                    onClick={() => handleDecision(item.id, "approve")}
-                    disabled={anyBusy}
-                    className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99] sm:h-9 sm:flex-none"
-                  >
-                    {approveBusy ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                    ) : null}
-                    Approve
-                  </Button>
-                  <div className="grid grid-cols-2 gap-2 sm:contents">
-                    <Link
-                      href={`/approvals/${item.id}`}
-                      className={`${buttonVariants({ variant: "outline" })} h-11 sm:h-9`}
-                      aria-disabled={anyBusy}
-                    >
-                      Edit
-                    </Link>
-                    <Button
-                      onClick={() => handleDecision(item.id, "reject")}
-                      disabled={anyBusy}
-                      variant="outline"
-                      className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99] sm:h-9"
-                    >
-                      {rejectBusy ? (
-                        <Loader2 className="size-4 animate-spin" aria-hidden />
-                      ) : null}
-                      Reject
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </li>
-        )
-      })}
-    </ul>
+          return (
+            <motion.div
+              key={item.id}
+              layout={!reduce}
+              exit={
+                reduce
+                  ? { opacity: 0 }
+                  : { opacity: 0, x: 24, transition: { duration: 0.3 } }
+              }
+            >
+              <StaggerItem>
+                <ApprovalCard
+                  item={item}
+                  meta={meta}
+                  isEditRequested={isEditRequested}
+                  approveBusy={approveBusy}
+                  rejectBusy={rejectBusy}
+                  anyBusy={anyBusy}
+                  onDecision={handleDecision}
+                />
+              </StaggerItem>
+            </motion.div>
+          )
+        })}
+      </AnimatePresence>
+    </PageStagger>
   )
 }
 
-function renderLeadHeader(proposal: LeadProposal) {
+function ApprovalCard({
+  item,
+  meta,
+  isEditRequested,
+  approveBusy,
+  rejectBusy,
+  anyBusy,
+  onDecision,
+}: {
+  item: PendingActionRow
+  meta: ActionMeta
+  isEditRequested: boolean
+  approveBusy: boolean
+  rejectBusy: boolean
+  anyBusy: boolean
+  onDecision: (id: string, decision: "approve" | "reject") => void
+}) {
+  const Icon = meta.icon
+  const tone = TONE_STYLE[meta.tone]
+
   return (
-    <>
-      <p className="text-base font-medium">
-        {proposal.customer_name || "Unknown caller"}
-      </p>
-      <p className="text-sm tabular-nums text-muted-foreground">
-        {proposal.phone}
-      </p>
-    </>
+    <MotionCard
+      interactive={false}
+      className={cn(
+        "relative overflow-hidden p-5 sm:p-6",
+        // Accent rail on the left edge, color-coded to the action type.
+        // Notes get no rail (low stakes); everything else does.
+        tone.rail &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-['']",
+        tone.rail
+      )}
+    >
+      <header className="flex flex-wrap items-start justify-between gap-3 pb-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1",
+              tone.tile
+            )}
+          >
+            <Icon className="size-[18px]" aria-hidden />
+          </div>
+          <div className="min-w-0 space-y-0.5">
+            <p className="label-eyebrow text-muted-foreground/70">
+              {meta.label}
+            </p>
+            <div className="font-display text-lg leading-tight tracking-tight text-foreground">
+              <ActionHeader item={item} />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone={isEditRequested ? "warn" : tone.pill}>
+            {isEditRequested ? "Edit needed" : "Pending"}
+          </StatusPill>
+        </div>
+      </header>
+
+      <div className="space-y-3 pl-[52px] sm:pl-[52px]">
+        <ActionBody item={item} />
+        <p className="text-xs text-muted-foreground/80">
+          Caught {formatRelative(item.created_at)}
+        </p>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-2 pl-0 sm:flex-row sm:items-center sm:pl-[52px]">
+        <Button
+          onClick={() => onDecision(item.id, "approve")}
+          disabled={anyBusy}
+          size="lg"
+          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.98] sm:h-10 sm:px-5"
+        >
+          {approveBusy ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : null}
+          {ACTION_CTA[item.action_type] ?? "Approve"}
+        </Button>
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          <Link
+            href={`/approvals/${item.id}`}
+            aria-disabled={anyBusy}
+            className={cn(
+              buttonVariants({ variant: "outline" }),
+              "h-11 gap-2 sm:h-10"
+            )}
+          >
+            <Pencil className="size-4" aria-hidden />
+            Tweak it
+          </Link>
+          <Button
+            onClick={() => onDecision(item.id, "reject")}
+            disabled={anyBusy}
+            variant="ghost"
+            className="h-11 gap-2 text-muted-foreground transition-colors duration-200 hover:text-destructive sm:h-10"
+          >
+            {rejectBusy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : null}
+            Drop it
+          </Button>
+        </div>
+      </div>
+    </MotionCard>
   )
 }
 
-function renderLeadBody(proposal: LeadProposal) {
+const ACTION_CTA: Partial<Record<PendingActionType, string>> = {
+  send_sms: "Send it",
+  send_email: "Send it",
+  send_instagram_dm: "Send it",
+  send_facebook_dm: "Send it",
+  book_appointment: "Book it",
+  charge_customer: "Charge it",
+  create_lead: "Save the lead",
+  add_note: "Save the note",
+}
+
+function EmptyState() {
+  return (
+    <MotionCard
+      interactive={false}
+      className="overflow-hidden px-6 py-16 text-center"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: EASE_OUT_EXPO }}
+        className="space-y-2"
+      >
+        <p className="font-display text-2xl text-foreground sm:text-3xl">
+          <span className="italic">All</span> clear.
+        </p>
+        <p className="mx-auto max-w-sm text-sm text-muted-foreground">
+          Nothing waiting on us right now — we&apos;ll holler the moment
+          something needs your eyes.
+        </p>
+      </motion.div>
+    </MotionCard>
+  )
+}
+
+// --- per-action renderers ---------------------------------------------------
+
+function ActionHeader({ item }: { item: PendingActionRow }) {
+  switch (item.action_type) {
+    case "add_note":
+      return <NoteHeader proposal={item.payload as unknown as NoteProposal} />
+    case "book_appointment":
+      return (
+        <BookingHeader
+          proposal={item.payload as unknown as BookingProposal}
+        />
+      )
+    case "send_sms":
+      return <SmsHeader proposal={item.payload as unknown as SmsProposal} />
+    case "charge_customer":
+      return (
+        <ChargeHeader proposal={item.payload as unknown as ChargeProposal} />
+      )
+    case "send_email":
+      return (
+        <EmailHeader proposal={item.payload as unknown as EmailProposal} />
+      )
+    case "send_instagram_dm":
+      return (
+        <InstagramHeader
+          proposal={item.payload as unknown as InstagramDmProposal}
+        />
+      )
+    case "send_facebook_dm":
+      return (
+        <FacebookHeader
+          proposal={item.payload as unknown as FacebookDmProposal}
+        />
+      )
+    case "create_lead":
+    default:
+      return <LeadHeader proposal={item.payload as unknown as LeadProposal} />
+  }
+}
+
+function ActionBody({ item }: { item: PendingActionRow }) {
+  switch (item.action_type) {
+    case "add_note":
+      return <NoteBody proposal={item.payload as unknown as NoteProposal} />
+    case "book_appointment":
+      return (
+        <BookingBody proposal={item.payload as unknown as BookingProposal} />
+      )
+    case "send_sms":
+      return <SmsBody proposal={item.payload as unknown as SmsProposal} />
+    case "charge_customer":
+      return (
+        <ChargeBody proposal={item.payload as unknown as ChargeProposal} />
+      )
+    case "send_email":
+      return <EmailBody proposal={item.payload as unknown as EmailProposal} />
+    case "send_instagram_dm":
+      return (
+        <InstagramBody
+          proposal={item.payload as unknown as InstagramDmProposal}
+        />
+      )
+    case "send_facebook_dm":
+      return (
+        <FacebookBody
+          proposal={item.payload as unknown as FacebookDmProposal}
+        />
+      )
+    case "create_lead":
+    default:
+      return <LeadBody proposal={item.payload as unknown as LeadProposal} />
+  }
+}
+
+function LeadHeader({ proposal }: { proposal: LeadProposal }) {
+  return (
+    <span>
+      {proposal.customer_name || "Unknown caller"}
+      {proposal.phone ? (
+        <span className="ml-2 align-middle text-sm font-normal tabular-nums text-muted-foreground">
+          {proposal.phone}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+function LeadBody({ proposal }: { proposal: LeadProposal }) {
   return (
     <>
       {proposal.car_info ? (
-        <p className="text-sm">{proposal.car_info}</p>
+        <p className="text-sm text-foreground/90">{proposal.car_info}</p>
       ) : null}
       {proposal.pin_notes ? (
         <p className="text-sm text-muted-foreground">{proposal.pin_notes}</p>
@@ -326,43 +498,49 @@ function renderLeadBody(proposal: LeadProposal) {
   )
 }
 
-function renderNoteHeader(proposal: NoteProposal) {
+function NoteHeader({ proposal }: { proposal: NoteProposal }) {
   const subject =
     proposal.customer_name?.trim() ||
     proposal.phone?.trim() ||
     "General note"
   return (
-    <>
-      <p className="text-base font-medium">{subject}</p>
-      <p className="text-xs text-muted-foreground">From Whisper</p>
-    </>
+    <span>
+      {subject}
+      <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
+        from Whisper
+      </span>
+    </span>
   )
 }
 
-function renderNoteBody(proposal: NoteProposal) {
+function NoteBody({ proposal }: { proposal: NoteProposal }) {
   return (
-    <p className="whitespace-pre-line text-sm">{proposal.content}</p>
+    <p className="whitespace-pre-line text-sm text-foreground/90">
+      {proposal.content}
+    </p>
   )
 }
 
-function renderBookingHeader(proposal: BookingProposal) {
+function BookingHeader({ proposal }: { proposal: BookingProposal }) {
   return (
-    <>
-      <p className="text-base font-medium">
-        {proposal.customer_name || "Unknown customer"}
-      </p>
-      <p className="text-sm tabular-nums text-muted-foreground">
-        {proposal.phone}
-      </p>
-    </>
+    <span>
+      {proposal.customer_name || "Unknown customer"}
+      {proposal.phone ? (
+        <span className="ml-2 align-middle text-sm font-normal tabular-nums text-muted-foreground">
+          {proposal.phone}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
-function renderBookingBody(proposal: BookingProposal) {
+function BookingBody({ proposal }: { proposal: BookingProposal }) {
   return (
     <>
-      <p className="text-sm">
-        <span className="font-medium">{proposal.service ?? "Service TBD"}</span>{" "}
+      <p className="text-sm text-foreground/90">
+        <span className="font-medium text-foreground">
+          {proposal.service ?? "Service TBD"}
+        </span>{" "}
         — {formatBookingWhen(proposal.iso_start_time, proposal.duration_minutes)}
       </p>
       {proposal.car_info ? (
@@ -375,114 +553,120 @@ function renderBookingBody(proposal: BookingProposal) {
   )
 }
 
-function renderSmsHeader(proposal: SmsProposal) {
+function SmsHeader({ proposal }: { proposal: SmsProposal }) {
   const target =
     proposal.customer_name?.trim() || proposal.to_phone || "Unknown"
   return (
-    <>
-      <p className="text-base font-medium">To {target}</p>
-      <p className="text-xs text-muted-foreground">
-        {proposal.reason ?? "Outbound SMS"}
-      </p>
-    </>
+    <span>
+      To {target}
+      {proposal.reason ? (
+        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
+          {proposal.reason}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
-function renderSmsBody(proposal: SmsProposal) {
-  return (
-    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
-      {proposal.body}
-    </p>
-  )
+function SmsBody({ proposal }: { proposal: SmsProposal }) {
+  return <MessagePreview body={proposal.body} />
 }
 
-function renderChargeHeader(proposal: ChargeProposal) {
+function ChargeHeader({ proposal }: { proposal: ChargeProposal }) {
   return (
-    <>
-      <p className="text-base font-medium">
-        {proposal.customer_name || "Unknown customer"}{" "}
-        <span className="text-muted-foreground">·</span>{" "}
+    <span>
+      {proposal.customer_name || "Unknown customer"}
+      <span className="ml-2 align-middle text-sm font-normal text-muted-foreground">
         {formatMoney(proposal.amount_cents)}
+      </span>
+    </span>
+  )
+}
+
+function ChargeBody({ proposal }: { proposal: ChargeProposal }) {
+  return (
+    <>
+      <p className="text-sm text-foreground/90">
+        <span className="font-medium">
+          {proposal.description || "Detailing service"}
+        </span>
       </p>
       <p className="text-xs text-muted-foreground">
-        {proposal.customer_email || "Email missing — edit to add"}
+        {proposal.customer_email || "Email missing — tweak to add"}
       </p>
     </>
   )
 }
 
-function renderChargeBody(proposal: ChargeProposal) {
-  return (
-    <p className="text-sm">
-      <span className="font-medium">{proposal.description || "Detailing service"}</span>
-    </p>
-  )
-}
-
-function renderEmailHeader(proposal: EmailProposal) {
+function EmailHeader({ proposal }: { proposal: EmailProposal }) {
   const target =
     proposal.customer_name?.trim() || proposal.to_email || "Unknown"
   return (
-    <>
-      <p className="text-base font-medium">To {target}</p>
-      <p className="truncate text-xs text-muted-foreground">
+    <span>
+      To {target}
+      <span className="ml-2 align-middle truncate text-xs font-normal text-muted-foreground">
         {proposal.subject || "(no subject)"}
-      </p>
-    </>
+      </span>
+    </span>
   )
 }
 
-function renderEmailBody(proposal: EmailProposal) {
-  const preview = proposal.body.length > 240
-    ? `${proposal.body.slice(0, 240).trim()}…`
-    : proposal.body
-  return (
-    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
-      {preview}
-    </p>
-  )
+function EmailBody({ proposal }: { proposal: EmailProposal }) {
+  const preview =
+    proposal.body.length > 240
+      ? `${proposal.body.slice(0, 240).trim()}…`
+      : proposal.body
+  return <MessagePreview body={preview} />
 }
 
-function renderInstagramHeader(proposal: InstagramDmProposal) {
+function InstagramHeader({ proposal }: { proposal: InstagramDmProposal }) {
   const target =
     proposal.customer_name?.trim() ||
     (proposal.recipient_id ? `IG ${proposal.recipient_id}` : "Unknown")
   return (
-    <>
-      <p className="break-words text-base font-medium">To {target}</p>
-      <p className="text-xs text-muted-foreground">
-        {proposal.reason ?? "Outbound IG DM"}
-      </p>
-    </>
+    <span className="break-words">
+      To {target}
+      {proposal.reason ? (
+        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
+          {proposal.reason}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
-function renderInstagramBody(proposal: InstagramDmProposal) {
-  return (
-    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
-      {proposal.body}
-    </p>
-  )
+function InstagramBody({ proposal }: { proposal: InstagramDmProposal }) {
+  return <MessagePreview body={proposal.body} />
 }
 
-function renderFacebookHeader(proposal: FacebookDmProposal) {
+function FacebookHeader({ proposal }: { proposal: FacebookDmProposal }) {
   const target =
     proposal.customer_name?.trim() ||
     (proposal.recipient_id ? `FB ${proposal.recipient_id}` : "Unknown")
   return (
-    <>
-      <p className="break-words text-base font-medium">To {target}</p>
-      <p className="text-xs text-muted-foreground">
-        {proposal.reason ?? "Outbound FB DM"}
-      </p>
-    </>
+    <span className="break-words">
+      To {target}
+      {proposal.reason ? (
+        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
+          {proposal.reason}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
-function renderFacebookBody(proposal: FacebookDmProposal) {
+function FacebookBody({ proposal }: { proposal: FacebookDmProposal }) {
+  return <MessagePreview body={proposal.body} />
+}
+
+function MessagePreview({ body }: { body: string }) {
   return (
-    <p className="whitespace-pre-line break-words rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm">
-      {proposal.body}
+    <p className="relative whitespace-pre-line break-words rounded-lg border border-border/60 bg-muted/20 px-3.5 py-2.5 text-sm text-foreground/90">
+      {body}
     </p>
   )
 }
+
+// Re-export SectionHeader so its import isn't unused if a parent wants
+// to slot one above this list. (Kept inline-importable for the page.)
+export { SectionHeader }
