@@ -21,20 +21,17 @@ import {
   setCustomAgentEnabled,
 } from "@/app/actions/custom-agents"
 import { AgentRunsSheet } from "@/components/gradia/agent-runs-sheet"
+import { MotionCard } from "@/components/gradia/motion/motion-card"
+import { PulseDot } from "@/components/gradia/motion/pulse-dot"
 import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { StatusPill } from "@/components/ui/status-pill"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import type {
   AgentConfig,
   CustomAgentRow,
   CustomAgentRunRow,
 } from "@/lib/types/database"
+import { cn } from "@/lib/utils"
 
 const ACTION_LABEL: Record<AgentConfig["action"]["kind"], string> = {
   draft_sms: "Drafts an SMS for approval",
@@ -83,6 +80,7 @@ export function CustomAgentCard({
   const [enabled, setEnabled] = React.useState(agent.enabled)
   const config = agent.config
   const runnable = Boolean(config.recipe?.id)
+  const isLive = enabled && runnable
 
   async function handleDelete() {
     const ok = await confirm({
@@ -99,7 +97,7 @@ export function CustomAgentCard({
       toast.error(result.error)
       return
     }
-    toast.success("Deleted.")
+    toast.success("Deleted. Gone for good.")
     router.refresh()
   }
 
@@ -139,27 +137,49 @@ export function CustomAgentCard({
       toast.error(result.error)
       return
     }
-    toast.success(next ? "Agent enabled." : "Agent paused.")
+    toast.success(next ? "Live — we'll run it on schedule." : "Paused.")
   }
 
   return (
-    <Card className="flex h-full flex-col border-border/80">
+    <MotionCard
+      interactive
+      glow={isLive}
+      className={cn(
+        "relative flex h-full flex-col overflow-hidden p-5 sm:p-6",
+        // Status-coded accent rail on the left edge.
+        isLive &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+        !isLive &&
+          enabled &&
+          runnable === false &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-muted-foreground/30 before:via-muted-foreground/10 before:to-transparent"
+      )}
+    >
       {confirmDialog}
-      <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
-          <Bot className="size-5 text-primary" aria-hidden />
+
+      <header className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1",
+            isLive
+              ? "bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400"
+              : "bg-primary/12 text-primary ring-primary/25"
+          )}
+        >
+          <Bot className="size-[18px]" aria-hidden />
         </div>
-        <div className="flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle className="text-base font-medium">
-              {agent.name}
-            </CardTitle>
+            <h3 className="flex items-center gap-1.5 font-display text-lg leading-tight tracking-tight text-foreground">
+              <span className="truncate">{agent.name}</span>
+              {isLive ? (
+                <PulseDot tone="good" size={5} className="shrink-0" />
+              ) : null}
+            </h3>
             {!runnable ? (
-              <StatusPill tone="muted">
-                Plan only · recreate to enable
-              </StatusPill>
+              <StatusPill tone="muted">Plan only</StatusPill>
             ) : enabled ? (
-              <StatusPill tone="good">Enabled</StatusPill>
+              <StatusPill tone="good">Live</StatusPill>
             ) : (
               <StatusPill tone="warn">Paused</StatusPill>
             )}
@@ -168,91 +188,43 @@ export function CustomAgentCard({
             {agent.description ?? config.short_description}
           </p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4">
-        <div className="grid gap-3 text-sm">
-          <div className="flex items-start gap-2">
-            <Clock
-              className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-            <div>
-              <span className="text-xs uppercase tracking-widest text-muted-foreground">
-                When
-              </span>
-              <p>
-                {config.trigger.kind === "schedule"
-                  ? config.trigger.schedule_summary || "On a schedule"
-                  : config.trigger.event_summary || "On an event"}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Target
-              className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-            <div>
-              <span className="text-xs uppercase tracking-widest text-muted-foreground">
-                Who
-              </span>
-              <p className="capitalize">{config.audience.entity}</p>
-              {config.audience.filters_summary.length > 0 ? (
-                <ul className="mt-0.5 text-xs text-muted-foreground">
-                  {config.audience.filters_summary.slice(0, 3).map((f, i) => (
-                    <li key={i}>• {f}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Send
-              className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-            <div>
-              <span className="text-xs uppercase tracking-widest text-muted-foreground">
-                Does
-              </span>
-              <p>{ACTION_LABEL[config.action.kind]}</p>
-              <p className="text-xs text-muted-foreground">
-                {config.action.intent_summary}
-              </p>
-            </div>
-          </div>
-        </div>
+      </header>
+
+      <div className="mt-5 flex flex-1 flex-col gap-4">
+        <ConfigRow
+          icon={Clock}
+          eyebrow="When"
+          primary={
+            config.trigger.kind === "schedule"
+              ? config.trigger.schedule_summary || "On a schedule"
+              : config.trigger.event_summary || "On an event"
+          }
+        />
+        <ConfigRow
+          icon={Target}
+          eyebrow="Who"
+          primary={
+            <span className="capitalize">{config.audience.entity}</span>
+          }
+          secondaryList={config.audience.filters_summary.slice(0, 3)}
+        />
+        <ConfigRow
+          icon={Send}
+          eyebrow="Does"
+          primary={ACTION_LABEL[config.action.kind]}
+          secondary={config.action.intent_summary}
+        />
+
         {lastRun ? (
-          <div className="rounded-md border border-border/60 bg-muted/15 px-3 py-2">
-            <div className="flex items-start gap-2">
-              {lastRun.fired ? (
-                <CheckCircle2
-                  className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                  aria-hidden
-                />
-              ) : (
-                <XCircle
-                  className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-widest text-muted-foreground">
-                  <span>Last run</span>
-                  <span className="tabular-nums normal-case tracking-normal">
-                    {relativeAgo(lastRun.created_at)}
-                  </span>
-                </div>
-                <p className="text-sm">
-                  {lastRun.fired
-                    ? (statsSummary(lastRun.stats) ?? "Fired.")
-                    : (lastRun.reason ?? "Skipped — nothing matched.")}
-                </p>
-              </div>
-            </div>
-          </div>
+          <LastRunPanel run={lastRun} />
+        ) : !runnable ? (
+          <p className="rounded-lg border border-dashed border-border/50 px-3.5 py-2.5 text-xs text-muted-foreground">
+            Recreate this agent to enable it — the runtime needs the latest
+            recipe wired in.
+          </p>
         ) : null}
-        <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-1">
+
+        <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-2">
           <AgentRunsSheet agentId={agent.id} agentName={agent.name} />
           <Button
             type="button"
@@ -260,7 +232,7 @@ export function CustomAgentCard({
             size="sm"
             onClick={handleDelete}
             disabled={pending !== null}
-            className="gap-1.5 text-muted-foreground hover:text-destructive"
+            className="gap-1.5 text-muted-foreground transition-colors hover:text-destructive"
           >
             {pending === "delete" ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -297,12 +269,86 @@ export function CustomAgentCard({
                 {pending === "toggle" ? (
                   <Loader2 className="size-3.5 animate-spin" aria-hidden />
                 ) : null}
-                {enabled ? "Pause" : "Enable"}
+                {enabled ? "Pause" : "Turn it on"}
               </Button>
             </>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </MotionCard>
+  )
+}
+
+function ConfigRow({
+  icon: Icon,
+  eyebrow,
+  primary,
+  secondary,
+  secondaryList,
+}: {
+  icon: typeof Clock
+  eyebrow: string
+  primary: React.ReactNode
+  secondary?: React.ReactNode
+  secondaryList?: string[]
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-background/60 ring-1 ring-border/50">
+        <Icon
+          className="size-3.5 text-muted-foreground/80"
+          aria-hidden
+        />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="label-eyebrow text-muted-foreground/70">{eyebrow}</p>
+        <p className="mt-0.5 text-sm text-foreground/90">{primary}</p>
+        {secondary ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">{secondary}</p>
+        ) : null}
+        {secondaryList && secondaryList.length > 0 ? (
+          <ul className="mt-0.5 grid gap-0.5 text-xs text-muted-foreground">
+            {secondaryList.map((f, i) => (
+              <li key={i}>• {f}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
+      <div className="flex items-start gap-2.5">
+        {run.fired ? (
+          <CheckCircle2
+            className="mt-0.5 size-4 shrink-0 text-emerald-500 dark:text-emerald-400"
+            aria-hidden
+          />
+        ) : (
+          <XCircle
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground/80"
+            aria-hidden
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="label-eyebrow text-muted-foreground/70">
+              Last run
+            </p>
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {relativeAgo(run.created_at)}
+            </p>
+          </div>
+          <p className="mt-0.5 text-sm text-foreground/90">
+            {run.fired
+              ? (statsSummary(run.stats) ?? "Fired.")
+              : (run.reason ?? "Skipped — nothing matched.")}
+          </p>
+        </div>
+      </div>
+    </div>
   )
 }
