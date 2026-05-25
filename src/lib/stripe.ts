@@ -166,6 +166,50 @@ export async function createAccountOnboardingLink(input: {
   })
 }
 
+// ---------- Embedded Connect (Account Sessions) ----------
+
+export type StripeAccountSession = {
+  /** Short-lived secret consumed by @stripe/connect-js on the client. */
+  client_secret: string
+  /** Unix seconds; sessions are ~60 min and refresh automatically. */
+  expires_at: number
+}
+
+/**
+ * Mints an Account Session scoped to a single connected account, with
+ * the embedded onboarding component enabled. This is the modern (2024+)
+ * replacement for Stripe-hosted Account Links: the entire KYC + bank
+ * + identity flow renders inside our own UI via
+ * `<ConnectAccountOnboarding />`, so the operator never leaves Gradia.
+ *
+ * Docs: https://stripe.com/docs/connect/get-started-connect-embedded-components
+ */
+export async function createAccountSession(input: {
+  accountId: string
+  /** Set true to also enable Payments/Payouts dashboards later. */
+  enablePayments?: boolean
+  enablePayouts?: boolean
+}): Promise<StripeAccountSession> {
+  const body: Record<string, string | number | boolean> = {
+    account: input.accountId,
+    "components[account_onboarding][enabled]": true,
+    // Sensible default: account-management lets the operator update
+    // bank/identity later from inside Gradia without a re-onboard.
+    "components[account_management][enabled]": true,
+  }
+  if (input.enablePayments) {
+    body["components[payments][enabled]"] = true
+  }
+  if (input.enablePayouts) {
+    body["components[payouts][enabled]"] = true
+  }
+  return stripeFetch<StripeAccountSession>({
+    method: "POST",
+    path: "/account_sessions",
+    body,
+  })
+}
+
 // ---------- Customers (on the connected account) ----------
 
 type StripeListResponse<T> = { data: T[]; has_more: boolean }

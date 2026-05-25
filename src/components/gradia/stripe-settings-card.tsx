@@ -2,27 +2,30 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import {
+  ArrowRight,
   Check,
   CreditCard,
   Download,
   Loader2,
-  Plug,
+  Settings2,
   TriangleAlert,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { backfillStripePayments } from "@/app/actions/payments"
 import { disconnectStripe } from "@/app/actions/shop"
-import { Button, buttonVariants } from "@/components/ui/button"
-import { useConfirm } from "@/components/ui/confirm-dialog"
-import { StatusPill } from "@/components/ui/status-pill"
+import { StripeEmbeddedOnboarding } from "@/components/gradia/stripe-embedded-onboarding"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { useConfirm } from "@/components/ui/confirm-dialog"
+import { StatusPill } from "@/components/ui/status-pill"
 
 type CallbackStatus =
   | "ok"
@@ -38,11 +41,11 @@ const CALLBACK_MESSAGES: Record<
 > = {
   ok: {
     kind: "success",
-    text: "Stripe connected. Charges enabled — we're ready to send invoices.",
+    text: "Stripe connected — we're cleared to send invoices.",
   },
   needs_more: {
     kind: "info",
-    text: "Stripe wants a bit more info before charges can run — open Connect again to finish.",
+    text: "Stripe wants a bit more from you — reopen the panel to finish.",
   },
   no_account: {
     kind: "error",
@@ -58,7 +61,7 @@ const CALLBACK_MESSAGES: Record<
   },
   link_failed: {
     kind: "error",
-    text: "Couldn't open the onboarding link — try again in a moment.",
+    text: "Couldn't open the onboarding panel — try again in a moment.",
   },
 }
 
@@ -79,7 +82,11 @@ export function StripeSettingsCard({
   const [localConnected, setLocalConnected] = React.useState(connected)
   const [localChargesEnabled, setLocalChargesEnabled] =
     React.useState(chargesEnabled)
+  const [embeddedMode, setEmbeddedMode] = React.useState<
+    null | "onboarding" | "management"
+  >(null)
   const router = useRouter()
+  const reduce = useReducedMotion()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const toastedRef = React.useRef(false)
 
@@ -113,6 +120,7 @@ export function StripeSettingsCard({
     }
     setLocalConnected(false)
     setLocalChargesEnabled(false)
+    setEmbeddedMode(null)
     toast.success("Stripe disconnected.")
   }
 
@@ -133,6 +141,14 @@ export function StripeSettingsCard({
     }
   }
 
+  function handleOnboardingComplete(nextChargesEnabled: boolean) {
+    setLocalConnected(true)
+    setLocalChargesEnabled(nextChargesEnabled)
+    if (nextChargesEnabled) {
+      setEmbeddedMode(null)
+    }
+  }
+
   return (
     <Card id="payments" className="scroll-mt-20 border-border/80">
       {confirmDialog}
@@ -144,7 +160,7 @@ export function StripeSettingsCard({
           <CardTitle className="text-base font-medium">Payments</CardTitle>
           <p className="text-sm text-muted-foreground">
             Charge customers with one voice command. Stripe handles the
-            checkout — funds go straight to our bank.
+            checkout — funds go straight to your bank.
           </p>
         </div>
         {localConnected && localChargesEnabled ? (
@@ -166,94 +182,146 @@ export function StripeSettingsCard({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        {localConnected ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {localChargesEnabled
-                ? "We're cleared to send invoices on our connected account. Try saying \"charge Smith $450 for ceramic\" from Whisper."
-                : "Stripe needs a bit more from us — re-open onboarding to finish (usually identity / bank details)."}
-            </p>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {localChargesEnabled ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleBackfill}
-                  disabled={pending !== null}
-                  className="gap-2"
-                >
-                  {pending === "backfill" ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Download className="size-4" aria-hidden />
-                  )}
-                  Sync history
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDisconnect}
-                disabled={pending !== null}
-              >
-                {pending === "disconnect" ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                    Disconnecting
-                  </>
-                ) : (
-                  "Disconnect"
-                )}
-              </Button>
-              {!localChargesEnabled && stripeConfigured ? (
-                <a
-                  href="/api/stripe/connect/start"
-                  className={buttonVariants({ variant: "default" })}
-                >
-                  <Plug className="size-4" aria-hidden />
-                  Continue onboarding
-                </a>
-              ) : null}
-            </div>
-            {localChargesEnabled ? (
-              <p className="text-xs text-muted-foreground">
-                Sync history pulls paid Stripe invoices into our local
-                mirror so our dashboard tiles and BI chat can see what
-                we&apos;ve already collected. Idempotent — safe to run
-                more than once.
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-muted-foreground">
-              Stripe Connect (Standard accounts). We never see or store a
-              raw secret key — Stripe gives us a connected-account ID, we
-              charge on our behalf with that.
-            </p>
-            <div className="flex items-center justify-end">
-              {stripeConfigured ? (
-                <a
-                  href="/api/stripe/connect/start"
-                  className={buttonVariants({ variant: "default" })}
-                >
-                  <Plug className="size-4" aria-hidden />
-                  Connect Stripe
-                </a>
+        <AnimatePresence initial={false} mode="wait">
+          {embeddedMode ? (
+            <motion.div
+              key="embedded"
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <StripeEmbeddedOnboarding
+                mode={embeddedMode}
+                onComplete={handleOnboardingComplete}
+                onCancel={() => setEmbeddedMode(null)}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="summary"
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              className="space-y-4"
+            >
+              {localConnected ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {localChargesEnabled
+                      ? "We're cleared to send invoices. Try saying “charge Smith $450 for ceramic” from Whisper."
+                      : "Stripe still wants a bit more — reopen the panel to finish (usually identity / bank details)."}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {localChargesEnabled ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBackfill}
+                        disabled={pending !== null}
+                        className="gap-2"
+                      >
+                        {pending === "backfill" ? (
+                          <Loader2
+                            className="size-4 animate-spin"
+                            aria-hidden
+                          />
+                        ) : (
+                          <Download className="size-4" aria-hidden />
+                        )}
+                        Sync history
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleDisconnect}
+                      disabled={pending !== null}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      {pending === "disconnect" ? (
+                        <>
+                          <Loader2
+                            className="size-4 animate-spin"
+                            aria-hidden
+                          />
+                          Disconnecting
+                        </>
+                      ) : (
+                        "Disconnect"
+                      )}
+                    </Button>
+                    {stripeConfigured ? (
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          setEmbeddedMode(
+                            localChargesEnabled ? "management" : "onboarding"
+                          )
+                        }
+                        disabled={pending !== null}
+                        className="gap-2"
+                      >
+                        {localChargesEnabled ? (
+                          <>
+                            <Settings2 className="size-4" aria-hidden />
+                            Manage Stripe
+                          </>
+                        ) : (
+                          <>
+                            <ArrowRight className="size-4" aria-hidden />
+                            Finish onboarding
+                          </>
+                        )}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {localChargesEnabled ? (
+                    <p className="text-xs text-muted-foreground">
+                      Sync history pulls paid Stripe invoices into our local
+                      mirror so the dashboard tiles and Ask Gradia can see
+                      what we&apos;ve already collected. Idempotent — safe
+                      to run more than once.
+                    </p>
+                  ) : null}
+                </>
               ) : (
-                <Button type="button" disabled>
-                  Stripe not configured
-                </Button>
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Stripe Connect (Standard accounts). All onboarding —
+                    business info, identity, bank details — happens inside
+                    Gradia. We never see card numbers or banking secrets;
+                    those go straight to Stripe.
+                  </p>
+                  <div className="flex items-center justify-end">
+                    {stripeConfigured ? (
+                      <Button
+                        type="button"
+                        onClick={() => setEmbeddedMode("onboarding")}
+                        className="gap-2"
+                      >
+                        <CreditCard className="size-4" aria-hidden />
+                        Connect Stripe
+                      </Button>
+                    ) : (
+                      <Button type="button" disabled>
+                        Stripe not configured
+                      </Button>
+                    )}
+                  </div>
+                  {!stripeConfigured ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Server is missing <code>STRIPE_SECRET_KEY</code> /{" "}
+                      <code>STRIPE_CONNECT_CLIENT_ID</code> /{" "}
+                      <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code>.
+                    </p>
+                  ) : null}
+                </>
               )}
-            </div>
-            {!stripeConfigured ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                Server is missing <code>STRIPE_SECRET_KEY</code> /{" "}
-                <code>STRIPE_CONNECT_CLIENT_ID</code>.
-              </p>
-            ) : null}
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </CardContent>
     </Card>
   )
