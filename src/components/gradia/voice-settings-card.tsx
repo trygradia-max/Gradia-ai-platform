@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { saveVapiAssistantId } from "@/app/actions/shop"
 import { Button } from "@/components/ui/button"
+import { StatusPill } from "@/components/ui/status-pill"
 import {
   Card,
   CardContent,
@@ -64,10 +65,13 @@ export function VoiceSettingsCard({
           </p>
         </div>
         {isConnected ? (
-          <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-            <Check className="size-3" aria-hidden />
+          <StatusPill
+            tone="good"
+            size="default"
+            icon={<Check className="size-3" aria-hidden />}
+          >
             Connected
-          </span>
+          </StatusPill>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-5">

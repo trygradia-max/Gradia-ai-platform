@@ -23,6 +23,7 @@ import {
 import { AgentRunsSheet } from "@/components/gradia/agent-runs-sheet"
 import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
+import { StatusPill } from "@/components/ui/status-pill"
 import {
   Card,
   CardContent,
@@ -154,17 +155,13 @@ export function CustomAgentCard({
               {agent.name}
             </CardTitle>
             {!runnable ? (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <StatusPill tone="muted">
                 Plan only · recreate to enable
-              </span>
+              </StatusPill>
             ) : enabled ? (
-              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                Enabled
-              </span>
+              <StatusPill tone="good">Enabled</StatusPill>
             ) : (
-              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                Paused
-              </span>
+              <StatusPill tone="warn">Paused</StatusPill>
             )}
           </div>
           <p className="text-sm text-muted-foreground">

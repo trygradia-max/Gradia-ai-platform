@@ -16,6 +16,7 @@ import { backfillStripePayments } from "@/app/actions/payments"
 import { disconnectStripe } from "@/app/actions/shop"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
+import { StatusPill } from "@/components/ui/status-pill"
 import {
   Card,
   CardContent,
@@ -147,15 +148,21 @@ export function StripeSettingsCard({
           </p>
         </div>
         {localConnected && localChargesEnabled ? (
-          <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-            <Check className="size-3" aria-hidden />
+          <StatusPill
+            tone="good"
+            size="default"
+            icon={<Check className="size-3" aria-hidden />}
+          >
             Connected
-          </span>
+          </StatusPill>
         ) : localConnected ? (
-          <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
-            <TriangleAlert className="size-3" aria-hidden />
+          <StatusPill
+            tone="warn"
+            size="default"
+            icon={<TriangleAlert className="size-3" aria-hidden />}
+          >
             Needs more info
-          </span>
+          </StatusPill>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">

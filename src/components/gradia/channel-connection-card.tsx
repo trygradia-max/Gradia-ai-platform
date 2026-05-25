@@ -19,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import type { ChannelId, ChannelSummary } from "@/lib/data/channels"
 
 const ICONS: Record<ChannelId, typeof Phone> = {
@@ -67,7 +68,7 @@ export function ChannelConnectionCard({
                     <p className="truncate text-sm font-medium">
                       {c.label}
                     </p>
-                    <StatusPill status={c.status} />
+                    <ChannelStatusPill status={c.status} />
                   </div>
                   <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                     {c.hint ?? c.description}
@@ -101,27 +102,29 @@ function ChannelIcon({ channel }: { channel: ChannelSummary }) {
   )
 }
 
-function StatusPill({ status }: { status: ChannelSummary["status"] }) {
-  if (status === "connected") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-        <CheckCircle2 className="size-3" aria-hidden />
-        Live
-      </span>
-    )
-  }
-  if (status === "partial") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-        <CircleAlert className="size-3" aria-hidden />
-        Needs info
-      </span>
-    )
-  }
+const CHANNEL_TONE: Record<ChannelSummary["status"], StatusPillTone> = {
+  connected: "good",
+  partial: "warn",
+  off: "muted",
+}
+
+function ChannelStatusPill({ status }: { status: ChannelSummary["status"] }) {
+  const tone = CHANNEL_TONE[status]
+  const Icon =
+    status === "connected"
+      ? CheckCircle2
+      : status === "partial"
+        ? CircleAlert
+        : Circle
+  const label =
+    status === "connected"
+      ? "Live"
+      : status === "partial"
+        ? "Needs info"
+        : "Off"
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-      <Circle className="size-3" aria-hidden />
-      Off
-    </span>
+    <StatusPill tone={tone} icon={<Icon className="size-3" aria-hidden />}>
+      {label}
+    </StatusPill>
   )
 }

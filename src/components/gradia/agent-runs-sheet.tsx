@@ -14,6 +14,7 @@ import { toast } from "sonner"
 
 import { listAgentRuns } from "@/app/actions/custom-agents"
 import { Button } from "@/components/ui/button"
+import { StatusPill } from "@/components/ui/status-pill"
 import {
   Sheet,
   SheetContent,
@@ -149,9 +150,9 @@ export function AgentRunsSheet({
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                          <StatusPill tone="muted">
                             {triggerLabel(run.trigger_source)}
-                          </span>
+                          </StatusPill>
                           <span className="flex items-center gap-1 tabular-nums">
                             <Clock className="size-3" aria-hidden />
                             {relative(run.created_at)}

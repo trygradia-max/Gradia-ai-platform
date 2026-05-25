@@ -17,6 +17,7 @@ import { planAgent, saveCustomAgent } from "@/app/actions/custom-agents"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
+import { StatusPill } from "@/components/ui/status-pill"
 import { Textarea } from "@/components/ui/textarea"
 import type { AgentConfig } from "@/lib/types/database"
 
@@ -156,9 +157,9 @@ export function AgentBuilder() {
               <CardTitle className="text-lg font-semibold tracking-tight">
                 {plan.name}
               </CardTitle>
-              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
+              <StatusPill tone="warn">
                 Saved · runtime coming soon
-              </span>
+              </StatusPill>
             </div>
             <p className="text-sm text-muted-foreground">
               {plan.short_description}

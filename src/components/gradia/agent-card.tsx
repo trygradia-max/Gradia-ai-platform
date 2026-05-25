@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { buttonVariants } from "@/components/ui/button"
+import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import {
   Card,
   CardContent,
@@ -36,11 +37,10 @@ const STATUS_LABEL: Record<Agent["status"], string> = {
   off: "Not connected",
 }
 
-const STATUS_CLASS: Record<Agent["status"], string> = {
-  active:
-    "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  needs_setup: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  off: "bg-muted text-muted-foreground",
+const STATUS_TONE: Record<Agent["status"], StatusPillTone> = {
+  active: "good",
+  needs_setup: "warn",
+  off: "muted",
 }
 
 export function AgentCard({ agent }: { agent: Agent }) {
@@ -56,11 +56,9 @@ export function AgentCard({ agent }: { agent: Agent }) {
             <CardTitle className="text-base font-medium">
               {agent.name}
             </CardTitle>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${STATUS_CLASS[agent.status]}`}
-            >
+            <StatusPill tone={STATUS_TONE[agent.status]}>
               {STATUS_LABEL[agent.status]}
-            </span>
+            </StatusPill>
           </div>
           <p className="text-sm text-muted-foreground">{agent.oneLiner}</p>
         </div>
