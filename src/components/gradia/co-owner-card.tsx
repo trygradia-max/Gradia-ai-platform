@@ -10,20 +10,26 @@ import {
   Hourglass,
   Loader2,
   Send,
-  Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { draftFollowupForLead } from "@/app/actions/co-owner"
 import { Button } from "@/components/ui/button"
+import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  PageStagger,
+  StaggerItem,
+} from "@/components/gradia/motion/page-stagger"
+import { SectionHeader } from "@/components/gradia/motion/section-header"
 import type { CoOwnerSuggestion } from "@/lib/data/co-owner"
+import { cn } from "@/lib/utils"
 
+/**
+ * Proactive nudge surface. Lives high on the dashboard so the
+ * owner sees "what to tackle next" before they even scroll. Each
+ * row is a one-tap follow-up — drafts an SMS, lands it in
+ * Approvals, the operator approves once.
+ */
 export function CoOwnerCard({
   suggestions,
 }: {
@@ -31,26 +37,6 @@ export function CoOwnerCard({
 }) {
   const router = useRouter()
   const [busyId, setBusyId] = React.useState<string | null>(null)
-
-  if (suggestions.length === 0) {
-    return (
-      <Card className="border-border/80">
-        <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-            <Sparkles className="size-5 text-primary" aria-hidden />
-          </div>
-          <div>
-            <CardTitle className="text-base font-medium">
-              What I&apos;d tackle next
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Quiet right now — we&apos;re caught up on follow-ups.
-            </p>
-          </div>
-        </CardHeader>
-      </Card>
-    )
-  }
 
   async function handleDraft(leadId: string) {
     setBusyId(leadId)
@@ -60,50 +46,80 @@ export function CoOwnerCard({
       toast.error(result.error)
       return
     }
-    toast.success("Drafted — review it in Approvals.")
+    toast.success("Drafted — it's waiting in Approvals.")
     router.refresh()
   }
 
   return (
-    <Card className="border-border/80">
-      <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-          <Sparkles className="size-5 text-primary" aria-hidden />
-        </div>
-        <div className="flex-1">
-          <CardTitle className="text-base font-medium">
-            What I&apos;d tackle next
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Proactive nudges from what I&apos;m seeing — one tap to draft a
-            follow-up.
-          </p>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <ul className="grid gap-2">
+    <section className="space-y-5">
+      <SectionHeader
+        eyebrow="Co-owner"
+        title={
+          <>
+            What <span className="italic">I&apos;d</span> tackle next.
+          </>
+        }
+        subtitle={
+          suggestions.length === 0
+            ? "Quiet right now — we&apos;re caught up on follow-ups."
+            : "Real nudges from what I&apos;m seeing. One tap and a draft is waiting for you."
+        }
+      />
+
+      {suggestions.length === 0 ? (
+        <MotionCard
+          interactive={false}
+          className="p-8 text-center text-sm text-muted-foreground"
+        >
+          Nothing to chase right now. Go finish that car.
+        </MotionCard>
+      ) : (
+        <PageStagger className="grid gap-2">
           {suggestions.map((s) => {
             const key =
               s.kind === "upcoming_appointment"
                 ? `appt:${s.appointmentId}`
                 : `${s.kind}:${s.leadId}`
             return (
-              <li key={key}>
+              <StaggerItem key={key}>
                 <SuggestionRow
                   suggestion={s}
                   busy={
-                    s.kind !== "upcoming_appointment" && busyId === s.leadId
+                    s.kind !== "upcoming_appointment" &&
+                    busyId === s.leadId
                   }
                   disabled={busyId !== null}
                   onDraft={handleDraft}
                 />
-              </li>
+              </StaggerItem>
             )
           })}
-        </ul>
-      </CardContent>
-    </Card>
+        </PageStagger>
+      )}
+    </section>
   )
+}
+
+const TONE_BY_KIND: Record<
+  CoOwnerSuggestion["kind"],
+  { icon: typeof Flame; ringClass: string; iconClass: string }
+> = {
+  hot_lead_followup: {
+    icon: Flame,
+    ringClass:
+      "before:bg-gradient-to-b before:from-primary/30 before:via-primary/10 before:to-transparent",
+    iconClass: "text-primary",
+  },
+  stale_new_lead: {
+    icon: Hourglass,
+    ringClass: "",
+    iconClass: "text-muted-foreground",
+  },
+  upcoming_appointment: {
+    icon: Calendar,
+    ringClass: "",
+    iconClass: "text-foreground",
+  },
 }
 
 function SuggestionRow({
@@ -117,6 +133,9 @@ function SuggestionRow({
   disabled: boolean
   onDraft: (leadId: string) => void
 }) {
+  const tone = TONE_BY_KIND[suggestion.kind]
+  const Icon = tone.icon
+
   if (suggestion.kind === "upcoming_appointment") {
     const when = new Intl.DateTimeFormat(undefined, {
       weekday: "short",
@@ -124,82 +143,97 @@ function SuggestionRow({
       minute: "2-digit",
     }).format(new Date(suggestion.whenIso))
     return (
-      <Link
-        href="/schedule"
-        className="group flex items-start gap-3 rounded-md border border-border/60 bg-muted/15 px-3 py-2.5 transition hover:bg-muted/30"
+      <MotionCard
+        interactive
+        className="group relative overflow-hidden p-0"
       >
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background">
-          <Calendar className="size-4 text-amber-600 dark:text-amber-400" aria-hidden />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">
-            {suggestion.customerName}
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {when}
-            </span>
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {suggestion.service
-              ? `${suggestion.service} · on the books soon`
-              : "On the books soon — make sure they confirmed."}
-          </p>
-        </div>
-        <ArrowUpRight
-          className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
-          aria-hidden
-        />
-      </Link>
+        <Link
+          href="/schedule"
+          className="flex items-start gap-3 px-4 py-3.5"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60 ring-1 ring-border/60">
+            <Icon className={cn("size-4", tone.iconClass)} aria-hidden />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              {suggestion.customerName}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {when}
+              </span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {suggestion.service
+                ? `${suggestion.service} · on the books soon`
+                : "On the books soon — make sure they confirmed."}
+            </p>
+          </div>
+          <ArrowUpRight
+            className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+            aria-hidden
+          />
+        </Link>
+      </MotionCard>
     )
   }
 
-  const Icon =
-    suggestion.kind === "hot_lead_followup" ? Flame : Hourglass
-  const iconClass =
+  const reason =
     suggestion.kind === "hot_lead_followup"
-      ? "text-red-600 dark:text-red-400"
-      : "text-muted-foreground"
+      ? suggestion.reason
+      : `Cold for ${suggestion.daysOld} days — worth a check-in.`
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background">
-        <Icon className={`size-4 ${iconClass}`} aria-hidden />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">
-          {suggestion.customerName}
+    <MotionCard
+      interactive
+      glow={suggestion.kind === "hot_lead_followup"}
+      className={cn(
+        "relative overflow-hidden",
+        // Accent rail on hot leads — 2px gradient strip down the left
+        suggestion.kind === "hot_lead_followup" &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-['']",
+        tone.ringClass
+      )}
+    >
+      <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60 ring-1 ring-border/60">
+          <Icon className={cn("size-4", tone.iconClass)} aria-hidden />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            {suggestion.customerName}
+            {suggestion.phone ? (
+              <span className="ml-2 text-xs font-normal tabular-nums text-muted-foreground">
+                {suggestion.phone}
+              </span>
+            ) : null}
+          </p>
+          <p className="text-xs text-muted-foreground">{reason}</p>
+        </div>
+        <div className="flex items-center gap-2 sm:flex-none">
           {suggestion.phone ? (
-            <span className="ml-2 text-xs font-normal tabular-nums text-muted-foreground">
-              {suggestion.phone}
-            </span>
-          ) : null}
-        </p>
-        <p className="text-xs text-muted-foreground">{suggestion.reason}</p>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onDraft(suggestion.leadId)}
+              disabled={disabled}
+              className="h-9 gap-1.5"
+            >
+              {busy ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Send className="size-3.5" aria-hidden />
+              )}
+              Draft the text
+            </Button>
+          ) : (
+            <Link
+              href="/leads"
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Open the lead →
+            </Link>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2 sm:flex-none">
-        {suggestion.phone ? (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => onDraft(suggestion.leadId)}
-            disabled={disabled}
-            className="h-10 gap-1.5 sm:h-8"
-          >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Send className="size-3.5" aria-hidden />
-            )}
-            Draft follow-up
-          </Button>
-        ) : (
-          <Link
-            href={`/leads`}
-            className="text-xs text-muted-foreground hover:underline"
-          >
-            No phone — open lead
-          </Link>
-        )}
-      </div>
-    </div>
+    </MotionCard>
   )
 }

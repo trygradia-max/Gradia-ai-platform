@@ -2,7 +2,12 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-export type StatusPillTone = "good" | "warn" | "bad" | "muted"
+export type StatusPillTone =
+  | "good"
+  | "warn"
+  | "bad"
+  | "accent"
+  | "muted"
 
 const TONE_CLASS: Record<StatusPillTone, string> = {
   good:
@@ -11,6 +16,9 @@ const TONE_CLASS: Record<StatusPillTone, string> = {
     "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   bad:
     "bg-destructive/15 text-destructive",
+  /** Brand accent (racing orange) — fresh / new / call-to-attention. */
+  accent:
+    "bg-primary/12 text-primary",
   muted:
     "bg-muted text-muted-foreground",
 }
