@@ -1,12 +1,12 @@
 import Link from "next/link"
-import { CalendarRange, Plug } from "lucide-react"
+import { ArrowRight, CalendarRange, Plug } from "lucide-react"
 
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  ScheduleGroups,
+  type ScheduleGroup,
+} from "@/components/gradia/schedule-groups"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import {
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
   listCalendarEvents,
@@ -26,23 +26,6 @@ function startOfDay(d: Date): Date {
   return out
 }
 
-function formatDayHeader(iso: string): string {
-  const d = new Date(iso)
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  }).format(d)
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso)
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(d)
-}
-
 function isSameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -51,10 +34,7 @@ function isSameDay(a: Date, b: Date): boolean {
   )
 }
 
-function groupByDay(events: AurinkoCalendarEvent[]): {
-  day: string
-  events: AurinkoCalendarEvent[]
-}[] {
+function groupByDay(events: AurinkoCalendarEvent[]): ScheduleGroup[] {
   const buckets = new Map<string, AurinkoCalendarEvent[]>()
   for (const evt of events) {
     if (!evt.start) continue
@@ -67,9 +47,15 @@ function groupByDay(events: AurinkoCalendarEvent[]): {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, list]) => ({
       day,
-      events: list.sort((a, b) =>
-        (a.start ?? "").localeCompare(b.start ?? "")
-      ),
+      events: list
+        .sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""))
+        .map((evt) => ({
+          id: evt.id,
+          subject: evt.subject ?? null,
+          start: evt.start ?? null,
+          end: evt.end ?? null,
+          location: evt.location ?? null,
+        })),
     }))
 }
 
@@ -83,6 +69,7 @@ export default async function SchedulePage() {
     .eq("id", shopCtx.id)
     .single()
   const shop = (data as ShopRow | null) ?? null
+
   let accessToken: string | null = null
   if (shop) {
     try {
@@ -91,57 +78,15 @@ export default async function SchedulePage() {
       console.warn("[schedule] Aurinko token refresh failed:", err)
     }
   }
-  const notConnected = !accessToken
 
-  return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Our schedule</h1>
-        <p className="text-sm text-muted-foreground">
-          Today&apos;s jobs, day by day — from the truck or the office.
-        </p>
-      </div>
-
-      {notConnected ? (
+  if (!accessToken) {
+    return (
+      <ScheduleShell todayCount={0} upcomingCount={0} variant="not-connected">
         <NotConnectedCard />
-      ) : (
-        <ConnectedSchedule accessToken={accessToken!} calendarId="primary" />
-      )}
-    </div>
-  )
-}
+      </ScheduleShell>
+    )
+  }
 
-function NotConnectedCard() {
-  return (
-    <Card className="border-border/80">
-      <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
-          <Plug className="size-5 text-primary" aria-hidden />
-        </div>
-        <div>
-          <CardTitle className="text-base font-medium">
-            Connect our calendar first
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Hook up Google Calendar in{" "}
-            <Link className="underline" href="/settings#email">
-              Settings
-            </Link>{" "}
-            and approved bookings will land here automatically.
-          </p>
-        </div>
-      </CardHeader>
-    </Card>
-  )
-}
-
-async function ConnectedSchedule({
-  accessToken,
-  calendarId,
-}: {
-  accessToken: string
-  calendarId: string
-}) {
   const now = new Date()
   const timeMin = startOfDay(now).toISOString()
   const timeMax = new Date(
@@ -151,7 +96,7 @@ async function ConnectedSchedule({
   let events: AurinkoCalendarEvent[] = []
   let fetchError: string | null = null
   try {
-    events = await listCalendarEvents(accessToken, calendarId, {
+    events = await listCalendarEvents(accessToken, "primary", {
       timeMin,
       timeMax,
     })
@@ -161,89 +106,158 @@ async function ConnectedSchedule({
 
   if (fetchError) {
     return (
-      <Card className="border-border/80">
-        <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
-            <CalendarRange className="size-5 text-primary" aria-hidden />
-          </div>
-          <div>
-            <CardTitle className="text-base font-medium">
-              Couldn&apos;t reach our calendar
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Try disconnecting and reconnecting in Settings. The provider
-              said: <span className="font-mono text-xs">{fetchError}</span>
-            </p>
-          </div>
-        </CardHeader>
-      </Card>
+      <ScheduleShell todayCount={0} upcomingCount={0} variant="error">
+        <ErrorCard error={fetchError} />
+      </ScheduleShell>
     )
   }
 
   if (events.length === 0) {
     return (
-      <Card className="border-border/80">
-        <CardContent className="py-14 text-center text-sm text-muted-foreground">
-          Nothing on the books in the next two weeks. New bookings land here
-          once we approve them.
-        </CardContent>
-      </Card>
+      <ScheduleShell todayCount={0} upcomingCount={0} variant="empty">
+        <EmptyCard />
+      </ScheduleShell>
     )
   }
 
-  const today = new Date()
   const groups = groupByDay(events)
+  const todayCount = groups
+    .filter((g) => isSameDay(new Date(g.day), now))
+    .reduce((acc, g) => acc + g.events.length, 0)
+  const upcomingCount = groups.reduce((acc, g) => acc + g.events.length, 0)
 
   return (
-    <div className="grid gap-4">
-      {groups.map(({ day, events: dayEvents }) => {
-        const dayDate = new Date(day)
-        const tagToday = isSameDay(dayDate, today)
-        return (
-          <Card key={day} className="border-border/80">
-            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
-              <CardTitle className="text-base font-medium">
-                {formatDayHeader(day)}
-              </CardTitle>
-              {tagToday ? (
-                <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
-                  Today
-                </span>
-              ) : null}
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <ul className="grid gap-2">
-                {dayEvents.map((evt) => (
-                  <li
-                    key={evt.id}
-                    className="flex flex-wrap items-start gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2"
-                  >
-                    <div className="min-w-[6.5rem] text-sm tabular-nums">
-                      {evt.start ? formatTime(evt.start) : "—"}
-                      {evt.end ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          – {formatTime(evt.end)}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {evt.subject?.trim() || "Untitled event"}
-                      </p>
-                      {evt.location ? (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {evt.location}
-                        </p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )
-      })}
+    <ScheduleShell
+      todayCount={todayCount}
+      upcomingCount={upcomingCount}
+      variant="connected"
+    >
+      <ScheduleGroups groups={groups} />
+    </ScheduleShell>
+  )
+}
+
+function ScheduleShell({
+  children,
+  todayCount,
+  upcomingCount,
+  variant,
+}: {
+  children: React.ReactNode
+  todayCount: number
+  upcomingCount: number
+  variant: "connected" | "not-connected" | "error" | "empty"
+}) {
+  const subtitle =
+    variant === "not-connected"
+      ? "Hook up Google Calendar once and approved bookings land here automatically — by day, by time, by truck."
+      : variant === "error"
+        ? "We couldn't pull the calendar just now — try reconnecting in Settings."
+        : variant === "empty"
+          ? "Nothing on the books in the next two weeks. New bookings land here once we approve them."
+          : todayCount > 0
+            ? `${todayCount} ${todayCount === 1 ? "job" : "jobs"} today · ${upcomingCount} across the next two weeks.`
+            : `${upcomingCount} on the books across the next two weeks — nothing today yet.`
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-10">
+      <header className="space-y-2">
+        <p className="label-eyebrow text-muted-foreground/70">Schedule</p>
+        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+          What&apos;s <span className="italic">on the books</span>.
+        </h1>
+        <p className="max-w-prose text-sm text-muted-foreground">{subtitle}</p>
+      </header>
+
+      {children}
+    </div>
+  )
+}
+
+function NotConnectedCard() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card p-6 sm:p-8">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">
+          <Plug className="size-5" aria-hidden />
+        </div>
+        <div className="flex-1 space-y-3">
+          <div className="space-y-1">
+            <p className="label-eyebrow text-muted-foreground/70">
+              One quick wire-up
+            </p>
+            <h2 className="font-display text-xl text-foreground sm:text-2xl">
+              Plug in our <span className="italic">calendar</span> first.
+            </h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Connect Google Calendar through Settings and the AI starts
+              landing approved bookings here, by day and by time.
+            </p>
+          </div>
+          <Link
+            href="/settings#email"
+            className={cn(
+              buttonVariants({ size: "lg" }),
+              "h-11 gap-2 sm:w-fit"
+            )}
+          >
+            Connect the calendar
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ErrorCard({ error }: { error: string }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card p-6 sm:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/12 text-amber-500 ring-1 ring-amber-500/25 dark:text-amber-400">
+          <CalendarRange className="size-5" aria-hidden />
+        </div>
+        <div className="flex-1 space-y-3">
+          <div className="space-y-1">
+            <p className="label-eyebrow text-muted-foreground/70">
+              Calendar hiccup
+            </p>
+            <h2 className="font-display text-xl text-foreground sm:text-2xl">
+              Couldn&apos;t reach the calendar.
+            </h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Try disconnecting and reconnecting in Settings. The provider
+              said:{" "}
+              <span className="font-mono text-xs text-foreground/80">
+                {error}
+              </span>
+            </p>
+          </div>
+          <Link
+            href="/settings#email"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "lg" }),
+              "h-11 sm:w-fit"
+            )}
+          >
+            Open Settings
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EmptyCard() {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center sm:py-20">
+      <p className="font-display text-2xl text-foreground sm:text-3xl">
+        <span className="italic">Quiet</span> for the next two weeks.
+      </p>
+      <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+        New bookings land here the moment we approve them — voice, email,
+        SMS, or DMs.
+      </p>
     </div>
   )
 }
