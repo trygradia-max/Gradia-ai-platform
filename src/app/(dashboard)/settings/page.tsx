@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/card"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
+import { getPendingMetaPages } from "@/app/actions/meta-oauth"
+import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -71,10 +73,42 @@ const KNOWN_JOBBER_STATUSES = new Set([
   "save_failed",
 ])
 
+const KNOWN_META_STATUSES = new Set([
+  "ok",
+  "pick",
+  "denied",
+  "missing_params",
+  "state_mismatch",
+  "not_signed_in",
+  "token_exchange_failed",
+  "page_list_failed",
+  "no_pages",
+  "subscribe_failed",
+  "save_failed",
+])
+
+type MetaCallbackStatus =
+  | "ok"
+  | "pick"
+  | "denied"
+  | "missing_params"
+  | "state_mismatch"
+  | "not_signed_in"
+  | "token_exchange_failed"
+  | "page_list_failed"
+  | "no_pages"
+  | "subscribe_failed"
+  | "save_failed"
+
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string; stripe?: string; jobber?: string }>
+  searchParams: Promise<{
+    email?: string
+    stripe?: string
+    jobber?: string
+    meta?: string
+  }>
 }) {
   const shopCtx = await requireShop()
   const supabase = await createClient()
@@ -156,6 +190,17 @@ export default async function SettingsPage({
           | "save_failed")
       : null
 
+  const rawMetaStatus = params.meta ?? null
+  const metaStatus: MetaCallbackStatus | null =
+    rawMetaStatus && KNOWN_META_STATUSES.has(rawMetaStatus)
+      ? (rawMetaStatus as MetaCallbackStatus)
+      : null
+
+  // Multi-page picker payload — populated when the OAuth callback
+  // returned more than one Page and stashed the candidates in a
+  // short-lived cookie.
+  const pendingMetaPages = await getPendingMetaPages()
+
   const sections = [
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
@@ -181,6 +226,8 @@ export default async function SettingsPage({
           plug into to run the AI office.
         </p>
       </header>
+
+      <MetaCallbackToast status={metaStatus} />
 
       <SettingsSectionNav sections={sections} />
 
@@ -230,6 +277,7 @@ export default async function SettingsPage({
             initialHandle={shop?.instagram_account_handle ?? null}
             webhookUrl={metaWebhookUrl}
             metaConfigured={metaConfigured}
+            pendingPages={pendingMetaPages}
           />
         </section>
 
@@ -239,6 +287,7 @@ export default async function SettingsPage({
             initialPageName={shop?.facebook_page_name ?? null}
             webhookUrl={metaWebhookUrl}
             metaConfigured={metaConfigured}
+            pendingPages={pendingMetaPages}
           />
         </section>
 
