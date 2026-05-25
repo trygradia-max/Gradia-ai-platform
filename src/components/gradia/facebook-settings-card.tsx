@@ -9,6 +9,7 @@ import {
   saveFacebookCredentials,
 } from "@/app/actions/shop"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -29,6 +30,7 @@ export function FacebookSettingsCard({
   webhookUrl: string
   metaConfigured: boolean
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [pageId, setPageId] = React.useState(initialPageId ?? "")
   const [pageName, setPageName] = React.useState(initialPageName ?? "")
   const [pageToken, setPageToken] = React.useState("")
@@ -64,12 +66,14 @@ export function FacebookSettingsCard({
   }
 
   async function handleDisconnect() {
-    if (
-      !confirm(
-        "Disconnect Facebook? Inbound DMs won't reach Gradia until reconnected."
-      )
-    )
-      return
+    const ok = await confirm({
+      title: "Disconnect Facebook?",
+      description:
+        "Inbound DMs won't reach Gradia until you reconnect.",
+      confirmLabel: "Disconnect",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending("disconnect")
     const result = await disconnectFacebook()
     setPending(null)
@@ -85,6 +89,7 @@ export function FacebookSettingsCard({
 
   return (
     <Card id="facebook" className="scroll-mt-20 border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <Globe className="size-5 text-primary" aria-hidden />

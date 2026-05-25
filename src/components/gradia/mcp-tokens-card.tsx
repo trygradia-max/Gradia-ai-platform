@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { mintMcpToken, revokeMcpToken } from "@/app/actions/mcp"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ export function McpTokensCard({
 }: {
   initialTokens: McpTokenRow[]
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [tokens, setTokens] = React.useState(initialTokens)
   const [name, setName] = React.useState("")
   const [pending, setPending] = React.useState<null | "mint" | string>(null)
@@ -57,12 +59,14 @@ export function McpTokensCard({
   }
 
   async function handleRevoke(id: string) {
-    if (
-      !confirm(
-        "Revoke this token? Any agent using it will immediately get 401."
-      )
-    )
-      return
+    const ok = await confirm({
+      title: "Revoke this token?",
+      description:
+        "Any agent using it will immediately get 401. The token can't be un-revoked — mint a new one if you need to.",
+      confirmLabel: "Revoke",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending(id)
     const result = await revokeMcpToken(id)
     setPending(null)
@@ -90,6 +94,7 @@ export function McpTokensCard({
 
   return (
     <Card id="mcp" className="scroll-mt-20 border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <Key className="size-5 text-primary" aria-hidden />

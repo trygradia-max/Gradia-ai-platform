@@ -10,6 +10,7 @@ import {
   listChatConversations,
 } from "@/app/actions/bi-chat"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Sheet,
   SheetContent,
@@ -47,6 +48,7 @@ export function BiChatHistorySheet({
   currentConversationId: string | null
 }) {
   const router = useRouter()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [open, setOpen] = React.useState(false)
   const [items, setItems] = React.useState<Item[] | null>(null)
   const [loading, setLoading] = React.useState(false)
@@ -85,12 +87,14 @@ export function BiChatHistorySheet({
   }
 
   async function handleDelete(item: Item) {
-    if (
-      !confirm(
-        `Delete "${item.title?.trim() || "this conversation"}"? Our questions and answers in this thread go with it.`
-      )
-    )
-      return
+    const ok = await confirm({
+      title: `Delete ${item.title?.trim() || "this conversation"}?`,
+      description:
+        "Our questions and answers in this thread go with it. There's no undo.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    })
+    if (!ok) return
     setDeletingId(item.id)
     const result = await deleteConversation(item.id)
     setDeletingId(null)
@@ -108,6 +112,7 @@ export function BiChatHistorySheet({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
+      {confirmDialog}
       <SheetTrigger
         render={
           <Button

@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/approvals"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -129,6 +130,7 @@ function fromLocalInputValue(local: string): string {
 
 export function PendingProposalEditor(props: PendingProposalEditorProps) {
   const router = useRouter()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [pending, setPending] = React.useState<
     null | "save" | "approve" | "discard"
   >(null)
@@ -325,7 +327,13 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
   }
 
   async function handleDiscard() {
-    if (!confirm("Drop this proposal? It won't be saved anywhere.")) return
+    const ok = await confirm({
+      title: "Drop this proposal?",
+      description: "We won't save it anywhere — close the loop or edit it first if there's anything worth keeping.",
+      confirmLabel: "Drop it",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending("discard")
     const result = await rejectFromDashboard(props.pendingId)
     setPending(null)
@@ -341,6 +349,7 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
 
   return (
     <Card className="border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
         <div className="space-y-1">
           <CardTitle className="text-base font-medium">

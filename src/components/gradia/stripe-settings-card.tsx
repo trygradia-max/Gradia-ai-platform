@@ -15,6 +15,7 @@ import { toast } from "sonner"
 import { backfillStripePayments } from "@/app/actions/payments"
 import { disconnectStripe } from "@/app/actions/shop"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -78,6 +79,7 @@ export function StripeSettingsCard({
   const [localChargesEnabled, setLocalChargesEnabled] =
     React.useState(chargesEnabled)
   const router = useRouter()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const toastedRef = React.useRef(false)
 
   React.useEffect(() => {
@@ -93,12 +95,14 @@ export function StripeSettingsCard({
   }, [callbackStatus, router])
 
   async function handleDisconnect() {
-    if (
-      !confirm(
-        "Disconnect Stripe? You'll need to re-onboard to send invoices again."
-      )
-    )
-      return
+    const ok = await confirm({
+      title: "Disconnect Stripe?",
+      description:
+        "You'll need to re-onboard before we can send invoices again.",
+      confirmLabel: "Disconnect",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending("disconnect")
     const result = await disconnectStripe()
     setPending(null)
@@ -130,6 +134,7 @@ export function StripeSettingsCard({
 
   return (
     <Card id="payments" className="scroll-mt-20 border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <CreditCard className="size-5 text-primary" aria-hidden />

@@ -22,6 +22,7 @@ import {
 } from "@/app/actions/custom-agents"
 import { AgentRunsSheet } from "@/components/gradia/agent-runs-sheet"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -74,6 +75,7 @@ export function CustomAgentCard({
   lastRun: CustomAgentRunRow | null
 }) {
   const router = useRouter()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [pending, setPending] = React.useState<
     null | "delete" | "run" | "toggle"
   >(null)
@@ -82,7 +84,13 @@ export function CustomAgentCard({
   const runnable = Boolean(config.recipe?.id)
 
   async function handleDelete() {
-    if (!confirm(`Delete "${agent.name}"? The plan goes with it.`)) return
+    const ok = await confirm({
+      title: `Delete ${agent.name}?`,
+      description: "The plan and its run history go with it.",
+      confirmLabel: "Delete agent",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending("delete")
     const result = await deleteCustomAgent(agent.id)
     setPending(null)
@@ -135,6 +143,7 @@ export function CustomAgentCard({
 
   return (
     <Card className="flex h-full flex-col border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-start gap-3 space-y-0">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
           <Bot className="size-5 text-primary" aria-hidden />

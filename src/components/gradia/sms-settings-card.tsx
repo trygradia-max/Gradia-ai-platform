@@ -11,6 +11,7 @@ import {
   saveTwilioNumber,
 } from "@/app/actions/shop"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -31,6 +32,7 @@ export function SmsSettingsCard({
   twilioConfigured: boolean
   byoConnected: boolean
 }) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [phone, setPhone] = React.useState(initialPhoneNumber ?? "")
   const [savedValue, setSavedValue] = React.useState(initialPhoneNumber ?? "")
   const [pending, setPending] = React.useState<
@@ -62,12 +64,14 @@ export function SmsSettingsCard({
   }
 
   async function handleClearCredentials() {
-    if (
-      !confirm(
-        "Clear your Twilio credentials? Outbound SMS will fall back to Gradia's pilot account until you set them again."
-      )
-    )
-      return
+    const ok = await confirm({
+      title: "Clear your Twilio credentials?",
+      description:
+        "Outbound SMS falls back to Gradia's pilot account until you paste them again.",
+      confirmLabel: "Clear",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending("clear_byo")
     const result = await clearTwilioCredentials()
     setPending(null)
@@ -112,6 +116,7 @@ export function SmsSettingsCard({
 
   return (
     <Card id="sms" className="scroll-mt-20 border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <MessageSquare className="size-5 text-primary" aria-hidden />

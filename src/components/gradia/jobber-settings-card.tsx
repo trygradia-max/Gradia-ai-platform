@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { disconnectJobber } from "@/app/actions/shop"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -34,6 +35,7 @@ export function JobberSettingsCard({
   callbackStatus?: JobberCallbackStatus
 }) {
   const router = useRouter()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [accountName, setAccountName] = React.useState(initialAccountName)
   const [pending, setPending] = React.useState<null | "disconnect">(null)
   const toastedRef = React.useRef(false)
@@ -72,12 +74,14 @@ export function JobberSettingsCard({
   }, [callbackStatus, router])
 
   async function handleDisconnect() {
-    if (
-      !confirm(
-        "Disconnect Jobber? Approved bookings will stop pushing to it until reconnected."
-      )
-    )
-      return
+    const ok = await confirm({
+      title: "Disconnect Jobber?",
+      description:
+        "Approved bookings will stop pushing to Jobber until you reconnect.",
+      confirmLabel: "Disconnect",
+      tone: "destructive",
+    })
+    if (!ok) return
     setPending("disconnect")
     const result = await disconnectJobber()
     setPending(null)
@@ -91,6 +95,7 @@ export function JobberSettingsCard({
 
   return (
     <Card id="jobber" className="scroll-mt-20 border-border/80">
+      {confirmDialog}
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <Briefcase className="size-5 text-primary" aria-hidden />

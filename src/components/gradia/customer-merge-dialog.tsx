@@ -11,6 +11,7 @@ import {
   type MergeCandidate,
 } from "@/app/actions/customers"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Dialog,
   DialogClose,
@@ -45,6 +46,7 @@ export function CustomerMergeDialog({
   winnerName: string | null
 }) {
   const router = useRouter()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [candidates, setCandidates] = React.useState<MergeCandidate[]>([])
@@ -83,12 +85,14 @@ export function CustomerMergeDialog({
     const winnerLabel = winnerName?.trim() || "this record"
     const loserLabel =
       selected.name?.trim() || selected.phone || selected.email || "the duplicate"
-    if (
-      !confirm(
-        `Merge ${loserLabel} into ${winnerLabel}? Their history moves over and the duplicate record is deleted.`
-      )
-    )
-      return
+    const ok = await confirm({
+      title: `Merge ${loserLabel} into ${winnerLabel}?`,
+      description:
+        "Their history moves over and the duplicate record is deleted. There's no undo.",
+      confirmLabel: "Merge & delete duplicate",
+      tone: "destructive",
+    })
+    if (!ok) return
 
     setMerging(true)
     const result = await mergeCustomers({
@@ -122,6 +126,7 @@ export function CustomerMergeDialog({
         if (!next) reset()
       }}
     >
+      {confirmDialog}
       <DialogTrigger
         render={
           <Button variant="outline" type="button" className="gap-2" />
