@@ -31,7 +31,13 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-background/70",
+        "supports-backdrop-filter:backdrop-blur-md supports-backdrop-filter:bg-background/55",
+        // Slower, more cinematic backdrop — easeOutExpo on enter,
+        // easeInExpo on exit, so the dim doesn't snap on close.
+        "duration-300 [animation-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+        "data-open:animate-in data-open:fade-in-0",
+        "data-closed:animate-out data-closed:fade-out-0 data-closed:duration-200",
         className
       )}
       {...props}
@@ -53,7 +59,16 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl bg-popover p-5 text-sm text-popover-foreground outline-none sm:max-w-md",
+          // Border + tone — moves it from "popover" to "first-class
+          // surface" so dialogs match the card vocabulary on the page.
+          "border border-border/60 shadow-2xl shadow-black/40 ring-1 ring-foreground/5",
+          // Entry: opacity + scale 0.96 + 6px upward drift on
+          // easeOutExpo. Exit: snappier reverse on easeInExpo so closing
+          // doesn't feel sluggish.
+          "duration-260 [animation-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+          "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:slide-in-from-bottom-2",
+          "data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-closed:slide-out-to-bottom-1 data-closed:duration-180",
           className
         )}
         {...props}
@@ -84,7 +99,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex flex-col gap-1.5", className)}
       {...props}
     />
   )
@@ -102,7 +117,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mx-5 -mb-5 flex flex-col-reverse gap-2 rounded-b-2xl border-t border-border/60 bg-muted/30 p-4 sm:flex-row sm:justify-end sm:px-5",
         className
       )}
       {...props}
@@ -122,7 +137,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-none font-medium",
+        "font-display text-xl leading-tight tracking-[-0.015em] text-foreground",
         className
       )}
       {...props}
