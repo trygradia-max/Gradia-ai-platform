@@ -1,11 +1,14 @@
+"use client"
+
+import * as React from "react"
 import Link from "next/link"
 import {
   ArrowUpRight,
   AtSign,
   CalendarDays,
   CheckCircle2,
-  CircleAlert,
   Circle,
+  CircleAlert,
   CreditCard,
   Globe,
   Mail,
@@ -13,14 +16,16 @@ import {
   Phone,
 } from "lucide-react"
 
+import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  PageStagger,
+  StaggerItem,
+} from "@/components/gradia/motion/page-stagger"
+import { PulseDot } from "@/components/gradia/motion/pulse-dot"
+import { SectionHeader } from "@/components/gradia/motion/section-header"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import type { ChannelId, ChannelSummary } from "@/lib/data/channels"
+import { cn } from "@/lib/utils"
 
 const ICONS: Record<ChannelId, typeof Phone> = {
   voice: Phone,
@@ -32,6 +37,18 @@ const ICONS: Record<ChannelId, typeof Phone> = {
   facebook: Globe,
 }
 
+const STATUS_TONE: Record<ChannelSummary["status"], StatusPillTone> = {
+  connected: "good",
+  partial: "warn",
+  off: "muted",
+}
+
+const STATUS_ORDER: Record<ChannelSummary["status"], number> = {
+  partial: 0,
+  connected: 1,
+  off: 2,
+}
+
 export function ChannelConnectionCard({
   channels,
 }: {
@@ -39,92 +56,117 @@ export function ChannelConnectionCard({
 }) {
   const connected = channels.filter((c) => c.status === "connected").length
   const total = channels.length
+  const allLive = total > 0 && connected === total
+
+  // Surface anything needing attention first, then live channels, then off.
+  // Tradesperson-friendly order: "what should I fix?" → "what's running?" → "what's not on yet?"
+  const sorted = React.useMemo(
+    () =>
+      [...channels].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]),
+    [channels]
+  )
+
+  const firstActionable = sorted.find((c) => c.status !== "connected")
 
   return (
-    <Card id="channels" className="scroll-mt-20 border-border/80">
-      <CardHeader className="space-y-1 pb-3">
-        <CardTitle className="text-base font-medium">
-          Channels
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          What we&apos;re plugged into right now —{" "}
-          <span className="font-medium text-foreground">
-            {connected} of {total} live.
-          </span>{" "}
-          The rest are a paste-and-save away.
-        </p>
-      </CardHeader>
-      <CardContent>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {channels.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={c.href}
-                className="group flex items-start gap-3 rounded-md border border-border/60 bg-muted/10 px-3 py-2.5 transition hover:bg-muted/30"
-              >
-                <ChannelIcon channel={c} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">
-                      {c.label}
-                    </p>
-                    <ChannelStatusPill status={c.status} />
-                  </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                    {c.hint ?? c.description}
-                  </p>
-                </div>
-                <ArrowUpRight
-                  className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
-                  aria-hidden
-                />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+    <section id="channels" className="scroll-mt-20 space-y-5">
+      <SectionHeader
+        eyebrow="Channels"
+        title={
+          allLive ? (
+            <>
+              <span className="italic">Everywhere</span> they reach out, we&apos;re there.
+            </>
+          ) : (
+            <>
+              Where we&apos;re <span className="italic">listening</span>.
+            </>
+          )
+        }
+        subtitle={
+          allLive
+            ? `All ${total} lines covered — voice, email, SMS, social, payments.`
+            : firstActionable
+              ? `${connected} of ${total} live — ${firstActionable.label} is the next one to wire up.`
+              : `${connected} of ${total} live.`
+        }
+      />
+
+      <PageStagger className="grid gap-2 sm:grid-cols-2">
+        {sorted.map((channel) => (
+          <StaggerItem key={channel.id}>
+            <ChannelRow channel={channel} />
+          </StaggerItem>
+        ))}
+      </PageStagger>
+    </section>
   )
 }
 
-function ChannelIcon({ channel }: { channel: ChannelSummary }) {
+function ChannelRow({ channel }: { channel: ChannelSummary }) {
   const Icon = ICONS[channel.id]
-  const className =
-    channel.status === "connected"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : channel.status === "partial"
-        ? "text-amber-600 dark:text-amber-400"
-        : "text-muted-foreground"
-  return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background">
-      <Icon className={`size-4 ${className}`} aria-hidden />
-    </div>
-  )
-}
+  const isLive = channel.status === "connected"
+  const needsAttention = channel.status === "partial"
+  const StatusIcon = isLive
+    ? CheckCircle2
+    : needsAttention
+      ? CircleAlert
+      : Circle
+  const statusLabel = isLive ? "Live" : needsAttention ? "Needs info" : "Off"
 
-const CHANNEL_TONE: Record<ChannelSummary["status"], StatusPillTone> = {
-  connected: "good",
-  partial: "warn",
-  off: "muted",
-}
-
-function ChannelStatusPill({ status }: { status: ChannelSummary["status"] }) {
-  const tone = CHANNEL_TONE[status]
-  const Icon =
-    status === "connected"
-      ? CheckCircle2
-      : status === "partial"
-        ? CircleAlert
-        : Circle
-  const label =
-    status === "connected"
-      ? "Live"
-      : status === "partial"
-        ? "Needs info"
-        : "Off"
   return (
-    <StatusPill tone={tone} icon={<Icon className="size-3" aria-hidden />}>
-      {label}
-    </StatusPill>
+    <MotionCard
+      interactive
+      glow={isLive}
+      className={cn(
+        "group relative h-full overflow-hidden p-0",
+        // Subtle accent rail on rows that need attention — operator's eye
+        // lands on what to fix before what's already humming.
+        needsAttention &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-gradient-to-b before:from-amber-400/60 before:via-amber-400/20 before:to-transparent before:content-['']"
+      )}
+    >
+      <Link
+        href={channel.href}
+        aria-label={`${channel.label} — ${statusLabel}`}
+        className="flex h-full items-start gap-3 px-4 py-3.5 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <div
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors",
+            isLive
+              ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400"
+              : needsAttention
+                ? "bg-amber-500/10 text-amber-600 ring-amber-500/25 dark:text-amber-400"
+                : "bg-background/60 text-muted-foreground ring-border/60"
+          )}
+        >
+          <Icon className="size-4" aria-hidden />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+              <span className="truncate">{channel.label}</span>
+              {isLive ? (
+                <PulseDot tone="good" size={5} className="shrink-0" />
+              ) : null}
+            </p>
+            <StatusPill
+              tone={STATUS_TONE[channel.status]}
+              icon={<StatusIcon className="size-3" aria-hidden />}
+            >
+              {statusLabel}
+            </StatusPill>
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+            {channel.hint ?? channel.description}
+          </p>
+        </div>
+        <ArrowUpRight
+          className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+          aria-hidden
+        />
+      </Link>
+    </MotionCard>
   )
 }
