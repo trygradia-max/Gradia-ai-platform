@@ -1,3 +1,4 @@
+import { MeshBackground } from "@/components/gradia/mesh-background"
 import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -44,8 +45,37 @@ export default async function OnboardingPage({
   if (shop && services.length === 0) initialStep = 2
   if (shop && services.length > 0) initialStep = 3
 
+  const isResuming = Boolean(shop) && !startFresh
+
   return (
-    <div className="flex min-h-svh flex-col items-center bg-background p-4 sm:justify-center sm:p-6">
+    <div className="relative isolate flex min-h-svh flex-col items-center justify-center gap-8 overflow-hidden bg-background px-4 py-12 sm:px-6">
+      <MeshBackground />
+
+      <header className="relative max-w-xl space-y-2.5 text-center">
+        <p className="label-eyebrow text-muted-foreground/70">
+          {startFresh
+            ? "Add another shop"
+            : isResuming
+              ? "Pick up where we left off"
+              : "Set up the shop"}
+        </p>
+        <h1 className="font-display text-[clamp(1.875rem,5vw,2.75rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+          {startFresh ? (
+            <>
+              A <span className="italic">second</span> shop, same setup.
+            </>
+          ) : (
+            <>
+              Let&apos;s <span className="italic">wire</span> the shop up.
+            </>
+          )}
+        </h1>
+        <p className="mx-auto max-w-md text-sm text-muted-foreground">
+          Three short steps — your details, your service menu, then we&apos;re
+          live. You can edit anything later in Settings.
+        </p>
+      </header>
+
       <OnboardingWizard
         initialShop={shop}
         initialServices={services}
