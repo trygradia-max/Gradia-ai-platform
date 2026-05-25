@@ -3,13 +3,14 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
+import { motion, useReducedMotion, type Variants } from "framer-motion"
 import { Search } from "lucide-react"
 
-import { Card, CardContent } from "@/components/ui/card"
+import { MotionCard } from "@/components/gradia/motion/motion-card"
+import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Input } from "@/components/ui/input"
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -41,6 +42,23 @@ function channelHints(c: CustomerWithCounts): string {
   return parts.join(" · ") || "—"
 }
 
+const rowContainer: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.03, delayChildren: 0.08 },
+  },
+}
+
+const row: Variants = {
+  hidden: { opacity: 0, y: 8 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.45, ease: EASE_OUT_EXPO },
+  },
+}
+
 export function CustomersTable({
   initialQuery,
   customers,
@@ -50,6 +68,7 @@ export function CustomersTable({
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const reduce = useReducedMotion()
   const [query, setQuery] = React.useState(initialQuery)
 
   // Debounced server-side search via ?q=… on the URL.
@@ -59,7 +78,9 @@ export function CustomersTable({
       if (query.trim()) next.set("q", query.trim())
       else next.delete("q")
       const qs = next.toString()
-      router.replace(qs ? `/customers?${qs}` : "/customers", { scroll: false })
+      router.replace(qs ? `/customers?${qs}` : "/customers", {
+        scroll: false,
+      })
     }, 220)
     return () => window.clearTimeout(handle)
     // We only want to fire on query changes — router & searchParams are stable.
@@ -67,64 +88,83 @@ export function CustomersTable({
   }, [query])
 
   return (
-    <div className="grid gap-4">
-      <div className="relative max-w-md">
-        <Search
-          className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name, phone, email, social…"
-          className="pl-9"
-          autoComplete="off"
-          spellCheck={false}
-        />
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search
+            className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70"
+            aria-hidden
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, phone, email, social…"
+            className="h-10 pl-9"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <p className="label-eyebrow text-muted-foreground/70 sm:text-right">
+          {customers.length === 0
+            ? initialQuery
+              ? "No match"
+              : "Nobody yet"
+            : `${customers.length} ${
+                customers.length === 1 ? "customer" : "customers"
+              }`}
+        </p>
       </div>
 
-      <Card className="border-border/80 shadow-sm">
-        <CardContent className="px-0 pt-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="min-w-[140px] pl-4 sm:pl-6">Name</TableHead>
-                <TableHead className="hidden sm:table-cell">Phone</TableHead>
-                <TableHead className="hidden md:table-cell">Email</TableHead>
-                <TableHead className="hidden lg:table-cell">Channels</TableHead>
-                <TableHead className="text-right">Leads</TableHead>
-                <TableHead className="pr-4 text-right sm:pr-6">Last heard</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {customers.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="py-14 text-center text-sm text-muted-foreground"
-                  >
-                    {initialQuery
-                      ? "Nobody matches that yet — try a different name or number."
-                      : "Quiet so far — customers land here automatically when voice, SMS, or email comes in."}
-                  </TableCell>
+      <MotionCard interactive={false} className="overflow-hidden p-0">
+        {customers.length === 0 ? (
+          <EmptyState searching={Boolean(initialQuery)} />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border/50 hover:bg-transparent">
+                  <TableHead className="label-eyebrow min-w-[140px] pl-4 sm:pl-6">
+                    Name
+                  </TableHead>
+                  <TableHead className="label-eyebrow hidden sm:table-cell">
+                    Phone
+                  </TableHead>
+                  <TableHead className="label-eyebrow hidden md:table-cell">
+                    Email
+                  </TableHead>
+                  <TableHead className="label-eyebrow hidden lg:table-cell">
+                    Channels
+                  </TableHead>
+                  <TableHead className="label-eyebrow text-right">
+                    Leads
+                  </TableHead>
+                  <TableHead className="label-eyebrow pr-4 text-right sm:pr-6">
+                    Last heard
+                  </TableHead>
                 </TableRow>
-              ) : (
-                customers.map((c) => (
-                  <TableRow
+              </TableHeader>
+              <motion.tbody
+                key={initialQuery /* re-stagger when search changes results */}
+                variants={reduce ? undefined : rowContainer}
+                initial={reduce ? undefined : "hidden"}
+                animate={reduce ? undefined : "show"}
+                className="[&_tr]:border-b [&_tr]:border-border/40"
+              >
+                {customers.map((c) => (
+                  <motion.tr
                     key={c.id}
-                    className="relative cursor-pointer transition-colors duration-150 hover:bg-muted/40 focus-within:bg-muted/40"
+                    variants={reduce ? undefined : row}
+                    className="relative transition-colors duration-200 hover:bg-card/60 focus-within:bg-card/60"
                   >
                     <TableCell className="max-w-[200px] pl-4 font-medium sm:pl-6">
-                      {/* Single overlay link covers the entire row so
-                          click-anywhere works without per-cell wrappers
-                          or a non-semantic onClick. Cells stay read-
-                          only / selectable for screen readers. */}
+                      {/* Overlay link makes the whole row clickable while
+                          keeping table cells selectable for screen readers. */}
                       <Link
                         href={`/customers/${c.id}`}
                         aria-label={`Open ${c.name?.trim() || "customer"}`}
-                        className="absolute inset-0 z-10 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                        className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
                       />
-                      <span className="block truncate">
+                      <span className="block truncate text-foreground">
                         {c.name?.trim() || "Unknown"}
                       </span>
                       <span className="block truncate text-xs tabular-nums font-normal text-muted-foreground sm:hidden">
@@ -137,22 +177,47 @@ export function CustomersTable({
                     <TableCell className="hidden max-w-[240px] truncate text-muted-foreground md:table-cell">
                       {c.email ?? "—"}
                     </TableCell>
-                    <TableCell className="hidden text-xs uppercase tracking-wide text-muted-foreground lg:table-cell">
-                      {channelHints(c)}
+                    <TableCell className="hidden lg:table-cell">
+                      <span className="label-eyebrow !text-muted-foreground/80">
+                        {channelHints(c)}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {c.lead_count}
                     </TableCell>
-                    <TableCell className="pr-4 text-right text-muted-foreground tabular-nums sm:pr-6">
+                    <TableCell className="pr-4 text-right tabular-nums text-muted-foreground sm:pr-6">
                       {formatRelative(c.last_seen_at)}
                     </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  </motion.tr>
+                ))}
+              </motion.tbody>
+            </Table>
+          </div>
+        )}
+      </MotionCard>
+    </div>
+  )
+}
+
+function EmptyState({ searching }: { searching: boolean }) {
+  return (
+    <div className="px-6 py-16 text-center">
+      <p className="font-display text-2xl text-foreground sm:text-3xl">
+        {searching ? (
+          <>
+            <span className="italic">Nobody</span> by that name yet.
+          </>
+        ) : (
+          <>
+            <span className="italic">Quiet</span> so far.
+          </>
+        )}
+      </p>
+      <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+        {searching
+          ? "Try a different name or number — we'll keep looking."
+          : "Customers land here automatically the moment voice, SMS, email, or DMs come in."}
+      </p>
     </div>
   )
 }
