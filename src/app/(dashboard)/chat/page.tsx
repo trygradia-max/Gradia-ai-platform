@@ -39,15 +39,25 @@ export default async function ChatPage({
       }
     : { conversationId: null, messages: [] }
 
+  const messageCount = initialState.messages.length
+  const isFresh = messageCount === 0
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Ask Gradia</h1>
-        <p className="text-sm text-muted-foreground">
-          Anything about our shop — leads, customers, our schedule, what
-          people are asking about. Plain English in, straight answers out.
+    <div className="mx-auto max-w-3xl space-y-10">
+      <header className="space-y-2">
+        <p className="label-eyebrow text-muted-foreground/70">Ask Gradia</p>
+        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+          What do you want to <span className="italic">know</span>?
+        </h1>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          {isFresh
+            ? "Anything about our shop — leads, customers, the schedule, what people are asking about. Plain English in, straight answers out."
+            : `Picking up where we left off — ${messageCount} ${
+                messageCount === 1 ? "message" : "messages"
+              } in this thread.`}
         </p>
-      </div>
+      </header>
+
       <BiChat
         key={initialState.conversationId ?? "fresh"}
         initial={initialState}

@@ -2,13 +2,21 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  type Variants,
+} from "framer-motion"
 import { Loader2, Plus, Send, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { BiChatHistorySheet } from "@/components/gradia/bi-chat-history-sheet"
+import { MotionCard } from "@/components/gradia/motion/motion-card"
+import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
+import { cn } from "@/lib/utils"
 
 type Message = {
   role: "user" | "assistant"
@@ -63,8 +71,35 @@ function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? `Running ${name}`
 }
 
+const messageEnter: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, ease: EASE_OUT_EXPO },
+  },
+}
+
+const chipContainer: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05, delayChildren: 0.1 },
+  },
+}
+
+const chipItem: Variants = {
+  hidden: { opacity: 0, y: 6 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35, ease: EASE_OUT_EXPO },
+  },
+}
+
 export function BiChat({ initial }: { initial: InitialChatState }) {
   const router = useRouter()
+  const reduce = useReducedMotion()
   const [conversationId, setConversationId] = React.useState<string | null>(
     initial.conversationId
   )
@@ -84,9 +119,9 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
   React.useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
+      behavior: reduce ? "auto" : "smooth",
     })
-  }, [messages])
+  }, [messages, reduce])
 
   const isEmpty = messages.length === 0
 
@@ -259,130 +294,206 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
   const displayedMessages = isEmpty ? [GREETING] : messages
 
   return (
-    <Card className="border-border/80">
-      <CardContent className="grid gap-4 p-0">
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5 sm:px-6">
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">
-            Chat
-          </span>
-          <div className="flex items-center gap-1">
-            <BiChatHistorySheet
-              currentConversationId={conversationId}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={startNewChat}
-              disabled={pending || isEmpty}
-              className="gap-1.5 text-xs"
-            >
-              <Plus className="size-3.5" aria-hidden />
-              New chat
-            </Button>
-          </div>
+    <MotionCard
+      interactive={false}
+      className="overflow-hidden p-0"
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5 sm:px-6">
+        <div className="flex items-center gap-2">
+          <p className="label-eyebrow text-muted-foreground/70">Chat</p>
+          {pending ? (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+              <TypingDots />
+            </span>
+          ) : null}
         </div>
+        <div className="flex items-center gap-1">
+          <BiChatHistorySheet currentConversationId={conversationId} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={startNewChat}
+            disabled={pending || isEmpty}
+            className="gap-1.5 text-xs"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            New chat
+          </Button>
+        </div>
+      </div>
 
-        <div
-          ref={scrollRef}
-          className="max-h-[55dvh] min-h-[38dvh] overflow-y-auto px-4 py-5 sm:px-6"
-        >
-          <ul className="grid gap-4">
+      <div
+        ref={scrollRef}
+        className="max-h-[55dvh] min-h-[38dvh] overflow-y-auto px-4 py-6 sm:px-6"
+      >
+        <ul className="grid gap-5">
+          <AnimatePresence initial={false}>
             {displayedMessages.map((msg, i) => (
-              <li
-                key={i}
-                className={
-                  msg.role === "user"
-                    ? "flex justify-end"
-                    : "flex items-start gap-3"
-                }
-              >
-                {msg.role === "assistant" ? (
-                  <div
-                    className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/30"
-                    aria-hidden
-                  >
-                    <Sparkles className="size-3.5" />
-                  </div>
-                ) : null}
-                <div className="max-w-[80%]">
-                  {msg.content ? (
-                    <div
-                      className={
-                        msg.role === "user"
-                          ? "whitespace-pre-line rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground"
-                          : "whitespace-pre-line text-sm leading-relaxed text-foreground"
-                      }
-                    >
-                      {msg.content}
-                      {msg.pending ? (
-                        <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-primary/40" />
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {msg.role === "assistant" && msg.status ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2
-                        className="size-3.5 animate-spin"
-                        aria-hidden
-                      />
-                      {msg.status}
-                    </div>
-                  ) : null}
-                </div>
-              </li>
+              <MessageRow
+                key={`${msg.role}-${i}`}
+                msg={msg}
+                reduce={reduce ?? false}
+              />
             ))}
-          </ul>
-        </div>
+          </AnimatePresence>
+        </ul>
+      </div>
 
-        {isEmpty ? (
-          <div className="flex flex-wrap gap-2 px-4 pb-1 sm:px-6">
-            {SUGGESTED_QUESTIONS.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => handleSuggestion(q)}
-                disabled={pending}
-                className="rounded-full border border-border/60 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-              >
-                {q}
-              </button>
-            ))}
+      {isEmpty ? (
+        <motion.div
+          variants={reduce ? undefined : chipContainer}
+          initial={reduce ? undefined : "hidden"}
+          animate={reduce ? undefined : "show"}
+          className="flex flex-wrap gap-2 px-4 pb-2 sm:px-6"
+        >
+          {SUGGESTED_QUESTIONS.map((q) => (
+            <motion.button
+              key={q}
+              variants={reduce ? undefined : chipItem}
+              type="button"
+              onClick={() => handleSuggestion(q)}
+              disabled={pending}
+              whileHover={reduce ? undefined : { y: -2 }}
+              transition={{
+                type: "spring",
+                stiffness: 400,
+                damping: 28,
+              }}
+              className="rounded-full border border-border/60 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            >
+              {q}
+            </motion.button>
+          ))}
+        </motion.div>
+      ) : null}
+
+      <form
+        className="flex items-end gap-2 border-t border-border/40 bg-muted/10 px-4 py-3 sm:px-6"
+        onSubmit={handleSubmit}
+      >
+        <Textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault()
+              void send(input)
+            }
+          }}
+          placeholder="Ask anything about our shop…"
+          rows={1}
+          className="min-h-[44px] max-h-40 resize-none border-border/60 bg-background/60 text-sm focus-visible:border-primary/40"
+          disabled={pending}
+        />
+        <Button
+          type="submit"
+          disabled={pending || !input.trim()}
+          className="h-11 gap-2 px-4 transition-transform duration-200 active:scale-[0.98]"
+        >
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Send className="size-4" aria-hidden />
+          )}
+          <span className="sr-only">Send</span>
+        </Button>
+      </form>
+    </MotionCard>
+  )
+}
+
+function MessageRow({ msg, reduce }: { msg: Message; reduce: boolean }) {
+  const isUser = msg.role === "user"
+  return (
+    <motion.li
+      variants={reduce ? undefined : messageEnter}
+      initial={reduce ? false : "hidden"}
+      animate="show"
+      exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
+      className={cn(
+        isUser ? "flex justify-end" : "flex items-start gap-3"
+      )}
+    >
+      {!isUser ? <AssistantAvatar pending={Boolean(msg.pending)} /> : null}
+      <div className="min-w-0 max-w-[82%] space-y-1.5">
+        {msg.content ? (
+          <div
+            className={cn(
+              "whitespace-pre-line",
+              isUser
+                ? "rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm"
+                : "text-sm leading-relaxed text-foreground"
+            )}
+          >
+            {msg.content}
+            {msg.pending ? (
+              <motion.span
+                aria-hidden
+                animate={{ opacity: [1, 0.2, 1] }}
+                transition={{
+                  duration: 1.1,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+                className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 rounded-sm bg-primary/50"
+              />
+            ) : null}
           </div>
         ) : null}
+        {!isUser && msg.status ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <TypingDots />
+            <span>{msg.status}</span>
+          </div>
+        ) : null}
+      </div>
+    </motion.li>
+  )
+}
 
-        <form
-          className="flex items-end gap-2 border-t border-border/60 px-4 py-3 sm:px-6"
-          onSubmit={handleSubmit}
-        >
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                void send(input)
-              }
-            }}
-            placeholder="Ask anything about our shop…"
-            rows={1}
-            className="min-h-[44px] max-h-40 resize-none"
-            disabled={pending}
-          />
-          <Button
-            type="submit"
-            disabled={pending || !input.trim()}
-            className="gap-2"
-          >
-            {pending ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : (
-              <Send className="size-4" aria-hidden />
-            )}
-            <span className="sr-only">Send</span>
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+function AssistantAvatar({ pending }: { pending: boolean }) {
+  return (
+    <div className="relative mt-0.5 shrink-0" aria-hidden>
+      <div className="flex size-7 items-center justify-center rounded-full bg-primary/12 text-primary ring-1 ring-primary/25">
+        <Sparkles className="size-3.5" />
+      </div>
+      {pending ? (
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 rounded-full bg-primary/30"
+          animate={{ scale: [1, 1.9], opacity: [0.45, 0] }}
+          transition={{
+            duration: 1.8,
+            repeat: Infinity,
+            ease: "easeOut",
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function TypingDots() {
+  return (
+    <span
+      className="inline-flex items-center gap-[3px]"
+      aria-label="Working"
+      role="status"
+    >
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="inline-block size-1.5 rounded-full bg-current"
+          animate={{ opacity: [0.3, 1, 0.3], y: [0, -1, 0] }}
+          transition={{
+            duration: 1.1,
+            repeat: Infinity,
+            delay: i * 0.18,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
+    </span>
   )
 }
