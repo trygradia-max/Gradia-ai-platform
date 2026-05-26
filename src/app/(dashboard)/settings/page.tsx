@@ -129,6 +129,7 @@ export default async function SettingsPage({
   const webhookSecretConfigured = Boolean(
     process.env.VAPI_WEBHOOK_SECRET?.trim()
   )
+  const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
   const aurinkoConfigured = Boolean(
     process.env.AURINKO_CLIENT_ID?.trim() &&
       process.env.AURINKO_CLIENT_SECRET?.trim()
@@ -237,6 +238,8 @@ export default async function SettingsPage({
             initialAssistantId={shop?.vapi_assistant_id ?? null}
             webhookUrl={webhookUrl}
             webhookSecretConfigured={webhookSecretConfigured}
+            shopName={shop?.name ?? null}
+            vapiConfigured={vapiConfigured}
           />
         </section>
 
