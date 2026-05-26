@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   AnimatePresence,
@@ -44,6 +45,7 @@ export type InitialChatState = {
 }
 
 const SUGGESTED_QUESTIONS = [
+  "What should we set up next?",
   "How many leads came in this week?",
   "What's on the books in the next 7 days?",
   "Did anyone ask about ceramic coating recently?",
@@ -63,8 +65,12 @@ const TOOL_LABELS: Record<string, string> = {
   channel_volume: "Tallying channel volume",
   upcoming_appointments: "Checking the calendar",
   search_memory: "Searching our notes",
+  search_knowledge: "Reading our shop notes",
   revenue_in_window: "Tallying revenue",
   top_heat_leads: "Scoring our hottest leads",
+  check_setup_status: "Checking what's wired up",
+  recommend_next_setup: "Picking the next move",
+  link_to_setup: "Finding the right page",
 }
 
 function toolLabel(name: string): string {
@@ -426,7 +432,7 @@ function MessageRow({ msg, reduce }: { msg: Message; reduce: boolean }) {
                 : "text-sm leading-relaxed text-foreground"
             )}
           >
-            {msg.content}
+            {renderInlineLinks(msg.content, isUser)}
             {msg.pending ? (
               <motion.span
                 aria-hidden
@@ -471,6 +477,67 @@ function AssistantAvatar({ pending }: { pending: boolean }) {
         />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Renders message text with two kinds of links turned into real
+ * elements:
+ *   1. Markdown: [label](path)   — produced by the link_to_setup tool
+ *   2. Bare relative paths:      /settings#voice, /approvals, etc.
+ *
+ * Only paths that start with "/" become links — never external URLs,
+ * since the agent shouldn't ever be sending users off-platform. User
+ * bubbles render plain text only (no point linking what the operator
+ * just typed).
+ */
+function renderInlineLinks(
+  text: string,
+  isUserBubble: boolean
+): React.ReactNode {
+  if (isUserBubble || !text) return text
+
+  // One regex with two alternatives so we walk the string once.
+  // [label](/path)  →  group 1 + 2
+  // bare /path      →  group 3
+  const linkPattern =
+    /\[([^\]]+)\]\((\/[^\s)]+)\)|(\/(?:settings|approvals|leads|customers|schedule|chat|agents|dashboard|onboarding)(?:[#/?][^\s)]*)?)/g
+
+  const nodes: React.ReactNode[] = []
+  let cursor = 0
+  let key = 0
+
+  for (const match of text.matchAll(linkPattern)) {
+    const start = match.index ?? 0
+    if (start > cursor) {
+      nodes.push(text.slice(cursor, start))
+    }
+    const mdLabel = match[1]
+    const mdPath = match[2]
+    const barePath = match[3]
+    if (mdLabel && mdPath) {
+      nodes.push(<ChatLink key={`l${key++}`} href={mdPath} label={mdLabel} />)
+    } else if (barePath) {
+      nodes.push(
+        <ChatLink key={`l${key++}`} href={barePath} label={barePath} />
+      )
+    }
+    cursor = start + match[0].length
+  }
+  if (cursor < text.length) {
+    nodes.push(text.slice(cursor))
+  }
+  return nodes.length > 0 ? nodes : text
+}
+
+function ChatLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-sm font-medium text-primary underline-offset-4 transition-colors hover:bg-primary/15 hover:underline"
+    >
+      {label}
+    </Link>
   )
 }
 

@@ -30,6 +30,7 @@ import type {
   InteractionChannel,
   LeadRow,
   LeadStatus,
+  ShopRow,
 } from "@/lib/types/database"
 
 function isoDaysBack(days: number): string {
@@ -388,6 +389,304 @@ async function searchKnowledge(
   return { query: params.query, matches }
 }
 
+// ---------- Setup Engineer tools ----------
+//
+// These three turn the BI chat into a setup assistant. The agent can
+// inspect what's wired (check_setup_status), recommend the highest-
+// leverage next channel for a detail shop (recommend_next_setup), and
+// hand the operator a deep link to the right settings card
+// (link_to_setup). Provisioning itself still happens via the existing
+// settings UI — the agent guides; the operator drives.
+
+const checkSetupStatusSchema = z.object({})
+
+const recommendNextSetupSchema = z.object({})
+
+const linkToSetupSchema = z.object({
+  channel: z
+    .enum([
+      "voice",
+      "email",
+      "sms",
+      "payments",
+      "instagram",
+      "facebook",
+      "knowledge",
+      "services",
+    ])
+    .describe("Which channel / area to deep-link the operator to."),
+})
+
+type ChannelStatus = {
+  channel: string
+  connected: boolean
+  /** Human-readable label of the connection target (e.g. "+1 (617) 555-0142"). */
+  detail: string | null
+  /** Why we say it's "connected" or "not" — feeds the agent's narration. */
+  reason: string
+}
+
+async function loadShopRow(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<ShopRow | null> {
+  const { data } = await supabase
+    .from("shops")
+    .select("*")
+    .eq("id", shopId)
+    .single()
+  return (data as ShopRow | null) ?? null
+}
+
+async function checkSetupStatus(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<{
+  shopName: string | null
+  channels: ChannelStatus[]
+  servicesCount: number
+  knowledgeCount: number
+  connectedCount: number
+  totalChannels: number
+}> {
+  const shop = await loadShopRow(supabase, shopId)
+  const [{ count: servicesCount }, { count: knowledgeCount }] =
+    await Promise.all([
+      supabase
+        .from("services")
+        .select("id", { count: "exact", head: true })
+        .eq("shop_id", shopId),
+      supabase
+        .from("shop_knowledge")
+        .select("id", { count: "exact", head: true })
+        .eq("shop_id", shopId),
+    ])
+
+  const channels: ChannelStatus[] = [
+    {
+      channel: "voice",
+      connected: Boolean(shop?.vapi_assistant_id),
+      detail: shop?.vapi_assistant_id ?? null,
+      reason: shop?.vapi_assistant_id
+        ? "Vapi voice receptionist is provisioned."
+        : "No Vapi assistant on file yet — build one in Settings → Voice.",
+    },
+    {
+      channel: "email",
+      connected: Boolean(
+        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
+      ),
+      detail: shop?.aurinko_account_email ?? null,
+      reason:
+        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
+          ? "Gmail (via Aurinko) is connected."
+          : "Gmail isn't connected yet — connect via Settings → Email.",
+    },
+    {
+      channel: "sms",
+      connected: Boolean(shop?.twilio_phone_number),
+      detail: shop?.twilio_phone_number ?? null,
+      reason: shop?.twilio_phone_number
+        ? "Twilio number is wired up for inbound + outbound SMS."
+        : "No SMS number yet — pick one in Settings → SMS.",
+    },
+    {
+      channel: "payments",
+      connected: Boolean(shop?.stripe_account_id),
+      detail: shop?.stripe_account_id ?? null,
+      reason: shop?.stripe_charges_enabled
+        ? "Stripe Connect is live — invoices can ship."
+        : shop?.stripe_account_id
+          ? "Stripe account exists but charges aren't enabled yet — finish onboarding in Settings → Payments."
+          : "No Stripe Connect account yet — connect via Settings → Payments.",
+    },
+    {
+      channel: "instagram",
+      connected: Boolean(
+        shop?.instagram_page_id && shop?.instagram_page_access_token_enc
+      ),
+      detail: shop?.instagram_account_handle
+        ? `@${shop.instagram_account_handle}`
+        : (shop?.instagram_page_id ?? null),
+      reason:
+        shop?.instagram_page_id && shop?.instagram_page_access_token_enc
+          ? "Instagram DMs route through the connected Page."
+          : "Instagram DMs aren't wired up — connect via Settings → Instagram.",
+    },
+    {
+      channel: "facebook",
+      connected: Boolean(
+        shop?.facebook_page_id && shop?.facebook_page_access_token_enc
+      ),
+      detail: shop?.facebook_page_name ?? shop?.facebook_page_id ?? null,
+      reason:
+        shop?.facebook_page_id && shop?.facebook_page_access_token_enc
+          ? "Facebook Page DMs are live."
+          : "Facebook Page DMs aren't wired up — connect via Settings → Facebook.",
+    },
+    {
+      channel: "calendar",
+      connected: Boolean(
+        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
+      ),
+      detail: null,
+      reason:
+        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
+          ? "Google Calendar inherits from the Gmail connection."
+          : "Calendar lights up automatically when Gmail is connected.",
+    },
+  ]
+  const connectedCount = channels.filter((c) => c.connected).length
+
+  return {
+    shopName: shop?.name ?? null,
+    channels,
+    servicesCount: servicesCount ?? 0,
+    knowledgeCount: knowledgeCount ?? 0,
+    connectedCount,
+    totalChannels: channels.length,
+  }
+}
+
+async function recommendNextSetup(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<{
+  /** Highest-leverage next move, or null when everything's wired. */
+  next: { channel: string; reason: string } | null
+  /** Everything missing, in priority order, for context. */
+  missing: { channel: string; reason: string }[]
+  /** Short paragraph the agent can paraphrase. */
+  summary: string
+}> {
+  const status = await checkSetupStatus(supabase, shopId)
+
+  // Priority order tuned for detail shops:
+  //   1. services    — without these the voice agent can't quote
+  //   2. voice       — biggest lead capture, runs while shop is busy
+  //   3. sms         — second-biggest, plus the only outbound the AI
+  //                    handles unattended
+  //   4. payments    — needed before any "charge" action can fire
+  //   5. email       — Gmail + Calendar (lower volume than voice/sms but
+  //                    still essential)
+  //   6. instagram   — social leads, lower volume in pilot
+  //   7. facebook    — same
+  //   8. knowledge   — quality lever, can come later
+  const PRIORITY: { channel: string; reason: string }[] = []
+  if (status.servicesCount === 0) {
+    PRIORITY.push({
+      channel: "services",
+      reason:
+        "Add at least one service so the voice + chat agents can quote prices.",
+    })
+  }
+  for (const c of status.channels) {
+    if (c.channel === "calendar") continue // inherits from email
+    if (!c.connected) PRIORITY.push({ channel: c.channel, reason: c.reason })
+  }
+  // Knowledge is "missing" only if zero entries — it's a soft lever, not
+  // a hard blocker, so it goes last.
+  if (status.knowledgeCount === 0) {
+    PRIORITY.push({
+      channel: "knowledge",
+      reason:
+        "Paste in your shop policies — deposit rules, weather policy, hours — so the agents quote your actual words.",
+    })
+  }
+
+  const priorityOrder = [
+    "services",
+    "voice",
+    "sms",
+    "payments",
+    "email",
+    "instagram",
+    "facebook",
+    "knowledge",
+  ]
+  const missing = PRIORITY.sort(
+    (a, b) =>
+      priorityOrder.indexOf(a.channel) - priorityOrder.indexOf(b.channel)
+  )
+
+  const next = missing[0] ?? null
+  const shopLabel = status.shopName?.trim()
+    ? status.shopName
+    : "the shop"
+  const summary =
+    missing.length === 0
+      ? `${shopLabel} is fully wired — ${status.connectedCount} of ${status.totalChannels} channels live, ${status.servicesCount} services on file.`
+      : `${status.connectedCount} of ${status.totalChannels} channels live. Highest-leverage next move: ${next?.channel} — ${next?.reason}`
+
+  return { next, missing, summary }
+}
+
+const SETUP_LINKS: Record<
+  z.infer<typeof linkToSetupSchema>["channel"],
+  { path: string; label: string; cta: string }
+> = {
+  voice: {
+    path: "/settings#voice",
+    label: "Voice receptionist",
+    cta: "Build the receptionist",
+  },
+  email: {
+    path: "/settings#email",
+    label: "Email + Calendar (Gmail)",
+    cta: "Connect Gmail",
+  },
+  sms: {
+    path: "/settings#sms",
+    label: "SMS receptionist",
+    cta: "Pick a Gradia number",
+  },
+  payments: {
+    path: "/settings#payments",
+    label: "Payments (Stripe)",
+    cta: "Connect Stripe",
+  },
+  instagram: {
+    path: "/settings#instagram",
+    label: "Instagram DMs",
+    cta: "Connect via Facebook",
+  },
+  facebook: {
+    path: "/settings#facebook",
+    label: "Facebook DMs",
+    cta: "Connect via Facebook",
+  },
+  knowledge: {
+    path: "/settings#knowledge",
+    label: "Shop knowledge",
+    cta: "Paste your policies",
+  },
+  services: {
+    path: "/onboarding",
+    label: "Service menu",
+    cta: "Add a service",
+  },
+}
+
+async function linkToSetup(
+  params: z.infer<typeof linkToSetupSchema>
+): Promise<{
+  channel: z.infer<typeof linkToSetupSchema>["channel"]
+  path: string
+  label: string
+  cta: string
+  markdownLink: string
+}> {
+  const link = SETUP_LINKS[params.channel]
+  return {
+    channel: params.channel,
+    path: link.path,
+    label: link.label,
+    cta: link.cta,
+    /** Pre-formatted markdown link the agent can paste into its reply. */
+    markdownLink: `[${link.cta}](${link.path})`,
+  }
+}
+
 // ---------- registry ----------
 
 export type BiToolHandler = (
@@ -479,6 +778,28 @@ export const BI_TOOLS: BiToolDefinition[] = [
     schema: topHeatSchema,
     handler: (supabase, shopId, params) =>
       topHeatLeads(supabase, shopId, topHeatSchema.parse(params)),
+  },
+  {
+    name: "check_setup_status",
+    description:
+      "Inspect which Gradia channels are wired up for this shop (voice, email, SMS, payments, Instagram, Facebook, calendar) plus services + knowledge counts. Use whenever the operator asks about setup, what's missing, what's connected, or 'are we live yet.' Returns structured status for each channel with a human-readable reason.",
+    schema: checkSetupStatusSchema,
+    handler: (supabase, shopId) => checkSetupStatus(supabase, shopId),
+  },
+  {
+    name: "recommend_next_setup",
+    description:
+      "Pick the highest-leverage next setup step for this shop based on what's missing — opinionated for detail shops (services first so the agents can quote, then voice for the biggest lead capture, then SMS, then payments). Use when the operator asks 'what should we do next', 'where do I start', 'help me set this up'. Returns the next move plus the full priority-ordered missing list.",
+    schema: recommendNextSetupSchema,
+    handler: (supabase, shopId) => recommendNextSetup(supabase, shopId),
+  },
+  {
+    name: "link_to_setup",
+    description:
+      "Get the in-app deep link + CTA copy for a specific setup area. Always call this when you're about to tell the operator where to go — paste the returned markdownLink directly in your reply so they get a one-tap navigation. Use after recommend_next_setup or any time the operator asks 'where do I…' for a channel.",
+    schema: linkToSetupSchema,
+    handler: (_supabase, _shopId, params) =>
+      linkToSetup(linkToSetupSchema.parse(params)),
   },
 ]
 
