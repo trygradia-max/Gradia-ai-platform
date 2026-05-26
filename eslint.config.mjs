@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The /marketing app is a separate Next.js project with its own
+    // tsconfig + lint config. The root scan should ignore it so its
+    // findings don't block product-app commits.
+    "marketing/**",
   ]),
 ]);
 
