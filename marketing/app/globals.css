@@ -1,0 +1,334 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ──────────────────────────────────────────────────────────────
+   Gradia marketing — design tokens
+   Ported 1:1 from the product app (src/app/globals.css) so the
+   marketing → app handoff feels like one continuous surface.
+   Premium dark · Instrument Serif display · Geist body
+   Linear-meets-Stripe + automotive heritage accent.
+   ────────────────────────────────────────────────────────────── */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-instrument-serif);
+  --font-heading: var(--font-geist-sans);
+
+  /* Type scale — clamp() responsive */
+  --text-xs:   clamp(0.7rem,  1vw,    0.75rem);
+  --text-sm:   clamp(0.8rem,  1.2vw,  0.875rem);
+  --text-base: clamp(0.95rem, 1.5vw,  1rem);
+  --text-lg:   clamp(1.1rem,  2vw,    1.25rem);
+  --text-xl:   clamp(1.2rem,  2.5vw,  1.5rem);
+  --text-2xl:  clamp(1.5rem,  3vw,    2rem);
+  --text-3xl:  clamp(1.8rem,  4vw,    2.5rem);
+  --text-hero: clamp(3.25rem, 9.5vw,  8.5rem);
+
+  /* Easing tokens — match framer-motion EASE_OUT_EXPO */
+  --ease-out-expo:    cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-luxury:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-material:    cubic-bezier(0.4, 0, 0.2, 1);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+}
+
+:root {
+  /* Surfaces — premium dark, true blacks not pure #000 */
+  --background: oklch(0.06 0 0);            /* #080808 */
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.10 0 0);                  /* #111 */
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.12 0 0);               /* #1a1a1a */
+  --popover-foreground: oklch(0.985 0 0);
+
+  /* Primary = accent. Premium racing orange. */
+  --primary: oklch(0.72 0.18 35);           /* ~#FF6A3D */
+  --primary-foreground: oklch(0.10 0 0);
+
+  --secondary: oklch(0.14 0 0);
+  --secondary-foreground: oklch(0.96 0 0);
+
+  --muted: oklch(0.12 0 0);
+  --muted-foreground: oklch(0.62 0 0);
+
+  --accent: oklch(0.72 0.18 35);
+  --accent-foreground: oklch(0.10 0 0);
+
+  --destructive: oklch(0.62 0.22 25);
+
+  --border: oklch(0.18 0 0);
+  --input: oklch(0.18 0 0);
+  --ring: oklch(0.72 0.18 35);
+
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply font-sans;
+    letter-spacing: -0.01em;
+    /* Lenis owns smooth scroll; keep native smooth off to avoid conflict. */
+    scroll-behavior: auto;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+    overflow-x: hidden;
+  }
+
+  /* Anchor offset so sticky-nav doesn't crop headings. */
+  [id] {
+    scroll-margin-top: 6rem;
+  }
+
+  /* Display utility — hero headlines + section heads */
+  .font-display {
+    font-family: var(--font-display), "Times New Roman", serif;
+    letter-spacing: -0.025em;
+    line-height: 1.02;
+  }
+
+  /* 11px uppercase tracking-wide micro-labels */
+  .label-eyebrow {
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .text-hero {
+    font-size: var(--text-hero);
+    line-height: 1.0;
+    letter-spacing: -0.035em;
+  }
+
+  /* Lenis */
+  html.lenis,
+  html.lenis body {
+    height: auto;
+  }
+  .lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+  }
+  .lenis.lenis-stopped {
+    overflow: clip;
+  }
+
+  /* Hide the native cursor only on fine-pointer devices where the
+     custom cursor renders; touch devices keep their default. */
+  @media (hover: hover) and (pointer: fine) {
+    .has-custom-cursor,
+    .has-custom-cursor * {
+      cursor: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Texture + surface layers (ported from app)
+   ────────────────────────────────────────────────────────────── */
+
+.grain-layer {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.06;
+}
+
+.mesh-hero {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 0%, oklch(0.72 0.18 35 / 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 30%, oklch(0.55 0.10 250 / 0.07) 0%, transparent 55%),
+    transparent;
+}
+
+.glass-card {
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(120%);
+  border: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
+}
+
+.accent-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 50%, transparent),
+    0 8px 32px -8px color-mix(in oklab, var(--primary) 35%, transparent);
+}
+
+/* Hairline divider gradient — used between sections. */
+.rule-x {
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklab, var(--border) 100%, transparent),
+    transparent
+  );
+}
+
+/* Animated conic sheen for the loading screen ring. */
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 1.1s linear infinite;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Signature micro-details — the senior-studio finish
+   ────────────────────────────────────────────────────────────── */
+
+/* Hero vignette — pulls focus to the copy, darkens the edges. */
+.vignette {
+  background: radial-gradient(
+    ellipse 90% 80% at 30% 45%,
+    transparent 40%,
+    color-mix(in oklab, var(--background) 80%, transparent) 100%
+  );
+}
+
+/* Animated gradient border. A racing-orange arc sweeps the perimeter,
+   masked to a 1px ring so only the border lights up. */
+@property --gradia-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes border-orbit {
+  to { --gradia-angle: 360deg; }
+}
+.animated-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--gradia-angle),
+    transparent 0deg,
+    color-mix(in oklab, var(--primary) 90%, transparent) 70deg,
+    color-mix(in oklab, oklch(0.7 0.14 250) 70%, transparent) 130deg,
+    transparent 200deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: border-orbit 7s linear infinite;
+  pointer-events: none;
+}
+
+/* Breathing accent glow — slow pulse for the closing CTA. */
+@keyframes glow-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent),
+      0 10px 50px -12px color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--primary) 55%, transparent),
+      0 14px 70px -10px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+}
+.glow-breathe {
+  animation: glow-breathe 4.5s ease-in-out infinite;
+}
+
+/* Shimmer sweep — a single moving highlight across primary buttons. */
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-150%) skewX(-18deg); }
+  60%, 100% { transform: translateX(260%) skewX(-18deg); }
+}
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  transform: translateX(-150%) skewX(-18deg);
+  animation: shimmer-sweep 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Oversized editorial section numeral — sits behind/beside section heads. */
+.section-numeral {
+  font-family: var(--font-display), serif;
+  font-size: clamp(4rem, 12vw, 9rem);
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1px color-mix(in oklab, var(--border) 100%, transparent);
+  user-select: none;
+}
+
+/* Kinetic marquee — seamless because the track holds two copies and
+   slides exactly one copy width (-50%). */
+@keyframes marquee-slide {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee-track {
+  display: inline-flex;
+  width: max-content;
+  animation: marquee-slide 32s linear infinite;
+}
+.marquee-track.reverse {
+  animation-direction: reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated-border::before,
+  .glow-breathe,
+  .shimmer::after,
+  .marquee-track {
+    animation: none !important;
+  }
+}
