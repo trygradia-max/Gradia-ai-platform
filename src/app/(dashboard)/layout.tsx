@@ -5,6 +5,7 @@ import {
 } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/gradia/app-sidebar"
 import { SetupProgressPill } from "@/components/gradia/setup-progress-pill"
+import { countOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
 import { getOptionalShop, listShopsForCurrentUser } from "@/lib/shop"
 
 export const dynamic = "force-dynamic"
@@ -14,14 +15,19 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const [shops, active] = await Promise.all([
+  const [shops, active, approvalsCount] = await Promise.all([
     listShopsForCurrentUser(),
     getOptionalShop(),
+    countOpenApprovalsForCurrentShop(),
   ])
 
   return (
     <SidebarProvider>
-      <AppSidebar shops={shops} activeShopId={active?.id} />
+      <AppSidebar
+        shops={shops}
+        activeShopId={active?.id}
+        approvalsCount={approvalsCount}
+      />
       <SidebarInset className="min-h-svh overflow-x-hidden">
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border/80 bg-background/85 px-4 backdrop-blur-md transition-colors duration-200 supports-[backdrop-filter]:bg-background/65">
           <SidebarTrigger className="-ml-0.5" />

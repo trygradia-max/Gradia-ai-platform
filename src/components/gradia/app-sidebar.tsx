@@ -59,9 +59,11 @@ const ACTIVE_SPRING = { type: "spring" as const, stiffness: 380, damping: 32 }
 export function AppSidebar({
   shops = [],
   activeShopId,
+  approvalsCount = 0,
 }: {
   shops?: ShopContext[]
   activeShopId?: string
+  approvalsCount?: number
 } = {}) {
   const pathname = usePathname()
   const reduce = useReducedMotion()
@@ -115,6 +117,7 @@ export function AppSidebar({
                     isActive={isActive}
                     index={index}
                     reduce={reduce ?? false}
+                    badge={item.href === "/approvals" ? approvalsCount : 0}
                   />
                 )
               })}
@@ -132,11 +135,13 @@ function NavRow({
   isActive,
   index,
   reduce,
+  badge = 0,
 }: {
   item: NavItem
   isActive: boolean
   index: number
   reduce: boolean
+  badge?: number
 }) {
   const Icon = item.icon
   return (
@@ -200,6 +205,14 @@ function NavRow({
             aria-hidden
           />
           <span className="font-medium">{item.label}</span>
+          {badge > 0 ? (
+            <span
+              className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 text-xs font-semibold tabular-nums text-primary group-data-[collapsible=icon]:hidden"
+              aria-label={`${badge} awaiting approval`}
+            >
+              {badge > 99 ? "99+" : badge}
+            </span>
+          ) : null}
         </SidebarMenuButton>
       </motion.div>
     </SidebarMenuItem>

@@ -7,6 +7,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 
+import { FEATURES } from "@/lib/features"
 import type { LeadStatus } from "@/lib/types/database"
 
 const DEFAULT_DASHBOARD = "http://localhost:3000/dashboard"
@@ -160,6 +161,10 @@ async function postWebhook(
   blocks: Block[],
   opts?: { pendingActionId?: string }
 ): Promise<void> {
+  // Slack is opt-in (Phase 1): in-app /approvals is the default HITL surface.
+  // When disabled, every approval still lands in pending_actions and surfaces
+  // in the app — we just skip the Slack post entirely.
+  if (!FEATURES.slackApprovals) return
   // Prefer chat.postMessage when a bot token + default channel are
   // configured — it returns a message ts so dashboard-side decisions
   // can later chat.update the card instead of leaving it stale.
