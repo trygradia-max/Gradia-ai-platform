@@ -1,5 +1,7 @@
 export type LeadStatus = "new" | "quoted" | "booked"
 
+export type ShopPlan = "free" | "active" | "past_due"
+
 export type ShopRow = {
   id: string
   name: string
@@ -17,6 +19,10 @@ export type ShopRow = {
   twilio_auth_token_enc: string | null
   stripe_account_id: string | null
   stripe_charges_enabled: boolean
+  plan: ShopPlan
+  stripe_subscription_id: string | null
+  credit_limit: number
+  credit_period_start: string
   instagram_business_account_id: string | null
   instagram_page_id: string | null
   instagram_page_access_token_enc: string | null
@@ -32,6 +38,18 @@ export type ShopRow = {
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type UsageEventKind = "agent_run" | "message" | "voice_minute"
+
+export type UsageEventRow = {
+  id: string
+  shop_id: string
+  kind: UsageEventKind
+  quantity: number
+  credits: number
+  ref_id: string | null
+  created_at: string
 }
 
 export type LeadRow = {

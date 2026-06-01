@@ -45,6 +45,7 @@ import { timingSafeEqual } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { recordUsage } from "@/lib/credits"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -88,6 +89,10 @@ type VapiMessage = {
   endedReason?: string
   summary?: string
   recordingUrl?: string
+  durationSeconds?: number
+  durationMinutes?: number
+  startedAt?: string
+  endedAt?: string
 }
 
 type VapiPayload = { message?: VapiMessage }
@@ -146,6 +151,23 @@ function callContextFrom(message: VapiMessage): VapiCallContext {
     callerPhone,
     callerName,
   }
+}
+
+/** Billed voice minutes for an ended call. Coarse + post-call by nature —
+ *  Vapi is real-time, so we meter after the fact (we can't interrupt a live
+ *  call). Rounds up; falls back to 1 minute when no duration is reported. */
+function callMinutes(message: VapiMessage): number {
+  if (typeof message.durationMinutes === "number" && message.durationMinutes > 0)
+    return Math.max(1, Math.ceil(message.durationMinutes))
+  if (typeof message.durationSeconds === "number" && message.durationSeconds > 0)
+    return Math.max(1, Math.ceil(message.durationSeconds / 60))
+  if (message.startedAt && message.endedAt) {
+    const ms =
+      new Date(message.endedAt).getTime() -
+      new Date(message.startedAt).getTime()
+    if (ms > 0) return Math.max(1, Math.ceil(ms / 60_000))
+  }
+  return 1
 }
 
 export async function POST(request: Request) {
@@ -285,6 +307,12 @@ async function handleEndOfCall(
       console.error("[vapi] recordInteraction failed:", result.error)
     }
   }
+
+  // Meter the call (voice minutes). Best-effort; never blocks the ack.
+  await recordUsage(supabase, shopId, "voice_minute", {
+    quantity: callMinutes(message),
+    refId: message.call?.id ?? null,
+  })
 
   revalidatePath("/dashboard")
   revalidatePath("/leads")

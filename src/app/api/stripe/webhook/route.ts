@@ -28,6 +28,7 @@ import {
 } from "@/lib/slack"
 import { verifyStripeSignature } from "@/lib/stripe"
 import { createServiceClient } from "@/lib/supabase/service"
+import type { ShopPlan } from "@/lib/types/database"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -66,11 +67,90 @@ type StripeCharge = {
   } | null
 }
 
+type StripeCheckoutSessionObj = {
+  client_reference_id?: string | null
+  subscription?: string | null
+  mode?: string | null
+  metadata?: { shop_id?: string } | null
+}
+
+type StripeSubscriptionObj = {
+  id?: string
+  status?: string
+  metadata?: { shop_id?: string } | null
+}
+
 type StripeEvent = {
   id?: string
   type?: string
   account?: string
-  data?: { object?: StripeInvoice | StripeCharge }
+  data?: {
+    object?:
+      | StripeInvoice
+      | StripeCharge
+      | StripeCheckoutSessionObj
+      | StripeSubscriptionObj
+  }
+}
+
+function planFromSubStatus(status: string | undefined | null): ShopPlan {
+  switch (status) {
+    case "active":
+    case "trialing":
+      return "active"
+    case "past_due":
+    case "unpaid":
+      return "past_due"
+    default:
+      return "free"
+  }
+}
+
+/**
+ * Subscription lifecycle for the $20/mo Gradia plan. These are PLATFORM
+ * events (no `account` envelope), distinct from the Connect invoice/charge
+ * events below. The shop is resolved by client_reference_id (checkout) or
+ * stripe_subscription_id (updates).
+ */
+async function handleSubscriptionEvent(
+  eventType: string,
+  event: StripeEvent
+): Promise<Response> {
+  const supabase = createServiceClient()
+
+  if (eventType === "checkout.session.completed") {
+    const session = event.data?.object as StripeCheckoutSessionObj | undefined
+    if (session?.mode !== "subscription") {
+      return Response.json({ ok: true, ignored: "non-subscription checkout" })
+    }
+    const shopId =
+      session.client_reference_id ?? session.metadata?.shop_id ?? null
+    if (!shopId) return Response.json({ ok: true, ignored: "no shop ref" })
+    const { error } = await supabase
+      .from("shops")
+      .update({
+        plan: "active",
+        stripe_subscription_id: session.subscription ?? null,
+      })
+      .eq("id", shopId)
+    if (error) console.error("[stripe webhook] sub activate failed:", error)
+    revalidatePath("/billing")
+    return Response.json({ ok: true })
+  }
+
+  const sub = event.data?.object as StripeSubscriptionObj | undefined
+  if (!sub?.id) return Response.json({ ok: true, ignored: "no subscription id" })
+  const plan: ShopPlan =
+    eventType === "customer.subscription.deleted"
+      ? "free"
+      : planFromSubStatus(sub.status)
+  const { error } = await supabase
+    .from("shops")
+    .update({ plan })
+    .eq("stripe_subscription_id", sub.id)
+  if (error) console.error("[stripe webhook] sub update failed:", error)
+  revalidatePath("/billing")
+  return Response.json({ ok: true })
 }
 
 export async function POST(request: Request) {
@@ -91,6 +171,14 @@ export async function POST(request: Request) {
 
   if (eventType === "charge.refunded") {
     return handleChargeRefunded(event)
+  }
+
+  if (
+    eventType === "checkout.session.completed" ||
+    eventType === "customer.subscription.updated" ||
+    eventType === "customer.subscription.deleted"
+  ) {
+    return handleSubscriptionEvent(eventType, event)
   }
 
   if (eventType !== "invoice.paid" && eventType !== "invoice.payment_failed") {

@@ -361,6 +361,50 @@ export async function* iteratePaidInvoices(
   }
 }
 
+// ---------- Subscription (platform-side: the Gradia plan) ----------
+
+function subscriptionPriceId(): string {
+  const p = process.env.STRIPE_PRICE_ID?.trim()
+  if (!p) {
+    throw new StripeError(500, "STRIPE_PRICE_ID is not configured")
+  }
+  return p
+}
+
+export type StripeCheckoutSession = {
+  id: string
+  url: string | null
+}
+
+/**
+ * Creates a Checkout Session for the $20/mo Gradia subscription on the
+ * PLATFORM account (no Stripe-Account header) — distinct from the Connect
+ * flow that charges the detailer's own customers. shop_id rides along as
+ * client_reference_id + metadata so the webhook can mark the shop active.
+ */
+export async function createSubscriptionCheckoutSession(input: {
+  shopId: string
+  customerEmail?: string | null
+  successUrl: string
+  cancelUrl: string
+}): Promise<StripeCheckoutSession> {
+  return stripeFetch<StripeCheckoutSession>({
+    method: "POST",
+    path: "/checkout/sessions",
+    body: {
+      mode: "subscription",
+      "line_items[0][price]": subscriptionPriceId(),
+      "line_items[0][quantity]": 1,
+      client_reference_id: input.shopId,
+      "metadata[shop_id]": input.shopId,
+      "subscription_data[metadata][shop_id]": input.shopId,
+      customer_email: input.customerEmail ?? undefined,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+    },
+  })
+}
+
 // ---------- Webhook signature verification ----------
 
 /**

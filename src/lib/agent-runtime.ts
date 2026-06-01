@@ -15,6 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
+import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
 import { FEATURES } from "@/lib/features"
@@ -1129,8 +1130,20 @@ export async function runCustomAgent(
       reason: "shop not found",
     })
   }
+  if (FEATURES.paywall && (await isOverCreditLimit(supabase, shop))) {
+    return recordAndReturn({
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason:
+        "credit limit reached — raise the limit in settings or wait for the next period",
+    })
+  }
   const outcome = await handler(supabase, shop, agent)
-  if (outcome.fired) await stampFired(supabase, agent.id, agent.shop_id)
+  if (outcome.fired) {
+    await stampFired(supabase, agent.id, agent.shop_id)
+    await recordUsage(supabase, agent.shop_id, "agent_run", { refId: agent.id })
+  }
   return recordAndReturn(outcome)
 }
 
@@ -1220,9 +1233,28 @@ export async function runScheduledAgents(
         })
         continue
       }
+      if (FEATURES.paywall && (await isOverCreditLimit(supabase, shop))) {
+        const outcome: AgentRunOutcome = {
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "credit limit reached",
+        }
+        outcomes.push(outcome)
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
+        })
+        continue
+      }
       const outcome = await handler(supabase, shop, agent)
       if (outcome.fired) {
         await stampFired(supabase, agent.id, agent.shop_id)
+        await recordUsage(supabase, agent.shop_id, "agent_run", {
+          refId: agent.id,
+        })
         fired += 1
       }
       outcomes.push(outcome)

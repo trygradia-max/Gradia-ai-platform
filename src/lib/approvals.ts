@@ -18,6 +18,7 @@ import {
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
   sendEmailMessage,
 } from "@/lib/aurinko"
+import { recordUsage } from "@/lib/credits"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
@@ -760,6 +761,8 @@ async function executeSendSms(
     .update({ result_id: resultId })
     .eq("id", claimed.id)
 
+  await recordUsage(supabase, claimed.shop_id, "message", { refId: claimed.id })
+
   return {
     ok: true,
     status: "executed",
@@ -934,6 +937,8 @@ async function executeSendEmail(
     .from("pending_actions")
     .update({ result_id: resultId })
     .eq("id", claimed.id)
+
+  await recordUsage(supabase, claimed.shop_id, "message", { refId: claimed.id })
 
   return {
     ok: true,

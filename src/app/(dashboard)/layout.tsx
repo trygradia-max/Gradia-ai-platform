@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation"
+
 import {
   SidebarInset,
   SidebarProvider,
@@ -6,7 +8,10 @@ import {
 import { AppSidebar } from "@/components/gradia/app-sidebar"
 import { SetupProgressPill } from "@/components/gradia/setup-progress-pill"
 import { countOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
+import { FEATURES } from "@/lib/features"
 import { getOptionalShop, listShopsForCurrentUser } from "@/lib/shop"
+import { createClient } from "@/lib/supabase/server"
+import type { ShopPlan } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
@@ -20,6 +25,20 @@ export default async function DashboardLayout({
     getOptionalShop(),
     countOpenApprovalsForCurrentShop(),
   ])
+
+  // Paywall gate — inert until FEATURES.paywall flips on. /billing lives
+  // outside this layout group so the redirect can't loop.
+  if (FEATURES.paywall && active) {
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("shops")
+      .select("plan")
+      .eq("id", active.id)
+      .single()
+    if ((data as { plan: ShopPlan } | null)?.plan !== "active") {
+      redirect("/billing")
+    }
+  }
 
   return (
     <SidebarProvider>

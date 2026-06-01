@@ -5,6 +5,7 @@ import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
 import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
+import { CreditsSettingsCard } from "@/components/gradia/credits-settings-card"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/card"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
+import { getCreditUsage } from "@/app/actions/billing"
 import { getPendingMetaPages } from "@/app/actions/meta-oauth"
 import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
 import { integrationEnabled } from "@/lib/features"
@@ -202,6 +204,7 @@ export default async function SettingsPage({
   // returned more than one Page and stashed the candidates in a
   // short-lived cookie.
   const pendingMetaPages = await getPendingMetaPages()
+  const creditUsage = await getCreditUsage()
 
   const sections = [
     { id: "voice", label: "Voice" },
@@ -212,6 +215,7 @@ export default async function SettingsPage({
     { id: "facebook", label: "Facebook" },
     { id: "jobber", label: "Jobber" },
     { id: "knowledge", label: "Knowledge" },
+    { id: "usage", label: "Usage" },
     { id: "developer", label: "Developer" },
     { id: "soon", label: "More" },
   ].filter(
@@ -315,6 +319,13 @@ export default async function SettingsPage({
 
         <section id="knowledge">
           <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
+        </section>
+
+        <section id="usage">
+          <CreditsSettingsCard
+            spent={creditUsage.spent}
+            limit={creditUsage.limit}
+          />
         </section>
 
         <section id="developer">
