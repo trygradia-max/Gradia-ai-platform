@@ -1,3 +1,4 @@
+import { agentEnabled } from "@/lib/features"
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
 import type {
@@ -175,7 +176,7 @@ function buildAgents(shop: ShopRow): Agent[] {
     },
   ]
 
-  return [
+  const agents: Agent[] = [
     {
       id: "voice",
       name: "Voice receptionist",
@@ -289,6 +290,7 @@ function buildAgents(shop: ShopRow): Agent[] {
       prerequisites: memoryPrereqs,
     },
   ]
+  return agents.filter((agent) => agentEnabled(agent.id))
 }
 
 export async function getAgentsForCurrentShop(): Promise<Agent[]> {

@@ -16,7 +16,6 @@
 import { revalidatePath } from "next/cache"
 
 import {
-  sendChargeApprovalRequest,
   sendLeadApprovalRequest,
   sendNoteApprovalRequest,
 } from "@/lib/slack"
@@ -27,7 +26,6 @@ import {
   transcribeAudio,
   type WhisperIntent,
 } from "@/lib/whisper"
-import type { CustomerRow } from "@/lib/types/database"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -41,7 +39,7 @@ const MAX_AUDIO_BYTES = 25 * 1024 * 1024 // OpenAI Whisper file-size limit
 type WhisperResult =
   | {
       ok: true
-      intent: "create_lead" | "add_note" | "charge_customer"
+      intent: "create_lead" | "add_note"
       transcript: string
     }
   | { ok: false; error: string; transcript?: string }
@@ -176,77 +174,6 @@ export async function POST(request: Request) {
 
     revalidatePath("/approvals")
     return jsonResult({ ok: true, intent: "create_lead", transcript })
-  }
-
-  if (intent.type === "charge_customer") {
-    if (!intent.customer_name || intent.amount_cents <= 0) {
-      return jsonResult({
-        ok: false,
-        error:
-          "Couldn't catch who to charge or how much — try 'charge {name} ${amount}'.",
-        transcript,
-      })
-    }
-
-    // Try to resolve the customer record by name so the approver
-    // sees their email pre-filled. Best-effort — falls back to an
-    // empty email that the operator must fill in via /approvals/[id].
-    let customer: CustomerRow | null = null
-    const nameLower = intent.customer_name.toLowerCase()
-    const { data: candidates } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("shop_id", shop.id)
-    for (const row of (candidates as CustomerRow[] | null) ?? []) {
-      if (row.name && row.name.toLowerCase().includes(nameLower)) {
-        customer = row
-        break
-      }
-    }
-
-    const chargeProposal = {
-      customer_name: intent.customer_name,
-      customer_email: customer?.email ?? "",
-      customer_id: customer?.id ?? null,
-      amount_cents: intent.amount_cents,
-      description: intent.description,
-      source: "whisper",
-      transcript,
-    }
-
-    const { data: pending, error: pendingErr } = await supabase
-      .from("pending_actions")
-      .insert({
-        shop_id: shop.id,
-        action_type: "charge_customer",
-        payload: chargeProposal,
-        requested_by: user.id,
-      })
-      .select("id")
-      .single()
-
-    if (pendingErr || !pending) {
-      console.error("[whisper] charge pending_action insert failed:", pendingErr)
-      return jsonResult(
-        { ok: false, error: "Couldn't queue that charge — try again.", transcript },
-        500
-      )
-    }
-
-    try {
-      await sendChargeApprovalRequest({
-        pendingActionId: pending.id,
-        customerName: chargeProposal.customer_name,
-        customerEmail: chargeProposal.customer_email,
-        amountCents: chargeProposal.amount_cents,
-        description: chargeProposal.description,
-      })
-    } catch (err) {
-      console.error("[whisper] charge Slack send failed:", err)
-    }
-
-    revalidatePath("/approvals")
-    return jsonResult({ ok: true, intent: "charge_customer", transcript })
   }
 
   // add_note path

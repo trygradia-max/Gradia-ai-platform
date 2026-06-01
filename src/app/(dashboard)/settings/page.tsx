@@ -21,6 +21,7 @@ import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getPendingMetaPages } from "@/app/actions/meta-oauth"
 import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
+import { integrationEnabled } from "@/lib/features"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -213,7 +214,11 @@ export default async function SettingsPage({
     { id: "knowledge", label: "Knowledge" },
     { id: "developer", label: "Developer" },
     { id: "soon", label: "More" },
-  ]
+  ].filter(
+    (s) =>
+      !["payments", "instagram", "facebook"].includes(s.id) ||
+      integrationEnabled(s.id)
+  )
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -262,37 +267,43 @@ export default async function SettingsPage({
           />
         </section>
 
-        <section id="payments">
-          <StripeSettingsCard
-            connected={Boolean(shop?.stripe_account_id)}
-            chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
-            stripeConfigured={stripeConfigured}
-            callbackStatus={stripeStatus}
-          />
-        </section>
+        {integrationEnabled("payments") && (
+          <section id="payments">
+            <StripeSettingsCard
+              connected={Boolean(shop?.stripe_account_id)}
+              chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
+              stripeConfigured={stripeConfigured}
+              callbackStatus={stripeStatus}
+            />
+          </section>
+        )}
 
-        <section id="instagram">
-          <InstagramSettingsCard
-            initialPageId={shop?.instagram_page_id ?? null}
-            initialBusinessAccountId={
-              shop?.instagram_business_account_id ?? null
-            }
-            initialHandle={shop?.instagram_account_handle ?? null}
-            webhookUrl={metaWebhookUrl}
-            metaConfigured={metaConfigured}
-            pendingPages={pendingMetaPages}
-          />
-        </section>
+        {integrationEnabled("instagram") && (
+          <section id="instagram">
+            <InstagramSettingsCard
+              initialPageId={shop?.instagram_page_id ?? null}
+              initialBusinessAccountId={
+                shop?.instagram_business_account_id ?? null
+              }
+              initialHandle={shop?.instagram_account_handle ?? null}
+              webhookUrl={metaWebhookUrl}
+              metaConfigured={metaConfigured}
+              pendingPages={pendingMetaPages}
+            />
+          </section>
+        )}
 
-        <section id="facebook">
-          <FacebookSettingsCard
-            initialPageId={shop?.facebook_page_id ?? null}
-            initialPageName={shop?.facebook_page_name ?? null}
-            webhookUrl={metaWebhookUrl}
-            metaConfigured={metaConfigured}
-            pendingPages={pendingMetaPages}
-          />
-        </section>
+        {integrationEnabled("facebook") && (
+          <section id="facebook">
+            <FacebookSettingsCard
+              initialPageId={shop?.facebook_page_id ?? null}
+              initialPageName={shop?.facebook_page_name ?? null}
+              webhookUrl={metaWebhookUrl}
+              metaConfigured={metaConfigured}
+              pendingPages={pendingMetaPages}
+            />
+          </section>
+        )}
 
         <section id="jobber">
           <JobberSettingsCard
