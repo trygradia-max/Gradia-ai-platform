@@ -5,11 +5,10 @@
  * set to `false` is intentionally dormant — flip it to `true` to bring the
  * surface back with no other code change.
  *
- * Safety note (2026-06-01): `freeformPlanner` and `paywall` are kept `false`
- * until their phases land (Phase 2 and Phase 3 respectively). Enabling an
- * unbuilt mass-outreach planner or a half-built paywall gate would violate the
- * HITL/safety golden rule. Nothing reads them yet; flip each on when its
- * executor + guardrails (P2) or subscription gate (P3) are built and verified.
+ * Safety note: `paywall` stays `false` until the Phase 3 subscription gate is
+ * built and verified — enabling a half-built gate would lock everyone out.
+ * `freeformPlanner` was enabled in Phase 2 once its executor + guardrails
+ * (HITL staging, audience cap, cooldown, opt-out, dry-run preview) landed.
  */
 export const FEATURES = {
   agents: {
@@ -33,7 +32,7 @@ export const FEATURES = {
   },
   whisper: true,
   agenticMode: true,
-  freeformPlanner: false, // Phase 2 — flip on when the executor + guardrails land
+  freeformPlanner: true, // Phase 2 — executor + guardrails landed
   biChat: true, // Ask Gradia
   slackApprovals: false, // Phase 1 — Slack is now opt-in
   paywall: false, // Phase 3 — flip on when the subscription gate is built

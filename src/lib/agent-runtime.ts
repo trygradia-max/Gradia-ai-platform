@@ -13,9 +13,11 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
+import { FEATURES } from "@/lib/features"
 import {
   sendEmailApprovalRequest,
   sendSmsApprovalRequest,
@@ -563,6 +565,196 @@ async function executeStaleCustomerSms(
   }
 }
 
+// ---------- recipe: freeform_outreach (hybrid Chat agent) ----------
+
+/**
+ * Runs a free-form plan: resolve the (guardrailed) audience, draft a
+ * per-recipient message in our voice, and stage each as a pending_actions
+ * approval. NEVER sends directly — every message is HITL-gated, exactly like
+ * the coded recipes. Audience resolution (cap, cooldown, opt-out, no-inbound,
+ * inactivity) lives in lib/agent-audience.ts.
+ */
+async function executeFreeformOutreach(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow
+): Promise<AgentRunOutcome> {
+  const plan = agent.config.freeform
+  if (!plan) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "no free-form plan on this agent",
+    }
+  }
+  if (plan.channel === "sms" && !shop.twilio_phone_number) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Twilio number not connected",
+    }
+  }
+  if (plan.channel === "email" && !shop.aurinko_access_token_enc) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "Gmail not connected via Aurinko",
+    }
+  }
+
+  let audience
+  try {
+    audience = await resolveFreeformAudience(supabase, shop, plan)
+  } catch (err) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: err instanceof Error ? err.message : "audience resolve failed",
+    }
+  }
+  if (audience.blocked) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: audience.blocked,
+    }
+  }
+
+  const stats: Record<string, number> = {
+    matched: audience.stats.candidates,
+    proposed: 0,
+    skipped_no_contact: audience.stats.skipped_no_contact,
+    skipped_active: audience.stats.skipped_active,
+    skipped_recent_inbound: audience.stats.skipped_recent_inbound,
+    skipped_cooldown: audience.stats.skipped_cooldown,
+    skipped_opted_out: audience.stats.skipped_opted_out,
+    draft_failed: 0,
+  }
+  const pendingActionIds: string[] = []
+  const reason = `Custom agent · ${agent.name}`
+
+  for (const t of audience.targets) {
+    if (plan.channel === "sms") {
+      if (!t.phone) continue
+      const body = await draftCustomSmsForCustomer({
+        shopName: shop.name,
+        customerName: t.name ?? "there",
+        vehicle: t.vehicle,
+        service: t.service,
+        intent: plan.message_intent,
+      }).catch(() => null)
+      if (!body) {
+        stats.draft_failed += 1
+        continue
+      }
+
+      const { data: pending, error: pendingErr } = await supabase
+        .from("pending_actions")
+        .insert({
+          shop_id: shop.id,
+          action_type: "send_sms",
+          payload: {
+            to_phone: t.phone,
+            body,
+            customer_name: t.name,
+            customer_id: t.customerId,
+            reason,
+            source: "custom_agent",
+            custom_agent_id: agent.id,
+            lead_id: t.leadId,
+          },
+          requested_by: agent.owner_id,
+        })
+        .select("id")
+        .single()
+      if (pendingErr || !pending) {
+        console.error("[agent-runtime] freeform sms insert failed:", pendingErr)
+        continue
+      }
+      try {
+        await sendSmsApprovalRequest({
+          pendingActionId: pending.id,
+          toPhone: t.phone,
+          customerName: t.name,
+          body,
+          reason,
+        })
+      } catch (err) {
+        console.error("[agent-runtime] freeform Slack send failed:", err)
+      }
+      stats.proposed += 1
+      pendingActionIds.push(pending.id)
+    } else {
+      if (!t.email) continue
+      const draft = await draftCustomEmailForCustomer({
+        shopName: shop.name,
+        customerName: t.name ?? "there",
+        service: t.service,
+        when: null,
+        intent: plan.message_intent,
+      }).catch(() => null)
+      if (!draft) {
+        stats.draft_failed += 1
+        continue
+      }
+
+      const { data: pending, error: pendingErr } = await supabase
+        .from("pending_actions")
+        .insert({
+          shop_id: shop.id,
+          action_type: "send_email",
+          payload: {
+            to_email: t.email,
+            subject: draft.subject,
+            body: draft.body,
+            customer_name: t.name,
+            customer_id: t.customerId,
+            reason,
+            source: "custom_agent",
+            custom_agent_id: agent.id,
+          },
+          requested_by: agent.owner_id,
+        })
+        .select("id")
+        .single()
+      if (pendingErr || !pending) {
+        console.error(
+          "[agent-runtime] freeform email insert failed:",
+          pendingErr
+        )
+        continue
+      }
+      try {
+        await sendEmailApprovalRequest({
+          pendingActionId: pending.id,
+          toEmail: t.email,
+          customerName: t.name,
+          subject: draft.subject,
+          body: draft.body,
+          reason,
+        })
+      } catch (err) {
+        console.error("[agent-runtime] freeform Slack send failed:", err)
+      }
+      stats.proposed += 1
+      pendingActionIds.push(pending.id)
+    }
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats,
+    pendingActionIds,
+  }
+}
+
 // ---------- event-driven recipe handlers ----------
 
 // Lazy-imports kept inline so this module doesn't grab the email
@@ -813,6 +1005,19 @@ const RECIPE_HANDLERS: Record<string, RecipeHandler> = {
   stale_customer_sms: executeStaleCustomerSms,
 }
 
+/**
+ * Resolves the handler for an agent: a known recipe, or the free-form
+ * outreach executor when the plan carries a freeform block. Returns null when
+ * neither is present (plan saved but not runnable).
+ */
+function resolveScheduledHandler(agent: CustomAgentRow): RecipeHandler | null {
+  const recipeId = agent.config.recipe?.id
+  if (recipeId) return RECIPE_HANDLERS[recipeId] ?? null
+  if (agent.config.freeform && FEATURES.freeformPlanner)
+    return executeFreeformOutreach
+  return null
+}
+
 const EVENT_RECIPE_HANDLERS: Record<string, EventRecipeHandler> = {
   payment_received_thank_you_sms: executePaymentReceivedThankYouSms,
   booking_approved_prep_email: executeBookingApprovedPrepEmail,
@@ -906,22 +1111,13 @@ export async function runCustomAgent(
     return outcome
   }
 
-  const recipeId = agent.config.recipe?.id
-  if (!recipeId) {
-    return recordAndReturn({
-      agentId: agent.id,
-      agentName: agent.name,
-      fired: false,
-      reason: "no runnable recipe on this plan",
-    })
-  }
-  const handler = RECIPE_HANDLERS[recipeId]
+  const handler = resolveScheduledHandler(agent)
   if (!handler) {
     return recordAndReturn({
       agentId: agent.id,
       agentName: agent.name,
       fired: false,
-      reason: `unknown recipe id: ${recipeId}`,
+      reason: "no runnable recipe or free-form plan on this agent",
     })
   }
   const shop = await loadShop(supabase, agent.shop_id)
@@ -970,30 +1166,13 @@ export async function runScheduledAgents(
 
   for (const agent of agents) {
     try {
-      const recipeId = agent.config.recipe?.id
-      if (!recipeId) {
-        const outcome: AgentRunOutcome = {
-          agentId: agent.id,
-          agentName: agent.name,
-          fired: false,
-          reason: "no recipe",
-        }
-        outcomes.push(outcome)
-        await recordAgentRun(supabase, {
-          agentId: agent.id,
-          shopId: agent.shop_id,
-          triggerSource: "schedule",
-          outcome,
-        })
-        continue
-      }
-      const handler = RECIPE_HANDLERS[recipeId]
+      const handler = resolveScheduledHandler(agent)
       if (!handler) {
         const outcome: AgentRunOutcome = {
           agentId: agent.id,
           agentName: agent.name,
           fired: false,
-          reason: `unknown recipe: ${recipeId}`,
+          reason: "no runnable recipe or free-form plan",
         }
         outcomes.push(outcome)
         await recordAgentRun(supabase, {

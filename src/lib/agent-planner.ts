@@ -189,6 +189,90 @@ const planSchema = z.object({
     .describe(
       "Machine-executable mapping. Pick ONE recipe id that fits the problem:\n\nSCHEDULED (require a schedule):\n• 'lead_followup_sms' — leads in a given status, older than N days, no inbound recently → drafts an SMS.\n• 'appointment_reminder_email' — drafts an email reminder ~N hours before a booked appointment. Pair with hourly cadence.\n• 'stale_customer_sms' — drafts an SMS to customers whose last interaction is N+ days ago.\n\nEVENT-DRIVEN (omit the schedule field):\n• 'payment_received_thank_you_sms' — fires when a Stripe invoice is paid; drafts a thank-you SMS.\n• 'booking_approved_prep_email' — fires when a booking approval lands an appointment; drafts a prep email.\n\nOMIT recipe entirely if no recipe fits — the plan still saves but won't run."
     ),
+  freeform: z
+    .object({
+      entity: z
+        .enum(["leads", "customers"])
+        .describe(
+          "Which records to target. 'leads' for sales/quote follow-ups (SMS only — leads carry a phone, not an email). 'customers' for re-engagement (SMS or email)."
+        ),
+      channel: z
+        .enum(["sms", "email"])
+        .describe("How we reach them. 'email' requires entity=customers."),
+      filters: z
+        .object({
+          lead_status: z
+            .enum(["new", "quoted", "booked"])
+            .optional()
+            .describe("leads only: target this lead status."),
+          min_age_days: z
+            .number()
+            .int()
+            .min(0)
+            .max(365)
+            .optional()
+            .describe("Record created at least this many days ago."),
+          max_age_days: z
+            .number()
+            .int()
+            .min(0)
+            .max(3650)
+            .optional()
+            .describe("Record created at most this many days ago."),
+          no_inbound_within_days: z
+            .number()
+            .int()
+            .min(1)
+            .max(365)
+            .optional()
+            .describe(
+              "Skip targets who contacted us within the last N days — don't pester mid-conversation."
+            ),
+          inactive_days: z
+            .number()
+            .int()
+            .min(1)
+            .max(365)
+            .optional()
+            .describe(
+              "customers only: their last interaction is at least this many days ago."
+            ),
+          keyword: z
+            .string()
+            .min(2)
+            .max(60)
+            .optional()
+            .describe(
+              "Case-insensitive keyword matched against name / vehicle / notes — e.g. 'ceramic', 'Tesla'."
+            ),
+        })
+        .describe("Whitelisted filters that narrow the audience. No raw SQL."),
+      message_intent: z
+        .string()
+        .min(8)
+        .max(400)
+        .describe(
+          "Plain-English intent for the per-recipient message, in we/us voice."
+        ),
+      max_recipients: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .describe("Hard cap on recipients per run. Default 50."),
+      cooldown_days: z
+        .number()
+        .int()
+        .min(1)
+        .max(365)
+        .describe(
+          "Don't re-contact the same recipient within this many days. Default 30."
+        ),
+    })
+    .optional()
+    .describe(
+      "Machine-executable FREE-FORM outreach. Use ONLY when no recipe fits but the ask is still SMS/email outreach to a queryable audience of leads or customers (e.g. 'text leads who got a ceramic quote and never booked'). Outbound is ALWAYS HITL — every drafted message becomes an approval card. NEVER emit both a recipe and a freeform block. Pair with a schedule."
+    ),
   schedule: z
     .object({
       cadence: z.enum(["hourly", "daily", "weekly"]),
@@ -231,7 +315,9 @@ Constraints — DO NOT propose anything outside Gradia's actual surfaces:
 - Actions: draft_sms, draft_email, log_note, flag_for_review. Outbound is ALWAYS HITL-gated — never describe it as auto-sending.
 - Be honest about prerequisites. Outbound SMS needs Twilio. Outbound email needs Gmail. Don't promise capabilities the shop hasn't wired up.
 
-If the operator's problem is vague, pick the most reasonable interpretation and reflect it back via the name + short_description. If it's outside Gradia's scope (general AI chat, web scraping, calling APIs we don't have), still return a plan but flag the constraint in prerequisites_needed.`
+If the operator's problem is vague, pick the most reasonable interpretation and reflect it back via the name + short_description. If it's outside Gradia's scope (general AI chat, web scraping, calling APIs we don't have), still return a plan but flag the constraint in prerequisites_needed.
+
+Recipe vs. free-form: prefer a known recipe when one fits. When the ask is outreach to a queryable audience of leads or customers (SMS or email) but no recipe matches — e.g. "text leads who got a ceramic quote and never booked" — emit a structured \`freeform\` block instead (entity, channel, whitelisted filters, message_intent, max_recipients, cooldown_days) and pair it with a schedule. Free-form outbound is ALWAYS HITL. Never emit both a recipe and a freeform block.`
 
 const HUMAN = `The shop owner says:
 

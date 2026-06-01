@@ -9,16 +9,22 @@ import {
   Sparkles,
   Target,
   TriangleAlert,
+  Users,
   Wand2,
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { planAgent, saveCustomAgent } from "@/app/actions/custom-agents"
+import {
+  planAgent,
+  previewCustomAgentPlan,
+  saveCustomAgent,
+} from "@/app/actions/custom-agents"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { StatusPill } from "@/components/ui/status-pill"
 import { Textarea } from "@/components/ui/textarea"
+import type { FreeformPreview } from "@/lib/agent-audience"
 import type { AgentConfig } from "@/lib/types/database"
 
 const EXAMPLES = [
@@ -41,12 +47,15 @@ export function AgentBuilder() {
   const [planning, setPlanning] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [plan, setPlan] = React.useState<AgentConfig | null>(null)
+  const [preview, setPreview] = React.useState<FreeformPreview | null>(null)
+  const [previewing, setPreviewing] = React.useState(false)
 
   async function handlePlan(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!problem.trim() || planning) return
     setPlanning(true)
     setPlan(null)
+    setPreview(null)
     const result = await planAgent(problem)
     setPlanning(false)
     if (!result.ok) {
@@ -72,14 +81,29 @@ export function AgentBuilder() {
     router.push("/agents")
   }
 
+  async function handlePreview() {
+    if (!plan?.freeform || previewing) return
+    setPreviewing(true)
+    const result = await previewCustomAgentPlan(plan)
+    setPreviewing(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setPreview(result.preview)
+    if (result.preview.blocked) toast.error(result.preview.blocked)
+  }
+
   function handleExample(text: string) {
     if (planning) return
     setProblem(text)
     setPlan(null)
+    setPreview(null)
   }
 
   function handleReset() {
     setPlan(null)
+    setPreview(null)
   }
 
   return (
@@ -108,6 +132,7 @@ export function AgentBuilder() {
               onChange={(e) => {
                 setProblem(e.target.value)
                 if (plan) setPlan(null)
+                if (preview) setPreview(null)
               }}
               placeholder={EXAMPLES[0]}
               rows={5}
@@ -157,9 +182,7 @@ export function AgentBuilder() {
               <CardTitle className="text-lg font-semibold tracking-tight">
                 {plan.name}
               </CardTitle>
-              <StatusPill tone="warn">
-                Saved · runtime coming soon
-              </StatusPill>
+              <StatusPill tone="warn">Review before saving</StatusPill>
             </div>
             <p className="text-sm text-muted-foreground">
               {plan.short_description}
@@ -215,6 +238,70 @@ export function AgentBuilder() {
                     <li key={i}>• {p}</li>
                   ))}
                 </ul>
+              </div>
+            ) : null}
+
+            {plan.freeform ? (
+              <div className="grid gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                    <Users className="size-3.5" aria-hidden />
+                    Dry run
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePreview}
+                    disabled={previewing}
+                    className="h-8 gap-2"
+                  >
+                    {previewing ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    ) : null}
+                    {preview ? "Refresh preview" : "Preview audience"}
+                  </Button>
+                </div>
+                {preview && !preview.blocked ? (
+                  <div className="grid gap-3">
+                    <p className="text-sm">
+                      <span className="font-medium">{preview.count}</span>{" "}
+                      {preview.count === 1 ? "recipient" : "recipients"} match
+                      right now — each becomes an approval. Nothing sends
+                      automatically.
+                    </p>
+                    {preview.samples.length > 0 ? (
+                      <ul className="grid gap-2">
+                        {preview.samples.map((s, i) => (
+                          <li
+                            key={i}
+                            className="rounded border border-border/50 bg-background/60 px-3 py-2 text-sm"
+                          >
+                            <div className="text-xs text-muted-foreground">
+                              {s.name ? `${s.name} · ` : ""}
+                              {s.to}
+                            </div>
+                            {s.subject ? (
+                              <div className="font-medium">{s.subject}</div>
+                            ) : null}
+                            <div className="text-muted-foreground">
+                              {s.message}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No sample drafts — likely no one matches yet.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Preview who this reaches and see a few sample drafts before
+                    you enable it.
+                  </p>
+                )}
               </div>
             ) : null}
 

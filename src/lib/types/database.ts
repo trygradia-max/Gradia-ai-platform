@@ -288,6 +288,43 @@ export type AgentSchedule = {
   day_of_week?: number
 }
 
+export type FreeformAudienceEntity = "leads" | "customers"
+
+export type FreeformChannel = "sms" | "email"
+
+/**
+ * Safe, whitelisted audience filter for free-form outreach — never raw SQL.
+ * The resolver maps each field to a constrained Supabase query, so the
+ * free-form planner can target an audience without ever executing operator
+ * (or model) supplied query text.
+ */
+export type FreeformFilters = {
+  /** leads only: target lead status */
+  lead_status?: LeadStatus
+  /** record created at least this many days ago */
+  min_age_days?: number
+  /** record created at most this many days ago */
+  max_age_days?: number
+  /** skip targets the customer contacted us within the last N days */
+  no_inbound_within_days?: number
+  /** customers only: last interaction at least this many days ago */
+  inactive_days?: number
+  /** case-insensitive keyword matched against name / vehicle / notes */
+  keyword?: string
+}
+
+export type FreeformPlan = {
+  entity: FreeformAudienceEntity
+  channel: FreeformChannel
+  filters: FreeformFilters
+  /** plain-English message intent; drafted per recipient in we/us voice */
+  message_intent: string
+  /** hard cap on recipients per run (owner-configurable; default 50) */
+  max_recipients: number
+  /** don't re-contact the same recipient within this many days */
+  cooldown_days: number
+}
+
 export type AgentConfig = {
   name: string
   short_description: string
@@ -307,6 +344,7 @@ export type AgentConfig = {
   prerequisites_needed: string[]
   human_in_the_loop_note: string
   recipe?: AgentRecipe
+  freeform?: FreeformPlan
   schedule?: AgentSchedule
 }
 
