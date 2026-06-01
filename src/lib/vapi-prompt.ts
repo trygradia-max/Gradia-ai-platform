@@ -11,6 +11,7 @@
  * shop.
  */
 
+import { GRADIA_VOICE } from "@/lib/persona"
 import type { ServiceRow, ShopKnowledgeRow, ShopRow } from "@/lib/types/database"
 
 function formatPrice(cents: number): string {
@@ -91,9 +92,7 @@ export function synthesizeSystemPrompt(input: SynthesisInput): string {
         ? "Friendly and a little playful — but always helpful and clear."
         : "Warm, attentive, and direct — like a real teammate at the shop."
   lines.push("", `Tone: ${toneRule}`)
-  lines.push(
-    `Speak as "we" or "us" — you are part of the team, not an outside assistant. Never say "the shop" when "we" or "us" would fit. Never identify yourself as an AI or bot unless explicitly asked.`
-  )
+  lines.push(GRADIA_VOICE)
 
   // 3. Services menu ----------------------------------------------
   if (input.services.length > 0) {
