@@ -14,6 +14,7 @@ import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
 import { ConnectionTile } from "@/components/gradia/connection-tile"
 import { SectionHeader } from "@/components/gradia/section-header"
+import { AutonomyDefaultCard } from "@/components/gradia/autonomy-default-card"
 import {
   Card,
   CardContent,
@@ -25,6 +26,7 @@ import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getCreditUsage } from "@/app/actions/billing"
 import { getPendingMetaPages } from "@/app/actions/meta-oauth"
 import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
+import { readAutonomy } from "@/lib/autonomy"
 import { integrationEnabled } from "@/lib/features"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -125,6 +127,7 @@ export default async function SettingsPage({
     .single()
 
   const shop = (data as ShopRow | null) ?? null
+  const autonomyDefault = readAutonomy(shop).default
   const knowledgeEntries = await listShopKnowledge(supabase, shopCtx.id)
   const mcpTokens = await listMcpTokensForCurrentShop()
   const baseUrl = await resolveWebhookBaseUrl()
@@ -315,6 +318,10 @@ export default async function SettingsPage({
             />
           </div>
         </div>
+      </div>
+
+      <div className="pt-8">
+        <AutonomyDefaultCard initialMode={autonomyDefault} />
       </div>
 
       <details className="pt-10">
