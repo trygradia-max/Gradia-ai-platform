@@ -15,6 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
+import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
@@ -30,6 +31,7 @@ import type {
   CustomAgentRow,
   CustomerRow,
   LeadRow,
+  PendingActionType,
   ShopRow,
 } from "@/lib/types/database"
 
@@ -1068,7 +1070,12 @@ export async function runEventRecipe(
     })
     return outcome
   }
-  const outcome = await handler(supabase, shop, agent, event)
+  const outcome = await maybeAutoExecute(
+    supabase,
+    shop,
+    agent,
+    await handler(supabase, shop, agent, event)
+  )
   await recordAgentRun(supabase, {
     agentId: agent.id,
     shopId: shop.id,
@@ -1076,6 +1083,60 @@ export async function runEventRecipe(
     outcome,
   })
   return outcome
+}
+
+/**
+ * Autonomous post-step (BUILD_REFERENCE §5). For an agent in autonomous mode,
+ * immediately execute the non-floor pending_actions the handler just staged —
+ * so they send + log instead of waiting in /approvals. ALWAYS_HITL actions
+ * (money / calendar) are never auto-executed; they stay pending for a human.
+ *
+ * executeApproval is dynamic-imported to avoid a static import cycle
+ * (agent-runtime → approvals → agent-events → agent-runtime).
+ *
+ * Note: while this auto-executes, the handler may also have posted a Slack
+ * approval card (when FEATURES.slackApprovals is on) — a known limitation until
+ * staging is mode-aware. With Slack off (MVP default) there's no stale card.
+ */
+async function maybeAutoExecute(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  outcome: AgentRunOutcome
+): Promise<AgentRunOutcome> {
+  if (!outcome.fired) return outcome
+  const ids = outcome.pendingActionIds ?? []
+  if (ids.length === 0) return outcome
+  if (resolveAgentMode(shop, agent.id) !== "autonomous") return outcome
+
+  const { data } = await supabase
+    .from("pending_actions")
+    .select("id, action_type, status")
+    .in("id", ids)
+  const rows =
+    (data as
+      | { id: string; action_type: PendingActionType; status: string }[]
+      | null) ?? []
+
+  const { executeApproval } = await import("@/lib/approvals")
+  let executed = 0
+  for (const row of rows) {
+    if (row.status !== "pending") continue
+    if (!isAutonomyAllowed(row.action_type)) continue
+    try {
+      const result = await executeApproval(supabase, row.id, {
+        userId: agent.owner_id,
+      })
+      if (result.ok && result.status === "executed") executed += 1
+    } catch (err) {
+      console.error("[agent-runtime] autonomous execute threw:", err)
+    }
+  }
+
+  return {
+    ...outcome,
+    stats: { ...(outcome.stats ?? {}), auto_executed: executed },
+  }
 }
 
 async function loadShop(
@@ -1139,7 +1200,12 @@ export async function runCustomAgent(
         "credit limit reached — raise the limit in settings or wait for the next period",
     })
   }
-  const outcome = await handler(supabase, shop, agent)
+  const outcome = await maybeAutoExecute(
+    supabase,
+    shop,
+    agent,
+    await handler(supabase, shop, agent)
+  )
   if (outcome.fired) {
     await stampFired(supabase, agent.id, agent.shop_id)
     await recordUsage(supabase, agent.shop_id, "agent_run", { refId: agent.id })
@@ -1249,7 +1315,12 @@ export async function runScheduledAgents(
         })
         continue
       }
-      const outcome = await handler(supabase, shop, agent)
+      const outcome = await maybeAutoExecute(
+        supabase,
+        shop,
+        agent,
+        await handler(supabase, shop, agent)
+      )
       if (outcome.fired) {
         await stampFired(supabase, agent.id, agent.shop_id)
         await recordUsage(supabase, agent.shop_id, "agent_run", {
