@@ -9,13 +9,13 @@
  */
 
 import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 
 import { encryptSecret } from "@/lib/crypto"
 import {
   exchangeAuthorizationCode,
   fetchAccountInfo,
 } from "@/lib/jobber"
+import { finishOauth } from "@/lib/oauth-popup"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -53,10 +53,10 @@ export async function GET(request: Request) {
 
   if (oauthError) {
     console.warn("[jobber callback] provider returned error:", oauthError)
-    redirect(settingsRedirect("denied"))
+    return finishOauth(settingsRedirect("denied"))
   }
   if (!code || !state) {
-    redirect(settingsRedirect("missing_params"))
+    return finishOauth(settingsRedirect("missing_params"))
   }
 
   const cookieStore = await cookies()
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
 
   if (!cookieNonce || cookieNonce !== state) {
     console.warn("[jobber callback] state nonce mismatch")
-    redirect(settingsRedirect("state_mismatch"))
+    return finishOauth(settingsRedirect("state_mismatch"))
   }
 
   const redirectUri = await buildRedirectUri(request)
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
     tokens = await exchangeAuthorizationCode({ code, redirectUri })
   } catch (err) {
     console.error("[jobber callback] token exchange failed:", err)
-    redirect(settingsRedirect("token_exchange_failed"))
+    return finishOauth(settingsRedirect("token_exchange_failed"))
   }
 
   let account
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
     account = await fetchAccountInfo(tokens.accessToken)
   } catch (err) {
     console.error("[jobber callback] account fetch failed:", err)
-    redirect(settingsRedirect("account_fetch_failed"))
+    return finishOauth(settingsRedirect("account_fetch_failed"))
   }
 
   let accessEnc: string | null
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
       : null
   } catch (err) {
     console.error("[jobber callback] token encryption failed:", err)
-    redirect(settingsRedirect("save_failed"))
+    return finishOauth(settingsRedirect("save_failed"))
   }
 
   const supabase = await createClient()
@@ -111,8 +111,8 @@ export async function GET(request: Request) {
     .eq("id", shop.id)
   if (updateErr) {
     console.error("[jobber callback] shop update failed:", updateErr)
-    redirect(settingsRedirect("save_failed"))
+    return finishOauth(settingsRedirect("save_failed"))
   }
 
-  redirect(settingsRedirect("ok"))
+  return finishOauth(settingsRedirect("ok"))
 }

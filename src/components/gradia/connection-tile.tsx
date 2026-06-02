@@ -1,14 +1,19 @@
-import Link from "next/link"
-import { Check, type LucideIcon } from "lucide-react"
+"use client"
 
-import { buttonVariants } from "@/components/ui/button"
+import * as React from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { Check, Loader2, type LucideIcon } from "lucide-react"
+
+import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 /**
  * The Connections screen tile (BUILD_REFERENCE §4). One integration, status as
- * icon + text. Three states: not connected (coral Connect), connected (✓ +
- * identity + Manage), and "setup needed" when the integration isn't wired on
- * the server. The popup-OAuth `connecting` state is a follow-up.
+ * icon + text. Three states: not connected (coral Connect), connecting (popup
+ * open), connected (✓ + identity + Manage). When `popup` is set, Connect opens
+ * a centered OAuth popup and flips the tile inline on success — no full-page
+ * redirect, no toast-hunting.
  */
 export function ConnectionTile({
   icon: Icon,
@@ -20,6 +25,7 @@ export function ConnectionTile({
   connectedDetail,
   connectHref,
   manageHref,
+  popup = false,
 }: {
   icon: LucideIcon
   name: string
@@ -30,7 +36,50 @@ export function ConnectionTile({
   connectedDetail?: string | null
   connectHref?: string
   manageHref?: string
+  popup?: boolean
 }) {
+  const router = useRouter()
+  const [connecting, setConnecting] = React.useState(false)
+
+  function openPopup() {
+    if (!connectHref) return
+    setConnecting(true)
+    const w = 520
+    const h = 680
+    const left = window.screenX + Math.max(0, (window.outerWidth - w) / 2)
+    const top = window.screenY + Math.max(0, (window.outerHeight - h) / 2)
+    const win = window.open(
+      connectHref,
+      "gradia-oauth",
+      `width=${w},height=${h},left=${left},top=${top}`
+    )
+    // Popup blocked → fall back to a full-page redirect.
+    if (!win) {
+      window.location.href = connectHref
+      return
+    }
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return
+      if ((e.data as { source?: string } | null)?.source !== "gradia-oauth")
+        return
+      cleanup()
+      router.refresh()
+    }
+    const poll = window.setInterval(() => {
+      if (win.closed) {
+        cleanup()
+        router.refresh()
+      }
+    }, 600)
+    function cleanup() {
+      window.removeEventListener("message", onMessage)
+      window.clearInterval(poll)
+      setConnecting(false)
+    }
+    window.addEventListener("message", onMessage)
+  }
+
   const connectedLine =
     [connectedLabel, connectedDetail].filter(Boolean).join(" · ") || description
 
@@ -44,13 +93,21 @@ export function ConnectionTile({
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <Check className="size-3.5" aria-hidden /> Connected
           </span>
+        ) : connecting ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" aria-hidden /> Waiting…
+          </span>
         ) : null}
       </div>
 
       <div className="space-y-1">
         <p className="font-medium text-foreground">{name}</p>
         <p className="text-sm text-muted-foreground">
-          {connected ? connectedLine : description}
+          {connected
+            ? connectedLine
+            : connecting
+              ? "Waiting for you to finish in the popup…"
+              : description}
         </p>
       </div>
 
@@ -68,14 +125,27 @@ export function ConnectionTile({
               Manage
             </Link>
           ) : null
-        ) : connectHref ? (
+        ) : !connectHref ? null : popup ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={openPopup}
+            disabled={connecting}
+            className="gap-2"
+          >
+            {connecting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : null}
+            {connecting ? "Connecting…" : "Connect"}
+          </Button>
+        ) : (
           <Link
             href={connectHref}
             className={cn(buttonVariants({ size: "sm" }), "gap-2")}
           >
             Connect
           </Link>
-        ) : null}
+        )}
       </div>
     </div>
   )

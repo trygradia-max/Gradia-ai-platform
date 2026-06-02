@@ -265,6 +265,7 @@ export default async function SettingsPage({
               connectedLabel={shop?.aurinko_account_email}
               connectedDetail="Reading + drafting"
               connectHref="/api/aurinko/auth/start"
+              popup
               manageHref="#email"
             />
             <ConnectionTile
@@ -297,6 +298,7 @@ export default async function SettingsPage({
               }
               connectedDetail="On the books"
               connectHref="/api/aurinko/auth/start"
+              popup
               manageHref="#email"
             />
             <ConnectionTile
@@ -308,6 +310,7 @@ export default async function SettingsPage({
               connectedLabel={shop?.jobber_account_name}
               connectedDetail="Synced to Jobber"
               connectHref="/api/jobber/auth/start"
+              popup
               manageHref="#jobber"
             />
           </div>
