@@ -1,5 +1,5 @@
 import { headers } from "next/headers"
-import { Shield } from "lucide-react"
+import { Briefcase, Calendar, Mail, MessageSquare, Phone, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
@@ -12,6 +12,8 @@ import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
+import { ConnectionTile } from "@/components/gradia/connection-tile"
+import { SectionHeader } from "@/components/gradia/section-header"
 import {
   Card,
   CardContent,
@@ -226,20 +228,97 @@ export default async function SettingsPage({
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <header className="space-y-2 pt-2 pb-6">
-        <p className="label-eyebrow text-muted-foreground/70">Settings</p>
-        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
-          The <span className="italic">wiring</span> behind the scenes.
-        </h1>
-        <p className="max-w-prose text-sm text-muted-foreground">
-          Shop, integrations, knowledge, and developer access — everything we
-          plug into to run the AI office.
-        </p>
-      </header>
+      <SectionHeader
+        className="pt-2 pb-6"
+        eyebrow="Connections"
+        title={
+          <>
+            The <em className="italic">wiring</em> behind the scenes.
+          </>
+        }
+        subhead="The channels and tools we run on. Connect once — we handle the rest."
+      />
 
       <MetaCallbackToast status={metaStatus} />
 
-      <SettingsSectionNav sections={sections} />
+      <div className="space-y-8 pt-2">
+        <div className="space-y-3">
+          <p className="label-eyebrow text-muted-foreground/70">Channels</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConnectionTile
+              icon={Phone}
+              name="Voice"
+              description="Answers calls, quotes, and books — in our voice."
+              connected={Boolean(shop?.vapi_assistant_id)}
+              available={vapiConfigured}
+              connectedLabel="Assistant linked"
+              connectedDetail="Answering calls"
+              connectHref="#voice"
+              manageHref="#voice"
+            />
+            <ConnectionTile
+              icon={Mail}
+              name="Email"
+              description="Reads leads and drafts replies for our approval."
+              connected={Boolean(shop?.aurinko_account_email)}
+              available={aurinkoConfigured}
+              connectedLabel={shop?.aurinko_account_email}
+              connectedDetail="Reading + drafting"
+              connectHref="/api/aurinko/auth/start"
+              manageHref="#email"
+            />
+            <ConnectionTile
+              icon={MessageSquare}
+              name="SMS"
+              description="Catches every text and drafts a reply in a minute."
+              connected={Boolean(shop?.twilio_phone_number)}
+              available={twilioConfigured}
+              connectedLabel={shop?.twilio_phone_number}
+              connectedDetail="Texting back"
+              connectHref="#sms"
+              manageHref="#sms"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="label-eyebrow text-muted-foreground/70">
+            Your business
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConnectionTile
+              icon={Calendar}
+              name="Calendar"
+              description="Puts approved bookings on our calendar."
+              connected={Boolean(shop?.aurinko_account_email)}
+              available={aurinkoConfigured}
+              connectedLabel={
+                shop?.aurinko_account_email ? "Google Calendar" : null
+              }
+              connectedDetail="On the books"
+              connectHref="/api/aurinko/auth/start"
+              manageHref="#email"
+            />
+            <ConnectionTile
+              icon={Briefcase}
+              name="Jobs (CRM)"
+              description="Pushes approved leads and bookings to Jobber."
+              connected={Boolean(shop?.jobber_account_name)}
+              available={jobberConfigured}
+              connectedLabel={shop?.jobber_account_name}
+              connectedDetail="Synced to Jobber"
+              connectHref="/api/jobber/auth/start"
+              manageHref="#jobber"
+            />
+          </div>
+        </div>
+      </div>
+
+      <details className="pt-10">
+        <summary className="label-eyebrow cursor-pointer select-none text-muted-foreground/70 transition-colors hover:text-foreground">
+          Manage individual connections
+        </summary>
+        <SettingsSectionNav sections={sections} />
 
       <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
         <section id="voice">
@@ -356,6 +435,7 @@ export default async function SettingsPage({
           </Card>
         </section>
       </div>
+      </details>
     </div>
   )
 }
