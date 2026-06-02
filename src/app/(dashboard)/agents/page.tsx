@@ -9,11 +9,14 @@ import {
 } from "@/components/gradia/motion/page-stagger"
 import { SectionHeader } from "@/components/gradia/motion/section-header"
 import { buttonVariants } from "@/components/ui/button"
+import { readAutonomy } from "@/lib/autonomy"
 import {
   getAgentsForCurrentShop,
   getLatestRunsByAgent,
   listCustomAgentsForCurrentShop,
 } from "@/lib/data/agents"
+import { requireShop } from "@/lib/shop"
+import { createClient } from "@/lib/supabase/server"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
@@ -24,6 +27,17 @@ export default async function AgentsPage() {
     listCustomAgentsForCurrentShop(),
   ])
   const lastRuns = await getLatestRunsByAgent(customAgents.map((a) => a.id))
+  const shopCtx = await requireShop()
+  const supabase = await createClient()
+  const { data: shopRow } = await supabase
+    .from("shops")
+    .select("settings")
+    .eq("id", shopCtx.id)
+    .single()
+  const autonomy = readAutonomy({
+    settings:
+      (shopRow as { settings?: Record<string, unknown> } | null)?.settings ?? {},
+  })
   const activeCount = agents.filter((a) => a.status === "active").length
   const enabledCustom = customAgents.filter((a) => a.enabled).length
 
@@ -112,6 +126,7 @@ export default async function AgentsPage() {
                 <CustomAgentCard
                   agent={agent}
                   lastRun={lastRuns.get(agent.id) ?? null}
+                  initialMode={autonomy.overrides[agent.id] ?? autonomy.default}
                 />
               </StaggerItem>
             ))}
