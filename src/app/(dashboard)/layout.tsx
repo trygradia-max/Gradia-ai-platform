@@ -6,6 +6,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/gradia/app-sidebar"
+import { AskGradiaButton } from "@/components/gradia/ask-gradia-button"
 import { SetupProgressPill } from "@/components/gradia/setup-progress-pill"
 import { countOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
 import { FEATURES } from "@/lib/features"
@@ -53,7 +54,8 @@ export default async function DashboardLayout({
           <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
             Gradia
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <AskGradiaButton />
             <SetupProgressPill />
           </div>
         </header>

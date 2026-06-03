@@ -6,14 +6,11 @@ import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
   Bot,
-  Calendar,
   Contact,
   Inbox,
   LayoutDashboard,
-  MessageCircle,
   Settings,
   Sparkles,
-  Users,
 } from "lucide-react"
 
 import {
@@ -39,14 +36,14 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
+// Five sturdy destinations (BUILD_REFERENCE §2). Ask Gradia moved to a top-bar
+// ⌘K action; Leads folds into Customers and Schedule into Home/Customers —
+// their routes still exist, they're just off the primary nav.
 const nav: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/chat", label: "Ask Gradia", icon: MessageCircle },
-  { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/approvals", label: "Approvals", icon: Inbox },
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Contact },
-  { href: "/leads", label: "Leads", icon: Users },
-  { href: "/schedule", label: "Schedule", icon: Calendar },
+  { href: "/approvals", label: "Approvals", icon: Inbox },
+  { href: "/agents", label: "Agents", icon: Bot },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
