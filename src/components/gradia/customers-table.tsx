@@ -185,7 +185,10 @@ export function CustomersTable({
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {c.lead_count}
                     </TableCell>
-                    <TableCell className="pr-4 text-right tabular-nums text-muted-foreground sm:pr-6">
+                    <TableCell
+                      suppressHydrationWarning
+                      className="pr-4 text-right tabular-nums text-muted-foreground sm:pr-6"
+                    >
                       {formatRelative(c.last_seen_at)}
                     </TableCell>
                   </motion.tr>

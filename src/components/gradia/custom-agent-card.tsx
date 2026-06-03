@@ -357,7 +357,10 @@ function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
             <p className="label-eyebrow text-muted-foreground/70">
               Last run
             </p>
-            <p className="text-xs tabular-nums text-muted-foreground">
+            <p
+              suppressHydrationWarning
+              className="text-xs tabular-nums text-muted-foreground"
+            >
               {relativeAgo(run.created_at)}
             </p>
           </div>

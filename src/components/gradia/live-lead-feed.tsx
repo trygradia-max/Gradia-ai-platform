@@ -158,7 +158,10 @@ export function LiveLeadFeed({
                           {STATUS_LABEL[lead.status]}
                         </StatusPill>
                       </TableCell>
-                      <TableCell className="pr-4 text-right text-muted-foreground tabular-nums sm:pr-6">
+                      <TableCell
+                        suppressHydrationWarning
+                        className="pr-4 text-right text-muted-foreground tabular-nums sm:pr-6"
+                      >
                         {WHEN.format(new Date(lead.created_at))}
                       </TableCell>
                     </motion.tr>
