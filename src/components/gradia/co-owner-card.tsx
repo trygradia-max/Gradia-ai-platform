@@ -61,8 +61,8 @@ export function CoOwnerCard({
         }
         subtitle={
           suggestions.length === 0
-            ? "Quiet right now — we&apos;re caught up on follow-ups."
-            : "Real nudges from what I&apos;m seeing. One tap and a draft is waiting for you."
+            ? "Quiet right now — we're caught up on follow-ups."
+            : "Real nudges from what I'm seeing. One tap and a draft is waiting for you."
         }
       />
 
