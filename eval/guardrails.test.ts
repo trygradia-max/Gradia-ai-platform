@@ -6,6 +6,7 @@ import {
   isAutonomyAllowed,
   resolveAgentMode,
 } from "@/lib/autonomy"
+import { GRADIA_VOICE } from "@/lib/persona"
 import type { PendingActionType, ShopRow } from "@/lib/types/database"
 
 /**
@@ -65,6 +66,20 @@ describe("autonomy resolution — safe defaults & override precedence", () => {
     } as unknown as Pick<ShopRow, "settings">
     expect(resolveAgentMode(shop, "reminder")).toBe("autonomous")
     expect(resolveAgentMode(shop, "other")).toBe("suggest")
+  })
+})
+
+describe("canonical voice — strictly we/us, never first-person singular", () => {
+  // persona.ts is the single source the drafters + voice + chat compose. Lock
+  // the strict rule here so it can't be silently weakened back to "never I"
+  // (which lets "me"/"my" slip through).
+  it('GRADIA_VOICE forbids "I", "me", and "my"', () => {
+    expect(GRADIA_VOICE).toMatch(/never/i)
+    for (const pronoun of ['"I"', '"me"', '"my"']) {
+      expect(GRADIA_VOICE, `canonical voice must forbid ${pronoun}`).toContain(
+        pronoun
+      )
+    }
   })
 })
 

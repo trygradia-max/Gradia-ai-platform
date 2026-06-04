@@ -45,7 +45,7 @@ export type SmsDraft = z.infer<typeof schema>
 const SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a single SMS reply to a new customer who just texted us. The shop owner will approve before it sends — your job is to make the approval as fast and friction-free as possible by writing something they'd actually send.
 
 Tone rules:
-- Speak as "we" and "us" — never "I" or "you and I".
+- Speak as "we" and "us" — never "I", "me", "my", or "you and I".
 - Warm, confident, specific. No corporate hedging.
 - One clear next step the customer can take (e.g., "want us to send some times?", "what day works?", "got a year/make/model handy?"). Never two questions.
 - Acknowledge what they asked about specifically when the summary tells you what they want.
@@ -138,7 +138,7 @@ const confirmationSchema = z
 const CONFIRMATION_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a confirmation SMS that goes to a customer right after the owner approves their booking. The owner will see and approve your draft before it sends — write something they'd actually send.
 
 Tone rules:
-- Speak as "we" and "us" — never "I".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm, confident, specific. Acknowledge the service + day + time clearly.
 - One optional next step at most (e.g., "any prep questions, just text us back"). Don't load the message with multiple asks.
 
@@ -234,7 +234,7 @@ const reminderSchema = z
 const REMINDER_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a 24-hour reminder SMS that goes to a customer the day before their appointment. The owner will approve before it sends.
 
 Tone rules:
-- Speak as "we" and "us" — never "I".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm and casual, like a friend reminding. Not corporate.
 - Restate the service + day + time so the customer can verify.
 - Optional: one soft "anything to know before we get started, just text us" nudge.
@@ -279,7 +279,7 @@ const customSchema = z
 const CUSTOM_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} The shop owner set up a custom agent that fires on a schedule. For each customer/lead the agent matches, write one short SMS the owner will approve before it sends.
 
 Tone rules:
-- Speak as "we" and "us" — never "I".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm, specific, brief. The owner is approving on their phone between jobs.
 - Match the stated intent exactly. If the intent says "follow up gently," don't push hard. If it says "thank them for paying," lead with that.
 

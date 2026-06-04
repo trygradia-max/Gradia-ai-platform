@@ -6,18 +6,20 @@ import { LIVE, assertField, type FieldSpec } from "./_lib"
 import smsCases from "./cases/sms.json"
 import emailCases from "./cases/email.json"
 
+// `expect` mixes the is_lead label with per-field specs, so the index
+// signature allows both; the loops skip is_lead before treating values as specs.
 type SmsCase = {
   name: string
   from: string
   body: string
-  expect: { is_lead: boolean } & Record<string, FieldSpec>
+  expect: { is_lead: boolean; [field: string]: boolean | FieldSpec }
 }
 type EmailCase = {
   name: string
   from: string
   subject: string
   body: string
-  expect: { is_lead: boolean } & Record<string, FieldSpec>
+  expect: { is_lead: boolean; [field: string]: boolean | FieldSpec }
 }
 
 /**
@@ -32,7 +34,11 @@ describe.skipIf(!LIVE)("SMS classification golden [live]", () => {
     expect(out.is_lead, `${c.name} → is_lead`).toBe(c.expect.is_lead)
     for (const [field, spec] of Object.entries(c.expect)) {
       if (field === "is_lead") continue
-      assertField(out[field as keyof typeof out] as string, spec, `${c.name} → ${field}`)
+      assertField(
+        out[field as keyof typeof out] as string,
+        spec as FieldSpec,
+        `${c.name} → ${field}`
+      )
     }
   })
 })
@@ -47,7 +53,11 @@ describe.skipIf(!LIVE)("Email classification golden [live]", () => {
     expect(out.is_lead, `${c.name} → is_lead`).toBe(c.expect.is_lead)
     for (const [field, spec] of Object.entries(c.expect)) {
       if (field === "is_lead") continue
-      assertField(out[field as keyof typeof out] as string, spec, `${c.name} → ${field}`)
+      assertField(
+        out[field as keyof typeof out] as string,
+        spec as FieldSpec,
+        `${c.name} → ${field}`
+      )
     }
   })
 })
