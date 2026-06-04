@@ -11,6 +11,9 @@ properties that must never silently regress. **Run on every change.**
 - `guardrails.test.ts` — HITL floor (book/charge always stage, even in
   autonomous mode), autonomy default/override resolution, and a source scan
   proving the BI tool layer has no write calls.
+- `webhooks.test.ts` — signature verification for every inbound webhook
+  (Twilio, Stripe, Aurinko, Slack, Meta): forge a valid signature, then assert
+  tamper / wrong-secret / replayed-timestamp / missing-header all reject.
 
 **Tier 2 — golden cases (LLM-backed, exact/structural assertions).** Real inputs
 → expected structured output. Cheap-ish, mildly nondeterministic; assertions are

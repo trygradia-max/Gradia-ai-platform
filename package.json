@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed:smoke": "node --env-file=.env.local scripts/seed-smoke.mjs",
-    "test": "vitest run eval/guardrails.test.ts",
-    "eval": "EVAL_LIVE=1 vitest run",
+    "test": "vitest run --exclude '**/*.eval.test.ts' --exclude '**/integration/**'",
+    "eval": "EVAL_LIVE=1 vitest run --exclude '**/integration/**'",
     "test:int": "INTEGRATION=1 vitest run eval/integration"
   },
   "dependencies": {
