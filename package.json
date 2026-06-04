@@ -9,7 +9,8 @@
     "lint": "eslint",
     "seed:smoke": "node --env-file=.env.local scripts/seed-smoke.mjs",
     "test": "vitest run eval/guardrails.test.ts",
-    "eval": "EVAL_LIVE=1 vitest run"
+    "eval": "EVAL_LIVE=1 vitest run",
+    "test:int": "INTEGRATION=1 vitest run eval/integration"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

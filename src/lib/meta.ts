@@ -86,7 +86,9 @@ export function verifyMetaSignature(input: {
 
 // ---------- outbound: Meta Send API ----------
 
-const GRAPH_API_BASE = "https://graph.facebook.com/v22.0"
+// Env-overridable so tests can point the executor at a mock server.
+const GRAPH_API_BASE =
+  process.env.META_GRAPH_API_BASE?.trim() || "https://graph.facebook.com/v22.0"
 
 export class MetaSendError extends Error {
   status: number

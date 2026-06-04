@@ -1,0 +1,48 @@
+name: ci-integration
+
+# DB-backed integration tests (approval engine vs real Postgres). Separate from
+# the fast `ci` workflow so a slow Supabase boot can't gate the pure unit tier.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-int-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: npm ci
+
+      # Boots the full local stack (Postgres + auth + PostgREST) and applies
+      # every migration in supabase/migrations.
+      - name: Start Supabase
+        run: supabase start
+
+      - name: Export local Supabase env
+        run: |
+          json=$(supabase status -o json)
+          echo "SUPABASE_TEST_URL=$(echo "$json" | jq -r '.API_URL')" >> "$GITHUB_ENV"
+          echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$(echo "$json" | jq -r '.SERVICE_ROLE_KEY')" >> "$GITHUB_ENV"
+
+      - name: Run integration tests
+        run: npm run test:int
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup

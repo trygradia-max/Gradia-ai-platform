@@ -26,11 +26,22 @@ string. A second model scores against a rubric. Costs tokens + adds
 nondeterminism — keep it to a few cases.
 - BI answer tone in `bi.eval.test.ts`.
 
+**Integration — DB-backed (real Postgres).** The safety-critical paths a mock
+can't honestly cover: the approval engine's atomic claim, dispatch, and
+rollback against actual transactional Postgres.
+- `integration/approvals.int.test.ts` — create_lead happy path, idempotent
+  double-approve, rollback-on-failure, reject.
+- Needs the Supabase local stack (Docker). Runs in the `ci-integration`
+  workflow; self-skips locally without Docker. Provider executors are testable
+  offline because their base URLs are env-overridable (point `STRIPE_API_BASE`
+  etc. at a mock).
+
 ## Running
 
 ```bash
 npm test          # Tier 1 only — pure, no API key, run constantly
 npm run eval      # all tiers (EVAL_LIVE=1) — costs Anthropic tokens
+npm run test:int  # integration — needs `supabase start` + Docker (CI does this)
 ```
 
 Live tests self-skip unless `EVAL_LIVE=1` and `ANTHROPIC_API_KEY` is set

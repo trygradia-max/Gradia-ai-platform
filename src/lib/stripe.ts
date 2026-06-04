@@ -14,7 +14,9 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 
-const STRIPE_API_BASE = "https://api.stripe.com/v1"
+// Env-overridable so tests can point the executor at a mock server.
+const STRIPE_API_BASE =
+  process.env.STRIPE_API_BASE?.trim() || "https://api.stripe.com/v1"
 const STRIPE_API_VERSION = "2024-06-20"
 
 const WEBHOOK_TOLERANCE_SECONDS = 300

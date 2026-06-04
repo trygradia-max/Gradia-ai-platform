@@ -24,7 +24,9 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
 import type { ShopRow } from "@/lib/types/database"
 
-const AURINKO_API_BASE = "https://api.aurinko.io/v1"
+// Env-overridable so tests can point the executor at a mock server.
+const AURINKO_API_BASE =
+  process.env.AURINKO_API_BASE?.trim() || "https://api.aurinko.io/v1"
 const REFRESH_BUFFER_MS = 60 * 1000 // refresh when within 60s of expiry
 
 export class AurinkoError extends Error {

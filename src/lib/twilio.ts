@@ -152,7 +152,9 @@ export function verifyTwilioSignature(input: {
  */
 export const EMPTY_TWIML_RESPONSE = `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`
 
-const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01"
+// Env-overridable so tests can point the executor at a mock server.
+const TWILIO_API_BASE =
+  process.env.TWILIO_API_BASE?.trim() || "https://api.twilio.com/2010-04-01"
 
 export class TwilioError extends Error {
   status: number

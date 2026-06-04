@@ -13,7 +13,8 @@
  * Docs: https://docs.vapi.ai/api-reference/assistants
  */
 
-const VAPI_API_BASE = "https://api.vapi.ai"
+// Env-overridable so tests can point the executor at a mock server.
+const VAPI_API_BASE = process.env.VAPI_API_BASE?.trim() || "https://api.vapi.ai"
 
 export class VapiApiError extends Error {
   status: number
