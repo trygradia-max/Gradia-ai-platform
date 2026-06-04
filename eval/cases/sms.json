@@ -1,0 +1,36 @@
+[
+  {
+    "name": "lead — ceramic quote inquiry with vehicle",
+    "from": "+15035550133",
+    "body": "Do you guys do ceramic coating on a 2021 BMW X5? roughly how much?",
+    "expect": {
+      "is_lead": true,
+      "vehicle": { "matches": "bmw" },
+      "service": { "contains": "ceramic" }
+    }
+  },
+  {
+    "name": "noise — short follow-up inside a thread, must not stage a lead",
+    "from": "+15035550133",
+    "body": "yep see you saturday",
+    "expect": {
+      "is_lead": false,
+      "customer_name": { "empty": true },
+      "vehicle": { "empty": true },
+      "service": { "empty": true },
+      "summary": { "empty": true }
+    }
+  },
+  {
+    "name": "noise — one-word thanks",
+    "from": "+15035550199",
+    "body": "thanks!",
+    "expect": {
+      "is_lead": false,
+      "customer_name": { "empty": true },
+      "vehicle": { "empty": true },
+      "service": { "empty": true },
+      "summary": { "empty": true }
+    }
+  }
+]

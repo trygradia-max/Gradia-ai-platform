@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed:smoke": "node --env-file=.env.local scripts/seed-smoke.mjs"
+    "seed:smoke": "node --env-file=.env.local scripts/seed-smoke.mjs",
+    "test": "vitest run eval/guardrails.test.ts",
+    "eval": "EVAL_LIVE=1 vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -48,6 +50,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.8"
   }
 }
