@@ -37,16 +37,20 @@ describe.skipIf(!LIVE)("BI agent answer quality [live]", () => {
     // exact: the dataset has 3 leads, so the answer must say 3
     expect(text, "answer should state the count (3)").toMatch(/\b3\b/)
 
-    // judge: tone + no fabrication (open-ended, so scored not string-matched)
+    // exact: the we/us voice is a hard contract (persona.ts), so check it
+    // deterministically rather than paying the judge for it. Safe for this
+    // case — a lead-count answer has no customer quotes that could contain "I".
+    expect(text, 'persona: must not use first-person singular ("I"/"me"/"my")').not.toMatch(
+      /\b(I|me|my|mine|myself)\b/i
+    )
+
+    // judge: only the open-ended dimensions a regex can't settle.
     const verdict = await judge({
       output: text,
       rubric: [
         "States the number 3.",
         "Concise — 1 to 3 sentences.",
-        // Partner voice, but NOT the strict no-\"I\" rule — PROJECT_BRIEF's own
-        // voice example uses \"I handled the backend\", so we judge the
-        // defensible intent (insider, not a detached third party) instead.
-        'Reads as the shop\'s own partner/co-owner ("we"/"our", or "I" as the back-office half) — not a detached outside service referring to "the shop" or "your business" as an outsider.',
+        'Reads as the shop\'s own partner ("we"/"us"/"our"), not a detached outside service referring to "the shop" or "your business" as an outsider.',
         "Does NOT invent customer names, vehicles, prices, or revenue (none were provided).",
       ].join("\n"),
     })

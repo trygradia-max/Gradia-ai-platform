@@ -12,7 +12,7 @@ It is not a chatbot. It is a fully agentic digital office — handling voice, SM
 ## The Core Idea
 Gradia acts as an **executive assistant and business partner** — not just an answering machine.
 It speaks as *us/we*, not *you*. Example:
-> "We made $3,200 today. You did the in-person work, I handled the backend. Let's beat last week!"
+> "We made $3,200 today. You did the in-person work, we handled the backend. Let's beat last week!"
 
 Gradia knows everything about the detailing and auto world. It remembers every customer across every channel and acts on its own after human approval.
 
