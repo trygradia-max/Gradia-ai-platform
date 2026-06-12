@@ -103,7 +103,7 @@ export async function toggleVoiceAddon(
   const subId = (data as { stripe_subscription_id: string | null } | null)
     ?.stripe_subscription_id
   if (!subId) {
-    return { ok: false, error: "Subscribe to Gradia Core first — the add-on rides on it." }
+    return { ok: false, error: "Subscribe to Gradia first — then add the voice receptionist." }
   }
   try {
     if (on) await addVoiceAddonItem(subId)

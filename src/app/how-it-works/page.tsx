@@ -44,19 +44,19 @@ const CHANNELS: {
   {
     icon: Phone,
     label: "Voice",
-    body: "A real receptionist (Vapi-powered) takes the call, quotes services from your menu, and proposes bookings — even when you're under a car.",
+    body: "A real receptionist takes the call, quotes services from your menu, and proposes bookings — even when you're under a car.",
     tone: "voice",
   },
   {
     icon: Mail,
     label: "Email",
-    body: "Gmail via Aurinko. Every inbound inquiry is classified, an on-brand reply is drafted, one tap in Slack sends it.",
+    body: "Connected to Gmail. Every inbound inquiry is classified, an on-brand reply is drafted, one tap in Slack sends it.",
     tone: "email",
   },
   {
     icon: MessageSquare,
     label: "SMS",
-    body: "Your Twilio number captures texts, auto-drafts replies, and sends booking reminders 24 hours before each appointment.",
+    body: "Your business number captures texts, auto-drafts replies, and sends booking reminders 24 hours before each appointment.",
     tone: "sms",
   },
   {
@@ -68,7 +68,7 @@ const CHANNELS: {
   {
     icon: Calendar,
     label: "Calendar",
-    body: "Approved bookings drop straight into your Google Calendar. Same Aurinko OAuth covers email and calendar.",
+    body: "Approved bookings drop straight into your Google Calendar. One Gmail connection covers email and calendar.",
     tone: "calendar",
   },
   {
@@ -135,9 +135,9 @@ const FLOW: { title: string; body: string }[] = [
 ]
 
 const FEATURES: string[] = [
-  "Voice receptionist via Vapi — books, quotes, captures leads",
-  "Email + Calendar via Aurinko — inbound classifier + auto-drafts",
-  "Twilio SMS — inbound + outbound + delivery callbacks",
+  "Voice receptionist — books, quotes, captures leads",
+  "Email + Calendar — inbound classifier + auto-drafts",
+  "Business-number texting — inbound + outbound + delivery receipts",
   "Instagram & Facebook DMs — same HITL flow as the rest",
   "Stripe Connect — invoice from inside Gradia",
   "Shared customer memory across every channel",
@@ -217,7 +217,7 @@ export default function HowItWorksPage() {
                   <span className="italic">reach you</span>.
                 </>
               }
-              subtitle="Gradia plugs into the tools you already use — Vapi for voice, Gmail for email, Twilio for SMS, Meta for DMs, Stripe for payments. Each lands in the same approval queue."
+              subtitle="Gradia plugs into the tools you already use — your phone line, Gmail, texting, Instagram and Facebook DMs, and payments. Everything lands in the same approval queue."
             />
             <RevealOnScroll
               as="ul"

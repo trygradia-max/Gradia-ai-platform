@@ -113,13 +113,13 @@ export function SmsSettingsCard({
     setAccountSid("")
     setAuthToken("")
     toast.success(
-      "Twilio credentials saved — your account is now used for this shop."
+      "Texting credentials saved — your own account now sends for this shop."
     )
   }
 
   async function handleClearCredentials() {
     const ok = await confirm({
-      title: "Clear your Twilio credentials?",
+      title: "Clear your texting credentials?",
       description:
         "Outbound SMS falls back to Gradia's pilot account until you paste them again.",
       confirmLabel: "Clear",
@@ -147,7 +147,7 @@ export function SmsSettingsCard({
     }
     setSavedValue("")
     setPastePhone("")
-    toast.success("SMS disconnected — number kept on the Twilio account.")
+    toast.success("SMS disconnected — the number stays reserved for you.")
     router.refresh()
   }
 
@@ -155,7 +155,7 @@ export function SmsSettingsCard({
     const ok = await confirm({
       title: "Release this number?",
       description:
-        "Twilio drops the number and stops the monthly rental. You can pick a new one anytime.",
+        "We release the number and stop the monthly rental. You can pick a new one anytime.",
       confirmLabel: "Release & disconnect",
       tone: "destructive",
     })
@@ -302,14 +302,13 @@ export function SmsSettingsCard({
                   </Button>
                 ) : (
                   <Button type="button" disabled>
-                    Twilio not configured
+                    Numbers coming soon
                   </Button>
                 )}
               </div>
               {!twilioConfigured ? (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Server needs <code>TWILIO_ACCOUNT_SID</code> +{" "}
-                  <code>TWILIO_AUTH_TOKEN</code>.
+                  We're finishing texting setup on our side — check back soon.
                 </p>
               ) : null}
             </motion.div>
@@ -326,7 +325,7 @@ export function SmsSettingsCard({
         >
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
             <span>
-              Advanced: bring your own Twilio account or paste a number
+              Advanced: bring your own texting account or paste a number
             </span>
             <ChevronDown
               className={cn(
@@ -342,11 +341,11 @@ export function SmsSettingsCard({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    Your own Twilio account
+                    Your own texting account
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Past the pilot, paste your own SID + auth token. Your
-                    deliverability, A2P registration, your Twilio bill.
+                    Past the pilot, paste your own credentials. Your
+                    deliverability, your carrier verification, your bill.
                     Encrypted at rest.
                   </p>
                 </div>

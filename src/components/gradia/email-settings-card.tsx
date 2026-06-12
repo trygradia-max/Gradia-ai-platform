@@ -30,7 +30,7 @@ const CALLBACK_MESSAGES: Record<CallbackStatus, { kind: "success" | "error"; tex
   denied: { kind: "error", text: "We didn't get permission — try again when you're ready." },
   missing_params: { kind: "error", text: "OAuth response was incomplete — please try again." },
   state_mismatch: { kind: "error", text: "Security check failed — please try again." },
-  token_exchange_failed: { kind: "error", text: "Couldn't get a token from Aurinko. Check the server logs." },
+  token_exchange_failed: { kind: "error", text: "Couldn't finish connecting Gmail — try again in a minute." },
   account_fetch_failed: { kind: "error", text: "Connected but couldn't read your account. Try disconnecting and again." },
   subscription_failed: { kind: "error", text: "Connected but couldn't subscribe to new mail. Try disconnecting and again." },
   save_failed: { kind: "error", text: "Couldn't save the connection. Check the server logs." },
@@ -129,7 +129,7 @@ export function EmailSettingsCard({
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              We&apos;ll redirect to Aurinko to authorize Gmail. We only
+              We&apos;ll redirect you to authorize Gmail. We only
               read inbound messages and never send without your approval.
             </p>
             <div className="flex items-center justify-end">
@@ -143,14 +143,13 @@ export function EmailSettingsCard({
                 </a>
               ) : (
                 <Button type="button" disabled>
-                  Aurinko not configured
+                  Gmail coming soon
                 </Button>
               )}
             </div>
             {!aurinkoConfigured ? (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                Server is missing <code>AURINKO_CLIENT_ID</code> /{" "}
-                <code>AURINKO_CLIENT_SECRET</code>.
+                We're finishing email setup on our side — check back soon.
               </p>
             ) : null}
           </>

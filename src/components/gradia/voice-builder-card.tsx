@@ -289,7 +289,7 @@ export function VoiceBuilderCard({
           </Button>
           {!vapiConfigured ? (
             <p className="text-xs text-muted-foreground">
-              Voice isn&apos;t configured on the server yet.
+              We&apos;re finishing voice setup on our side — check back soon.
             </p>
           ) : null}
         </div>

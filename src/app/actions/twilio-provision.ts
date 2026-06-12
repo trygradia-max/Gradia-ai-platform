@@ -74,7 +74,7 @@ export async function searchTwilioNumbers(input: {
   if (!creds) {
     return {
       ok: false,
-      error: "Twilio isn't configured on the server yet.",
+      error: "We're finishing texting setup on our side — check back soon.",
     }
   }
 
@@ -97,7 +97,7 @@ export async function searchTwilioNumbers(input: {
       error:
         err instanceof Error
           ? err.message
-          : "Couldn't reach Twilio — try again.",
+          : "Couldn't load numbers — try again.",
     }
   }
 }
@@ -143,7 +143,7 @@ export async function provisionTwilioNumber(input: {
   if (!creds) {
     return {
       ok: false,
-      error: "Twilio isn't configured on the server yet.",
+      error: "We're finishing texting setup on our side — check back soon.",
     }
   }
 
@@ -220,7 +220,7 @@ export async function releaseTwilioNumber(): Promise<ReleaseTwilioNumberResult> 
   if (!creds) {
     return {
       ok: false,
-      error: "Twilio isn't configured on the server yet.",
+      error: "We're finishing texting setup on our side — check back soon.",
     }
   }
 

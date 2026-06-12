@@ -47,7 +47,7 @@ const MESSAGES: Record<
   },
   token_exchange_failed: {
     kind: "error",
-    text: "Meta didn't return a token — try again or check the server logs.",
+    text: "Instagram connection didn't finish — try again.",
   },
   page_list_failed: {
     kind: "error",
@@ -59,7 +59,7 @@ const MESSAGES: Record<
   },
   subscribe_failed: {
     kind: "error",
-    text: "Meta wouldn't let us subscribe to webhook events — try again.",
+    text: "Instagram connection couldn't be finalized — try reconnecting.",
   },
   save_failed: {
     kind: "error",
