@@ -13,6 +13,7 @@ import { toast } from "sonner"
 
 import {
   refreshA2pStatus,
+  resendA2pOtp,
   submitA2pRegistration,
   type A2pState,
 } from "@/app/actions/a2p"
@@ -39,8 +40,10 @@ const BUSINESS_TYPES = [
 ] as const
 
 const EMPTY_FORM: A2pFormInput = {
+  has_ein: true,
   legal_name: "",
   ein: "",
+  mobile_phone: "",
   business_type: "Limited Liability Corporation",
   website_url: "",
   address: { street: "", city: "", region: "", postal_code: "" },
@@ -57,6 +60,9 @@ function formFrom(business: A2pBusinessDetails | null): A2pFormInput {
   if (!business) return EMPTY_FORM
   return {
     ...business,
+    has_ein: business.has_ein ?? true,
+    ein: business.ein ?? "",
+    mobile_phone: business.mobile_phone ?? "",
     website_url: business.website_url ?? "",
     business_type:
       (BUSINESS_TYPES as readonly string[]).find((t) => t === business.business_type) ??
@@ -80,6 +86,23 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
   const [form, setForm] = React.useState<A2pFormInput>(formFrom(initial.business))
   const [submitting, setSubmitting] = React.useState(false)
   const [checking, setChecking] = React.useState(false)
+  const [resending, setResending] = React.useState(false)
+
+  /** Sole-prop registrations verify by texting the owner's cell. */
+  const isSoleProp =
+    (state.business?.has_ein ?? form.has_ein ?? true) === false
+
+  async function handleResendOtp() {
+    if (resending) return
+    setResending(true)
+    const result = await resendA2pOtp()
+    setResending(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Verification text re-sent — answer it within 24 hours.")
+  }
 
   const set = (patch: Partial<A2pFormInput>) => setForm((f) => ({ ...f, ...patch }))
   const setAddr = (patch: Partial<A2pFormInput["address"]>) =>
@@ -140,10 +163,26 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
         <div className="min-w-0 flex-1">
           <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
           <p className="text-sm text-foreground">
-            Carriers are verifying the business — usually 1–3 days. Texting
-            unlocks automatically when they approve; calls work the whole time.
+            {isSoleProp && state.status === "brand_pending"
+              ? "Check your phone — carriers texted your cell a verification message. Answer it, then this finishes on its own (usually 1–3 days). Calls work the whole time."
+              : "Carriers are verifying the business — usually 1–3 days. Texting unlocks automatically when they approve; calls work the whole time."}
           </p>
         </div>
+        {isSoleProp && state.status === "brand_pending" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleResendOtp}
+            disabled={resending}
+            className="gap-2 shrink-0"
+          >
+            {resending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : null}
+            Didn&apos;t get the text?
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="outline"
@@ -194,31 +233,78 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
             </p>
           </div>
 
+          {/* The fork: EIN → Low-Volume Standard; no EIN → sole prop with
+              mobile OTP. Asked first because it changes what we collect. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="a2p-has-ein">Do you have an EIN (federal tax ID)?</Label>
+            <Select
+              value={form.has_ein === false ? "no" : "yes"}
+              onValueChange={(v) =>
+                set(
+                  v === "no"
+                    ? { has_ein: false, ein: "", business_type: "Sole Proprietorship" }
+                    : { has_ein: true }
+                )
+              }
+            >
+              <SelectTrigger id="a2p-has-ein">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes — we have an EIN</SelectItem>
+                <SelectItem value="no">No — registering as a sole proprietor</SelectItem>
+              </SelectContent>
+            </Select>
+            {form.has_ein === false ? (
+              <p className="text-xs text-muted-foreground">
+                Carriers verify sole proprietors by texting your cell — you&apos;ll
+                get a message to answer right after you submit. Use your real
+                cell: a number only works for three registrations, ever.
+              </p>
+            ) : null}
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="a2p-legal-name">Legal business name</Label>
+              <Label htmlFor="a2p-legal-name">
+                {form.has_ein === false ? "Business name (as customers know it)" : "Legal business name"}
+              </Label>
               <Input
                 id="a2p-legal-name"
                 value={form.legal_name}
                 onChange={(e) => set({ legal_name: e.target.value })}
-                placeholder="Pristine Detailing LLC"
+                placeholder={form.has_ein === false ? "Pristine Detailing" : "Pristine Detailing LLC"}
                 required
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="a2p-ein">EIN</Label>
-              <Input
-                id="a2p-ein"
-                value={form.ein}
-                onChange={(e) => set({ ein: e.target.value })}
-                placeholder="12-3456789"
-                required
-              />
-            </div>
+            {form.has_ein === false ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="a2p-mobile">Your cell (gets the verification text)</Label>
+                <Input
+                  id="a2p-mobile"
+                  value={String(form.mobile_phone ?? "")}
+                  onChange={(e) => set({ mobile_phone: e.target.value })}
+                  placeholder="+16175550142"
+                  required
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="a2p-ein">EIN</Label>
+                <Input
+                  id="a2p-ein"
+                  value={String(form.ein ?? "")}
+                  onChange={(e) => set({ ein: e.target.value })}
+                  placeholder="12-3456789"
+                  required
+                />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="a2p-type">Business structure</Label>
               <Select
                 value={form.business_type}
+                disabled={form.has_ein === false}
                 onValueChange={(v) =>
                   set({ business_type: v as A2pFormInput["business_type"] })
                 }

@@ -82,10 +82,14 @@ export type A2pRegistrationStatus =
   | "approved"
   | "rejected"
 
-/** Owner-submitted compliance details, kept verbatim for resubmission. */
+/** Owner-submitted compliance details, kept verbatim for resubmission.
+ *  has_ein forks the carrier path: true → Low-Volume Standard;
+ *  false → SOLE_PROPRIETOR (no tax ID; mobile_phone gets the OTP text). */
 export type A2pBusinessDetails = {
+  has_ein?: boolean
   legal_name: string
-  ein: string
+  ein: string | null
+  mobile_phone?: string | null
   business_type: string
   website_url: string | null
   address: {

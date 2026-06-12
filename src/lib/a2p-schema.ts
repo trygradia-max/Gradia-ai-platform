@@ -6,17 +6,45 @@ import { z } from "zod"
  * input problems (EIN format, legal-name/EIN mismatch, vague details), so
  * we catch what we can before Twilio does. Shared by the wizard form, the
  * server action, and the tests.
+ *
+ * Two carrier paths, forked on "Do you have an EIN?" (twilio-isv-telephony
+ * skill):
+ *   - has_ein: true  → Low-Volume Standard (secondary profile + EIN brand)
+ *   - has_ein: false → SOLE_PROPRIETOR (starter profile, no tax ID; the
+ *     owner's MOBILE gets a one-time verification text they must answer —
+ *     a number can only ever be used 3× across all carrier registrations,
+ *     so it must be the owner's real cell)
  */
 export const a2pBusinessSchema = z.object({
+  has_ein: z.boolean().default(true),
   legal_name: z
     .string()
     .trim()
-    .min(2, "Enter the business's legal name — exactly as registered with the IRS."),
-  ein: z
-    .string()
-    .trim()
-    .transform((v) => v.replace(/[^0-9]/g, ""))
-    .refine((v) => v.length === 9, "EIN is 9 digits (formatted like 12-3456789)."),
+    .min(2, "Enter the business name — for EIN registrations, exactly as registered with the IRS."),
+  ein: z.preprocess(
+    (v) => (v == null ? "" : v),
+    z
+      .string()
+      .trim()
+      .transform((v) => v.replace(/[^0-9]/g, ""))
+      .refine(
+        (v) => v.length === 9 || v.length === 0,
+        "EIN is 9 digits (formatted like 12-3456789)."
+      )
+      .transform((v) => v || null)
+  ),
+  /** Sole-prop only: the owner's cell that receives the verification text. */
+  mobile_phone: z.preprocess(
+    (v) => (v == null ? "" : v),
+    z
+      .string()
+      .trim()
+      .refine(
+        (v) => v === "" || /^\+1\d{10}$/.test(v),
+        "US mobile in +1XXXXXXXXXX format."
+      )
+      .transform((v) => v || null)
+  ),
   business_type: z.enum(
     [
       "Sole Proprietorship",
@@ -57,6 +85,21 @@ export const a2pBusinessSchema = z.object({
       .refine((v) => /^\+1\d{10}$/.test(v), "US phone in +1XXXXXXXXXX format."),
     job_position: z.string().trim().min(2, "Role at the business (e.g. Owner)."),
   }),
+}).superRefine((data, ctx) => {
+  if (data.has_ein && !data.ein) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["ein"],
+      message: "Enter the 9-digit EIN — or switch to \"No EIN\" if you don't have one.",
+    })
+  }
+  if (!data.has_ein && !data.mobile_phone) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["mobile_phone"],
+      message: "Carriers verify sole proprietors by texting the owner's cell — enter it.",
+    })
+  }
 })
 
 export type A2pFormInput = z.input<typeof a2pBusinessSchema>

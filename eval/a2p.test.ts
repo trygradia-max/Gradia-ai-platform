@@ -72,6 +72,44 @@ describe("A2P business details validation", () => {
   })
 })
 
+describe("the EIN fork — sole proprietors register without a tax ID", () => {
+  const SOLE_PROP = {
+    ...VALID,
+    has_ein: false,
+    ein: "",
+    business_type: "Sole Proprietorship" as const,
+    mobile_phone: "+16175550177",
+  }
+
+  it("accepts a sole prop with a mobile and no EIN", () => {
+    const parsed = a2pBusinessSchema.parse(SOLE_PROP)
+    expect(parsed.has_ein).toBe(false)
+    expect(parsed.ein).toBeNull()
+    expect(parsed.mobile_phone).toBe("+16175550177")
+  })
+
+  it("sole prop without the OTP mobile is rejected with the why", () => {
+    const result = a2pBusinessSchema.safeParse({ ...SOLE_PROP, mobile_phone: "" })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain("texting")
+    }
+  })
+
+  it("EIN path still requires the EIN (defaults preserved)", () => {
+    const result = a2pBusinessSchema.safeParse({ ...VALID, ein: "" })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(["ein"])
+    }
+  })
+
+  it("omitting has_ein defaults to the EIN path (existing registrations)", () => {
+    const parsed = a2pBusinessSchema.parse(VALID)
+    expect(parsed.has_ein).toBe(true)
+  })
+})
+
 describe("pipeline → gate transitions", () => {
   const number = "+16175550142"
   const shopWith = (a2p_status: "unregistered" | "pending" | "approved" | "rejected") => ({

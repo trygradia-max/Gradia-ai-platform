@@ -7,7 +7,11 @@ import { a2pBusinessSchema, type A2pFormInput } from "@/lib/a2p-schema"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
-import { startA2pRegistration, syncA2pStatus } from "@/lib/telephony-provider"
+import {
+  resendA2pVerificationText,
+  startA2pRegistration,
+  syncA2pStatus,
+} from "@/lib/telephony-provider"
 import type {
   A2pBusinessDetails,
   A2pRegistrationRow,
@@ -93,6 +97,17 @@ export async function getA2pState(): Promise<A2pState> {
     failureReason: reg.failure_reason,
     business: reg.business,
   }
+}
+
+export type ResendOtpActionResult = { ok: true } | { ok: false; error: string }
+
+/** Sole-prop only: re-sends the carrier verification text to the owner's
+ *  cell ("Didn't get the text?"). */
+export async function resendA2pOtp(): Promise<ResendOtpActionResult> {
+  await requireUser()
+  const shop = await loadShop()
+  if (!shop) return { ok: false, error: "Finish onboarding first." }
+  return resendA2pVerificationText({ supabase: createServiceClient(), shop })
 }
 
 /** Polls Twilio and advances the pipeline ("Check status" button). */

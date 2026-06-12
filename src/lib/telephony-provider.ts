@@ -35,10 +35,13 @@ import {
   createBrand,
   createCampaign,
   createMessagingService,
+  createSoleProprietorBrand,
   getBrandStatus,
   getCampaignStatus,
   registerA2pTrustProduct,
   registerBusinessProfile,
+  registerSoleProprietorProfile,
+  resendSoleProprietorOtp,
 } from "@/lib/twilio-a2p"
 import type {
   A2pBusinessDetails,
@@ -277,8 +280,10 @@ export async function startA2pRegistration(input: {
   if (!creds) {
     return { ok: false, error: "This number isn't on a Gradia phone account — contact support." }
   }
-  const primaryProfileSid = process.env.TWILIO_PRIMARY_PROFILE_SID?.trim()
-  if (!primaryProfileSid) {
+  // Only the EIN path links to Gradia's primary profile; sole-prop uses
+  // the starter-profile policy and doesn't need it.
+  const primaryProfileSid = process.env.TWILIO_PRIMARY_PROFILE_SID?.trim() ?? ""
+  if (business.has_ein !== false && !primaryProfileSid) {
     return { ok: false, error: "Carrier registration isn't configured on the server yet." }
   }
 
@@ -302,18 +307,37 @@ export async function startA2pRegistration(input: {
   const statusCallback = `${origin}/api/twilio/a2p/status?shop=${encodeURIComponent(shop.id)}`
 
   try {
-    const { customerProfileSid } = await registerBusinessProfile(creds, business, {
-      primaryProfileSid,
-      statusCallback,
-      friendlyName: business.legal_name,
-    })
-    const { trustProductSid } = await registerA2pTrustProduct(creds, {
-      customerProfileSid,
-      email: business.contact.email,
-      friendlyName: `${business.legal_name} — A2P`,
-      statusCallback,
-    })
-    const { brandSid } = await createBrand(creds, { customerProfileSid, trustProductSid })
+    // The fork (twilio-isv-telephony skill): EIN → Low-Volume Standard;
+    // no EIN → SOLE_PROPRIETOR with mobile OTP verification.
+    let customerProfileSid: string
+    let trustProductSid: string
+    let brandSid: string
+    if (business.has_ein === false) {
+      const profile = await registerSoleProprietorProfile(creds, business, {
+        statusCallback,
+        friendlyName: business.legal_name,
+      })
+      customerProfileSid = profile.customerProfileSid
+      trustProductSid = profile.trustProductSid
+      const brand = await createSoleProprietorBrand(creds, profile)
+      brandSid = brand.brandSid
+    } else {
+      const profile = await registerBusinessProfile(creds, business, {
+        primaryProfileSid,
+        statusCallback,
+        friendlyName: business.legal_name,
+      })
+      customerProfileSid = profile.customerProfileSid
+      const product = await registerA2pTrustProduct(creds, {
+        customerProfileSid,
+        email: business.contact.email,
+        friendlyName: `${business.legal_name} — A2P`,
+        statusCallback,
+      })
+      trustProductSid = product.trustProductSid
+      const brand = await createBrand(creds, { customerProfileSid, trustProductSid })
+      brandSid = brand.brandSid
+    }
 
     await supabase
       .from("a2p_registrations")
@@ -397,6 +421,8 @@ export async function syncA2pStatus(input: {
           messagingServiceSid,
           brandSid: reg.brand_sid,
           shopName: shop.name,
+          useCase:
+            reg.business?.has_ein === false ? "SOLE_PROPRIETOR" : "LOW_VOLUME",
         })
         await supabase
           .from("a2p_registrations")
@@ -442,6 +468,42 @@ export async function syncA2pStatus(input: {
   }
 
   return { status: reg.status, failureReason: reg.failure_reason }
+}
+
+export type ResendOtpResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * Re-sends the sole-prop verification text (24h answer window; a mobile
+ * number has 3 lifetime uses across ALL carrier registrations, so don't
+ * spam this).
+ */
+export async function resendA2pVerificationText(input: {
+  supabase: SupabaseClient
+  shop: ShopTelephonyFields
+}): Promise<ResendOtpResult> {
+  const { supabase, shop } = input
+  const creds = subaccountCredsOrNull(shop)
+  if (!creds) return { ok: false, error: "No phone account on file." }
+
+  const { data } = await supabase
+    .from("a2p_registrations")
+    .select("brand_sid, status, business")
+    .eq("shop_id", shop.id)
+    .maybeSingle()
+  const reg = (data as Pick<
+    A2pRegistrationRow,
+    "brand_sid" | "status" | "business"
+  > | null) ?? null
+  if (!reg?.brand_sid || reg.business?.has_ein !== false) {
+    return { ok: false, error: "No verification text pending for this registration." }
+  }
+  try {
+    await resendSoleProprietorOtp(creds, reg.brand_sid)
+    return { ok: true }
+  } catch (err) {
+    console.error("[telephony] OTP resend failed:", err)
+    return { ok: false, error: "Couldn't re-send the text — try again in a bit." }
+  }
 }
 
 // ---------- A2P gate ----------

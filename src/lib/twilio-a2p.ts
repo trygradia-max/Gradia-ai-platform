@@ -27,6 +27,10 @@ const API_BASE =
 /** Well-known TrustHub policy SIDs (ISV onboarding docs). */
 const SECONDARY_PROFILE_POLICY_SID = "RNdfbf3fae0e1107f8aded0e7cead80bf5"
 const A2P_TRUST_PRODUCT_POLICY_SID = "RNb0d4771c2c98518d916a3d4cd70a8f8b"
+/** Sole-prop fork (onboarding-isv-api-sole-prop-new, verified 2026-06-11):
+ *  starter customer profile + sole-prop trust policy. No EIN involved. */
+const STARTER_PROFILE_POLICY_SID = "RN806dd6cd175f314e1f96a9727ee271f4"
+const SOLE_PROP_TRUST_POLICY_SID = "RN670d5d2e282a6130ae063b234b6019c8"
 
 async function call(
   creds: TwilioCredentials,
@@ -218,6 +222,108 @@ export async function registerA2pTrustProduct(
   return { trustProductSid: productSid }
 }
 
+/**
+ * Sole-prop fork (no EIN): starter customer profile + sole_proprietor
+ * trust product. Differences from the EIN path that matter:
+ *   - the owner's MOBILE number goes on the sole_proprietor_information
+ *     EndUser; submitting the brand triggers a one-time-password text to
+ *     it (24h to answer, 30 days to complete, 3 lifetime uses per number)
+ *   - brandType SOLE_PROPRIETOR; one campaign per brand, one number per
+ *     campaign (fits Gradia's one-number-per-shop v1 exactly)
+ */
+export async function registerSoleProprietorProfile(
+  creds: TwilioCredentials,
+  business: A2pBusinessDetails,
+  opts: { statusCallback: string; friendlyName: string }
+): Promise<{ customerProfileSid: string; trustProductSid: string }> {
+  // 1. Starter customer profile (the no-tax-id prerequisite)
+  const profile = await call(creds, "POST", `${TRUSTHUB_BASE}/CustomerProfiles`, {
+    FriendlyName: opts.friendlyName,
+    Email: business.contact.email,
+    PolicySid: STARTER_PROFILE_POLICY_SID,
+    StatusCallback: opts.statusCallback,
+  })
+  const profileSid = requireSid(profile, "Starter CustomerProfile")
+
+  const starterInfo = await call(creds, "POST", `${TRUSTHUB_BASE}/EndUsers`, {
+    FriendlyName: `${opts.friendlyName} — owner`,
+    Type: "starter_customer_profile_information",
+    Attributes: JSON.stringify({
+      email: business.contact.email,
+      first_name: business.contact.first_name,
+      last_name: business.contact.last_name,
+      phone_number: business.contact.phone,
+    }),
+  })
+  await assignEntity(creds, "CustomerProfiles", profileSid, requireSid(starterInfo, "EndUser"))
+
+  await evaluateAndSubmit(
+    creds,
+    "CustomerProfiles",
+    profileSid,
+    STARTER_PROFILE_POLICY_SID,
+    "Owner profile"
+  )
+
+  // 2. Sole-prop trust product — carries the brand name + OTP mobile
+  const product = await call(creds, "POST", `${TRUSTHUB_BASE}/TrustProducts`, {
+    FriendlyName: `${opts.friendlyName} — sole prop A2P`,
+    Email: business.contact.email,
+    PolicySid: SOLE_PROP_TRUST_POLICY_SID,
+    StatusCallback: opts.statusCallback,
+  })
+  const productSid = requireSid(product, "TrustProduct")
+
+  const soleProp = await call(creds, "POST", `${TRUSTHUB_BASE}/EndUsers`, {
+    FriendlyName: `${opts.friendlyName} — sole proprietor`,
+    Type: "sole_proprietor_information",
+    Attributes: JSON.stringify({
+      brand_name: business.legal_name,
+      mobile_phone_number: business.mobile_phone,
+      vertical: "AUTOMOTIVE",
+    }),
+  })
+  await assignEntity(creds, "TrustProducts", productSid, requireSid(soleProp, "EndUser"))
+  await assignEntity(creds, "TrustProducts", productSid, profileSid)
+
+  await evaluateAndSubmit(
+    creds,
+    "TrustProducts",
+    productSid,
+    SOLE_PROP_TRUST_POLICY_SID,
+    "Sole-proprietor profile"
+  )
+
+  return { customerProfileSid: profileSid, trustProductSid: productSid }
+}
+
+/** Sole-prop brand. Submission auto-triggers the OTP text to the owner's
+ *  mobile — surface that in the UI immediately. */
+export async function createSoleProprietorBrand(
+  creds: TwilioCredentials,
+  input: { customerProfileSid: string; trustProductSid: string }
+): Promise<{ brandSid: string }> {
+  const brand = await call(creds, "POST", `${MESSAGING_BASE}/a2p/BrandRegistrations`, {
+    CustomerProfileBundleSid: input.customerProfileSid,
+    A2PProfileBundleSid: input.trustProductSid,
+    BrandType: "SOLE_PROPRIETOR",
+  })
+  return { brandSid: requireSid(brand, "Sole-prop BrandRegistration") }
+}
+
+/** Re-sends the verification text (owner missed the 24h window). */
+export async function resendSoleProprietorOtp(
+  creds: TwilioCredentials,
+  brandSid: string
+): Promise<void> {
+  await call(
+    creds,
+    "POST",
+    `${MESSAGING_BASE}/a2p/BrandRegistrations/${brandSid}/SmsOtps`,
+    {}
+  )
+}
+
 /** Low-Volume Standard brand from the two submitted bundles. */
 export async function createBrand(
   creds: TwilioCredentials,
@@ -281,6 +387,8 @@ export async function createCampaign(
     messagingServiceSid: string
     brandSid: string
     shopName: string
+    /** SOLE_PROPRIETOR brands must use the SOLE_PROPRIETOR use case. */
+    useCase?: "LOW_VOLUME" | "SOLE_PROPRIETOR"
   }
 ): Promise<{ campaignSid: string }> {
   const campaign = await call(
@@ -289,7 +397,7 @@ export async function createCampaign(
     `${MESSAGING_BASE}/Services/${input.messagingServiceSid}/Compliance/Usa2p`,
     {
       BrandRegistrationSid: input.brandSid,
-      UsAppToPersonUsecase: "LOW_VOLUME",
+      UsAppToPersonUsecase: input.useCase ?? "LOW_VOLUME",
       Description: `Customer care and appointment messaging for ${input.shopName}, an auto detailing business: quote follow-ups, booking confirmations, appointment reminders, and replies to customer questions. All recipients are existing customers or people who contacted the business first.`,
       MessageFlow:
         "Customers opt in by texting or calling the business first, or by providing their phone number when requesting a quote or booking an appointment (by phone, web form, or in person). Opt-in is confirmed in the first reply, and every message supports STOP to unsubscribe and HELP for assistance.",
