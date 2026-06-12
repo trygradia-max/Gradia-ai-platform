@@ -74,7 +74,7 @@ const TOOL_LABELS: Record<string, string> = {
 }
 
 function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? `Running ${name}`
+  return TOOL_LABELS[name] ?? `Running ${name.replace(/_/g, " ")}`
 }
 
 const messageEnter: Variants = {

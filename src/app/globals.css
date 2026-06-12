@@ -88,7 +88,7 @@
   --secondary-foreground: oklch(0.96 0 0);
 
   --muted: oklch(0.12 0 0);
-  --muted-foreground: oklch(0.62 0 0);
+  --muted-foreground: oklch(0.70 0 0); /* AA on near-black even at /70 alpha (UX spec Part 5) */
 
   --accent: oklch(0.72 0.18 35);
   --accent-foreground: oklch(0.10 0 0);
@@ -130,7 +130,7 @@
   --secondary: oklch(0.14 0 0);
   --secondary-foreground: oklch(0.96 0 0);
   --muted: oklch(0.12 0 0);
-  --muted-foreground: oklch(0.62 0 0);
+  --muted-foreground: oklch(0.70 0 0); /* AA on near-black even at /70 alpha (UX spec Part 5) */
   --accent: oklch(0.72 0.18 35);
   --accent-foreground: oklch(0.10 0 0);
   --destructive: oklch(0.62 0.22 25);
@@ -170,6 +170,15 @@
     font-family: var(--font-display), serif;
     letter-spacing: -0.025em;
     line-height: 1.02;
+  }
+
+  /* The italic serif accent's overhang visually swallows the following
+     space ("Everyone​we've heard from") — give every display-heading
+     italic a hair of breathing room on the right. Sitewide fix for the
+     UX spec Part 5 spacing bug. */
+  .font-display em,
+  .font-display .italic {
+    padding-right: 0.09em;
   }
 
   /* 11px uppercase tracking-wide micro-labels */
