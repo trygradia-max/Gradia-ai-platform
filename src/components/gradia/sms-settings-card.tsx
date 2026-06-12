@@ -298,7 +298,7 @@ export function SmsSettingsCard({
                     className="gap-2"
                   >
                     <Phone className="size-4" aria-hidden />
-                    Pick a Gradia number
+                    Pick your business number
                   </Button>
                 ) : (
                   <Button type="button" disabled>

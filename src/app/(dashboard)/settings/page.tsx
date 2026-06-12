@@ -5,7 +5,7 @@ import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
 import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
-import { CreditsSettingsCard } from "@/components/gradia/credits-settings-card"
+import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/card"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
-import { getCreditUsage } from "@/app/actions/billing"
+import { getUsageState } from "@/app/actions/billing"
 import { getPendingMetaPages } from "@/app/actions/meta-oauth"
 import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
 import { readAutonomy } from "@/lib/autonomy"
@@ -208,7 +208,7 @@ export default async function SettingsPage({
   // returned more than one Page and stashed the candidates in a
   // short-lived cookie.
   const pendingMetaPages = await getPendingMetaPages()
-  const creditUsage = await getCreditUsage()
+  const usageState = await getUsageState()
   const a2pState = await getA2pState()
   const voiceOptions = listVoiceOptions()
 
@@ -417,11 +417,20 @@ export default async function SettingsPage({
           <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
         </section>
 
+        {/* Human units lead; credits are the fine print (pricing doc copy
+            rule + UX spec Part 3). The old credit-limit editor is gone —
+            the cap IS the allowance now; packs extend it from Billing. */}
         <section id="usage">
-          <CreditsSettingsCard
-            spent={creditUsage.spent}
-            limit={creditUsage.limit}
-          />
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="font-display text-lg tracking-tight">
+                Plan &amp; usage
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <UsageMeters usage={usageState} />
+            </CardContent>
+          </Card>
         </section>
 
         {/* Developer mode — off (collapsed) by default; everything

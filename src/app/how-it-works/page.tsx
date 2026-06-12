@@ -389,7 +389,7 @@ export default function HowItWorksPage() {
                         <span className="italic">$20</span>/month. No catch.
                       </h2>
                       <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
-                        Bring your own Vapi number, Gmail, Twilio number,
+                        Bring your own voice line, Gmail, texting number,
                         Stripe, and Meta page. We handle the AI office layer
                         that ties them together. Cancel anytime — your data
                         exports cleanly.

@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils"
 /**
  * Inline picker that handles area-code search → candidate list →
  * one-click provision. Sits inside the SMS settings card whenever
- * the operator clicks "Pick a Gradia number."
+ * the operator clicks "Pick your business number."
  *
  * Money note: provisioning starts a monthly rental, billed at Gradia's
  * retail price from pricing_config (white-label shops; metered through
@@ -95,7 +95,7 @@ export function TwilioNumberPicker({
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="label-eyebrow text-muted-foreground/70">
-              Pick a Gradia number
+              Pick your business number
             </p>
             <p className="text-sm text-foreground">
               Search by area code, pick one, we wire it up. {priceLine}
