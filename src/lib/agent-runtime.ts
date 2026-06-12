@@ -13,10 +13,11 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { resolveFreeformAudience } from "@/lib/agent-audience"
+import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
 import { FEATURES } from "@/lib/features"
@@ -24,7 +25,11 @@ import {
   sendEmailApprovalRequest,
   sendSmsApprovalRequest,
 } from "@/lib/slack"
-import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
+import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
+import {
+  draftAppointmentReminderSms,
+  draftCustomSmsForCustomer,
+} from "@/lib/sms-drafter"
 import type {
   AgentConfig,
   AppointmentRow,
@@ -32,6 +37,7 @@ import type {
   CustomerRow,
   LeadRow,
   PendingActionType,
+  ServiceRow,
   ShopRow,
 } from "@/lib/types/database"
 
@@ -229,6 +235,11 @@ async function executeLeadFollowupSms(
           source: "custom_agent",
           custom_agent_id: agent.id,
           lead_id: lead.id,
+          ...(await verifyBeforeStaging(supabase, shop, {
+            channel: "sms",
+            body: draft,
+            customerName: lead.customer_name,
+          })),
         },
         requested_by: agent.owner_id,
       })
@@ -262,6 +273,61 @@ async function executeLeadFollowupSms(
     stats,
     pendingActionIds,
   }
+}
+
+// ---------- cross-model draft verification (sharpening brief P1) ----------
+
+/** Per-process service-menu cache — one fetch per shop per cron tick. */
+const serviceMenuCache = new Map<
+  string,
+  Pick<ServiceRow, "name" | "price_cents">[]
+>()
+
+async function serviceMenuFor(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<Pick<ServiceRow, "name" | "price_cents">[]> {
+  const cached = serviceMenuCache.get(shopId)
+  if (cached) return cached
+  const { data } = await supabase
+    .from("services")
+    .select("name, price_cents")
+    .eq("shop_id", shopId)
+  const menu = (data as Pick<ServiceRow, "name" | "price_cents">[] | null) ?? []
+  serviceMenuCache.set(shopId, menu)
+  return menu
+}
+
+/**
+ * Runs the separate critic over a draft about to be staged and returns
+ * the payload fragment to merge in: empty when clean, a `verifier` flag
+ * with objections when not. Never throws, never blocks staging.
+ */
+async function verifyBeforeStaging(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  draft: {
+    channel: "sms" | "email"
+    body: string
+    subject?: string | null
+    customerName?: string | null
+  }
+): Promise<Record<string, unknown>> {
+  const result = await verifyDraft({
+    channel: draft.channel,
+    body: draft.body,
+    subject: draft.subject ?? null,
+    customerName: draft.customerName ?? null,
+    shopName: shop.name,
+    services: await serviceMenuFor(supabase, shop.id),
+  })
+  if (!result.pass) {
+    console.warn(
+      `[agent-runtime] verifier flagged a ${draft.channel} draft for ${shop.id}:`,
+      result.objections
+    )
+  }
+  return verifierPayloadFragment(result)
 }
 
 // ---------- recipe: appointment_reminder_email ----------
@@ -375,6 +441,12 @@ async function executeAppointmentReminderEmail(
           source: "custom_agent",
           custom_agent_id: agent.id,
           appointment_id: appt.id,
+          ...(await verifyBeforeStaging(supabase, shop, {
+            channel: "email",
+            body: draft.body,
+            subject: draft.subject,
+            customerName: appt.customer?.name ?? null,
+          })),
         },
         requested_by: agent.owner_id,
       })
@@ -399,6 +471,180 @@ async function executeAppointmentReminderEmail(
       console.error("[agent-runtime] Slack send failed:", err)
     }
     stats.proposed_email += 1
+    pendingActionIds.push(pending.id)
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats,
+    pendingActionIds,
+  }
+}
+
+// ---------- recipe: appointment_reminder_sms ----------
+
+/**
+ * SMS twin of the email reminder (work order item 3). Same window logic;
+ * differences: requires a phone + the shop's SMS line, honors STOP
+ * opt-outs before staging (compliance — never draft to an opted-out
+ * customer), and stages send_sms approvals. HITL as always.
+ */
+async function executeAppointmentReminderSms(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow
+): Promise<AgentRunOutcome> {
+  const stats = {
+    matched: 0,
+    proposed_sms: 0,
+    skipped_no_phone: 0,
+    skipped_already_reminded: 0,
+    skipped_opted_out: 0,
+  }
+  const pendingActionIds: string[] = []
+  const recipe = agent.config.recipe
+  if (!recipe || recipe.id !== "appointment_reminder_sms") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "recipe missing or wrong id",
+    }
+  }
+  if (!shop.twilio_phone_number) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "no SMS number connected",
+    }
+  }
+
+  const { hours_before, window_hours } = recipe.params
+  const now = Date.now()
+  const targetMs = now + hours_before * HOUR_MS
+  const lowerIso = new Date(targetMs - window_hours * HOUR_MS).toISOString()
+  const upperIso = new Date(targetMs + window_hours * HOUR_MS).toISOString()
+
+  const { data: apptRows, error: apptErr } = await supabase
+    .from("appointments")
+    .select("*, customer:customers(id, name, email, phone)")
+    .eq("shop_id", shop.id)
+    .gte("scheduled_at", lowerIso)
+    .lte("scheduled_at", upperIso)
+    .order("scheduled_at", { ascending: true })
+    .limit(50)
+  if (apptErr) {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: `appointment query failed: ${apptErr.message}`,
+    }
+  }
+  type JoinedAppt = AppointmentRow & {
+    customer: Pick<CustomerRow, "id" | "name" | "email" | "phone"> | null
+  }
+  const appts = (apptRows as JoinedAppt[] | null) ?? []
+  stats.matched = appts.length
+
+  for (const appt of appts) {
+    const phone = appt.customer?.phone?.trim()
+    if (!phone) {
+      stats.skipped_no_phone += 1
+      continue
+    }
+
+    // STOP compliance: never stage to a customer who opted out.
+    if (appt.customer?.id) {
+      const { data: inbound } = await supabase
+        .from("interactions")
+        .select("content")
+        .eq("shop_id", shop.id)
+        .eq("role", "customer")
+        .eq("customer_id", appt.customer.id)
+        .order("created_at", { ascending: false })
+        .limit(20)
+      const optedOut = (
+        (inbound as { content: string }[] | null) ?? []
+      ).some((r) => looksOptedOut(r.content))
+      if (optedOut) {
+        stats.skipped_opted_out += 1
+        continue
+      }
+    }
+
+    // Dedup: one reminder SMS per appointment.
+    const { data: existing } = await supabase
+      .from("pending_actions")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("action_type", "send_sms")
+      .eq("payload->>appointment_id", appt.id)
+      .limit(1)
+    if (existing && existing.length > 0) {
+      stats.skipped_already_reminded += 1
+      continue
+    }
+
+    const body = await draftAppointmentReminderSms({
+      shopName: shop.name,
+      customerName: appt.customer?.name ?? "there",
+      service: appt.service_name,
+      isoStartTime: appt.scheduled_at,
+      timezone: appt.timezone,
+      vehicle: null,
+    }).catch(() => null)
+    if (!body) continue
+
+    const reason = appt.service_name?.trim()
+      ? `Reminder · ${appt.service_name.trim()}`
+      : "Appointment reminder"
+
+    const { data: pending, error: pendingErr } = await supabase
+      .from("pending_actions")
+      .insert({
+        shop_id: shop.id,
+        action_type: "send_sms",
+        payload: {
+          to_phone: phone,
+          body,
+          customer_name: appt.customer?.name ?? null,
+          customer_id: appt.customer?.id ?? null,
+          reason,
+          source: "custom_agent",
+          custom_agent_id: agent.id,
+          appointment_id: appt.id,
+          ...(await verifyBeforeStaging(supabase, shop, {
+            channel: "sms",
+            body,
+            customerName: appt.customer?.name ?? null,
+          })),
+        },
+        requested_by: agent.owner_id,
+      })
+      .select("id")
+      .single()
+
+    if (pendingErr || !pending) {
+      console.error("[agent-runtime] sms reminder insert failed:", pendingErr)
+      continue
+    }
+
+    try {
+      await sendSmsApprovalRequest({
+        pendingActionId: pending.id,
+        toPhone: phone,
+        customerName: appt.customer?.name ?? null,
+        body,
+        reason,
+      })
+    } catch (err) {
+      console.error("[agent-runtime] Slack send failed:", err)
+    }
+    stats.proposed_sms += 1
     pendingActionIds.push(pending.id)
   }
 
@@ -533,6 +779,11 @@ async function executeStaleCustomerSms(
           reason,
           source: "custom_agent",
           custom_agent_id: agent.id,
+          ...(await verifyBeforeStaging(supabase, shop, {
+            channel: "sms",
+            body: draft,
+            customerName: customer.name,
+          })),
         },
         requested_by: agent.owner_id,
       })
@@ -670,6 +921,11 @@ async function executeFreeformOutreach(
             source: "custom_agent",
             custom_agent_id: agent.id,
             lead_id: t.leadId,
+            ...(await verifyBeforeStaging(supabase, shop, {
+              channel: "sms",
+              body,
+              customerName: t.name,
+            })),
           },
           requested_by: agent.owner_id,
         })
@@ -720,6 +976,12 @@ async function executeFreeformOutreach(
             reason,
             source: "custom_agent",
             custom_agent_id: agent.id,
+            ...(await verifyBeforeStaging(supabase, shop, {
+              channel: "email",
+              body: draft.body,
+              subject: draft.subject,
+              customerName: t.name,
+            })),
           },
           requested_by: agent.owner_id,
         })
@@ -833,6 +1095,11 @@ async function executePaymentReceivedThankYouSms(
         custom_agent_id: agent.id,
         event_kind: event.kind,
         stripe_invoice_id: event.stripeInvoiceId,
+        ...(await verifyBeforeStaging(supabase, shop, {
+          channel: "sms",
+          body: draft,
+          customerName: event.customerName,
+        })),
       },
       requested_by: agent.owner_id,
     })
@@ -951,6 +1218,12 @@ async function executeBookingApprovedPrepEmail(
         custom_agent_id: agent.id,
         event_kind: event.kind,
         appointment_id: event.appointmentId,
+        ...(await verifyBeforeStaging(supabase, shop, {
+          channel: "email",
+          body: draft.body,
+          subject: draft.subject,
+          customerName: event.customerName,
+        })),
       },
       requested_by: agent.owner_id,
     })
@@ -1002,9 +1275,11 @@ type EventRecipeHandler = (
   event: AgentEvent
 ) => Promise<AgentRunOutcome>
 
-const RECIPE_HANDLERS: Record<string, RecipeHandler> = {
+/** Exported for the eval harness — recipes ship gated on tests (#6). */
+export const RECIPE_HANDLERS: Record<string, RecipeHandler> = {
   lead_followup_sms: executeLeadFollowupSms,
   appointment_reminder_email: executeAppointmentReminderEmail,
+  appointment_reminder_sms: executeAppointmentReminderSms,
   stale_customer_sms: executeStaleCustomerSms,
 }
 
@@ -1197,7 +1472,7 @@ export async function runCustomAgent(
       agentName: agent.name,
       fired: false,
       reason:
-        "credit limit reached — raise the limit in settings or wait for the next period",
+        "credit allowance used up — add a credit pack in Billing or wait for the next period",
     })
   }
   const outcome = await maybeAutoExecute(
@@ -1208,9 +1483,32 @@ export async function runCustomAgent(
   )
   if (outcome.fired) {
     await stampFired(supabase, agent.id, agent.shop_id)
-    await recordUsage(supabase, agent.shop_id, "agent_run", { refId: agent.id })
+    await meterDrafts(supabase, agent.shop_id, agent.id, outcome)
   }
   return recordAndReturn(outcome)
+}
+
+/**
+ * Locked menu (GRADIA_PRICING.md): 1 credit per outreach draft staged.
+ * The run itself is plumbing — never metered; a fired run that staged
+ * nothing costs nothing.
+ */
+async function meterDrafts(
+  supabase: SupabaseClient,
+  shopId: string,
+  agentId: string,
+  outcome: AgentRunOutcome
+): Promise<void> {
+  const drafts = outcome.pendingActionIds?.length ?? 0
+  if (drafts <= 0) return
+  const priced = priceUsage(await getPricing(supabase), "outreach_draft", drafts)
+  await recordUsage(supabase, shopId, "outreach_draft", {
+    quantity: drafts,
+    credits: priced.credits,
+    wholesaleCost: priced.wholesale_cost,
+    retailCost: priced.retail_cost,
+    refId: agentId,
+  })
 }
 
 /**
@@ -1323,9 +1621,7 @@ export async function runScheduledAgents(
       )
       if (outcome.fired) {
         await stampFired(supabase, agent.id, agent.shop_id)
-        await recordUsage(supabase, agent.shop_id, "agent_run", {
-          refId: agent.id,
-        })
+        await meterDrafts(supabase, agent.shop_id, agent.id, outcome)
         fired += 1
       }
       outcomes.push(outcome)

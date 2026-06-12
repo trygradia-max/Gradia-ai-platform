@@ -148,6 +148,27 @@ const planSchema = z.object({
         }),
       }),
       z.object({
+        id: z.literal("appointment_reminder_sms"),
+        params: z.object({
+          hours_before: z
+            .number()
+            .int()
+            .min(1)
+            .max(168)
+            .describe(
+              "How many hours before the appointment to text. 24 is the canonical day-before reminder; 2–3 works for same-day nudges."
+            ),
+          window_hours: z
+            .number()
+            .int()
+            .min(1)
+            .max(24)
+            .describe(
+              "Half-width of the matching window — same mechanics as the email variant. Pair with hourly cadence."
+            ),
+        }),
+      }),
+      z.object({
         id: z.literal("stale_customer_sms"),
         params: z.object({
           inactive_days: z
@@ -187,7 +208,7 @@ const planSchema = z.object({
     ])
     .optional()
     .describe(
-      "Machine-executable mapping. Pick ONE recipe id that fits the problem:\n\nSCHEDULED (require a schedule):\n• 'lead_followup_sms' — leads in a given status, older than N days, no inbound recently → drafts an SMS.\n• 'appointment_reminder_email' — drafts an email reminder ~N hours before a booked appointment. Pair with hourly cadence.\n• 'stale_customer_sms' — drafts an SMS to customers whose last interaction is N+ days ago.\n\nEVENT-DRIVEN (omit the schedule field):\n• 'payment_received_thank_you_sms' — fires when a Stripe invoice is paid; drafts a thank-you SMS.\n• 'booking_approved_prep_email' — fires when a booking approval lands an appointment; drafts a prep email.\n\nOMIT recipe entirely if no recipe fits — the plan still saves but won't run."
+      "Machine-executable mapping. Pick ONE recipe id that fits the problem:\n\nSCHEDULED (require a schedule):\n• 'lead_followup_sms' — leads in a given status, older than N days, no inbound recently → drafts an SMS.\n• 'appointment_reminder_email' — drafts an email reminder ~N hours before a booked appointment. Pair with hourly cadence.\n• 'appointment_reminder_sms' — same as above but a text message. Prefer SMS when the owner says 'text' or wants day-of nudges; texts get read faster.\n• 'stale_customer_sms' — drafts an SMS to customers whose last interaction is N+ days ago.\n\nEVENT-DRIVEN (omit the schedule field):\n• 'payment_received_thank_you_sms' — fires when a Stripe invoice is paid; drafts a thank-you SMS.\n• 'booking_approved_prep_email' — fires when a booking approval lands an appointment; drafts a prep email.\n\nOMIT recipe entirely if no recipe fits — the plan still saves but won't run."
     ),
   freeform: z
     .object({

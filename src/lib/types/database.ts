@@ -17,6 +17,20 @@ export type ShopRow = {
   twilio_phone_number: string | null
   twilio_account_sid_enc: string | null
   twilio_auth_token_enc: string | null
+  twilio_subaccount_sid: string | null
+  twilio_subaccount_token_enc: string | null
+  gradia_number_e164: string | null
+  gradia_number_sid: string | null
+  a2p_status: A2pStatus
+  voice_addon: boolean
+  voice_addon_ended_at: string | null
+  voice_config: VoiceConfig
+  voice_live: boolean
+  voice_test_called_at: string | null
+  vapi_phone_number_id: string | null
+  vapi_stale: boolean
+  vapi_server_secret_enc: string | null
+  voice_minutes_budget: number | null
   stripe_account_id: string | null
   stripe_charges_enabled: boolean
   plan: ShopPlan
@@ -40,7 +54,81 @@ export type ShopRow = {
   updated_at: string
 }
 
-export type UsageEventKind = "agent_run" | "message" | "voice_minute"
+export type A2pStatus = "unregistered" | "pending" | "approved" | "rejected"
+
+/**
+ * Voice receptionist builder form answers (guardrailed form — never a
+ * prompt editor). The system prompt is composed server-side from
+ * persona.ts + KB + services + this config.
+ */
+export type VoiceConfig = {
+  greeting?: string | null
+  tone?: "warm" | "professional" | "playful" | null
+  voice?: string | null
+  /** After-hours behavior: read a message, or take a message (lead capture). */
+  after_hours?: "message_only" | "take_message" | null
+  hours_text?: string | null
+  /** Booking rule: stage propose_booking approvals, or read out a link. */
+  booking_mode?: "propose_booking" | "calendar_link" | null
+  calendar_link?: string | null
+  /** Transfer-to-human number for escalations. */
+  escalation_phone?: string | null
+}
+
+export type A2pRegistrationStatus =
+  | "draft"
+  | "brand_pending"
+  | "campaign_pending"
+  | "approved"
+  | "rejected"
+
+/** Owner-submitted compliance details, kept verbatim for resubmission. */
+export type A2pBusinessDetails = {
+  legal_name: string
+  ein: string
+  business_type: string
+  website_url: string | null
+  address: {
+    street: string
+    city: string
+    region: string
+    postal_code: string
+  }
+  contact: {
+    first_name: string
+    last_name: string
+    email: string
+    phone: string
+    job_position: string
+  }
+}
+
+export type A2pRegistrationRow = {
+  id: string
+  shop_id: string
+  status: A2pRegistrationStatus
+  business: A2pBusinessDetails
+  customer_profile_sid: string | null
+  trust_product_sid: string | null
+  brand_sid: string | null
+  messaging_service_sid: string | null
+  campaign_sid: string | null
+  failure_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type UsageEventKind =
+  | "agent_run" // legacy rows only — new writers use the menu kinds below
+  | "message" // legacy rows only
+  | "voice_minute"
+  | "sms_segment"
+  | "number_monthly"
+  | "email_send"
+  | "outreach_draft"
+  | "bi_answer"
+  | "whisper_note"
+  | "agentic_plan"
 
 export type UsageEventRow = {
   id: string
@@ -48,8 +136,44 @@ export type UsageEventRow = {
   kind: UsageEventKind
   quantity: number
   credits: number
+  /** Vendor cost in cents (what Gradia pays). Null on legacy/LLM-only rows. */
+  wholesale_cost: number | null
+  /** Shop-facing cost in cents (what the shop pays). Null on legacy rows. */
+  retail_cost: number | null
+  /** Twilio/Vapi record id for nightly reconciliation. */
+  vendor_ref: string | null
   ref_id: string | null
   created_at: string
+}
+
+export type PricingKey =
+  | "number_monthly"
+  | "voice_minute"
+  | "sms_segment"
+  | "email_send"
+  | "outreach_draft"
+  | "bi_answer"
+  | "whisper_note"
+  | "agentic_plan"
+
+export type CreditGrantKind = "credit_pack" | "minute_pack" | "rollover"
+
+export type CreditGrantRow = {
+  id: string
+  shop_id: string
+  kind: CreditGrantKind
+  credits: number
+  minutes: number
+  stripe_ref: string | null
+  created_at: string
+}
+
+export type PricingConfigRow = {
+  key: PricingKey
+  wholesale_cents: number
+  retail_cents: number
+  note: string | null
+  updated_at: string
 }
 
 export type LeadRow = {
@@ -110,6 +234,8 @@ export type PendingActionType =
   | "create_lead"
   | "add_note"
   | "book_appointment"
+  | "reschedule_appointment"
+  | "cancel_appointment"
   | "send_sms"
   | "charge_customer"
   | "send_email"
@@ -251,6 +377,7 @@ export type PaymentRow = {
 export type AgentRecipeId =
   | "lead_followup_sms"
   | "appointment_reminder_email"
+  | "appointment_reminder_sms"
   | "stale_customer_sms"
   | "payment_received_thank_you_sms"
   | "booking_approved_prep_email"
@@ -271,6 +398,9 @@ export type AppointmentReminderEmailParams = {
   window_hours: number
 }
 
+/** Same window shape as the email variant — the channel differs. */
+export type AppointmentReminderSmsParams = AppointmentReminderEmailParams
+
 export type StaleCustomerSmsParams = {
   /** Customer last had any interaction at least this many days ago. */
   inactive_days: number
@@ -290,6 +420,10 @@ export type AgentRecipe =
   | {
       id: "appointment_reminder_email"
       params: AppointmentReminderEmailParams
+    }
+  | {
+      id: "appointment_reminder_sms"
+      params: AppointmentReminderSmsParams
     }
   | { id: "stale_customer_sms"; params: StaleCustomerSmsParams }
   | {

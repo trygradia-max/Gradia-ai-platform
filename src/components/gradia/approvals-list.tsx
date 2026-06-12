@@ -143,6 +143,8 @@ const ACTION_META: Record<PendingActionType, ActionMeta> = {
   create_lead: { icon: User, label: "Lead", tone: "lead" },
   add_note: { icon: StickyNote, label: "Note", tone: "note" },
   book_appointment: { icon: Calendar, label: "Booking", tone: "booking" },
+  reschedule_appointment: { icon: Calendar, label: "Reschedule", tone: "booking" },
+  cancel_appointment: { icon: Calendar, label: "Cancellation", tone: "booking" },
   send_sms: { icon: MessageSquare, label: "SMS", tone: "outbound" },
   send_email: { icon: Mail, label: "Email", tone: "outbound" },
   send_instagram_dm: { icon: AtSign, label: "IG DM", tone: "outbound" },
@@ -568,8 +570,28 @@ function SmsHeader({ proposal }: { proposal: SmsProposal }) {
   )
 }
 
+/** Cross-model verifier objection (sharpening brief P1) — the draft was
+ *  staged anyway, flagged so the approver knows what smells off. */
+function VerifierFlag({ proposal }: { proposal: Record<string, unknown> }) {
+  const verifier = proposal.verifier as
+    | { flagged?: boolean; objections?: string[] }
+    | undefined
+  if (!verifier?.flagged) return null
+  return (
+    <p className="mt-1.5 rounded-md border border-amber-500/25 bg-amber-500/8 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+      ⚠ Our reviewer flagged this draft:{" "}
+      {(verifier.objections ?? []).join(" ") || "double-check before sending."}
+    </p>
+  )
+}
+
 function SmsBody({ proposal }: { proposal: SmsProposal }) {
-  return <MessagePreview body={proposal.body} />
+  return (
+    <>
+      <MessagePreview body={proposal.body} />
+      <VerifierFlag proposal={proposal as unknown as Record<string, unknown>} />
+    </>
+  )
 }
 
 function ChargeHeader({ proposal }: { proposal: ChargeProposal }) {
@@ -616,7 +638,12 @@ function EmailBody({ proposal }: { proposal: EmailProposal }) {
     proposal.body.length > 240
       ? `${proposal.body.slice(0, 240).trim()}…`
       : proposal.body
-  return <MessagePreview body={preview} />
+  return (
+    <>
+      <MessagePreview body={preview} />
+      <VerifierFlag proposal={proposal as unknown as Record<string, unknown>} />
+    </>
+  )
 }
 
 function InstagramHeader({ proposal }: { proposal: InstagramDmProposal }) {

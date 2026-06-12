@@ -203,7 +203,7 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
-    } else {
+    } else if (result.actionType === "add_note") {
       const { proposal } = result
       await replaceOriginalMessage(
         payload.response_url,
@@ -214,6 +214,14 @@ export async function POST(request: Request) {
           phone: proposal.phone,
           approverSlackId: payload.user.id,
         })
+      )
+    } else {
+      // reschedule/cancel + any future types: generic confirmation —
+      // these are primarily in-app approvals (Slack is the optional mirror).
+      await replaceOriginalMessage(
+        payload.response_url,
+        "Approved ✔",
+        []
       )
     }
 
@@ -336,7 +344,7 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
-    } else {
+    } else if (result.actionType === "add_note") {
       const { proposal } = result
       await replaceOriginalMessage(
         payload.response_url,
@@ -348,6 +356,9 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
+    } else {
+      // reschedule/cancel + future types — generic; edits happen in-app.
+      await replaceOriginalMessage(payload.response_url, "Edit requested", [])
     }
 
     return Response.json({ ok: true })

@@ -112,6 +112,10 @@ function approvedHeadline(
       return "Note saved"
     case "book_appointment":
       return "Booking confirmed"
+    case "reschedule_appointment":
+      return "Booking moved"
+    case "cancel_appointment":
+      return "Booking cancelled"
     case "send_sms":
       return "SMS sent"
     case "send_email":
@@ -138,6 +142,10 @@ function approvedSummary(
       )
     case "book_appointment":
       return `${result.proposal.customer_name} · ${result.proposal.iso_start_time}`
+    case "reschedule_appointment":
+      return `${(result.proposal.customer_name as string | null) ?? "booking"} → ${(result.proposal.new_when as string | null) ?? "new time"}`
+    case "cancel_appointment":
+      return `${(result.proposal.customer_name as string | null) ?? "booking"} cancelled`
     case "send_sms":
       return `${result.proposal.customer_name ?? result.proposal.to_phone}`
     case "send_email":
@@ -161,6 +169,10 @@ function rejectedSummary(
       return "note"
     case "book_appointment":
       return `booking for ${result.proposal.customer_name}`
+    case "reschedule_appointment":
+      return "reschedule request"
+    case "cancel_appointment":
+      return "cancellation request"
     case "send_sms":
       return `SMS to ${result.proposal.customer_name ?? result.proposal.to_phone}`
     case "send_email":

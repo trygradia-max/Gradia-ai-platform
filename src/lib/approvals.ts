@@ -15,10 +15,13 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { dispatchAgentEvent } from "@/lib/agent-events"
 import {
   createCalendarEvent,
+  deleteCalendarEvent,
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
   sendEmailMessage,
+  updateCalendarEventTime,
 } from "@/lib/aurinko"
 import { recordUsage } from "@/lib/credits"
+import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
@@ -30,12 +33,14 @@ import {
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { chargeCustomerViaInvoice, type StripeInvoice } from "@/lib/stripe"
+import { smsGateForShop } from "@/lib/telephony-provider"
 import {
   defaultStatusCallbackUrl,
   resolveTwilioCredentials,
   sendOutboundSms,
 } from "@/lib/twilio"
 import type {
+  AppointmentRow,
   LeadStatus,
   PendingActionStatus,
   PendingActionType,
@@ -148,6 +153,18 @@ export type ApprovalSuccess =
     }
   | {
       status: "executed"
+      actionType: "reschedule_appointment"
+      resultId: string
+      proposal: Record<string, unknown>
+    }
+  | {
+      status: "executed"
+      actionType: "cancel_appointment"
+      resultId: string
+      proposal: Record<string, unknown>
+    }
+  | {
+      status: "executed"
       actionType: "send_sms"
       resultId: string
       proposal: SmsProposal
@@ -195,6 +212,16 @@ export type DecisionSuccess =
       proposal: BookingProposal
     }
   | { status: "claimed"; actionType: "send_sms"; proposal: SmsProposal }
+  | {
+      status: "claimed"
+      actionType: "reschedule_appointment"
+      proposal: Record<string, unknown>
+    }
+  | {
+      status: "claimed"
+      actionType: "cancel_appointment"
+      proposal: Record<string, unknown>
+    }
   | {
       status: "claimed"
       actionType: "charge_customer"
@@ -409,6 +436,10 @@ export async function executeApproval(
       return executeAddNote(supabase, claimed)
     case "book_appointment":
       return executeBookAppointment(supabase, claimed)
+    case "reschedule_appointment":
+      return executeRescheduleAppointment(supabase, claimed)
+    case "cancel_appointment":
+      return executeCancelAppointment(supabase, claimed)
     case "send_sms":
       return executeSendSms(supabase, claimed)
     case "charge_customer":
@@ -438,6 +469,217 @@ async function loadShopWithToken(
     .eq("id", shopId)
     .maybeSingle()
   return (data as ShopRow | null) ?? null
+}
+
+type AppointmentChangeProposal = {
+  appointment_id?: string | null
+  current_scheduled_at?: string | null
+  service?: string | null
+  customer_name?: string | null
+  phone?: string | null
+  new_when?: string | null
+  iso_new_start_time?: string | null
+  reason?: string | null
+}
+
+async function loadAppointmentForChange(
+  supabase: SupabaseClient,
+  shopId: string,
+  proposal: AppointmentChangeProposal
+): Promise<AppointmentRow | null> {
+  if (!proposal.appointment_id) return null
+  const { data } = await supabase
+    .from("appointments")
+    .select("*")
+    .eq("shop_id", shopId)
+    .eq("id", proposal.appointment_id)
+    .maybeSingle()
+  return (data as AppointmentRow | null) ?? null
+}
+
+/**
+ * Reschedule executor (ALWAYS_HITL — runs only on human approve). Moves
+ * the calendar event when one is linked, then the appointments row. Needs
+ * a parseable new time — without one the approver edits the card first.
+ */
+async function executeRescheduleAppointment(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as AppointmentChangeProposal
+
+  const newStart = proposal.iso_new_start_time
+    ? new Date(proposal.iso_new_start_time)
+    : null
+  if (!newStart || Number.isNaN(newStart.getTime())) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: `No exact new time on this request ("${proposal.new_when ?? "?"}") — edit it in before approving.`,
+    }
+  }
+
+  const appointment = await loadAppointmentForChange(
+    supabase,
+    claimed.shop_id,
+    proposal
+  )
+  if (!appointment) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Couldn't match this to a booking — find it in Schedule and move it there.",
+    }
+  }
+
+  const durationMinutes = appointment.duration_minutes ?? 90
+  const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000)
+
+  if (appointment.aurinko_event_id && appointment.aurinko_calendar_id) {
+    const shop = await loadShopWithToken(supabase, claimed.shop_id)
+    let accessToken: string | null = null
+    if (shop) {
+      try {
+        accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+      } catch (err) {
+        console.warn("[approvals] Aurinko token refresh failed:", err)
+      }
+    }
+    if (!accessToken) {
+      await rollbackClaim(supabase, claimed.id)
+      return {
+        ok: false,
+        error: "Calendar isn't connected — reconnect it in /settings, then approve.",
+      }
+    }
+    try {
+      await updateCalendarEventTime(
+        accessToken,
+        appointment.aurinko_calendar_id,
+        appointment.aurinko_event_id,
+        {
+          startIso: newStart.toISOString(),
+          endIso: newEnd.toISOString(),
+          timezone: appointment.timezone,
+        }
+      )
+    } catch (err) {
+      await rollbackClaim(supabase, claimed.id)
+      return {
+        ok: false,
+        error: `Calendar move failed: ${err instanceof Error ? err.message : String(err)}`,
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("appointments")
+    .update({ scheduled_at: newStart.toISOString() })
+    .eq("id", appointment.id)
+  if (error) {
+    return { ok: false, error: `Appointment update failed: ${error.message}` }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: appointment.id })
+    .eq("id", claimed.id)
+
+  await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId: appointment.customer_id,
+    channel: "voice",
+    role: "system",
+    content: `Rescheduled ${proposal.service ?? "appointment"} to ${newStart.toISOString()} (was ${proposal.current_scheduled_at ?? "?"}).`,
+    metadata: { pending_action_id: claimed.id },
+  })
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "reschedule_appointment",
+    resultId: appointment.id,
+    proposal,
+  }
+}
+
+/** Cancel executor (ALWAYS_HITL). Deletes the linked calendar event when
+ *  present, then removes the appointments row. */
+async function executeCancelAppointment(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as AppointmentChangeProposal
+
+  const appointment = await loadAppointmentForChange(
+    supabase,
+    claimed.shop_id,
+    proposal
+  )
+  if (!appointment) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Couldn't match this to a booking — find it in Schedule and cancel it there.",
+    }
+  }
+
+  if (appointment.aurinko_event_id && appointment.aurinko_calendar_id) {
+    const shop = await loadShopWithToken(supabase, claimed.shop_id)
+    let accessToken: string | null = null
+    if (shop) {
+      try {
+        accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+      } catch (err) {
+        console.warn("[approvals] Aurinko token refresh failed:", err)
+      }
+    }
+    if (accessToken) {
+      try {
+        await deleteCalendarEvent(
+          accessToken,
+          appointment.aurinko_calendar_id,
+          appointment.aurinko_event_id
+        )
+      } catch (err) {
+        await rollbackClaim(supabase, claimed.id)
+        return {
+          ok: false,
+          error: `Calendar delete failed: ${err instanceof Error ? err.message : String(err)}`,
+        }
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("appointments")
+    .delete()
+    .eq("id", appointment.id)
+  if (error) {
+    return { ok: false, error: `Appointment delete failed: ${error.message}` }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: appointment.id })
+    .eq("id", claimed.id)
+
+  await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId: appointment.customer_id,
+    channel: "voice",
+    role: "system",
+    content: `Cancelled ${proposal.service ?? "appointment"} scheduled for ${proposal.current_scheduled_at ?? "?"}${proposal.reason ? ` — reason: ${proposal.reason}` : ""}.`,
+    metadata: { pending_action_id: claimed.id },
+  })
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "cancel_appointment",
+    resultId: appointment.id,
+    proposal,
+  }
 }
 
 async function executeBookAppointment(
@@ -709,6 +951,14 @@ async function executeSendSms(
     }
   }
 
+  // A2P gate — a Gradia-provisioned number can't text until carriers
+  // approve its campaign. Enforced here at the send boundary, in code.
+  const smsGate = smsGateForShop(shop, shop.twilio_phone_number)
+  if (!smsGate.allowed) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: smsGate.reason }
+  }
+
   let sendResult
   try {
     sendResult = await sendOutboundSms({
@@ -761,7 +1011,19 @@ async function executeSendSms(
     .update({ result_id: resultId })
     .eq("id", claimed.id)
 
-  await recordUsage(supabase, claimed.shop_id, "message", { refId: claimed.id })
+  // Locked menu: 4 credits per SMS segment, metered on send.
+  {
+    const segments = smsSegments(proposal.body)
+    const priced = priceUsage(await getPricing(supabase), "sms_segment", segments)
+    await recordUsage(supabase, claimed.shop_id, "sms_segment", {
+      quantity: segments,
+      credits: priced.credits,
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+      vendorRef: sendResult.messageSid,
+      refId: claimed.id,
+    })
+  }
 
   return {
     ok: true,
@@ -938,7 +1200,16 @@ async function executeSendEmail(
     .update({ result_id: resultId })
     .eq("id", claimed.id)
 
-  await recordUsage(supabase, claimed.shop_id, "message", { refId: claimed.id })
+  // Locked menu: 1 credit per email send.
+  {
+    const priced = priceUsage(await getPricing(supabase), "email_send", 1)
+    await recordUsage(supabase, claimed.shop_id, "email_send", {
+      credits: priced.credits,
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+      refId: claimed.id,
+    })
+  }
 
   return {
     ok: true,
@@ -1140,6 +1411,20 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         status: "claimed",
         actionType: "send_sms",
         proposal: claimed.payload as unknown as SmsProposal,
+      }
+    case "reschedule_appointment":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "reschedule_appointment",
+        proposal: claimed.payload as unknown as Record<string, unknown>,
+      }
+    case "cancel_appointment":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "cancel_appointment",
+        proposal: claimed.payload as unknown as Record<string, unknown>,
       }
     case "charge_customer":
       return {

@@ -27,10 +27,12 @@ import {
   type AgentEvent,
   type ChatMessage,
 } from "@/lib/bi-agent"
+import { recordUsage } from "@/lib/credits"
 import {
   appendMessage,
   ensureConversation,
 } from "@/lib/data/bi-conversations"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -162,6 +164,15 @@ export async function POST(request: Request) {
             shopId: shop.id,
             role: "assistant",
             content: assistantText.trim(),
+          })
+          // Locked menu: 7 credits per completed Ask Gradia answer.
+          // Errored/empty turns are never metered (trust rule).
+          const priced = priceUsage(await getPricing(supabase), "bi_answer", 1)
+          await recordUsage(supabase, shop.id, "bi_answer", {
+            credits: priced.credits,
+            wholesaleCost: priced.wholesale_cost,
+            retailCost: priced.retail_cost,
+            refId: conversationId,
           })
         }
       } catch (err) {

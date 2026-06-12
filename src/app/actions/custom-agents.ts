@@ -9,6 +9,8 @@ import {
 } from "@/lib/agent-audience"
 import { planAgentFromProblem } from "@/lib/agent-planner"
 import { listAgentRunsForShop } from "@/lib/agent-runs"
+import { recordUsage } from "@/lib/credits"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { runCustomAgent, type AgentRunOutcome } from "@/lib/agent-runtime"
 import { FEATURES } from "@/lib/features"
 import { requireShop, requireUser } from "@/lib/shop"
@@ -26,8 +28,19 @@ export type PlanAgentResult =
 
 export async function planAgent(problem: string): Promise<PlanAgentResult> {
   await requireUser()
-  await requireShop()
-  return planAgentFromProblem(problem)
+  const shop = await requireShop()
+  const result = await planAgentFromProblem(problem)
+  if (result.ok) {
+    // Locked menu: 10 credits per agentic-mode plan.
+    const supabase = await createClient()
+    const priced = priceUsage(await getPricing(supabase), "agentic_plan", 1)
+    await recordUsage(supabase, shop.id, "agentic_plan", {
+      credits: priced.credits,
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+    })
+  }
+  return result
 }
 
 export type PreviewAgentResult =

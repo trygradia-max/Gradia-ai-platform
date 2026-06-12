@@ -19,6 +19,10 @@ import {
   sendLeadApprovalRequest,
   sendNoteApprovalRequest,
 } from "@/lib/slack"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+import { recordUsage } from "@/lib/credits"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { getOptionalShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import {
@@ -172,6 +176,7 @@ export async function POST(request: Request) {
       console.error("[whisper] Slack send failed:", err)
     }
 
+    await meterWhisperNote(supabase, shop.id, pending.id)
     revalidatePath("/approvals")
     return jsonResult({ ok: true, intent: "create_lead", transcript })
   }
@@ -216,6 +221,23 @@ export async function POST(request: Request) {
     console.error("[whisper] Slack note send failed:", err)
   }
 
+  await meterWhisperNote(supabase, shop.id, pending.id)
   revalidatePath("/approvals")
   return jsonResult({ ok: true, intent: "add_note", transcript })
+}
+
+/** Locked menu: 3 credits per Whisper note (owner-initiated — metered;
+ *  the staged approval itself is plumbing and stays free). */
+async function meterWhisperNote(
+  supabase: SupabaseClient,
+  shopId: string,
+  refId: string
+): Promise<void> {
+  const priced = priceUsage(await getPricing(supabase), "whisper_note", 1)
+  await recordUsage(supabase, shopId, "whisper_note", {
+    credits: priced.credits,
+    wholesaleCost: priced.wholesale_cost,
+    retailCost: priced.retail_cost,
+    refId,
+  })
 }

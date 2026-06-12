@@ -64,7 +64,7 @@ function iso(daysAgo: number): string {
   return new Date(Date.now() - daysAgo * DAY_MS).toISOString()
 }
 
-function looksOptedOut(content: string): boolean {
+export function looksOptedOut(content: string): boolean {
   return /\b(stop|stopall|unsubscribe|cancel|opt\s?out|remove\s?me|quit)\b/i.test(
     content
   )

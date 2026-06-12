@@ -378,14 +378,76 @@ export type StripeCheckoutSession = {
   url: string | null
 }
 
+/** Voice Receptionist add-on price (+$29/mo, second item on the same
+ *  subscription). Null when not configured — voice purchase paths
+ *  surface a clear error instead of a broken checkout. */
+export function voiceAddonPriceId(): string | null {
+  return process.env.STRIPE_PRICE_VOICE_ADDON?.trim() || null
+}
+
+function packPriceId(pack: "credit" | "minute"): string {
+  const p =
+    pack === "credit"
+      ? process.env.STRIPE_PRICE_CREDIT_PACK?.trim()
+      : process.env.STRIPE_PRICE_MINUTE_PACK?.trim()
+  if (!p) {
+    throw new StripeError(
+      500,
+      `STRIPE_PRICE_${pack === "credit" ? "CREDIT" : "MINUTE"}_PACK is not configured`
+    )
+  }
+  return p
+}
+
 /**
- * Creates a Checkout Session for the $20/mo Gradia subscription on the
- * PLATFORM account (no Stripe-Account header) — distinct from the Connect
- * flow that charges the detailer's own customers. shop_id rides along as
+ * Creates a Checkout Session for the Gradia subscription on the PLATFORM
+ * account (no Stripe-Account header) — distinct from the Connect flow that
+ * charges the detailer's own customers. Core $20/mo always; the Voice
+ * Receptionist add-on rides as a SECOND line item on the same subscription
+ * when requested (GRADIA_PRICING.md SKU model). shop_id rides along as
  * client_reference_id + metadata so the webhook can mark the shop active.
  */
 export async function createSubscriptionCheckoutSession(input: {
   shopId: string
+  customerEmail?: string | null
+  successUrl: string
+  cancelUrl: string
+  includeVoiceAddon?: boolean
+}): Promise<StripeCheckoutSession> {
+  const body: Record<string, string | number | undefined> = {
+    mode: "subscription",
+    "line_items[0][price]": subscriptionPriceId(),
+    "line_items[0][quantity]": 1,
+    client_reference_id: input.shopId,
+    "metadata[shop_id]": input.shopId,
+    "subscription_data[metadata][shop_id]": input.shopId,
+    customer_email: input.customerEmail ?? undefined,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  }
+  if (input.includeVoiceAddon) {
+    const voicePrice = voiceAddonPriceId()
+    if (!voicePrice) {
+      throw new StripeError(500, "STRIPE_PRICE_VOICE_ADDON is not configured")
+    }
+    body["line_items[1][price]"] = voicePrice
+    body["line_items[1][quantity]"] = 1
+  }
+  return stripeFetch<StripeCheckoutSession>({
+    method: "POST",
+    path: "/checkout/sessions",
+    body,
+  })
+}
+
+/**
+ * One-time top-up packs ($10 credit pack / $10 minute pack). mode=payment;
+ * metadata carries shop_id + pack so the webhook can insert the
+ * credit_grant idempotently (session id = stripe_ref).
+ */
+export async function createPackCheckoutSession(input: {
+  shopId: string
+  pack: "credit" | "minute"
   customerEmail?: string | null
   successUrl: string
   cancelUrl: string
@@ -394,16 +456,73 @@ export async function createSubscriptionCheckoutSession(input: {
     method: "POST",
     path: "/checkout/sessions",
     body: {
-      mode: "subscription",
-      "line_items[0][price]": subscriptionPriceId(),
+      mode: "payment",
+      "line_items[0][price]": packPriceId(input.pack),
       "line_items[0][quantity]": 1,
       client_reference_id: input.shopId,
       "metadata[shop_id]": input.shopId,
-      "subscription_data[metadata][shop_id]": input.shopId,
+      "metadata[pack]": input.pack,
       customer_email: input.customerEmail ?? undefined,
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     },
+  })
+}
+
+type StripeSubscriptionItems = {
+  items?: {
+    data?: Array<{ id?: string; price?: { id?: string } }>
+  }
+}
+
+/** Reads a subscription's line items (price ids) — used to detect the
+ *  voice add-on and to find the item id for removal. */
+export async function getSubscriptionItems(
+  subscriptionId: string
+): Promise<Array<{ itemId: string; priceId: string }>> {
+  const sub = await stripeFetch<StripeSubscriptionItems>({
+    method: "GET",
+    path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+  })
+  return (sub.items?.data ?? [])
+    .filter((i): i is { id: string; price: { id: string } } =>
+      Boolean(i.id && i.price?.id)
+    )
+    .map((i) => ({ itemId: i.id, priceId: i.price.id }))
+}
+
+/** Adds the voice add-on as a second item on an existing subscription. */
+export async function addVoiceAddonItem(subscriptionId: string): Promise<void> {
+  const voicePrice = voiceAddonPriceId()
+  if (!voicePrice) {
+    throw new StripeError(500, "STRIPE_PRICE_VOICE_ADDON is not configured")
+  }
+  await stripeFetch<unknown>({
+    method: "POST",
+    path: "/subscription_items",
+    body: {
+      subscription: subscriptionId,
+      price: voicePrice,
+      quantity: 1,
+      proration_behavior: "create_prorations",
+    },
+  })
+}
+
+/** Removes the voice add-on item (the receptionist disables next-call;
+ *  the number stays reserved 30 days — handled app-side). */
+export async function removeVoiceAddonItem(
+  subscriptionId: string
+): Promise<void> {
+  const voicePrice = voiceAddonPriceId()
+  if (!voicePrice) return
+  const items = await getSubscriptionItems(subscriptionId)
+  const voiceItem = items.find((i) => i.priceId === voicePrice)
+  if (!voiceItem) return
+  await stripeFetch<unknown>({
+    method: "DELETE",
+    path: `/subscription_items/${encodeURIComponent(voiceItem.itemId)}`,
+    body: { proration_behavior: "create_prorations" },
   })
 }
 

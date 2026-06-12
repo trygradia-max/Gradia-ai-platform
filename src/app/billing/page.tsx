@@ -1,14 +1,18 @@
 import Link from "next/link"
 
-import { getCreditUsage } from "@/app/actions/billing"
-import { BillingSubscribe } from "@/components/gradia/billing-subscribe"
+import { getUsageState } from "@/app/actions/billing"
+import {
+  BillingSubscribe,
+  VoiceAddonToggle,
+} from "@/components/gradia/billing-subscribe"
+import { UsageMeters } from "@/components/gradia/usage-meters"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const dynamic = "force-dynamic"
 
 export default async function BillingPage() {
-  const usage = await getCreditUsage()
+  const usage = await getUsageState()
   const active = usage.plan === "active"
 
   return (
@@ -19,21 +23,33 @@ export default async function BillingPage() {
             {active ? "Your Gradia plan" : "Activate Gradia"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            One plan — $20/month per shop. Voice, chat, calendar, CRM, and
-            email, all through one approved brain.
+            From $20/month — chat agent, follow-ups, Whisper, Ask Gradia, and
+            approvals, with ~300 texts of credits included. Voice receptionist
+            + business number is +$29.
           </p>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="grid gap-5">
           {active ? (
             <>
               <p className="text-sm">
-                You&apos;re on the <span className="font-medium">$20/mo</span>{" "}
-                plan — {usage.remaining} of {usage.limit} credits left this
-                period.
+                You&apos;re on{" "}
+                <span className="font-medium">
+                  {usage.voiceAddon
+                    ? "Core + Voice — $49/mo"
+                    : "Gradia Core — $20/mo"}
+                </span>
+                .
               </p>
-              <Link href="/dashboard" className={buttonVariants()}>
-                Back to dashboard
-              </Link>
+              <UsageMeters usage={usage} />
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 pt-4">
+                <VoiceAddonToggle active={usage.voiceAddon} />
+                <Link
+                  href="/dashboard"
+                  className={buttonVariants({ variant: "ghost" })}
+                >
+                  Back to dashboard
+                </Link>
+              </div>
             </>
           ) : (
             <BillingSubscribe />

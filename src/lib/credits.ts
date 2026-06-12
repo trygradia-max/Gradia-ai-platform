@@ -13,23 +13,25 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { PLAN } from "@/lib/pricing"
 import type { ShopRow, UsageEventKind } from "@/lib/types/database"
 
-/** Credits per unit of each metered action. ~1 credit ≈ 1¢ of API cost. */
-export const CREDIT_COST: Record<UsageEventKind, number> = {
+/**
+ * Credits per unit of the legacy LLM-era kinds — kept only so historical
+ * rows stay interpretable. ALL new writers price through lib/pricing.ts
+ * (the locked menu) and pass explicit values to recordUsage.
+ */
+export const CREDIT_COST: Partial<Record<UsageEventKind, number>> = {
   agent_run: 1,
   message: 1,
   voice_minute: 15,
 }
 
 export function creditsFor(kind: UsageEventKind, quantity = 1): number {
-  return CREDIT_COST[kind] * Math.max(0, Math.round(quantity))
+  return (CREDIT_COST[kind] ?? 0) * Math.max(0, Math.round(quantity))
 }
 
-type ShopCreditFields = Pick<
-  ShopRow,
-  "id" | "credit_period_start" | "credit_limit"
->
+type ShopCreditFields = Pick<ShopRow, "id" | "plan" | "credit_period_start">
 
 /**
  * Append a usage event. Best-effort — logs and swallows errors so metering
@@ -39,7 +41,17 @@ export async function recordUsage(
   supabase: SupabaseClient,
   shopId: string,
   kind: UsageEventKind,
-  opts?: { quantity?: number; refId?: string | null }
+  opts?: {
+    quantity?: number
+    refId?: string | null
+    /** Explicit priced values from lib/pricing.ts (telephony kinds). When
+     * `credits` is omitted the legacy CREDIT_COST table applies. */
+    credits?: number
+    wholesaleCost?: number
+    retailCost?: number
+    /** Twilio/Vapi record id for the nightly reconciliation job. */
+    vendorRef?: string | null
+  }
 ): Promise<void> {
   const quantity = opts?.quantity ?? 1
   try {
@@ -47,7 +59,10 @@ export async function recordUsage(
       shop_id: shopId,
       kind,
       quantity,
-      credits: creditsFor(kind, quantity),
+      credits: opts?.credits ?? creditsFor(kind, quantity),
+      wholesale_cost: opts?.wholesaleCost ?? null,
+      retail_cost: opts?.retailCost ?? null,
+      vendor_ref: opts?.vendorRef ?? null,
       ref_id: opts?.refId ?? null,
     })
     if (error) console.error("[credits] recordUsage failed:", error)
@@ -76,23 +91,84 @@ export async function creditsSpentThisPeriod(
   )
 }
 
+/**
+ * The shop's credit allowance this period (GRADIA_PRICING.md):
+ * plan-included credits (Core = 1,200 while the subscription is active)
+ * plus pack purchases and rollover grants since credit_period_start.
+ * shops.credit_limit no longer caps spend — it's reserved for the future
+ * auto-top-up ceiling. The cap IS the allowance; fail closed past it.
+ */
+export async function creditAllowanceThisPeriod(
+  supabase: SupabaseClient,
+  shop: ShopCreditFields
+): Promise<number> {
+  const included = shop.plan === "active" ? PLAN.CORE_INCLUDED_CREDITS : 0
+  const { data, error } = await supabase
+    .from("credit_grants")
+    .select("credits")
+    .eq("shop_id", shop.id)
+    .gte("created_at", shop.credit_period_start)
+  if (error) {
+    console.error("[credits] grants query failed:", error)
+    return included
+  }
+  const granted = ((data as { credits: number }[] | null) ?? []).reduce(
+    (sum, r) => sum + (r.credits ?? 0),
+    0
+  )
+  return included + granted
+}
+
 export async function remainingCredits(
   supabase: SupabaseClient,
   shop: ShopCreditFields
 ): Promise<number> {
-  const spent = await creditsSpentThisPeriod(supabase, shop)
-  return Math.max(0, shop.credit_limit - spent)
+  const [allowance, spent] = await Promise.all([
+    creditAllowanceThisPeriod(supabase, shop),
+    creditsSpentThisPeriod(supabase, shop),
+  ])
+  return Math.max(0, allowance - spent)
 }
 
 /**
- * True when the shop has hit/exceeded its credit cap. The runtime fails closed
- * (stages nothing) and notifies. credit_limit is the cap; setting it to 0
- * pauses all metered automation.
+ * True when the shop has spent its allowance. The runtime fails closed
+ * (stages nothing) and the owner is offered a credit pack.
  */
 export async function isOverCreditLimit(
   supabase: SupabaseClient,
   shop: ShopCreditFields
 ): Promise<boolean> {
-  const spent = await creditsSpentThisPeriod(supabase, shop)
-  return spent >= shop.credit_limit
+  const [allowance, spent] = await Promise.all([
+    creditAllowanceThisPeriod(supabase, shop),
+    creditsSpentThisPeriod(supabase, shop),
+  ])
+  return spent >= allowance
+}
+
+export type CreditPrecheck =
+  | { ok: true; remaining: number }
+  | { ok: false; remaining: number; reason: string }
+
+/**
+ * Pre-check BEFORE consuming a metered resource: would spending `cost`
+ * credits stay within the cap? Callers must run this before the vendor call
+ * (Twilio purchase, outbound send, voice session), not after — the cap must
+ * prevent the spend, not report it. A ledger read error fails open like the
+ * rest of this module (metering must never break the product), but a real
+ * over-cap answer is a hard stop.
+ */
+export async function precheckCredits(
+  supabase: SupabaseClient,
+  shop: ShopCreditFields,
+  cost: number
+): Promise<CreditPrecheck> {
+  const remaining = await remainingCredits(supabase, shop)
+  if (cost > remaining) {
+    return {
+      ok: false,
+      remaining,
+      reason: `This needs ${cost} credits but only ${remaining} remain this period. Add a credit pack ($10 / 950 credits) in Billing to keep going.`,
+    }
+  }
+  return { ok: true, remaining }
 }

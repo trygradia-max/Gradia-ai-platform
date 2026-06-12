@@ -624,3 +624,139 @@ export async function lookupShopPolicy(
   }
   return `On ${top.source_name.toLowerCase()}: ${top.content}`
 }
+
+// ---------- reschedule_appointment / cancel_appointment ----------
+//
+// Both are CALENDAR WRITES → ALWAYS_HITL (locked principle #4). The voice
+// agent never moves or deletes anything: it finds the caller's upcoming
+// appointment, stages an approval with the ask, and tells the caller the
+// team will text to confirm. Same staging pattern as propose_booking.
+
+type UpcomingAppointment = {
+  id: string
+  scheduled_at: string
+  service_name: string | null
+}
+
+/** The caller's next upcoming appointment, matched by phone. */
+async function findUpcomingAppointmentByPhone(
+  supabase: SupabaseClient,
+  shopId: string,
+  phone: string
+): Promise<UpcomingAppointment | null> {
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("phone", phone)
+    .maybeSingle()
+  if (!customer?.id) return null
+
+  const { data } = await supabase
+    .from("appointments")
+    .select("id, scheduled_at, service_name")
+    .eq("shop_id", shopId)
+    .eq("customer_id", customer.id)
+    .gte("scheduled_at", new Date().toISOString())
+    .order("scheduled_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return (data as UpcomingAppointment | null) ?? null
+}
+
+async function stageAppointmentChange(
+  supabase: SupabaseClient,
+  shopId: string,
+  actionType: "reschedule_appointment" | "cancel_appointment",
+  payload: Record<string, unknown>
+): Promise<boolean> {
+  const { data: shop, error: shopErr } = await supabase
+    .from("shops")
+    .select("owner_id")
+    .eq("id", shopId)
+    .single()
+  if (shopErr || !shop?.owner_id) {
+    console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
+    return false
+  }
+  const { error } = await supabase.from("pending_actions").insert({
+    shop_id: shopId,
+    action_type: actionType,
+    payload,
+    requested_by: shop.owner_id,
+  })
+  if (error) {
+    console.error(`[vapi-tools] ${actionType} stage failed:`, error)
+    return false
+  }
+  return true
+}
+
+export async function rescheduleAppointment(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const customerName = readParam(params, "customer_name", "customerName")
+  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const newWhen = readParam(params, "new_when", "newWhen", "when")
+  const isoNewStart = readParam(params, "iso_new_start_time", "isoNewStartTime")
+
+  if (!phone || !newWhen) {
+    const missing = [!phone && "a phone number", !newWhen && "the new time"]
+      .filter(Boolean)
+      .join(" and ")
+    return `Happy to move it — I just need ${missing}.`
+  }
+
+  const appointment = await findUpcomingAppointmentByPhone(supabase, shopId, phone)
+  const staged = await stageAppointmentChange(supabase, shopId, "reschedule_appointment", {
+    appointment_id: appointment?.id ?? null,
+    current_scheduled_at: appointment?.scheduled_at ?? null,
+    service: appointment?.service_name ?? null,
+    customer_name: customerName || null,
+    phone,
+    new_when: newWhen,
+    iso_new_start_time: isoNewStart || null,
+    source: "voice",
+    vapi_call_id: ctx.id ?? null,
+  })
+  if (!staged) {
+    return "Something went wrong saving that — let me have someone confirm the new time with you."
+  }
+  return appointment
+    ? `Got it — we'll move the ${appointment.service_name ?? "appointment"} and text ${customerName ? firstName(customerName) : "you"} to confirm ${newWhen}.`
+    : `Got it — I couldn't see the booking from here, but the team will find it and text to confirm ${newWhen}.`
+}
+
+export async function cancelAppointment(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const customerName = readParam(params, "customer_name", "customerName")
+  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const reason = readParam(params, "reason", "notes") || null
+
+  if (!phone) {
+    return "Of course — what's the best number on the booking so we cancel the right one?"
+  }
+
+  const appointment = await findUpcomingAppointmentByPhone(supabase, shopId, phone)
+  const staged = await stageAppointmentChange(supabase, shopId, "cancel_appointment", {
+    appointment_id: appointment?.id ?? null,
+    current_scheduled_at: appointment?.scheduled_at ?? null,
+    service: appointment?.service_name ?? null,
+    customer_name: customerName || null,
+    phone,
+    reason,
+    source: "voice",
+    vapi_call_id: ctx.id ?? null,
+  })
+  if (!staged) {
+    return "Something went wrong on my end — the team will call you right back to sort the cancellation."
+  }
+  return "Done — we'll take it off the books and text you a confirmation. Hope we see you again soon."
+}

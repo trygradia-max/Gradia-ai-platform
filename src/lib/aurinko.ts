@@ -541,6 +541,54 @@ export async function createCalendarEvent(
   return normalizeEvent(JSON.parse(raw) as RawCalendarEvent)
 }
 
+/** Moves an existing event to a new time (reschedule executor). */
+export async function updateCalendarEventTime(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  input: { startIso: string; endIso: string; timezone?: string | null }
+): Promise<void> {
+  const tz = input.timezone ?? "UTC"
+  const res = await fetch(
+    `${AURINKO_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        start: { dateTime: input.startIso, timezone: tz },
+        end: { dateTime: input.endIso, timezone: tz },
+      }),
+    }
+  )
+  if (!res.ok) {
+    const raw = await res.text()
+    throw new AurinkoError(res.status, `Event update failed: ${raw.slice(0, 200)}`)
+  }
+}
+
+/** Removes an event from the calendar (cancel executor). 404 = already gone. */
+export async function deleteCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string
+): Promise<void> {
+  const res = await fetch(
+    `${AURINKO_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  )
+  if (!res.ok && res.status !== 404) {
+    const raw = await res.text()
+    throw new AurinkoError(res.status, `Event delete failed: ${raw.slice(0, 200)}`)
+  }
+}
+
 /**
  * Verifies the X-Aurinko-Signature header against the raw POST body using
  * the app's signing secret. Format mirrors Slack's `v0:{timestamp}:{body}`
