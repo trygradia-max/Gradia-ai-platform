@@ -41,7 +41,13 @@ async function resolveOrigin(): Promise<string> {
   return `${proto}://${host}`
 }
 
-function settingsRedirect(status: "ok" | string): string {
+const NEXT_COOKIE = "aurinko_oauth_next"
+
+/** Lands on the wizard step (when the flow started there) or /settings. */
+function settingsRedirect(status: "ok" | string, next?: string | null): string {
+  if (next && next.startsWith("/") && !next.startsWith("//")) {
+    return next
+  }
   const params = new URLSearchParams({ email: status })
   return `/settings?${params.toString()}`
 }
@@ -66,6 +72,8 @@ export async function GET(request: Request) {
   const cookieStore = await cookies()
   const cookieNonce = cookieStore.get(STATE_COOKIE)?.value
   cookieStore.delete(STATE_COOKIE)
+  const nextPath = cookieStore.get(NEXT_COOKIE)?.value ?? null
+  cookieStore.delete(NEXT_COOKIE)
 
   if (!cookieNonce || cookieNonce !== state) {
     console.warn("[aurinko callback] state nonce mismatch")
@@ -127,5 +135,5 @@ export async function GET(request: Request) {
     return finishOauth(settingsRedirect("save_failed"))
   }
 
-  return finishOauth(settingsRedirect("ok"))
+  return finishOauth(settingsRedirect("ok", nextPath))
 }

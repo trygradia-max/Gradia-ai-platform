@@ -9,6 +9,7 @@ import {
   Flame,
   Hourglass,
   Loader2,
+  Plug,
   Send,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -77,15 +78,18 @@ export function CoOwnerCard({
         <PageStagger className="grid gap-2">
           {suggestions.map((s) => {
             const key =
-              s.kind === "upcoming_appointment"
-                ? `appt:${s.appointmentId}`
-                : `${s.kind}:${s.leadId}`
+              s.kind === "setup"
+                ? s.id
+                : s.kind === "upcoming_appointment"
+                  ? `appt:${s.appointmentId}`
+                  : `${s.kind}:${s.leadId}`
             return (
               <StaggerItem key={key}>
                 <SuggestionRow
                   suggestion={s}
                   busy={
                     s.kind !== "upcoming_appointment" &&
+                    s.kind !== "setup" &&
                     busyId === s.leadId
                   }
                   disabled={busyId !== null}
@@ -104,6 +108,11 @@ const TONE_BY_KIND: Record<
   CoOwnerSuggestion["kind"],
   { icon: typeof Flame; ringClass: string; iconClass: string }
 > = {
+  setup: {
+    icon: Plug,
+    ringClass: "",
+    iconClass: "text-primary",
+  },
   hot_lead_followup: {
     icon: Flame,
     ringClass:
@@ -135,6 +144,31 @@ function SuggestionRow({
 }) {
   const tone = TONE_BY_KIND[suggestion.kind]
   const Icon = tone.icon
+
+  // Setup the owner deferred in the wizard — one quiet row, one button.
+  if (suggestion.kind === "setup") {
+    return (
+      <MotionCard interactive className="group relative overflow-hidden p-0">
+        <Link
+          href={suggestion.href}
+          className="flex items-start gap-3 px-4 py-3.5"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60 ring-1 ring-border/60">
+            <Icon className={cn("size-4", tone.iconClass)} aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">
+              {suggestion.title}
+            </p>
+            <p className="text-xs text-muted-foreground">{suggestion.body}</p>
+          </div>
+          <span className="mt-0.5 shrink-0 text-xs font-medium text-primary">
+            {suggestion.cta}
+          </span>
+        </Link>
+      </MotionCard>
+    )
+  }
 
   if (suggestion.kind === "upcoming_appointment") {
     const when = new Intl.DateTimeFormat(undefined, {

@@ -1,19 +1,24 @@
+import { getA2pState } from "@/app/actions/a2p"
 import { MeshBackground } from "@/components/gradia/mesh-background"
 import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
+import { deriveWizardStep } from "@/lib/onboarding"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import { listVoiceOptions } from "@/lib/voice-provider"
 import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
+type Step = 1 | 2 | 3 | 4 | 5
+
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string }>
+  searchParams: Promise<{ new?: string; step?: string }>
 }) {
   await requireUser()
   const supabase = await createClient()
-  const { new: isNew } = await searchParams
+  const { new: isNew, step: stepParam } = await searchParams
   const startFresh = isNew === "1"
 
   // For "add another shop" we deliberately ignore any existing shop
@@ -41,11 +46,20 @@ export default async function OnboardingPage({
     services = (data as ServiceRow[] | null) ?? []
   }
 
-  let initialStep: 1 | 2 | 3 = 1
-  if (shop && services.length === 0) initialStep = 2
-  if (shop && services.length > 0) initialStep = 3
+  // ?step= override (the OAuth return lands on step 4); otherwise resume
+  // at the first incomplete step.
+  const requested = Number.parseInt(stepParam ?? "", 10)
+  const initialStep: Step =
+    requested >= 1 && requested <= 5 && shop && !startFresh
+      ? (requested as Step)
+      : startFresh
+        ? 1
+        : deriveWizardStep(shop, services.length)
 
   const isResuming = Boolean(shop) && !startFresh
+  const a2pState = shop ? await getA2pState() : { status: "none" as const, failureReason: null, business: null }
+  const voiceOptions = listVoiceOptions()
+  const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
 
   return (
     <div className="relative isolate flex min-h-svh flex-col items-center justify-center gap-8 overflow-hidden bg-background px-4 py-12 sm:px-6">
@@ -71,8 +85,9 @@ export default async function OnboardingPage({
           )}
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Three short steps — your details, your service menu, then we&apos;re
-          live. You can edit anything later in Settings.
+          Five short steps — your shop, your menu, then the inbox, number,
+          and receptionist. Skip anything; we&apos;ll nudge you later.
+          Everything&apos;s editable in Settings.
         </p>
       </header>
 
@@ -81,6 +96,9 @@ export default async function OnboardingPage({
         initialServices={services}
         initialStep={initialStep}
         forceCreate={startFresh}
+        a2pState={a2pState}
+        voiceOptions={voiceOptions}
+        vapiConfigured={vapiConfigured}
       />
     </div>
   )

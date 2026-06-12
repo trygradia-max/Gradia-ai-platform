@@ -115,7 +115,14 @@ export async function saveShop(
 
   const { data, error } = await supabase
     .from("shops")
-    .insert({ ...fields, owner_id: user.id, settings: {} })
+    // onboarding_done:false routes NEW shops through the first-run wizard
+    // until they finish/skip it. Shops created before this flag existed
+    // (no key in settings) are never gated.
+    .insert({
+      ...fields,
+      owner_id: user.id,
+      settings: { onboarding_done: false },
+    })
     .select("*")
     .single()
 

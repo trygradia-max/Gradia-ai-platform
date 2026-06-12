@@ -12,6 +12,14 @@ const DAY_MS = 24 * 60 * 60 * 1000
  */
 export type CoOwnerSuggestion =
   | {
+      kind: "setup"
+      id: string
+      title: string
+      body: string
+      href: string
+      cta: string
+    }
+  | {
       kind: "hot_lead_followup"
       leadId: string
       customerId: string | null
@@ -50,7 +58,7 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
   const shop = await requireShop()
   const supabase = await createClient()
 
-  const [scored, recentOutboundRes, upcomingRes] = await Promise.all([
+  const [scored, recentOutboundRes, upcomingRes, shopRowRes] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     // Last outbound message per customer in the last 24h. Used to
     // skip "you should follow up" for customers we already pinged.
@@ -68,6 +76,13 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
       .lte("scheduled_at", new Date(Date.now() + DAY_MS).toISOString())
       .order("scheduled_at", { ascending: true })
       .limit(3),
+    supabase
+      .from("shops")
+      .select(
+        "aurinko_account_email, twilio_phone_number, voice_addon, voice_live, settings"
+      )
+      .eq("id", shop.id)
+      .maybeSingle(),
   ])
 
   const recentlyContacted = new Set<string>()
@@ -79,6 +94,47 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
 
   const suggestions: CoOwnerSuggestion[] = []
   const now = Date.now()
+
+  // 0. Setup the owner skipped in the wizard — surfaced here per the UX
+  //    spec ("do later" moves it to a Today-page nudge). One at a time:
+  //    the next missing wire, not a checklist wall.
+  const shopRow = (shopRowRes.data as {
+    aurinko_account_email: string | null
+    twilio_phone_number: string | null
+    voice_addon: boolean
+    voice_live: boolean
+    settings?: Record<string, unknown>
+  } | null) ?? null
+  if (shopRow && shopRow.settings?.onboarding_done !== false) {
+    if (!shopRow.aurinko_account_email) {
+      suggestions.push({
+        kind: "setup",
+        id: "setup-email",
+        title: "Connect Gmail",
+        body: "Thirty seconds, one button — then inbound emails come with a drafted reply waiting on your yes.",
+        href: "/settings#email",
+        cta: "Connect",
+      })
+    } else if (!shopRow.twilio_phone_number) {
+      suggestions.push({
+        kind: "setup",
+        id: "setup-number",
+        title: "Get your business number",
+        body: "A line customers call and text. Calls work the moment you pick it.",
+        href: "/settings#sms",
+        cta: "Pick a number",
+      })
+    } else if (shopRow.voice_addon && !shopRow.voice_live) {
+      suggestions.push({
+        kind: "setup",
+        id: "setup-voice",
+        title: "Finish your receptionist",
+        body: "It's part of your plan — do the test call and flip it live.",
+        href: "/settings#voice",
+        cta: "Finish setup",
+      })
+    }
+  }
 
   // 1. Hottest leads we haven't pinged today.
   const hot = scored

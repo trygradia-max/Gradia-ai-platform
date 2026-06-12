@@ -19,7 +19,14 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const STATE_COOKIE = "aurinko_oauth_state"
+const NEXT_COOKIE = "aurinko_oauth_next"
 const STATE_COOKIE_MAX_AGE_SECONDS = 60 * 10 // 10 minutes
+
+/** Only same-app paths — never an absolute URL (open-redirect guard). */
+function safeNextPath(raw: string | null): string | null {
+  if (!raw) return null
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : null
+}
 
 async function resolveOrigin(): Promise<string> {
   const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
@@ -38,7 +45,7 @@ async function resolveOrigin(): Promise<string> {
   return `${proto}://${host}`
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   await requireShop()
 
   if (!process.env.AURINKO_CLIENT_ID?.trim()) {
@@ -59,6 +66,22 @@ export async function GET() {
     path: "/",
     maxAge: STATE_COOKIE_MAX_AGE_SECONDS,
   })
+
+  // Where to land after the callback (the onboarding wizard passes
+  // ?next=/onboarding?step=4 so the owner returns mid-flow). Same-app
+  // paths only; the callback consumes + clears the cookie.
+  const next = safeNextPath(new URL(request.url).searchParams.get("next"))
+  if (next) {
+    cookieStore.set({
+      name: NEXT_COOKIE,
+      value: next,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: STATE_COOKIE_MAX_AGE_SECONDS,
+    })
+  }
 
   const origin = await resolveOrigin()
   const authorizeUrl = buildAuthorizeUrl({

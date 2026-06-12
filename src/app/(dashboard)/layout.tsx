@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation"
+import { needsOnboarding } from "@/lib/onboarding"
 
 import {
   SidebarInset,
@@ -27,17 +28,25 @@ export default async function DashboardLayout({
     countOpenApprovalsForCurrentShop(),
   ])
 
-  // Paywall gate — inert until FEATURES.paywall flips on. /billing lives
-  // outside this layout group so the redirect can't loop.
-  if (FEATURES.paywall && active) {
+  // Paywall + first-run gates. /billing and /onboarding live outside this
+  // layout group so the redirects can't loop.
+  if (active) {
     const supabase = await createClient()
     const { data } = await supabase
       .from("shops")
-      .select("plan")
+      .select("plan, settings")
       .eq("id", active.id)
       .single()
-    if ((data as { plan: ShopPlan } | null)?.plan !== "active") {
+    const row =
+      (data as { plan: ShopPlan; settings?: Record<string, unknown> } | null) ??
+      null
+    if (FEATURES.paywall && row?.plan !== "active") {
       redirect("/billing")
+    }
+    // New shops see the wizard until they finish/skip it (UX spec Part 1).
+    // Shops from before the flag (no key) are never gated.
+    if (needsOnboarding(row?.settings)) {
+      redirect("/onboarding")
     }
   }
 
