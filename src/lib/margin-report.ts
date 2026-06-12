@@ -12,6 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { PLAN } from "@/lib/pricing"
 import type { UsageEventKind } from "@/lib/types/database"
 
 export type MarginRow = {
@@ -32,6 +33,13 @@ export type KindBreakdown = {
   marginPct: number | null
 }
 
+/** Flag shops whose vendor COGS is eating this fraction of what they pay
+ *  us per month. The SKU design point is COGS ≈ 28% of plan price
+ *  (GRADIA_PRICING.md margin rules) — 50% means the plan economics are
+ *  drifting and the shop needs a look (heavy usage, mispriced kind, or a
+ *  metering gap). */
+export const NEAR_PLAN_REVENUE_FRACTION = 0.5
+
 export type ShopMargin = {
   shopId: string
   shopName: string
@@ -40,6 +48,12 @@ export type ShopMargin = {
   marginCents: number
   /** null when the shop has no priced usage (margin of nothing isn't 100%). */
   marginPct: number | null
+  /** What the shop pays monthly (Core $20, +$29 with voice). 0 = free plan. */
+  planRevenueCents: number
+  /** wholesale COGS / plan revenue — the number the flag watches. */
+  cogsOfPlanPct: number | null
+  /** True when COGS ≥ 50% of plan revenue — review this shop. */
+  nearPlanRevenue: boolean
   /** Rows without cost columns (legacy) — excluded from the totals above. */
   unpricedEvents: number
   byKind: KindBreakdown[]
@@ -61,10 +75,16 @@ function pct(retail: number, wholesale: number): number | null {
   return ((retail - wholesale) / retail) * 100
 }
 
+export type ShopMeta = {
+  name: string
+  /** Monthly plan revenue in cents (Core 2000, +2900 with voice; 0 = free). */
+  planRevenueCents: number
+}
+
 /** Pure aggregation — testable without a database. */
 export function computeMarginReport(
   rows: MarginRow[],
-  shopNames: Map<string, string>,
+  shopMeta: Map<string, ShopMeta>,
   periodStart: string
 ): MarginReport {
   const byShop = new Map<
@@ -117,13 +137,22 @@ export function computeMarginReport(
     const retailCents = byKind.reduce((s, k) => s + k.retailCents, 0)
     totalWholesale += wholesaleCents
     totalRetail += retailCents
+    const meta = shopMeta.get(shopId)
+    const planRevenueCents = meta?.planRevenueCents ?? 0
+    const cogsOfPlanPct =
+      planRevenueCents > 0 ? (wholesaleCents / planRevenueCents) * 100 : null
     shops.push({
       shopId,
-      shopName: shopNames.get(shopId) ?? shopId,
+      shopName: meta?.name ?? shopId,
       wholesaleCents,
       retailCents,
       marginCents: retailCents - wholesaleCents,
       marginPct: pct(retailCents, wholesaleCents),
+      planRevenueCents,
+      cogsOfPlanPct,
+      nearPlanRevenue:
+        planRevenueCents > 0 &&
+        wholesaleCents >= planRevenueCents * NEAR_PLAN_REVENUE_FRACTION,
       unpricedEvents: data.unpriced,
       byKind,
     })
@@ -157,15 +186,25 @@ export async function buildMarginReport(
       .from("usage_events")
       .select("shop_id, kind, quantity, wholesale_cost, retail_cost")
       .gte("created_at", since),
-    supabase.from("shops").select("id, name"),
+    supabase.from("shops").select("id, name, plan, voice_addon"),
   ])
   if (error) throw new Error(`usage query failed: ${error.message}`)
 
-  const names = new Map(
-    (((shopRows as { id: string; name: string }[] | null) ?? []).map((s) => [
+  const meta = new Map<string, ShopMeta>(
+    (
+      (shopRows as
+        | { id: string; name: string; plan: string; voice_addon: boolean }[]
+        | null) ?? []
+    ).map((s) => [
       s.id,
-      s.name,
-    ]) as [string, string][])
+      {
+        name: s.name,
+        planRevenueCents:
+          s.plan === "active"
+            ? PLAN.CORE_PRICE_CENTS + (s.voice_addon ? PLAN.VOICE_PRICE_CENTS : 0)
+            : 0,
+      },
+    ])
   )
-  return computeMarginReport((rows as MarginRow[] | null) ?? [], names, since)
+  return computeMarginReport((rows as MarginRow[] | null) ?? [], meta, since)
 }

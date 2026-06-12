@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest"
 
-import { computeMarginReport, type MarginRow } from "@/lib/margin-report"
+import {
+  computeMarginReport,
+  NEAR_PLAN_REVENUE_FRACTION,
+  type MarginRow,
+} from "@/lib/margin-report"
 
 /**
  * Tier 1 — pure, deterministic. The margin report is the pricing doc's
@@ -11,8 +15,9 @@ import { computeMarginReport, type MarginRow } from "@/lib/margin-report"
  */
 
 const names = new Map([
-  ["shop-a", "Pristine Detailing"],
-  ["shop-b", "Elite Automotive"],
+  // shop-a pays Core+Voice ($49); shop-b Core only ($20)
+  ["shop-a", { name: "Pristine Detailing", planRevenueCents: 4900 }],
+  ["shop-b", { name: "Elite Automotive", planRevenueCents: 2000 }],
 ])
 
 const rows: MarginRow[] = [
@@ -69,5 +74,33 @@ describe("computeMarginReport", () => {
     )
     expect(r.shops[0].marginPct).toBeNull()
     expect(r.shops[0].unpricedEvents).toBe(1)
+  })
+
+  it("flags shops whose COGS nears plan revenue (≥50%), leaves healthy ones alone", () => {
+    // shop-a COGS 840¢ vs $49 plan → 17% — healthy.
+    const healthy = report.shops.find((s) => s.shopId === "shop-a")
+    expect(healthy?.nearPlanRevenue).toBe(false)
+    expect(healthy?.cogsOfPlanPct).toBeCloseTo(17.1, 1)
+
+    // A Core-only shop burning 1,100¢ wholesale vs $20 plan → 55% — flag.
+    const hot = computeMarginReport(
+      [{ shop_id: "shop-b", kind: "voice_minute", quantity: 90, wholesale_cost: 1100, retail_cost: 2250 }],
+      names,
+      "2026-06-01T00:00:00Z"
+    ).shops[0]
+    expect(hot.nearPlanRevenue).toBe(true)
+    expect(hot.cogsOfPlanPct).toBeCloseTo(55, 0)
+    expect(NEAR_PLAN_REVENUE_FRACTION).toBe(0.5)
+  })
+
+  it("free shops (no plan revenue) never flag — nothing to compare against", () => {
+    const r = computeMarginReport(
+      [{ shop_id: "shop-x", kind: "sms_segment", quantity: 1, wholesale_cost: 9999, retail_cost: 10000 }],
+      names,
+      "2026-06-01T00:00:00Z"
+    )
+    expect(r.shops[0].planRevenueCents).toBe(0)
+    expect(r.shops[0].nearPlanRevenue).toBe(false)
+    expect(r.shops[0].cogsOfPlanPct).toBeNull()
   })
 })
