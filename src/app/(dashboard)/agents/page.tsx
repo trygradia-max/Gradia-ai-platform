@@ -1,13 +1,15 @@
 import Link from "next/link"
-import { Wand2 } from "lucide-react"
+import {
+  CalendarClock,
+  MessagesSquare,
+  PhoneCall,
+  Send,
+  Wand2,
+} from "lucide-react"
 
 import { AgentCard } from "@/components/gradia/agent-card"
+import { CapabilityRow } from "@/components/gradia/capability-row"
 import { CustomAgentCard } from "@/components/gradia/custom-agent-card"
-import {
-  PageStagger,
-  StaggerItem,
-} from "@/components/gradia/motion/page-stagger"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
 import { buttonVariants } from "@/components/ui/button"
 import { readAutonomy } from "@/lib/autonomy"
 import {
@@ -17,9 +19,17 @@ import {
 } from "@/lib/data/agents"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import type { CustomAgentRow } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
+
+/** Reminder-recipe customs live under "Remind customers"; everything else
+ *  an owner plans (follow-ups, thank-yous, freeform) is "Follow up". */
+function isReminderAgent(agent: CustomAgentRow): boolean {
+  const id = agent.config.recipe?.id
+  return id === "appointment_reminder_email" || id === "appointment_reminder_sms"
+}
 
 export default async function AgentsPage() {
   const [agents, customAgents] = await Promise.all([
@@ -38,14 +48,67 @@ export default async function AgentsPage() {
     settings:
       (shopRow as { settings?: Record<string, unknown> } | null)?.settings ?? {},
   })
-  const activeCount = agents.filter((a) => a.status === "active").length
+
+  const byId = new Map(agents.map((a) => [a.id, a]))
+  const active = (id: string) => byId.get(id)?.status === "active"
+
+  const reminderCustoms = customAgents.filter(isReminderAgent)
+  const followupCustoms = customAgents.filter((a) => !isReminderAgent(a))
   const enabledCustom = customAgents.filter((a) => a.enabled).length
+  const activeCount = agents.filter((a) => a.status === "active").length
+
+  const customCard = (agent: CustomAgentRow) => (
+    <CustomAgentCard
+      key={agent.id}
+      agent={agent}
+      lastRun={lastRuns.get(agent.id) ?? null}
+      initialMode={autonomy.overrides[agent.id] ?? autonomy.default}
+    />
+  )
+
+  /** The four capabilities, in owner words (UX spec Part 2). */
+  const groups = [
+    {
+      icon: PhoneCall,
+      title: "Answer my calls",
+      blurb: "A receptionist that picks up, quotes, and proposes bookings.",
+      members: ["voice"],
+      customs: [] as CustomAgentRow[],
+      readyAction: { label: "Set it up", href: "/settings#voice" },
+    },
+    {
+      icon: MessagesSquare,
+      title: "Reply to texts & emails",
+      blurb: "Every inbound message gets a drafted reply waiting on your yes.",
+      members: ["sms", "email", "instagram"],
+      customs: [] as CustomAgentRow[],
+      readyAction: { label: "Connect a channel", href: "/settings#sms" },
+    },
+    {
+      icon: Send,
+      title: "Follow up with leads",
+      blurb: "Quotes that went quiet and customers we haven't seen in a while.",
+      members: ["chat", "memory", "booking"],
+      customs: followupCustoms,
+      readyAction: { label: "Plan one with us", href: "/agents/build" },
+    },
+    {
+      icon: CalendarClock,
+      title: "Remind customers before appointments",
+      blurb: "A text or email the day before, so nobody no-shows.",
+      members: [],
+      customs: reminderCustoms,
+      readyAction: { label: "Plan a reminder", href: "/agents/build" },
+    },
+  ]
 
   return (
-    <div className="mx-auto max-w-6xl space-y-12">
+    <div className="mx-auto max-w-6xl space-y-10">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
-          <p className="label-eyebrow text-muted-foreground/70">What Gradia does for you</p>
+          <p className="label-eyebrow text-muted-foreground/70">
+            What Gradia does for you
+          </p>
           <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
             What&apos;s <span className="italic">running</span> for us.
           </h1>
@@ -54,85 +117,51 @@ export default async function AgentsPage() {
             {customAgents.length > 0
               ? ` · ${enabledCustom} of ${customAgents.length} custom on`
               : ""}
-            . Pick what to switch on next, or design a new one from scratch.
+            . Open a row to tune it, or plan something new from scratch.
           </p>
         </div>
         <Link
           href="/agents/build"
-          className={cn(
-            buttonVariants({ size: "lg" }),
-            "h-11 gap-2 shrink-0"
-          )}
+          className={cn(buttonVariants({ size: "lg" }), "h-11 gap-2 shrink-0")}
         >
           <Wand2 className="size-4" aria-hidden />
           Build a new agent
         </Link>
       </header>
 
-      <section className="space-y-5">
-        <SectionHeader
-          eyebrow="Built-in"
-          title={
-            <>
-              Out of the <span className="italic">box</span>.
-            </>
-          }
-          subtitle="The agents Gradia ships ready to go — connect the channel, switch them on."
-        />
-        <PageStagger className="grid gap-4 md:grid-cols-2">
-          {agents.map((agent) => (
-            <StaggerItem key={agent.id} className="h-full">
-              <AgentCard agent={agent} />
-            </StaggerItem>
-          ))}
-        </PageStagger>
-      </section>
-
-      <section className="space-y-5">
-        <SectionHeader
-          eyebrow="Custom"
-          title={
-            <>
-              Workflows we&apos;ve <span className="italic">planned</span>.
-            </>
-          }
-          subtitle="Agents designed for our shop. Edit the plan, run on demand, or pause anytime."
-        />
-        {customAgents.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 px-6 py-14 text-center">
-            <p className="font-display text-xl text-foreground sm:text-2xl">
-              <span className="italic">Nothing</span> custom yet.
-            </p>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-              Describe a workflow in plain English — &ldquo;text new leads
-              we haven&apos;t heard from in 3 days&rdquo; — and we&apos;ll
-              plan the whole thing.
-            </p>
-            <Link
-              href="/agents/build"
-              className={cn(
-                buttonVariants({ variant: "default", size: "lg" }),
-                "mt-5 h-11 gap-2"
-              )}
+      <div className="space-y-3">
+        {groups.map((group) => {
+          const builtins = group.members
+            .map((id) => byId.get(id))
+            .filter((a): a is NonNullable<typeof a> => Boolean(a))
+          const onCount =
+            builtins.filter((a) => a.status === "active").length +
+            group.customs.filter((c) => c.enabled).length
+          const total = builtins.length + group.customs.length
+          const on =
+            group.members.length > 0
+              ? group.members.some(active) ||
+                group.customs.some((c) => c.enabled)
+              : group.customs.some((c) => c.enabled)
+          return (
+            <CapabilityRow
+              key={group.title}
+              icon={group.icon}
+              title={group.title}
+              blurb={group.blurb}
+              on={on}
+              detail={total > 0 ? `${onCount} of ${total} on` : null}
+              readyAction={!on ? group.readyAction : null}
+              defaultOpen={false}
             >
-              <Wand2 className="size-4" aria-hidden />
-              Plan one with us
-            </Link>
-          </div>
-        ) : (
-          <PageStagger className="grid gap-4 md:grid-cols-2">
-            {customAgents.map((agent) => (
-              <StaggerItem key={agent.id} className="h-full">
-                <CustomAgentCard
-                  agent={agent}
-                  lastRun={lastRuns.get(agent.id) ?? null}
-                  initialMode={autonomy.overrides[agent.id] ?? autonomy.default}
-                />
-              </StaggerItem>
-            ))}
-          </PageStagger>
-        )}
-      </section>
+              {builtins.map((agent) => (
+                <AgentCard key={agent.id} agent={agent} />
+              ))}
+              {group.customs.map(customCard)}
+            </CapabilityRow>
+          )
+        })}
+      </div>
     </div>
   )
 }
