@@ -424,8 +424,18 @@ export default async function SettingsPage({
           />
         </section>
 
+        {/* Developer mode — off (collapsed) by default; everything
+            technical relocates here, nothing is deleted
+            (GRADIA_UX_ONBOARDING_SPEC Part 2). */}
         <section id="developer">
-          <McpTokensCard initialTokens={mcpTokens} />
+          <details className="rounded-xl border border-border/40 bg-card/30 px-4 py-1">
+            <summary className="cursor-pointer list-none py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              Developer — API tokens and integration internals
+            </summary>
+            <div className="pb-4 pt-2">
+              <McpTokensCard initialTokens={mcpTokens} />
+            </div>
+          </details>
         </section>
 
         <section id="soon">

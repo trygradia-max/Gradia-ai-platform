@@ -49,9 +49,11 @@ export default async function DashboardPage() {
         rightSlot={<AddLeadDialog />}
       />
 
-      <RevenueTiles />
-
+      {/* Nudges first — "what I'd tackle next" beats a wall of stats
+          (GRADIA_UX_ONBOARDING_SPEC Part 2). */}
       <CoOwnerCard suggestions={suggestions} />
+
+      <RevenueTiles />
 
       <WhisperButton />
 

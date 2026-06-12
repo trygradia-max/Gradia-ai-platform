@@ -43,7 +43,7 @@ const nav: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/approvals", label: "Approvals", icon: Inbox },
-  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/agents", label: "What Gradia does", icon: Bot },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 

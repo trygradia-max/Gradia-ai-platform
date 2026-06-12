@@ -308,7 +308,7 @@ export function SmsSettingsCard({
               </div>
               {!twilioConfigured ? (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  We're finishing texting setup on our side — check back soon.
+                  We&apos;re finishing texting setup on our side — check back soon.
                 </p>
               ) : null}
             </motion.div>

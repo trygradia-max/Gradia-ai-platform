@@ -45,7 +45,7 @@ export default async function AgentsPage() {
     <div className="mx-auto max-w-6xl space-y-12">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
-          <p className="label-eyebrow text-muted-foreground/70">Agents</p>
+          <p className="label-eyebrow text-muted-foreground/70">What Gradia does for you</p>
           <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
             What&apos;s <span className="italic">running</span> for us.
           </h1>
