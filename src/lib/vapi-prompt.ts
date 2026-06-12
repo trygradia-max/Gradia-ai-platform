@@ -12,7 +12,12 @@
  */
 
 import { GRADIA_VOICE } from "@/lib/persona"
-import type { ServiceRow, ShopKnowledgeRow, ShopRow } from "@/lib/types/database"
+import type {
+  ServiceRow,
+  ShopKnowledgeRow,
+  ShopRow,
+  VoiceConfig,
+} from "@/lib/types/database"
 
 function formatPrice(cents: number): string {
   const dollars = cents / 100
@@ -43,6 +48,15 @@ export type SynthesisInput = {
   }
   services: ServiceRow[]
   knowledge: ShopKnowledgeRow[]
+  /** Builder form answers beyond greeting/tone (spec §2.1). */
+  config?: Pick<
+    VoiceConfig,
+    | "after_hours"
+    | "hours_text"
+    | "booking_mode"
+    | "calendar_link"
+    | "escalation_phone"
+  > | null
 }
 
 /** Suggested greeting when the operator hasn't supplied one yet. */
@@ -132,13 +146,35 @@ export function synthesizeSystemPrompt(input: SynthesisInput): string {
     )
   }
 
+  // 4b. Hours / escalation from the builder form -------------------
+  const config = input.config ?? null
+  if (config?.hours_text?.trim()) {
+    lines.push("", `Our hours: ${config.hours_text.trim()}`)
+    lines.push(
+      config.after_hours === "message_only"
+        ? "Outside those hours: let the caller know we're closed and when we reopen — don't take booking details, just invite them to call back."
+        : "Outside those hours: let the caller know we're closed, then take a message with their name, number, vehicle, and what they need (use capture_lead) so we can follow up first thing."
+    )
+  }
+  if (config?.escalation_phone?.trim()) {
+    lines.push(
+      "",
+      `If a caller insists on a human, has an urgent problem we can't solve, or is upset beyond a simple fix: offer to connect them to the owner at ${config.escalation_phone.trim()}. Mention that number at most once per call.`
+    )
+  }
+
   // 5. Behavioral / tool-use rules --------------------------------
+  const bookingRule =
+    config?.booking_mode === "calendar_link" && config.calendar_link?.trim()
+      ? `- For a booking request: don't collect a time over the phone. Tell the caller we'll text them our booking link (${config.calendar_link.trim()}) and use capture_lead with their info and the service so we follow up with it.`
+      : "- For a booking request: use the propose_booking tool with the caller's info, the service, the requested time, and the vehicle. Tell them one of us will text to confirm the slot."
+
   lines.push(
     "",
     "How to handle calls:",
     "- Greet the caller by name if they offer one. Otherwise ask politely.",
     "- For a price: quote from the menu above. Confirm vehicle make/model/year and any relevant condition.",
-    "- For a booking request: use the propose_booking tool with the caller's info, the service, the requested time, and the vehicle. Tell them one of us will text to confirm the slot.",
+    bookingRule,
     "- For a general inquiry that doesn't fit a service yet: use capture_lead so the team sees it on the dashboard.",
     "- For a question outside our menu / policies: use lookup_shop_policy first. If still no answer, take a message and promise a callback today.",
     "- For an existing customer asking about their last service: use lookup_customer_history.",

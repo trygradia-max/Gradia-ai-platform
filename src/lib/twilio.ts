@@ -77,19 +77,41 @@ export type TwilioCredentials = {
   authToken: string
 }
 
+type ShopCredFields = Partial<
+  Pick<
+    ShopRow,
+    | "twilio_account_sid_enc"
+    | "twilio_auth_token_enc"
+    | "twilio_subaccount_sid"
+    | "twilio_subaccount_token_enc"
+    | "twilio_phone_number"
+    | "gradia_number_e164"
+  >
+>
+
 /**
- * Resolves the Twilio credentials to use for a given shop. BYO
- * credentials (encrypted on the shop row) win when present;
- * otherwise we fall back to the pilot-mode global env account.
+ * Resolves the Twilio credentials to use for a given shop, in order:
+ *
+ * 1. The shop's Gradia subaccount — when the shop's active number IS the
+ *    Gradia-provisioned one. That number only exists on the subaccount, so
+ *    sends from it and inbound signature verification for it must use the
+ *    subaccount token, never the master account's.
+ * 2. BYO credentials (encrypted on the shop row).
+ * 3. The pilot-mode global env account.
+ *
  * Returns null when no credentials are available anywhere — callers
  * should treat that as "Twilio not configured."
  */
 export function resolveTwilioCredentials(
-  shop:
-    | Pick<ShopRow, "twilio_account_sid_enc" | "twilio_auth_token_enc">
-    | null
-    | undefined
+  shop: ShopCredFields | null | undefined
 ): TwilioCredentials | null {
+  const subToken = tryDecryptSecret(shop?.twilio_subaccount_token_enc)
+  const gradiaNumberActive =
+    Boolean(shop?.gradia_number_e164) &&
+    shop?.twilio_phone_number === shop?.gradia_number_e164
+  if (shop?.twilio_subaccount_sid && subToken && gradiaNumberActive) {
+    return { accountSid: shop.twilio_subaccount_sid, authToken: subToken }
+  }
   const shopSid = tryDecryptSecret(shop?.twilio_account_sid_enc)
   const shopToken = tryDecryptSecret(shop?.twilio_auth_token_enc)
   if (shopSid && shopToken) {
@@ -485,4 +507,167 @@ export async function sendOutboundSms(input: {
     throw new TwilioError(500, "SMS send response missing sid")
   }
   return { messageSid: obj.sid, status: obj.status ?? null }
+}
+
+/**
+ * Reads a number's current webhook wiring. Used after a Vapi import to
+ * verify the messaging webhook still points at Gradia (the voice/SMS
+ * split), and by the spike script.
+ */
+export async function getIncomingPhoneNumberConfig(input: {
+  sid: string
+  creds?: TwilioCredentials | null
+}): Promise<{ voiceUrl: string; smsUrl: string } | null> {
+  const accountSid = input.creds?.accountSid ?? envAccountSid()
+  const authToken = input.creds?.authToken ?? envAuthToken()
+  if (!accountSid || !authToken) return null
+
+  const auth =
+    "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+  const res = await fetch(
+    `${TWILIO_API_BASE}/Accounts/${encodeURIComponent(accountSid)}/IncomingPhoneNumbers/${encodeURIComponent(input.sid)}.json`,
+    { headers: { Authorization: auth, Accept: "application/json" } }
+  )
+  if (!res.ok) return null
+  const parsed = (await res.json()) as {
+    voice_url?: string | null
+    sms_url?: string | null
+  }
+  return { voiceUrl: parsed.voice_url ?? "", smsUrl: parsed.sms_url ?? "" }
+}
+
+/** Re-points a number's MESSAGING webhook (voice config untouched). */
+export async function setNumberSmsWebhook(input: {
+  sid: string
+  smsUrl: string
+  creds?: TwilioCredentials | null
+}): Promise<void> {
+  const accountSid = input.creds?.accountSid ?? envAccountSid()
+  const authToken = input.creds?.authToken ?? envAuthToken()
+  if (!accountSid || !authToken) {
+    throw new TwilioError(500, "Twilio credentials missing")
+  }
+  const auth =
+    "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+  const res = await fetch(
+    `${TWILIO_API_BASE}/Accounts/${encodeURIComponent(accountSid)}/IncomingPhoneNumbers/${encodeURIComponent(input.sid)}.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: auth,
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        SmsUrl: input.smsUrl,
+        SmsMethod: "POST",
+      }).toString(),
+    }
+  )
+  if (!res.ok) {
+    const raw = await res.text()
+    throw new TwilioError(
+      res.status,
+      `SmsUrl re-set failed: ${raw.slice(0, 300)}`
+    )
+  }
+}
+
+// ---------- Subaccounts (ISV model) ----------
+
+export type TwilioSubaccount = {
+  sid: string
+  authToken: string
+}
+
+/**
+ * Creates a subaccount under the master (env) account — the ISV model's
+ * per-shop isolation boundary (deliverability, A2P registration, usage
+ * records). Master credentials only; a subaccount can't create siblings.
+ *
+ * Created on FIRST NUMBER PURCHASE, never at signup — callers go through
+ * telephony-provider.ts `ensureSubaccount`, which handles idempotency and
+ * encrypted storage.
+ *
+ * Docs: https://www.twilio.com/docs/iam/api/subaccounts
+ */
+export async function createSubaccount(input: {
+  /** FriendlyName for the Twilio console — use the shop id. */
+  friendlyName: string
+}): Promise<TwilioSubaccount> {
+  const accountSid = envAccountSid()
+  const authToken = envAuthToken()
+  if (!accountSid || !authToken) {
+    throw new TwilioError(500, "Master Twilio credentials missing")
+  }
+  if (!input.friendlyName.trim()) {
+    throw new TwilioError(400, "friendlyName is required")
+  }
+
+  const auth =
+    "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts.json`, {
+    method: "POST",
+    headers: {
+      Authorization: auth,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: new URLSearchParams({
+      FriendlyName: input.friendlyName.trim(),
+    }).toString(),
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    throw new TwilioError(
+      res.status,
+      `Twilio subaccount create failed: ${raw.slice(0, 300)}`
+    )
+  }
+  const parsed = JSON.parse(raw) as { sid?: string; auth_token?: string }
+  if (!parsed.sid || !parsed.auth_token) {
+    throw new TwilioError(500, "Twilio subaccount response missing sid/token")
+  }
+  return { sid: parsed.sid, authToken: parsed.auth_token }
+}
+
+// ---------- Usage Records (reconciliation) ----------
+
+/**
+ * Month-to-date spend on an account in cents, from Twilio's Usage Records
+ * API (`Category=totalprice` covers every product — calls, SMS, number
+ * rentals). The reconciliation job compares this against the ledger's
+ * wholesale totals per subaccount; calendar-month alignment is why the
+ * ledger side also sums month-to-date.
+ *
+ * Docs: https://www.twilio.com/docs/usage/api/usage-record
+ */
+export async function fetchMonthToDateUsageCents(
+  creds: TwilioCredentials
+): Promise<number> {
+  const auth =
+    "Basic " +
+    Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64")
+  const url = new URL(
+    `${TWILIO_API_BASE}/Accounts/${encodeURIComponent(creds.accountSid)}/Usage/Records/ThisMonth.json`
+  )
+  url.searchParams.set("Category", "totalprice")
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: auth, Accept: "application/json" },
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    throw new TwilioError(
+      res.status,
+      `Twilio usage fetch failed: ${raw.slice(0, 300)}`
+    )
+  }
+  const parsed = JSON.parse(raw) as {
+    usage_records?: Array<{ price?: string | number | null }>
+  }
+  const priceUsd = Number(parsed.usage_records?.[0]?.price ?? 0)
+  return Number.isFinite(priceUsd) ? priceUsd * 100 : 0
 }

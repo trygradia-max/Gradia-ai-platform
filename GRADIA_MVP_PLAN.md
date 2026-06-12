@@ -35,7 +35,7 @@ Gradia is a SaaS agentic AI office for independent auto detailers, $20/month. It
 | Hidden for MVP | Instagram, Facebook, and the Billing (charge-customer-by-voice) agent |
 | Kept | SMS (follow-up channel), Ask Gradia BI chat, Knowledge, Developer/MCP |
 | Mechanism | Feature flags — one config, reversible |
-| Price | $20/month per user (from brief) |
+| Price | **Superseded 2026-06-11:** Core $20/mo (1,200 message credits) + Voice Receptionist add-on $29/mo (number + 60 min). Source of truth: `_docs/GRADIA_PRICING.md` |
 
 ### What this supersedes from `PROJECT_BRIEF.md`
 - **7 agents → 2.** Email/SMS/booking become capabilities of the two agents + integrations, not standalone agents. Instagram/Facebook/Billing are hidden.

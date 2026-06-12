@@ -46,16 +46,21 @@ import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { recordUsage } from "@/lib/credits"
+import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { createServiceClient } from "@/lib/supabase/service"
-import type { InteractionRole } from "@/lib/types/database"
+import type { InteractionRole, ShopRow } from "@/lib/types/database"
+import { voiceBudgetState } from "@/lib/voice-provider"
 import {
+  cancelAppointment,
   captureLead,
   lookupCustomerHistory,
   lookupShopPolicy,
   proposeBooking,
   quoteService,
+  rescheduleAppointment,
   type VapiCallContext,
 } from "@/lib/vapi-tools"
 
@@ -77,6 +82,12 @@ type VapiTurn = {
   endTime?: number
 }
 
+type VapiToolCall = {
+  id?: string
+  name?: string
+  function?: { name?: string; arguments?: Record<string, unknown> | string }
+}
+
 type VapiMessage = {
   type?: string
   call?: VapiCall
@@ -84,6 +95,7 @@ type VapiMessage = {
     name?: string
     parameters?: Record<string, unknown>
   }
+  toolCallList?: VapiToolCall[]
   messages?: VapiTurn[]
   transcript?: string
   endedReason?: string
@@ -97,12 +109,13 @@ type VapiMessage = {
 
 type VapiPayload = { message?: VapiMessage }
 
-function verifyVapiSecret(request: Request): boolean {
-  const expected = process.env.VAPI_WEBHOOK_SECRET?.trim()
-  if (!expected) return false
-  const provided = request.headers.get("x-vapi-secret")
-  if (!provided) return false
+type WebhookShop = Pick<
+  ShopRow,
+  "id" | "name" | "vapi_server_secret_enc" | "voice_addon" | "voice_minutes_budget"
+>
 
+function secretMatches(provided: string | null, expected: string | null): boolean {
+  if (!provided || !expected) return false
   const a = Buffer.from(expected)
   const b = Buffer.from(provided)
   if (a.length !== b.length) return false
@@ -113,25 +126,46 @@ function verifyVapiSecret(request: Request): boolean {
   }
 }
 
-async function resolveShopId(
+/**
+ * Per-shop webhook auth (skill hard rule): the assistant carries a
+ * per-shop server secret, echoed back as x-vapi-secret. Legacy assistants
+ * created before per-shop secrets fall back to the env-global secret.
+ * Fail closed when neither matches.
+ */
+function verifyVapiSecret(request: Request, shop: WebhookShop | null): boolean {
+  const provided = request.headers.get("x-vapi-secret")
+  const perShop = tryDecryptSecret(shop?.vapi_server_secret_enc)
+  if (perShop) return secretMatches(provided, perShop)
+  return secretMatches(provided, process.env.VAPI_WEBHOOK_SECRET?.trim() || null)
+}
+
+async function resolveShop(
   supabase: SupabaseClient,
   message: VapiMessage
-): Promise<string | null> {
+): Promise<WebhookShop | null> {
+  const select =
+    "id, name, vapi_server_secret_enc, voice_addon, voice_minutes_budget"
   const assistantId = asString(message.call?.assistantId).trim()
   if (assistantId) {
     const { data, error } = await supabase
       .from("shops")
-      .select("id")
+      .select(select)
       .eq("vapi_assistant_id", assistantId)
       .maybeSingle()
     if (error) {
       console.error("[vapi] shop lookup by assistant_id failed:", error)
     }
-    if (data?.id) return data.id
+    if (data) return data as WebhookShop
   }
 
   const fallback = process.env.VAPI_DEFAULT_SHOP_ID?.trim()
-  return fallback || null
+  if (!fallback) return null
+  const { data } = await supabase
+    .from("shops")
+    .select(select)
+    .eq("id", fallback)
+    .maybeSingle()
+  return (data as WebhookShop | null) ?? null
 }
 
 function asString(value: unknown): string {
@@ -171,10 +205,6 @@ function callMinutes(message: VapiMessage): number {
 }
 
 export async function POST(request: Request) {
-  if (!verifyVapiSecret(request)) {
-    return new Response("Invalid signature", { status: 401 })
-  }
-
   let payload: VapiPayload
   try {
     payload = (await request.json()) as VapiPayload
@@ -189,26 +219,101 @@ export async function POST(request: Request) {
 
   const supabase = createServiceClient()
 
-  const shopId = await resolveShopId(supabase, message)
-  if (!shopId) {
+  // Resolve before verify: the auth secret is per-shop (assistant-bound).
+  // The payload is untrusted until verifyVapiSecret passes — resolution
+  // only reads, and a wrong/forged assistantId fails verification anyway.
+  const shop = await resolveShop(supabase, message)
+  if (!shop) {
     console.error(
       "[vapi] no shop matched assistantId and no VAPI_DEFAULT_SHOP_ID fallback set",
       { assistantId: message.call?.assistantId ?? null }
     )
-    return new Response("Shop not configured", { status: 500 })
+    return new Response("Shop not configured", { status: 404 })
   }
+  if (!verifyVapiSecret(request, shop)) {
+    return new Response("Invalid signature", { status: 401 })
+  }
+  const shopId = shop.id
 
   switch (message.type) {
     case "function-call":
       return handleFunctionCall(supabase, shopId, message)
+    case "tool-calls":
+      return handleToolCalls(supabase, shopId, message)
     case "end-of-call-report":
-      return handleEndOfCall(supabase, shopId, message)
+      return handleEndOfCall(supabase, shop, message)
     default:
       // status-update, transcript chunks, hang, etc — ack and ignore for MVP
       return Response.json({ ok: true })
   }
 }
 
+/**
+ * Dispatches one named tool invocation to its handler — shared by the
+ * legacy `function-call` shape and the `tool-calls` shape that
+ * model.tools-declared assistants send.
+ */
+async function dispatchTool(
+  supabase: SupabaseClient,
+  shopId: string,
+  name: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  switch (name) {
+    case "capture_lead":
+      return captureLead(supabase, shopId, params, ctx)
+    case "propose_booking":
+      return proposeBooking(supabase, shopId, params, ctx)
+    case "quote_service":
+      return quoteService(supabase, shopId, params, ctx)
+    case "lookup_customer_history":
+      return lookupCustomerHistory(supabase, shopId, params, ctx)
+    case "lookup_shop_policy":
+      return lookupShopPolicy(supabase, shopId, params, ctx)
+    case "reschedule_appointment":
+      return rescheduleAppointment(supabase, shopId, params, ctx)
+    case "cancel_appointment":
+      return cancelAppointment(supabase, shopId, params, ctx)
+    default:
+      return `Unknown function: ${name}`
+  }
+}
+
+/** `tool-calls` event (assistants with model.tools). Response contract:
+ *  { results: [{ toolCallId, result }] }. */
+async function handleToolCalls(
+  supabase: SupabaseClient,
+  shopId: string,
+  message: VapiMessage
+): Promise<Response> {
+  const ctx = callContextFrom(message)
+  const calls = message.toolCallList ?? []
+  const results: { toolCallId: string; result: string }[] = []
+  for (const call of calls) {
+    const name = call.function?.name ?? call.name ?? ""
+    let args: Record<string, unknown> = {}
+    const rawArgs = call.function?.arguments
+    if (typeof rawArgs === "string") {
+      try {
+        args = JSON.parse(rawArgs) as Record<string, unknown>
+      } catch {
+        args = {}
+      }
+    } else if (rawArgs && typeof rawArgs === "object") {
+      args = rawArgs
+    }
+    results.push({
+      toolCallId: call.id ?? "",
+      result: name
+        ? await dispatchTool(supabase, shopId, name, args, ctx)
+        : "No function specified.",
+    })
+  }
+  return Response.json({ results })
+}
+
+/** Legacy `function-call` event shape — same dispatcher underneath. */
 async function handleFunctionCall(
   supabase: SupabaseClient,
   shopId: string,
@@ -218,34 +323,14 @@ async function handleFunctionCall(
   if (!fn?.name) {
     return Response.json({ result: "No function specified." })
   }
-
-  const ctx = callContextFrom(message)
-  const params = fn.parameters ?? {}
-
-  switch (fn.name) {
-    case "capture_lead":
-      return Response.json({
-        result: await captureLead(supabase, shopId, params, ctx),
-      })
-    case "propose_booking":
-      return Response.json({
-        result: await proposeBooking(supabase, shopId, params, ctx),
-      })
-    case "quote_service":
-      return Response.json({
-        result: await quoteService(supabase, shopId, params, ctx),
-      })
-    case "lookup_customer_history":
-      return Response.json({
-        result: await lookupCustomerHistory(supabase, shopId, params, ctx),
-      })
-    case "lookup_shop_policy":
-      return Response.json({
-        result: await lookupShopPolicy(supabase, shopId, params, ctx),
-      })
-    default:
-      return Response.json({ result: `Unknown function: ${fn.name}` })
-  }
+  const result = await dispatchTool(
+    supabase,
+    shopId,
+    fn.name,
+    fn.parameters ?? {},
+    callContextFrom(message)
+  )
+  return Response.json({ result })
 }
 
 /**
@@ -254,9 +339,10 @@ async function handleFunctionCall(
  */
 async function handleEndOfCall(
   supabase: SupabaseClient,
-  shopId: string,
+  shop: WebhookShop,
   message: VapiMessage
 ): Promise<Response> {
+  const shopId = shop.id
   const callerPhone =
     asString(message.call?.customer?.number).trim() ||
     asString(message.call?.phoneNumber?.number).trim() ||
@@ -308,11 +394,37 @@ async function handleEndOfCall(
     }
   }
 
-  // Meter the call (voice minutes). Best-effort; never blocks the ack.
+  // Meter the call at the BUNDLED retail rate (Twilio + Vapi + model in
+  // one per-minute price). Post-call by nature — voice is real-time.
+  // credits: 0 — minutes are their OWN meter (GRADIA_PRICING.md: the two
+  // meters never cross; voice can't drain message credits). wholesale +
+  // retail stay on the row so margin is computable.
+  const minutes = callMinutes(message)
+  const pricing = await getPricing(supabase)
+  const priced = priceUsage(pricing, "voice_minute", minutes)
   await recordUsage(supabase, shopId, "voice_minute", {
-    quantity: callMinutes(message),
+    quantity: minutes,
+    credits: 0,
+    wholesaleCost: priced.wholesale_cost,
+    retailCost: priced.retail_cost,
+    vendorRef: message.call?.id ?? null,
     refId: message.call?.id ?? null,
   })
+
+  // Minute budget (spec §2.5): warn at 80%; at 100% mark the assistant
+  // stale so the hourly voice sync PATCHes in the take-a-message fallback
+  // — that's how the NEXT call gets refused (can't cut a live one).
+  const budget = await voiceBudgetState(supabase, shop)
+  if (budget.over) {
+    console.warn(
+      `[vapi] shop ${shopId} is over its voice budget (${budget.usedMinutes}/${budget.budget} min) — queuing fallback sync`
+    )
+    await supabase.from("shops").update({ vapi_stale: true }).eq("id", shopId)
+  } else if (budget.warn) {
+    console.warn(
+      `[vapi] shop ${shopId} at ${budget.usedMinutes}/${budget.budget} voice minutes (≥80%)`
+    )
+  }
 
   revalidatePath("/dashboard")
   revalidatePath("/leads")

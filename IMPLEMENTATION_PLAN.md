@@ -26,7 +26,7 @@ Recon of `/Users/harryhatch/gradia-app` (canonical per founder decision; marketi
 
 ---
 
-## 1. Phase 0 — Subtraction / hide pass `[in progress]`
+## 1. Phase 0 — Subtraction / hide pass `[done]`
 
 Low-risk, reversible. Detail in `MVP_GATING_PLAN.md`. File-level changes:
 
@@ -42,7 +42,7 @@ Low-risk, reversible. Detail in `MVP_GATING_PLAN.md`. File-level changes:
 
 ---
 
-## 2. Phase 1 — In-app approvals as default `[planned]`
+## 2. Phase 1 — In-app approvals as default `[done]`
 
 In-app approval **execution already exists** — this phase makes it the *default surface* and removes the Slack dependency.
 
@@ -54,7 +54,7 @@ In-app approval **execution already exists** — this phase makes it the *defaul
 
 ---
 
-## 3. Phase 2 — Hybrid Chat agent (free-form planner) `[planned]` — highest risk
+## 3. Phase 2 — Hybrid Chat agent (free-form planner) `[done]` — highest risk
 
 - `agent-planner.ts`: extend the Zod plan schema so a plain-English ask resolves to **either** a known recipe (today's catalog) **or** a `freeform` shape `{ audience_query, message_template, channel, cadence }`.
 - `agent-runtime.ts`: add a `freeform_outreach` executor — resolve audience (capped), draft per-customer (we/us, signed) via existing drafters, stage each as `pending_actions`. **Never sends directly.**
@@ -64,7 +64,9 @@ In-app approval **execution already exists** — this phase makes it the *defaul
 
 ---
 
-## 4. Phase 3 — Credits + paywall `[planned]`
+## 4. Phase 3 — Credits + paywall `[done — flag flipped 2026-06-09]`
+
+> **2026-06-09:** new-signup defaulting landed (`20260609100000_shop_plan_default_free.sql` — `shops.plan` DEFAULT → `'free'`; existing shops stay grandfathered `'active'`), `FEATURES.paywall` flipped on, and the metering math is locked by `eval/credits.test.ts`. **Deploy steps:** apply the migration (`supabase db push`) and set `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` / `STRIPE_WEBHOOK_SECRET` in the deploy environment before this ships.
 
 - Migration: `usage_events` ledger + `shops` columns (`plan`, `stripe_subscription_id`, `credit_balance`, `credit_limit`, `credit_period_start`). RLS by `shop_id`.
 - Subscription: Stripe Checkout for $20/mo; gate `(dashboard)/layout.tsx` on `plan === 'active'` (redirect to `/billing`). **Extend the existing `/api/stripe/webhook`** for `customer.subscription.*` (distinct from gated Connect).
@@ -77,7 +79,7 @@ In-app approval **execution already exists** — this phase makes it the *defaul
 
 ---
 
-## 5. Phase 4 — Brain unification (light) `[planned]`
+## 5. Phase 4 — Brain unification (light) `[done]`
 
 - One persona source (derive from `HUMAN.md`/a `persona.ts`) wired into **both** `vapi-prompt.ts` and the drafters; both read one knowledge base (`knowledge.ts`, already shared).
 

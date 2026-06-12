@@ -286,9 +286,9 @@ export function SmsSettingsCard({
               className="space-y-4"
             >
               <p className="text-sm text-muted-foreground">
-                Pick a local number on Gradia&apos;s Twilio account, we
-                wire up the inbound webhook automatically. About
-                $1.15/month + per-message — billed through your Gradia plan.
+                Pick a local business number and Gradia wires everything
+                up automatically. You&apos;ll see the monthly price before
+                you buy — billed through your Gradia plan.
               </p>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {twilioConfigured ? (

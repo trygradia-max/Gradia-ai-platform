@@ -9,9 +9,12 @@ import { CreditsSettingsCard } from "@/components/gradia/credits-settings-card"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
+import { getA2pState } from "@/app/actions/a2p"
+import { A2pWizard } from "@/components/gradia/a2p-wizard"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
-import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
+import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
+import { listVoiceOptions } from "@/lib/voice-provider"
 import { ConnectionTile } from "@/components/gradia/connection-tile"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { AutonomyDefaultCard } from "@/components/gradia/autonomy-default-card"
@@ -131,12 +134,8 @@ export default async function SettingsPage({
   const knowledgeEntries = await listShopKnowledge(supabase, shopCtx.id)
   const mcpTokens = await listMcpTokensForCurrentShop()
   const baseUrl = await resolveWebhookBaseUrl()
-  const webhookUrl = `${baseUrl}/api/vapi/webhook`
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`
   const metaWebhookUrl = `${baseUrl}/api/meta/webhook`
-  const webhookSecretConfigured = Boolean(
-    process.env.VAPI_WEBHOOK_SECRET?.trim()
-  )
   const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
   const aurinkoConfigured = Boolean(
     process.env.AURINKO_CLIENT_ID?.trim() &&
@@ -210,6 +209,8 @@ export default async function SettingsPage({
   // short-lived cookie.
   const pendingMetaPages = await getPendingMetaPages()
   const creditUsage = await getCreditUsage()
+  const a2pState = await getA2pState()
+  const voiceOptions = listVoiceOptions()
 
   const sections = [
     { id: "voice", label: "Voice" },
@@ -332,13 +333,13 @@ export default async function SettingsPage({
 
       <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
         <section id="voice">
-          <VoiceSettingsCard
-            initialAssistantId={shop?.vapi_assistant_id ?? null}
-            webhookUrl={webhookUrl}
-            webhookSecretConfigured={webhookSecretConfigured}
-            shopName={shop?.name ?? null}
-            vapiConfigured={vapiConfigured}
-          />
+          {shop ? (
+            <VoiceBuilderCard
+              shop={shop}
+              voiceOptions={voiceOptions}
+              vapiConfigured={vapiConfigured}
+            />
+          ) : null}
         </section>
 
         <section id="email">
@@ -349,7 +350,7 @@ export default async function SettingsPage({
           />
         </section>
 
-        <section id="sms">
+        <section id="sms" className="space-y-4">
           <SmsSettingsCard
             initialPhoneNumber={shop?.twilio_phone_number ?? null}
             webhookUrl={smsWebhookUrl}
@@ -358,6 +359,12 @@ export default async function SettingsPage({
               shop?.twilio_account_sid_enc && shop?.twilio_auth_token_enc
             )}
           />
+          {/* Carrier verification — only for Gradia-provisioned numbers;
+              BYO shops handle A2P on their own Twilio account. */}
+          {shop?.gradia_number_e164 &&
+          shop.twilio_phone_number === shop.gradia_number_e164 ? (
+            <A2pWizard initial={a2pState} />
+          ) : null}
         </section>
 
         {integrationEnabled("payments") && (

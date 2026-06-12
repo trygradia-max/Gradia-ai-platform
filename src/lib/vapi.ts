@@ -106,10 +106,139 @@ type AssistantBody = {
   systemPrompt: string
   /** Public server URL Vapi POSTs tool calls + end-of-call to. */
   serverUrl: string
+  /** Per-shop webhook auth secret — sent back as x-vapi-secret. */
+  serverSecret?: string | null
   voice: VapiVoiceId
   /** Sticks shop_id on assistant.metadata for audit / lookup. */
   shopId: string
 }
+
+/**
+ * The five receptionist tools, declared on the assistant model so the LLM
+ * can actually call them (without these the webhook dispatcher never
+ * fires). Parameter names match what vapi-tools.ts readParam accepts.
+ * HITL invariant lives in the handlers, not here: propose_booking and
+ * capture_lead STAGE approvals; nothing executes from a call.
+ */
+export const VAPI_TOOL_DEFINITIONS = [
+  {
+    type: "function" as const,
+    function: {
+      name: "capture_lead",
+      description:
+        "Record a caller as a lead so the team follows up. Use for any inquiry that doesn't end in a booking proposal.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer_name: { type: "string", description: "Caller's name" },
+          phone: { type: "string", description: "Caller's phone, if offered" },
+          vehicle: { type: "string", description: "Vehicle make/model/year" },
+          service: { type: "string", description: "Service they asked about" },
+          notes: { type: "string", description: "Anything else the team should know" },
+        },
+        required: ["customer_name"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "propose_booking",
+      description:
+        "Stage a booking proposal for human approval. Never tell the caller the slot is confirmed — the team texts to confirm.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer_name: { type: "string" },
+          phone: { type: "string" },
+          service: { type: "string", description: "Service to book" },
+          when: { type: "string", description: "Requested time in the caller's words" },
+          iso_start_time: { type: "string", description: "ISO 8601 start time if determinable" },
+          duration_minutes: { type: "string" },
+          timezone: { type: "string" },
+          vehicle: { type: "string" },
+          notes: { type: "string" },
+        },
+        required: ["customer_name", "service", "when"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "quote_service",
+      description: "Look up the exact price and duration for a service on our menu.",
+      parameters: {
+        type: "object",
+        properties: {
+          service: { type: "string", description: "Service name to look up" },
+        },
+        required: ["service"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "lookup_customer_history",
+      description: "Find an existing customer's past services and notes by phone number.",
+      parameters: {
+        type: "object",
+        properties: {
+          phone: { type: "string", description: "Customer phone; defaults to the caller's number" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "lookup_shop_policy",
+      description: "Search the shop's knowledge base for a policy or FAQ answer.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The caller's question" },
+        },
+        required: ["question"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "reschedule_appointment",
+      description:
+        "Stage a reschedule request for human approval. Never tell the caller the move is confirmed — the team texts to confirm the new time.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer_name: { type: "string" },
+          phone: { type: "string", description: "Number on the booking; defaults to the caller's" },
+          new_when: { type: "string", description: "Requested new time in the caller's words" },
+          iso_new_start_time: { type: "string", description: "ISO 8601 new start time if determinable" },
+        },
+        required: ["new_when"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "cancel_appointment",
+      description:
+        "Stage a cancellation for human approval. Never tell the caller it's removed yet — the team confirms by text.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer_name: { type: "string" },
+          phone: { type: "string", description: "Number on the booking; defaults to the caller's" },
+          reason: { type: "string", description: "Why they're cancelling, if offered" },
+        },
+      },
+    },
+  },
+]
 
 /** Building blocks shared by create + update. */
 function assistantPayload(body: AssistantBody) {
@@ -128,8 +257,7 @@ function assistantPayload(body: AssistantBody) {
           content: body.systemPrompt,
         },
       ],
-      // Tools are wired to the same server URL — Vapi delivers tool
-      // calls into our /api/vapi/webhook handler which already exists.
+      tools: VAPI_TOOL_DEFINITIONS,
     },
     voice: {
       provider: voice.provider,
@@ -137,6 +265,7 @@ function assistantPayload(body: AssistantBody) {
     },
     server: {
       url: body.serverUrl,
+      ...(body.serverSecret ? { secret: body.serverSecret } : {}),
       // Wire delivery of these event types into our webhook so the
       // existing handler can dispatch to tool implementations + log
       // end-of-call summaries.
@@ -255,4 +384,72 @@ export async function deleteAssistant(assistantId: string): Promise<void> {
     method: "DELETE",
     path: `/assistant/${encodeURIComponent(assistantId)}`,
   })
+}
+
+// ---------- Phone numbers (BYO Twilio import) ----------
+
+/**
+ * Imports a Twilio number into Vapi for inbound voice routing.
+ *
+ * Per the vapi-voice-provider skill finding (2026-06-09): provider is
+ * "twilio" (byo-phone-number is SIP trunks only) and smsEnabled MUST be
+ * false — the default (true) overwrites the Twilio messaging webhook and
+ * breaks the split (voice → Vapi, SMS → Gradia). Callers should still
+ * verify the messaging webhook afterwards (belt and braces).
+ */
+export async function importTwilioNumber(input: {
+  e164: string
+  twilioAccountSid: string
+  twilioAuthToken: string
+  assistantId: string
+  name: string
+}): Promise<{ phoneNumberId: string }> {
+  const raw = await vapiFetch<{ id?: string }>({
+    method: "POST",
+    path: "/phone-number",
+    body: {
+      provider: "twilio",
+      number: input.e164,
+      twilioAccountSid: input.twilioAccountSid,
+      twilioAuthToken: input.twilioAuthToken,
+      assistantId: input.assistantId,
+      name: input.name,
+      smsEnabled: false,
+    },
+  })
+  if (!raw.id) {
+    throw new VapiApiError(500, "Vapi did not return a phone-number id")
+  }
+  return { phoneNumberId: raw.id }
+}
+
+export async function deletePhoneNumber(phoneNumberId: string): Promise<void> {
+  await vapiFetch<unknown>({
+    method: "DELETE",
+    path: `/phone-number/${encodeURIComponent(phoneNumberId)}`,
+  })
+}
+
+// ---------- Outbound calls (test call) ----------
+
+/** Rings `toNumber` from the shop's imported number with the assistant on
+ *  the line — the launch-gate test call. */
+export async function createOutboundCall(input: {
+  assistantId: string
+  phoneNumberId: string
+  toNumber: string
+}): Promise<{ callId: string }> {
+  const raw = await vapiFetch<{ id?: string }>({
+    method: "POST",
+    path: "/call",
+    body: {
+      assistantId: input.assistantId,
+      phoneNumberId: input.phoneNumberId,
+      customer: { number: input.toNumber },
+    },
+  })
+  if (!raw.id) {
+    throw new VapiApiError(500, "Vapi did not return a call id")
+  }
+  return { callId: raw.id }
 }
