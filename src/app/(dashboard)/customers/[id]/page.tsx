@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Briefcase,
   CalendarDays,
+  House,
   Mail,
   Phone,
   type LucideIcon,
@@ -160,6 +161,7 @@ function IdentityCard({
     phone: string | null
     email: string | null
     jobber_client_id: string | null
+    housecallpro_customer_id: string | null
   }
 }) {
   const rows: IdentityRow[] = [
@@ -170,6 +172,13 @@ function IdentityCard({
     rows.push({
       icon: Briefcase,
       label: "Jobber",
+      value: "Synced",
+    })
+  }
+  if (customer.housecallpro_customer_id) {
+    rows.push({
+      icon: House,
+      label: "Housecall Pro",
       value: "Synced",
     })
   }
