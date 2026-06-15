@@ -8,8 +8,6 @@ export type ChannelId =
   | "sms"
   | "calendar"
   | "payments"
-  | "instagram"
-  | "facebook"
 
 export type ChannelStatus = "connected" | "partial" | "off"
 
@@ -74,8 +72,6 @@ export async function getChannelStatusForCurrentShop(): Promise<
     smsSummary(shop),
     calendarSummary(shop),
     paymentsSummary(shop),
-    instagramSummary(shop),
-    facebookSummary(shop),
   ]
 }
 
@@ -170,34 +166,3 @@ function paymentsSummary(shop: ShopRow | null): ChannelSummary {
   }
 }
 
-function instagramSummary(shop: ShopRow | null): ChannelSummary {
-  const connected = Boolean(
-    shop?.instagram_page_id && shop?.instagram_page_access_token_enc
-  )
-  return {
-    id: "instagram",
-    label: "Instagram DMs",
-    description: "Inbound IG DMs auto-drafted with HITL approval; outbound from approvals queue.",
-    status: connected ? "connected" : "off",
-    hint: connected
-      ? null
-      : "Paste your IG Business Account + Page Access Token.",
-    href: "/settings#instagram",
-  }
-}
-
-function facebookSummary(shop: ShopRow | null): ChannelSummary {
-  const connected = Boolean(
-    shop?.facebook_page_id && shop?.facebook_page_access_token_enc
-  )
-  return {
-    id: "facebook",
-    label: "Facebook DMs",
-    description: "Page Messenger DMs with the same HITL flow as Instagram.",
-    status: connected ? "connected" : "off",
-    hint: connected
-      ? null
-      : "Paste your Facebook Page ID + Page Access Token.",
-    href: "/settings#facebook",
-  }
-}

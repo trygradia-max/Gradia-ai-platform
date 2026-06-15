@@ -36,10 +36,7 @@ import {
 } from "@/lib/memory"
 import {
   sendBookingApprovalRequest,
-  sendChargeApprovalRequest,
   sendEmailApprovalRequest,
-  sendFacebookDmApprovalRequest,
-  sendInstagramDmApprovalRequest,
   sendLeadApprovalRequest,
   sendSmsApprovalRequest,
 } from "@/lib/slack"
@@ -113,7 +110,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           .max(40)
           .default("mcp")
           .describe(
-            "Where the lead came from (e.g. 'instagram', 'email', 'voice'). Used for audit."
+            "Where the lead came from (e.g. 'email', 'voice', 'web'). Used for audit."
           ),
       },
     },
@@ -177,13 +174,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           .default(null)
           .describe("Any phone format; we normalize to E.164."),
         email: z.string().max(200).nullable().default(null),
-        instagram_handle: z
-          .string()
-          .max(60)
-          .nullable()
-          .default(null)
-          .describe("With or without leading @."),
-        facebook_id: z.string().max(60).nullable().default(null),
       },
     },
     async (args) => {
@@ -193,8 +183,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         {
           phone: args.phone ?? undefined,
           email: args.email ?? undefined,
-          instagramHandle: args.instagram_handle ?? undefined,
-          facebookId: args.facebook_id ?? undefined,
         }
       )
       return jsonResult({ customer })
@@ -212,8 +200,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         name: z.string().max(200).nullable().default(null),
         phone: z.string().max(60).nullable().default(null),
         email: z.string().max(200).nullable().default(null),
-        instagram_handle: z.string().max(60).nullable().default(null),
-        facebook_id: z.string().max(60).nullable().default(null),
       },
     },
     async (args) => {
@@ -221,8 +207,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         name: args.name ?? undefined,
         phone: args.phone ?? undefined,
         email: args.email ?? undefined,
-        instagramHandle: args.instagram_handle ?? undefined,
-        facebookId: args.facebook_id ?? undefined,
       })
       if (!result.ok) return errorResult(result.error)
       return jsonResult({ customer: result.customer, created: result.created })
@@ -247,8 +231,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           "voice",
           "sms",
           "email",
-          "instagram",
-          "facebook",
           "web",
           "note",
         ]),
@@ -336,8 +318,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
             "voice",
             "sms",
             "email",
-            "instagram",
-            "facebook",
             "web",
             "note",
           ])
@@ -589,168 +569,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
     }
   )
 
-  // ---------- propose_ig_dm ----------
-  server.registerTool(
-    "propose_ig_dm",
-    {
-      title: "Propose an outbound Instagram DM",
-      description:
-        "Stages a send_instagram_dm pending_action. recipient_id is the page-scoped sender id we stored on inbound (also surfaced as customer.instagram_handle).",
-      inputSchema: {
-        recipient_id: z.string().min(1).max(120),
-        body: z.string().min(1).max(900),
-        customer_name: z.string().max(200).nullable().default(null),
-        customer_id: z.string().uuid().nullable().default(null),
-        reason: z.string().max(200).nullable().default(null),
-        source: z.string().max(40).default("mcp"),
-      },
-    },
-    async (args) => {
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "send_instagram_dm",
-          payload: {
-            recipient_id: args.recipient_id,
-            body: args.body,
-            customer_name: args.customer_name,
-            customer_id: args.customer_id,
-            reason: args.reason,
-            source: args.source,
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) return errorResult(error?.message ?? "Insert failed.")
-      const pendingId = (data as { id: string }).id
-
-      try {
-        await sendInstagramDmApprovalRequest({
-          pendingActionId: pendingId,
-          recipientId: args.recipient_id,
-          customerName: args.customer_name,
-          body: args.body,
-          reason: args.reason,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_ig_dm] Slack send failed:", err)
-      }
-      return jsonResult({ ok: true, pending_action_id: pendingId })
-    }
-  )
-
-  // ---------- propose_fb_dm ----------
-  server.registerTool(
-    "propose_fb_dm",
-    {
-      title: "Propose an outbound Facebook page DM",
-      description:
-        "Stages a send_facebook_dm pending_action. recipient_id is the PSID we stored on inbound (also surfaced as customer.facebook_id).",
-      inputSchema: {
-        recipient_id: z.string().min(1).max(120),
-        body: z.string().min(1).max(900),
-        customer_name: z.string().max(200).nullable().default(null),
-        customer_id: z.string().uuid().nullable().default(null),
-        reason: z.string().max(200).nullable().default(null),
-        source: z.string().max(40).default("mcp"),
-      },
-    },
-    async (args) => {
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "send_facebook_dm",
-          payload: {
-            recipient_id: args.recipient_id,
-            body: args.body,
-            customer_name: args.customer_name,
-            customer_id: args.customer_id,
-            reason: args.reason,
-            source: args.source,
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) return errorResult(error?.message ?? "Insert failed.")
-      const pendingId = (data as { id: string }).id
-
-      try {
-        await sendFacebookDmApprovalRequest({
-          pendingActionId: pendingId,
-          recipientId: args.recipient_id,
-          customerName: args.customer_name,
-          body: args.body,
-          reason: args.reason,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_fb_dm] Slack send failed:", err)
-      }
-      return jsonResult({ ok: true, pending_action_id: pendingId })
-    }
-  )
-
-  // ---------- propose_charge ----------
-  server.registerTool(
-    "propose_charge",
-    {
-      title: "Propose a Stripe invoice",
-      description:
-        "Stages a charge_customer pending_action. On approval, Stripe Connect creates an invoice on the shop's connected account and emails the customer a hosted payment link. amount_cents is dollars × 100.",
-      inputSchema: {
-        customer_name: z.string().min(1).max(200),
-        customer_email: z
-          .string()
-          .email()
-          .describe("Required — Stripe needs an email to send the invoice."),
-        amount_cents: z
-          .number()
-          .int()
-          .positive()
-          .max(10_000_000)
-          .describe("Dollars × 100. Max $100,000 per charge."),
-        description: z.string().min(1).max(500),
-        source: z.string().max(40).default("mcp"),
-      },
-    },
-    async (args) => {
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "charge_customer",
-          payload: {
-            customer_name: args.customer_name,
-            customer_email: args.customer_email,
-            amount_cents: args.amount_cents,
-            description: args.description,
-            source: args.source,
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) return errorResult(error?.message ?? "Insert failed.")
-      const pendingId = (data as { id: string }).id
-
-      try {
-        await sendChargeApprovalRequest({
-          pendingActionId: pendingId,
-          customerName: args.customer_name,
-          customerEmail: args.customer_email,
-          amountCents: args.amount_cents,
-          description: args.description,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_charge] Slack send failed:", err)
-      }
-      return jsonResult({ ok: true, pending_action_id: pendingId })
-    }
-  )
-
   // ---------- resources ----------
 
   server.registerResource(
@@ -826,7 +644,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       const { data, error } = await ctx.supabase
         .from("customers")
         .select(
-          "id, name, phone, email, instagram_handle, facebook_id, updated_at"
+          "id, name, phone, email, updated_at"
         )
         .eq("shop_id", ctx.shopId)
         .order("updated_at", { ascending: false })
@@ -995,7 +813,7 @@ Tone: collaborative we/us — you're part of the team, not a vendor.
 Workflow:
   1. Read first. Start with the gradia://shop/snapshot resource for context. Use list_services, search_customer_memory, search_shop_knowledge, gradia://leads/active, and gradia://customers/recent to scope the audience.
   2. Plan out loud. Tell the operator what you're about to propose ("I see 14 leads that match; here's the draft").
-  3. Then batch-propose. Use propose_sms / propose_email / propose_ig_dm / propose_fb_dm — never send directly. Every draft lands in /approvals for the operator to Approve or Edit.
+  3. Then batch-propose. Use propose_sms / propose_email — never send directly. Every draft lands in /approvals for the operator to Approve or Edit.
   4. Cite policies. Pull any relevant entry from search_shop_knowledge into your drafts. Never quote a price unless list_services or knowledge explicitly states one.
 
 Hard rules:

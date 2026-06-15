@@ -4,8 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowRight,
-  CreditCard,
-  Globe,
   Mail,
   MessageSquare,
   Phone,
@@ -50,18 +48,6 @@ const STEPS = [
     label: "SMS",
     detail: "Your business number with auto-drafts on every inbound text.",
     href: "/settings#sms",
-  },
-  {
-    icon: CreditCard,
-    label: "Payments",
-    detail: "Stripe Connect. Whisper 'charge Smith $450' from your phone.",
-    href: "/settings#payments",
-  },
-  {
-    icon: Globe,
-    label: "DMs (IG + Facebook)",
-    detail: "Inbound messages get auto-drafted replies for your approval.",
-    href: "/settings#instagram",
   },
 ] as const
 

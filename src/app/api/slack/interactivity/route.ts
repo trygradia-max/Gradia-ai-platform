@@ -5,14 +5,8 @@ import { createServiceClient } from "@/lib/supabase/service"
 import {
   bookingApprovedBlocks,
   bookingEditRequestedBlocks,
-  chargeApprovedBlocks,
-  chargeEditRequestedBlocks,
   emailApprovedBlocks,
   emailEditRequestedBlocks,
-  facebookDmApprovedBlocks,
-  facebookDmEditRequestedBlocks,
-  instagramDmApprovedBlocks,
-  instagramDmEditRequestedBlocks,
   leadApprovedBlocks,
   leadEditRequestedBlocks,
   noteApprovedBlocks,
@@ -145,21 +139,6 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
-    } else if (result.actionType === "charge_customer") {
-      const { proposal, invoiceUrl } = result
-      await replaceOriginalMessage(
-        payload.response_url,
-        `Invoice sent · ${proposal.customer_name || proposal.customer_email}`,
-        chargeApprovedBlocks({
-          pendingActionId: pendingId,
-          customerName: proposal.customer_name,
-          customerEmail: proposal.customer_email,
-          amountCents: proposal.amount_cents,
-          description: proposal.description,
-          invoiceUrl,
-          approverSlackId: payload.user.id,
-        })
-      )
     } else if (result.actionType === "send_email") {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -170,34 +149,6 @@ export async function POST(request: Request) {
           toEmail: proposal.to_email,
           customerName: proposal.customer_name,
           subject: proposal.subject,
-          body: proposal.body,
-          reason: proposal.reason,
-          approverSlackId: payload.user.id,
-        })
-      )
-    } else if (result.actionType === "send_instagram_dm") {
-      const { proposal } = result
-      await replaceOriginalMessage(
-        payload.response_url,
-        `IG DM sent · ${proposal.customer_name ?? proposal.recipient_id}`,
-        instagramDmApprovedBlocks({
-          pendingActionId: pendingId,
-          recipientId: proposal.recipient_id,
-          customerName: proposal.customer_name,
-          body: proposal.body,
-          reason: proposal.reason,
-          approverSlackId: payload.user.id,
-        })
-      )
-    } else if (result.actionType === "send_facebook_dm") {
-      const { proposal } = result
-      await replaceOriginalMessage(
-        payload.response_url,
-        `FB DM sent · ${proposal.customer_name ?? proposal.recipient_id}`,
-        facebookDmApprovedBlocks({
-          pendingActionId: pendingId,
-          recipientId: proposal.recipient_id,
-          customerName: proposal.customer_name,
           body: proposal.body,
           reason: proposal.reason,
           approverSlackId: payload.user.id,
@@ -287,20 +238,6 @@ export async function POST(request: Request) {
           approverSlackId: payload.user.id,
         })
       )
-    } else if (result.actionType === "charge_customer") {
-      const { proposal } = result
-      await replaceOriginalMessage(
-        payload.response_url,
-        `Edit requested · charge ${proposal.customer_name || proposal.customer_email}`,
-        chargeEditRequestedBlocks({
-          pendingActionId: pendingId,
-          customerName: proposal.customer_name,
-          customerEmail: proposal.customer_email,
-          amountCents: proposal.amount_cents,
-          description: proposal.description,
-          approverSlackId: payload.user.id,
-        })
-      )
     } else if (result.actionType === "send_email") {
       const { proposal } = result
       await replaceOriginalMessage(
@@ -311,34 +248,6 @@ export async function POST(request: Request) {
           toEmail: proposal.to_email,
           customerName: proposal.customer_name,
           subject: proposal.subject,
-          body: proposal.body,
-          reason: proposal.reason,
-          approverSlackId: payload.user.id,
-        })
-      )
-    } else if (result.actionType === "send_instagram_dm") {
-      const { proposal } = result
-      await replaceOriginalMessage(
-        payload.response_url,
-        `Edit requested · IG DM to ${proposal.customer_name ?? proposal.recipient_id}`,
-        instagramDmEditRequestedBlocks({
-          pendingActionId: pendingId,
-          recipientId: proposal.recipient_id,
-          customerName: proposal.customer_name,
-          body: proposal.body,
-          reason: proposal.reason,
-          approverSlackId: payload.user.id,
-        })
-      )
-    } else if (result.actionType === "send_facebook_dm") {
-      const { proposal } = result
-      await replaceOriginalMessage(
-        payload.response_url,
-        `Edit requested · FB DM to ${proposal.customer_name ?? proposal.recipient_id}`,
-        facebookDmEditRequestedBlocks({
-          pendingActionId: pendingId,
-          recipientId: proposal.recipient_id,
-          customerName: proposal.customer_name,
           body: proposal.body,
           reason: proposal.reason,
           approverSlackId: payload.user.id,

@@ -5,10 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import {
-  AtSign,
   Calendar,
-  CreditCard,
-  Globe,
   Loader2,
   Mail,
   MessageSquare,
@@ -71,40 +68,12 @@ type SmsProposal = {
   reason: string | null
 }
 
-type ChargeProposal = {
-  customer_name: string
-  customer_email: string
-  amount_cents: number
-  description: string
-}
-
 type EmailProposal = {
   to_email: string
   subject: string
   body: string
   customer_name: string | null
   reason: string | null
-}
-
-type InstagramDmProposal = {
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  reason: string | null
-}
-
-type FacebookDmProposal = {
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  reason: string | null
-}
-
-function formatMoney(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100)
 }
 
 function formatBookingWhen(iso: string, minutes: number): string {
@@ -147,9 +116,6 @@ const ACTION_META: Record<PendingActionType, ActionMeta> = {
   cancel_appointment: { icon: Calendar, label: "Cancellation", tone: "booking" },
   send_sms: { icon: MessageSquare, label: "SMS", tone: "outbound" },
   send_email: { icon: Mail, label: "Email", tone: "outbound" },
-  send_instagram_dm: { icon: AtSign, label: "IG DM", tone: "outbound" },
-  send_facebook_dm: { icon: Globe, label: "FB DM", tone: "outbound" },
-  charge_customer: { icon: CreditCard, label: "Charge", tone: "money" },
 }
 
 const TONE_STYLE: Record<
@@ -368,10 +334,7 @@ function ApprovalCard({
 const ACTION_CTA: Partial<Record<PendingActionType, string>> = {
   send_sms: "Send it",
   send_email: "Send it",
-  send_instagram_dm: "Send it",
-  send_facebook_dm: "Send it",
   book_appointment: "Book it",
-  charge_customer: "Charge it",
   create_lead: "Save the lead",
   add_note: "Save the note",
 }
@@ -414,25 +377,9 @@ function ActionHeader({ item }: { item: PendingActionRow }) {
       )
     case "send_sms":
       return <SmsHeader proposal={item.payload as unknown as SmsProposal} />
-    case "charge_customer":
-      return (
-        <ChargeHeader proposal={item.payload as unknown as ChargeProposal} />
-      )
     case "send_email":
       return (
         <EmailHeader proposal={item.payload as unknown as EmailProposal} />
-      )
-    case "send_instagram_dm":
-      return (
-        <InstagramHeader
-          proposal={item.payload as unknown as InstagramDmProposal}
-        />
-      )
-    case "send_facebook_dm":
-      return (
-        <FacebookHeader
-          proposal={item.payload as unknown as FacebookDmProposal}
-        />
       )
     case "create_lead":
     default:
@@ -450,24 +397,8 @@ function ActionBody({ item }: { item: PendingActionRow }) {
       )
     case "send_sms":
       return <SmsBody proposal={item.payload as unknown as SmsProposal} />
-    case "charge_customer":
-      return (
-        <ChargeBody proposal={item.payload as unknown as ChargeProposal} />
-      )
     case "send_email":
       return <EmailBody proposal={item.payload as unknown as EmailProposal} />
-    case "send_instagram_dm":
-      return (
-        <InstagramBody
-          proposal={item.payload as unknown as InstagramDmProposal}
-        />
-      )
-    case "send_facebook_dm":
-      return (
-        <FacebookBody
-          proposal={item.payload as unknown as FacebookDmProposal}
-        />
-      )
     case "create_lead":
     default:
       return <LeadBody proposal={item.payload as unknown as LeadProposal} />
@@ -594,32 +525,6 @@ function SmsBody({ proposal }: { proposal: SmsProposal }) {
   )
 }
 
-function ChargeHeader({ proposal }: { proposal: ChargeProposal }) {
-  return (
-    <span>
-      {proposal.customer_name || "Unknown customer"}
-      <span className="ml-2 align-middle text-sm font-normal text-muted-foreground">
-        {formatMoney(proposal.amount_cents)}
-      </span>
-    </span>
-  )
-}
-
-function ChargeBody({ proposal }: { proposal: ChargeProposal }) {
-  return (
-    <>
-      <p className="text-sm text-foreground/90">
-        <span className="font-medium">
-          {proposal.description || "Detailing service"}
-        </span>
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {proposal.customer_email || "Email missing — tweak to add"}
-      </p>
-    </>
-  )
-}
-
 function EmailHeader({ proposal }: { proposal: EmailProposal }) {
   const target =
     proposal.customer_name?.trim() || proposal.to_email || "Unknown"
@@ -644,46 +549,6 @@ function EmailBody({ proposal }: { proposal: EmailProposal }) {
       <VerifierFlag proposal={proposal as unknown as Record<string, unknown>} />
     </>
   )
-}
-
-function InstagramHeader({ proposal }: { proposal: InstagramDmProposal }) {
-  const target =
-    proposal.customer_name?.trim() ||
-    (proposal.recipient_id ? `IG ${proposal.recipient_id}` : "Unknown")
-  return (
-    <span className="break-words">
-      To {target}
-      {proposal.reason ? (
-        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
-          {proposal.reason}
-        </span>
-      ) : null}
-    </span>
-  )
-}
-
-function InstagramBody({ proposal }: { proposal: InstagramDmProposal }) {
-  return <MessagePreview body={proposal.body} />
-}
-
-function FacebookHeader({ proposal }: { proposal: FacebookDmProposal }) {
-  const target =
-    proposal.customer_name?.trim() ||
-    (proposal.recipient_id ? `FB ${proposal.recipient_id}` : "Unknown")
-  return (
-    <span className="break-words">
-      To {target}
-      {proposal.reason ? (
-        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
-          {proposal.reason}
-        </span>
-      ) : null}
-    </span>
-  )
-}
-
-function FacebookBody({ proposal }: { proposal: FacebookDmProposal }) {
-  return <MessagePreview body={proposal.body} />
 }
 
 function MessagePreview({ body }: { body: string }) {

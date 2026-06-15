@@ -11,13 +11,7 @@ const CANDIDATE_LIMIT = 100
 
 export type MergeCandidate = Pick<
   CustomerRow,
-  | "id"
-  | "name"
-  | "phone"
-  | "email"
-  | "instagram_handle"
-  | "facebook_id"
-  | "updated_at"
+  "id" | "name" | "phone" | "email" | "updated_at"
 >
 
 /**
@@ -37,7 +31,7 @@ export async function listMergeCandidates(input: {
   let req = supabase
     .from("customers")
     .select(
-      "id, name, phone, email, instagram_handle, facebook_id, updated_at"
+      "id, name, phone, email, updated_at"
     )
     .eq("shop_id", shop.id)
     .neq("id", input.excludeId)
@@ -51,8 +45,6 @@ export async function listMergeCandidates(input: {
         `name.ilike.${pattern}`,
         `phone.ilike.${pattern}`,
         `email.ilike.${pattern}`,
-        `instagram_handle.ilike.${pattern}`,
-        `facebook_id.ilike.${pattern}`,
       ].join(",")
     )
   }
@@ -175,8 +167,6 @@ export async function mergeCustomers(
       name: null,
       phone: null,
       email: null,
-      instagram_handle: null,
-      facebook_id: null,
     })
     .eq("id", loser.id)
 
@@ -186,14 +176,6 @@ export async function mergeCustomers(
     { field: "name", value: winner.name ? null : loser.name },
     { field: "phone", value: winner.phone ? null : loser.phone },
     { field: "email", value: winner.email ? null : loser.email },
-    {
-      field: "instagram_handle",
-      value: winner.instagram_handle ? null : loser.instagram_handle,
-    },
-    {
-      field: "facebook_id",
-      value: winner.facebook_id ? null : loser.facebook_id,
-    },
   ]
 
   for (const { field, value } of absorbCandidates) {

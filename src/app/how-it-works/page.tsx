@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import {
   ArrowRight,
-  AtSign,
   BookOpen,
   Bot,
   Calendar,
@@ -58,12 +57,6 @@ const CHANNELS: {
     label: "SMS",
     body: "Your business number captures texts, auto-drafts replies, and sends booking reminders 24 hours before each appointment.",
     tone: "sms",
-  },
-  {
-    icon: AtSign,
-    label: "Instagram + Facebook DMs",
-    body: "Page messages get the same HITL flow as everything else — proposed drafts, your approval, sent in seconds.",
-    tone: "social",
   },
   {
     icon: Calendar,
@@ -138,8 +131,6 @@ const FEATURES: string[] = [
   "Voice receptionist — books, quotes, captures leads",
   "Email + Calendar — inbound classifier + auto-drafts",
   "Business-number texting — inbound + outbound + delivery receipts",
-  "Instagram & Facebook DMs — same HITL flow as the rest",
-  "Stripe Connect — invoice from inside Gradia",
   "Shared customer memory across every channel",
   "Heat-scored lead pipeline",
   "Co-owner widget — proactive nudges on what to do next",
@@ -217,7 +208,7 @@ export default function HowItWorksPage() {
                   <span className="italic">reach you</span>.
                 </>
               }
-              subtitle="Gradia plugs into the tools you already use — your phone line, Gmail, texting, Instagram and Facebook DMs, and payments. Everything lands in the same approval queue."
+              subtitle="Gradia plugs into the tools you already use — your phone line, Gmail, and texting. Everything lands in the same approval queue."
             />
             <RevealOnScroll
               as="ul"
@@ -390,7 +381,7 @@ export default function HowItWorksPage() {
                       </h2>
                       <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
                         Bring your own voice line, Gmail, texting number,
-                        Stripe, and Meta page. We handle the AI office layer
+                        and Stripe. We handle the AI office layer
                         that ties them together. Cancel anytime — your data
                         exports cleanly.
                       </p>

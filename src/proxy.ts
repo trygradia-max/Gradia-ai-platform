@@ -12,10 +12,6 @@ import { updateSession } from "@/lib/supabase/middleware"
 // bring the route back. /api/stripe/webhook is intentionally NOT gated: the
 // Phase-3 paywall reuses it.
 const GATED_PREFIXES: ReadonlyArray<readonly [string, boolean]> = [
-  [
-    "/api/meta",
-    FEATURES.integrations.instagram || FEATURES.integrations.facebook,
-  ],
   ["/api/stripe/connect", FEATURES.integrations.payments],
 ]
 

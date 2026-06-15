@@ -409,8 +409,6 @@ const linkToSetupSchema = z.object({
       "email",
       "sms",
       "payments",
-      "instagram",
-      "facebook",
       "knowledge",
       "services",
     ])
@@ -501,30 +499,6 @@ async function checkSetupStatus(
           : "No Stripe Connect account yet — connect via Settings → Payments.",
     },
     {
-      channel: "instagram",
-      connected: Boolean(
-        shop?.instagram_page_id && shop?.instagram_page_access_token_enc
-      ),
-      detail: shop?.instagram_account_handle
-        ? `@${shop.instagram_account_handle}`
-        : (shop?.instagram_page_id ?? null),
-      reason:
-        shop?.instagram_page_id && shop?.instagram_page_access_token_enc
-          ? "Instagram DMs route through the connected Page."
-          : "Instagram DMs aren't wired up — connect via Settings → Instagram.",
-    },
-    {
-      channel: "facebook",
-      connected: Boolean(
-        shop?.facebook_page_id && shop?.facebook_page_access_token_enc
-      ),
-      detail: shop?.facebook_page_name ?? shop?.facebook_page_id ?? null,
-      reason:
-        shop?.facebook_page_id && shop?.facebook_page_access_token_enc
-          ? "Facebook Page DMs are live."
-          : "Facebook Page DMs aren't wired up — connect via Settings → Facebook.",
-    },
-    {
       channel: "calendar",
       connected: Boolean(
         shop?.aurinko_access_token_enc && shop?.aurinko_account_id
@@ -569,9 +543,7 @@ async function recommendNextSetup(
   //   4. payments    — needed before any "charge" action can fire
   //   5. email       — Gmail + Calendar (lower volume than voice/sms but
   //                    still essential)
-  //   6. instagram   — social leads, lower volume in pilot
-  //   7. facebook    — same
-  //   8. knowledge   — quality lever, can come later
+  //   6. knowledge   — quality lever, can come later
   const PRIORITY: { channel: string; reason: string }[] = []
   if (status.servicesCount === 0) {
     PRIORITY.push({
@@ -600,8 +572,6 @@ async function recommendNextSetup(
     "sms",
     "payments",
     "email",
-    "instagram",
-    "facebook",
     "knowledge",
   ]
   const missing = PRIORITY.sort(
@@ -644,16 +614,6 @@ const SETUP_LINKS: Record<
     path: "/settings#payments",
     label: "Payments (Stripe)",
     cta: "Connect Stripe",
-  },
-  instagram: {
-    path: "/settings#instagram",
-    label: "Instagram DMs",
-    cta: "Connect via Facebook",
-  },
-  facebook: {
-    path: "/settings#facebook",
-    label: "Facebook DMs",
-    cta: "Connect via Facebook",
   },
   knowledge: {
     path: "/settings#knowledge",
@@ -782,7 +742,7 @@ export const BI_TOOLS: BiToolDefinition[] = [
   {
     name: "check_setup_status",
     description:
-      "Inspect which Gradia channels are wired up for this shop (voice, email, SMS, payments, Instagram, Facebook, calendar) plus services + knowledge counts. Use whenever the operator asks about setup, what's missing, what's connected, or 'are we live yet.' Returns structured status for each channel with a human-readable reason.",
+      "Inspect which Gradia channels are wired up for this shop (voice, email, SMS, payments, calendar) plus services + knowledge counts. Use whenever the operator asks about setup, what's missing, what's connected, or 'are we live yet.' Returns structured status for each channel with a human-readable reason.",
     schema: checkSetupStatusSchema,
     handler: (supabase, shopId) => checkSetupStatus(supabase, shopId),
   },

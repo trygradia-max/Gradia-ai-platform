@@ -1,10 +1,9 @@
 import { headers } from "next/headers"
-import { Briefcase, Calendar, Mail, MessageSquare, Phone, Shield } from "lucide-react"
+import { Briefcase, Calendar, House, Mail, MessageSquare, Phone, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
-import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
-import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
+import { HousecallProSettingsCard } from "@/components/gradia/housecallpro-settings-card"
 import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
@@ -27,8 +26,6 @@ import {
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getUsageState } from "@/app/actions/billing"
-import { getPendingMetaPages } from "@/app/actions/meta-oauth"
-import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
 import { readAutonomy } from "@/lib/autonomy"
 import { integrationEnabled } from "@/lib/features"
 import { requireShop } from "@/lib/shop"
@@ -83,32 +80,15 @@ const KNOWN_JOBBER_STATUSES = new Set([
   "save_failed",
 ])
 
-const KNOWN_META_STATUSES = new Set([
+const KNOWN_HOUSECALLPRO_STATUSES = new Set([
   "ok",
-  "pick",
   "denied",
   "missing_params",
   "state_mismatch",
-  "not_signed_in",
   "token_exchange_failed",
-  "page_list_failed",
-  "no_pages",
-  "subscribe_failed",
+  "account_fetch_failed",
   "save_failed",
 ])
-
-type MetaCallbackStatus =
-  | "ok"
-  | "pick"
-  | "denied"
-  | "missing_params"
-  | "state_mismatch"
-  | "not_signed_in"
-  | "token_exchange_failed"
-  | "page_list_failed"
-  | "no_pages"
-  | "subscribe_failed"
-  | "save_failed"
 
 export default async function SettingsPage({
   searchParams,
@@ -117,7 +97,7 @@ export default async function SettingsPage({
     email?: string
     stripe?: string
     jobber?: string
-    meta?: string
+    housecallpro?: string
   }>
 }) {
   const shopCtx = await requireShop()
@@ -135,15 +115,10 @@ export default async function SettingsPage({
   const mcpTokens = await listMcpTokensForCurrentShop()
   const baseUrl = await resolveWebhookBaseUrl()
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`
-  const metaWebhookUrl = `${baseUrl}/api/meta/webhook`
   const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
   const aurinkoConfigured = Boolean(
     process.env.AURINKO_CLIENT_ID?.trim() &&
       process.env.AURINKO_CLIENT_SECRET?.trim()
-  )
-  const metaConfigured = Boolean(
-    process.env.META_APP_SECRET?.trim() &&
-      process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()
   )
   const twilioConfigured = Boolean(
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
@@ -156,6 +131,10 @@ export default async function SettingsPage({
   const jobberConfigured = Boolean(
     process.env.JOBBER_CLIENT_ID?.trim() &&
       process.env.JOBBER_CLIENT_SECRET?.trim()
+  )
+  const housecallProConfigured = Boolean(
+    process.env.HOUSECALLPRO_CLIENT_ID?.trim() &&
+      process.env.HOUSECALLPRO_CLIENT_SECRET?.trim()
   )
 
   const params = await searchParams
@@ -198,16 +177,20 @@ export default async function SettingsPage({
           | "save_failed")
       : null
 
-  const rawMetaStatus = params.meta ?? null
-  const metaStatus: MetaCallbackStatus | null =
-    rawMetaStatus && KNOWN_META_STATUSES.has(rawMetaStatus)
-      ? (rawMetaStatus as MetaCallbackStatus)
+  const rawHousecallproStatus = params.housecallpro ?? null
+  const housecallproStatus =
+    rawHousecallproStatus &&
+    KNOWN_HOUSECALLPRO_STATUSES.has(rawHousecallproStatus)
+      ? (rawHousecallproStatus as
+          | "ok"
+          | "denied"
+          | "missing_params"
+          | "state_mismatch"
+          | "token_exchange_failed"
+          | "account_fetch_failed"
+          | "save_failed")
       : null
 
-  // Multi-page picker payload — populated when the OAuth callback
-  // returned more than one Page and stashed the candidates in a
-  // short-lived cookie.
-  const pendingMetaPages = await getPendingMetaPages()
   const usageState = await getUsageState()
   const a2pState = await getA2pState()
   const voiceOptions = listVoiceOptions()
@@ -217,18 +200,13 @@ export default async function SettingsPage({
     { id: "email", label: "Email" },
     { id: "sms", label: "SMS" },
     { id: "payments", label: "Payments" },
-    { id: "instagram", label: "Instagram" },
-    { id: "facebook", label: "Facebook" },
     { id: "jobber", label: "Jobber" },
+    { id: "housecallpro", label: "Housecall Pro" },
     { id: "knowledge", label: "Knowledge" },
     { id: "usage", label: "Usage" },
     { id: "developer", label: "Developer" },
     { id: "soon", label: "More" },
-  ].filter(
-    (s) =>
-      !["payments", "instagram", "facebook"].includes(s.id) ||
-      integrationEnabled(s.id)
-  )
+  ].filter((s) => !["payments"].includes(s.id) || integrationEnabled(s.id))
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -242,8 +220,6 @@ export default async function SettingsPage({
         }
         subhead="The channels and tools we run on. Connect once — we handle the rest."
       />
-
-      <MetaCallbackToast status={metaStatus} />
 
       <div className="space-y-8 pt-2">
         <div className="space-y-3">
@@ -307,7 +283,7 @@ export default async function SettingsPage({
             />
             <ConnectionTile
               icon={Briefcase}
-              name="Jobs (CRM)"
+              name="Jobs — Jobber"
               description="Pushes approved leads and bookings to Jobber."
               connected={Boolean(shop?.jobber_account_name)}
               available={jobberConfigured}
@@ -316,6 +292,18 @@ export default async function SettingsPage({
               connectHref="/api/jobber/auth/start"
               popup
               manageHref="#jobber"
+            />
+            <ConnectionTile
+              icon={House}
+              name="Jobs — Housecall Pro"
+              description="Pushes approved leads and bookings to Housecall Pro."
+              connected={Boolean(shop?.housecallpro_account_name)}
+              available={housecallProConfigured}
+              connectedLabel={shop?.housecallpro_account_name}
+              connectedDetail="Synced to Housecall Pro"
+              connectHref="/api/housecallpro/auth/start"
+              popup
+              manageHref="#housecallpro"
             />
           </div>
         </div>
@@ -378,38 +366,19 @@ export default async function SettingsPage({
           </section>
         )}
 
-        {integrationEnabled("instagram") && (
-          <section id="instagram">
-            <InstagramSettingsCard
-              initialPageId={shop?.instagram_page_id ?? null}
-              initialBusinessAccountId={
-                shop?.instagram_business_account_id ?? null
-              }
-              initialHandle={shop?.instagram_account_handle ?? null}
-              webhookUrl={metaWebhookUrl}
-              metaConfigured={metaConfigured}
-              pendingPages={pendingMetaPages}
-            />
-          </section>
-        )}
-
-        {integrationEnabled("facebook") && (
-          <section id="facebook">
-            <FacebookSettingsCard
-              initialPageId={shop?.facebook_page_id ?? null}
-              initialPageName={shop?.facebook_page_name ?? null}
-              webhookUrl={metaWebhookUrl}
-              metaConfigured={metaConfigured}
-              pendingPages={pendingMetaPages}
-            />
-          </section>
-        )}
-
         <section id="jobber">
           <JobberSettingsCard
             initialAccountName={shop?.jobber_account_name ?? null}
             jobberConfigured={jobberConfigured}
             callbackStatus={jobberStatus}
+          />
+        </section>
+
+        <section id="housecallpro">
+          <HousecallProSettingsCard
+            initialAccountName={shop?.housecallpro_account_name ?? null}
+            housecallProConfigured={housecallProConfigured}
+            callbackStatus={housecallproStatus}
           />
         </section>
 

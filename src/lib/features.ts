@@ -22,7 +22,6 @@ export const FEATURES = {
     sms: true,
     booking: true,
     memory: true,
-    instagram: false, // hidden
     billing: false, // hidden
   },
   integrations: {
@@ -30,8 +29,6 @@ export const FEATURES = {
     crm: true, // Jobber
     email: true,
     sms: true,
-    instagram: false, // hidden
-    facebook: false, // hidden
     payments: false, // Stripe Connect customer billing — hidden
   },
   whisper: true,

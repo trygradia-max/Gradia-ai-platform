@@ -2,10 +2,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import {
   ArrowLeft,
-  AtSign,
   Briefcase,
   CalendarDays,
-  Globe,
   Mail,
   Phone,
   type LucideIcon,
@@ -161,26 +159,12 @@ function IdentityCard({
   customer: {
     phone: string | null
     email: string | null
-    instagram_handle: string | null
-    facebook_id: string | null
     jobber_client_id: string | null
   }
 }) {
   const rows: IdentityRow[] = [
     { icon: Phone, label: "Phone", value: customer.phone },
     { icon: Mail, label: "Email", value: customer.email },
-    {
-      icon: AtSign,
-      label: "Instagram",
-      value: customer.instagram_handle
-        ? `@${customer.instagram_handle}`
-        : null,
-    },
-    {
-      icon: Globe,
-      label: "Facebook",
-      value: customer.facebook_id,
-    },
   ]
   if (customer.jobber_client_id) {
     rows.push({

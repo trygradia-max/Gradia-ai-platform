@@ -80,7 +80,7 @@ export default async function AgentsPage() {
       icon: MessagesSquare,
       title: "Reply to texts & emails",
       blurb: "Every inbound message gets a drafted reply waiting on your yes.",
-      members: ["sms", "email", "instagram"],
+      members: ["sms", "email"],
       customs: [] as CustomAgentRow[],
       readyAction: { label: "Connect a channel", href: "/settings#sms" },
     },

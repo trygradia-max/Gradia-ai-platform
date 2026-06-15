@@ -26,7 +26,6 @@ export const ALWAYS_HITL: ReadonlySet<PendingActionType> = new Set([
   "book_appointment",
   "reschedule_appointment",
   "cancel_appointment",
-  "charge_customer",
 ])
 
 export function isAutonomyAllowed(actionType: PendingActionType): boolean {

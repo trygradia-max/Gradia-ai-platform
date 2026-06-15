@@ -77,10 +77,6 @@ function activitySummary(
       return "Saved a note to memory"
     case "book_appointment":
       return `Booked ${name}`
-    case "charge_customer": {
-      const cents = Number(payload.amount_cents) || 0
-      return `Invoiced ${name}${cents ? ` $${(cents / 100).toFixed(0)}` : ""}`
-    }
     default:
       return `Handled ${name}`
   }

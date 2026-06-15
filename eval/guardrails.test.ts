@@ -15,11 +15,13 @@ import type { PendingActionType, ShopRow } from "@/lib/types/database"
  */
 
 describe("HITL floor — money & calendar actions are always human-approved", () => {
-  it("book_appointment and charge_customer are never auto-executable", () => {
+  it("book_appointment and calendar writes are never auto-executable", () => {
     expect(isAutonomyAllowed("book_appointment")).toBe(false)
-    expect(isAutonomyAllowed("charge_customer")).toBe(false)
+    expect(isAutonomyAllowed("reschedule_appointment")).toBe(false)
+    expect(isAutonomyAllowed("cancel_appointment")).toBe(false)
     expect(ALWAYS_HITL.has("book_appointment")).toBe(true)
-    expect(ALWAYS_HITL.has("charge_customer")).toBe(true)
+    expect(ALWAYS_HITL.has("reschedule_appointment")).toBe(true)
+    expect(ALWAYS_HITL.has("cancel_appointment")).toBe(true)
   })
 
   it("lower-stakes actions remain automatable (so the floor is a floor, not a wall)", () => {
@@ -41,7 +43,7 @@ describe("HITL floor — money & calendar actions are always human-approved", ()
     } as unknown as Pick<ShopRow, "settings">
 
     expect(resolveAgentMode(autonomousShop, "any-agent")).toBe("autonomous")
-    for (const t of ["book_appointment", "charge_customer"] as PendingActionType[]) {
+    for (const t of ["book_appointment", "reschedule_appointment", "cancel_appointment"] as PendingActionType[]) {
       const wouldAutoExecute =
         resolveAgentMode(autonomousShop, "any-agent") === "autonomous" &&
         isAutonomyAllowed(t)

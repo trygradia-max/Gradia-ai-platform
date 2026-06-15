@@ -37,18 +37,16 @@ export type ShopRow = {
   stripe_subscription_id: string | null
   credit_limit: number
   credit_period_start: string
-  instagram_business_account_id: string | null
-  instagram_page_id: string | null
-  instagram_page_access_token_enc: string | null
-  instagram_account_handle: string | null
-  facebook_page_id: string | null
-  facebook_page_access_token_enc: string | null
-  facebook_page_name: string | null
   jobber_account_id: string | null
   jobber_account_name: string | null
   jobber_access_token_enc: string | null
   jobber_refresh_token_enc: string | null
   jobber_token_expires_at: string | null
+  housecallpro_account_id: string | null
+  housecallpro_account_name: string | null
+  housecallpro_access_token_enc: string | null
+  housecallpro_refresh_token_enc: string | null
+  housecallpro_token_expires_at: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -199,9 +197,8 @@ export type CustomerRow = {
   name: string | null
   phone: string | null
   email: string | null
-  instagram_handle: string | null
-  facebook_id: string | null
   jobber_client_id: string | null
+  housecallpro_customer_id: string | null
   created_at: string
   updated_at: string
 }
@@ -230,6 +227,7 @@ export type AppointmentRow = {
   timezone: string | null
   reminder_pending_action_id: string | null
   jobber_request_id: string | null
+  housecallpro_job_id: string | null
   created_at: string
   updated_at: string
 }
@@ -241,10 +239,7 @@ export type PendingActionType =
   | "reschedule_appointment"
   | "cancel_appointment"
   | "send_sms"
-  | "charge_customer"
   | "send_email"
-  | "send_instagram_dm"
-  | "send_facebook_dm"
 
 export type PendingActionStatus =
   | "pending"
@@ -273,8 +268,6 @@ export type InteractionChannel =
   | "voice"
   | "sms"
   | "email"
-  | "instagram"
-  | "facebook"
   | "web"
   | "note"
 

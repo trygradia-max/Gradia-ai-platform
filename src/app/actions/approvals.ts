@@ -120,12 +120,6 @@ function approvedHeadline(
       return "SMS sent"
     case "send_email":
       return "Email sent"
-    case "send_instagram_dm":
-      return "IG DM sent"
-    case "send_facebook_dm":
-      return "FB DM sent"
-    case "charge_customer":
-      return "Invoice sent"
   }
 }
 
@@ -150,12 +144,6 @@ function approvedSummary(
       return `${result.proposal.customer_name ?? result.proposal.to_phone}`
     case "send_email":
       return `${result.proposal.customer_name ?? result.proposal.to_email}`
-    case "send_instagram_dm":
-      return `${result.proposal.customer_name ?? result.proposal.recipient_id}`
-    case "send_facebook_dm":
-      return `${result.proposal.customer_name ?? result.proposal.recipient_id}`
-    case "charge_customer":
-      return `${result.proposal.customer_name || result.proposal.customer_email}`
   }
 }
 
@@ -177,12 +165,6 @@ function rejectedSummary(
       return `SMS to ${result.proposal.customer_name ?? result.proposal.to_phone}`
     case "send_email":
       return `email to ${result.proposal.customer_name ?? result.proposal.to_email}`
-    case "send_instagram_dm":
-      return `IG DM to ${result.proposal.customer_name ?? result.proposal.recipient_id}`
-    case "send_facebook_dm":
-      return `FB DM to ${result.proposal.customer_name ?? result.proposal.recipient_id}`
-    case "charge_customer":
-      return `charge ${result.proposal.customer_name || result.proposal.customer_email}`
   }
 }
 
@@ -236,17 +218,6 @@ const smsPatchSchema = z.object({
   reason: z.string().trim().max(200).nullable(),
 })
 
-const chargePatchSchema = z.object({
-  type: z.literal("charge_customer"),
-  customer_name: z.string().trim().min(1, "Customer name is required.").max(200),
-  customer_email: z
-    .string()
-    .trim()
-    .email("Use a valid email so Stripe can deliver the invoice."),
-  amount_cents: z.number().int().positive().max(10_000_000),
-  description: z.string().trim().min(1, "Tell us what they're paying for.").max(500),
-})
-
 const emailPatchSchema = z.object({
   type: z.literal("send_email"),
   to_email: z.string().trim().email("Recipient must be a valid email."),
@@ -256,39 +227,12 @@ const emailPatchSchema = z.object({
   reason: z.string().trim().max(200).nullable(),
 })
 
-const instagramDmPatchSchema = z.object({
-  type: z.literal("send_instagram_dm"),
-  recipient_id: z
-    .string()
-    .trim()
-    .min(1, "Recipient ID is required.")
-    .max(120),
-  body: z.string().trim().min(1, "Message can't be empty.").max(900),
-  customer_name: z.string().trim().max(200).nullable(),
-  reason: z.string().trim().max(200).nullable(),
-})
-
-const facebookDmPatchSchema = z.object({
-  type: z.literal("send_facebook_dm"),
-  recipient_id: z
-    .string()
-    .trim()
-    .min(1, "Recipient ID is required.")
-    .max(120),
-  body: z.string().trim().min(1, "Message can't be empty.").max(900),
-  customer_name: z.string().trim().max(200).nullable(),
-  reason: z.string().trim().max(200).nullable(),
-})
-
 const patchSchema = z.discriminatedUnion("type", [
   leadPatchSchema,
   notePatchSchema,
   bookingPatchSchema,
   smsPatchSchema,
-  chargePatchSchema,
   emailPatchSchema,
-  instagramDmPatchSchema,
-  facebookDmPatchSchema,
 ])
 
 export type ProposalPatch = z.infer<typeof patchSchema>
@@ -374,45 +318,21 @@ export async function updatePendingProposal(
               customer_name: parsed.data.customer_name,
               reason: parsed.data.reason,
             }
-          : parsed.data.type === "charge_customer"
+          : parsed.data.type === "send_email"
             ? {
                 ...current.payload,
+                to_email: parsed.data.to_email,
+                subject: parsed.data.subject,
+                body: parsed.data.body,
                 customer_name: parsed.data.customer_name,
-                customer_email: parsed.data.customer_email,
-                amount_cents: parsed.data.amount_cents,
-                description: parsed.data.description,
+                reason: parsed.data.reason,
               }
-            : parsed.data.type === "send_email"
-              ? {
-                  ...current.payload,
-                  to_email: parsed.data.to_email,
-                  subject: parsed.data.subject,
-                  body: parsed.data.body,
-                  customer_name: parsed.data.customer_name,
-                  reason: parsed.data.reason,
-                }
-              : parsed.data.type === "send_instagram_dm"
-                ? {
-                    ...current.payload,
-                    recipient_id: parsed.data.recipient_id,
-                    body: parsed.data.body,
-                    customer_name: parsed.data.customer_name,
-                    reason: parsed.data.reason,
-                  }
-                : parsed.data.type === "send_facebook_dm"
-                  ? {
-                      ...current.payload,
-                      recipient_id: parsed.data.recipient_id,
-                      body: parsed.data.body,
-                      customer_name: parsed.data.customer_name,
-                      reason: parsed.data.reason,
-                    }
-                  : {
-                      ...current.payload,
-                      content: parsed.data.content,
-                      customer_name: parsed.data.customer_name,
-                      phone: parsed.data.phone,
-                    }
+            : {
+                ...current.payload,
+                content: parsed.data.content,
+                customer_name: parsed.data.customer_name,
+                phone: parsed.data.phone,
+              }
 
   const { data: updated, error: updateErr } = await supabase
     .from("pending_actions")

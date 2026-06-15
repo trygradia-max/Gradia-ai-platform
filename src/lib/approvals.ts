@@ -22,17 +22,11 @@ import {
 } from "@/lib/aurinko"
 import { recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
-import { tryDecryptSecret } from "@/lib/crypto"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
-import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
+import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
-import {
-  sendFacebookPageMessage,
-  sendInstagramDirectMessage,
-} from "@/lib/meta"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
-import { chargeCustomerViaInvoice, type StripeInvoice } from "@/lib/stripe"
 import { smsGateForShop } from "@/lib/telephony-provider"
 import {
   defaultStatusCallbackUrl,
@@ -87,37 +81,9 @@ export type SmsProposal = {
   reason: string | null
 }
 
-export type ChargeProposal = {
-  customer_name: string
-  customer_email: string
-  customer_id: string | null
-  amount_cents: number
-  description: string
-}
-
 export type EmailProposal = {
   to_email: string
   subject: string
-  body: string
-  customer_name: string | null
-  customer_id: string | null
-  reason: string | null
-}
-
-export type InstagramDmProposal = {
-  /** Page-scoped sender id we DM back. Same value we stored as the
-   *  customer's instagram_handle on inbound. */
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  customer_id: string | null
-  reason: string | null
-}
-
-export type FacebookDmProposal = {
-  /** PSID (page-scoped sender id) we DM back. Same value we stored as
-   *  the customer's facebook_id on inbound. */
-  recipient_id: string
   body: string
   customer_name: string | null
   customer_id: string | null
@@ -172,30 +138,9 @@ export type ApprovalSuccess =
     }
   | {
       status: "executed"
-      actionType: "charge_customer"
-      resultId: string
-      proposal: ChargeProposal
-      invoiceUrl: string | null
-    }
-  | {
-      status: "executed"
       actionType: "send_email"
       resultId: string
       proposal: EmailProposal
-    }
-  | {
-      status: "executed"
-      actionType: "send_instagram_dm"
-      resultId: string
-      proposal: InstagramDmProposal
-      messageId: string | null
-    }
-  | {
-      status: "executed"
-      actionType: "send_facebook_dm"
-      resultId: string
-      proposal: FacebookDmProposal
-      messageId: string | null
     }
   | { status: "already_decided" }
 
@@ -222,22 +167,7 @@ export type DecisionSuccess =
       actionType: "cancel_appointment"
       proposal: Record<string, unknown>
     }
-  | {
-      status: "claimed"
-      actionType: "charge_customer"
-      proposal: ChargeProposal
-    }
   | { status: "claimed"; actionType: "send_email"; proposal: EmailProposal }
-  | {
-      status: "claimed"
-      actionType: "send_instagram_dm"
-      proposal: InstagramDmProposal
-    }
-  | {
-      status: "claimed"
-      actionType: "send_facebook_dm"
-      proposal: FacebookDmProposal
-    }
   | { status: "already_decided" }
 
 export type DecisionResult =
@@ -329,9 +259,10 @@ async function executeCreateLead(
     .update({ result_id: created.id })
     .eq("id", claimed.id)
 
-  // Best-effort Jobber push. Never blocks the approval.
+  // Best-effort CRM push (Jobber, Housecall Pro, …). Never blocks the
+  // approval; the seam pushes to every connected CRM independently.
   try {
-    await pushLeadToJobber({
+    await pushLeadToCrm({
       supabase,
       shopId: claimed.shop_id,
       customerId: customerResult.customer.id,
@@ -339,7 +270,7 @@ async function executeCreateLead(
       phone: proposal.phone || null,
     })
   } catch (err) {
-    console.warn("[approvals] Jobber lead push failed:", err)
+    console.warn("[approvals] CRM lead push failed:", err)
   }
 
   return {
@@ -442,14 +373,8 @@ export async function executeApproval(
       return executeCancelAppointment(supabase, claimed)
     case "send_sms":
       return executeSendSms(supabase, claimed)
-    case "charge_customer":
-      return executeChargeCustomer(supabase, claimed)
     case "send_email":
       return executeSendEmail(supabase, claimed)
-    case "send_instagram_dm":
-      return executeSendInstagramDm(supabase, claimed)
-    case "send_facebook_dm":
-      return executeSendFacebookDm(supabase, claimed)
     default:
       await rollbackClaim(supabase, claimed.id)
       return {
@@ -810,12 +735,12 @@ async function executeBookAppointment(
     )
   }
 
-  // Best-effort Jobber push — find-or-create the client + create a
-  // request with the agreed time. Failures never roll back the
-  // booking; logs only.
+  // Best-effort CRM push — find-or-create the customer + create a
+  // job/request with the agreed time in every connected CRM. Failures
+  // never roll back the booking; logs only.
   if (appointmentId) {
     try {
-      await pushBookingToJobber({
+      await pushBookingToCrm({
         supabase,
         shopId: claimed.shop_id,
         appointmentId,
@@ -828,7 +753,7 @@ async function executeBookAppointment(
         carInfo: proposal.car_info,
       })
     } catch (err) {
-      console.warn("[approvals] Jobber booking push failed:", err)
+      console.warn("[approvals] CRM booking push failed:", err)
     }
   }
 
@@ -1035,86 +960,6 @@ async function executeSendSms(
   }
 }
 
-async function executeChargeCustomer(
-  supabase: SupabaseClient,
-  claimed: ClaimedAction
-): Promise<ApprovalResult> {
-  const proposal = claimed.payload as unknown as ChargeProposal
-
-  if (!proposal.customer_email?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        "Charge needs the customer's email — open the editor and add it before approving.",
-    }
-  }
-  if (!proposal.amount_cents || proposal.amount_cents <= 0) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: "Charge amount must be greater than zero." }
-  }
-
-  const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  if (!shop?.stripe_account_id || !shop.stripe_charges_enabled) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        "Finish Stripe onboarding in /settings before approving any charge.",
-    }
-  }
-
-  let invoice: StripeInvoice
-  try {
-    invoice = await chargeCustomerViaInvoice({
-      stripeAccount: shop.stripe_account_id,
-      customerEmail: proposal.customer_email,
-      customerName: proposal.customer_name || null,
-      amountCents: Math.round(proposal.amount_cents),
-      description: proposal.description?.trim() || "Detailing service",
-    })
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        err instanceof Error ? `Stripe: ${err.message}` : "Stripe charge failed.",
-    }
-  }
-
-  // Log on the customer's timeline so it shows up in shared memory.
-  await recordInteraction(supabase, {
-    shopId: claimed.shop_id,
-    customerId: proposal.customer_id,
-    channel: "note",
-    role: "gradia",
-    content: `Sent invoice for $${(proposal.amount_cents / 100).toFixed(2)} — ${
-      proposal.description?.trim() || "detailing service"
-    }`,
-    metadata: {
-      stripe_invoice_id: invoice.id,
-      stripe_invoice_number: invoice.number,
-      stripe_invoice_url: invoice.hosted_invoice_url,
-      amount_cents: proposal.amount_cents,
-      pending_action_id: claimed.id,
-    },
-  })
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: invoice.id })
-    .eq("id", claimed.id)
-
-  return {
-    ok: true,
-    status: "executed",
-    actionType: "charge_customer",
-    resultId: invoice.id,
-    proposal,
-    invoiceUrl: invoice.hosted_invoice_url,
-  }
-}
-
 async function executeSendEmail(
   supabase: SupabaseClient,
   claimed: ClaimedAction
@@ -1220,168 +1065,6 @@ async function executeSendEmail(
   }
 }
 
-async function executeSendInstagramDm(
-  supabase: SupabaseClient,
-  claimed: ClaimedAction
-): Promise<ApprovalResult> {
-  const proposal = claimed.payload as unknown as InstagramDmProposal
-
-  if (!proposal.recipient_id?.trim() || !proposal.body?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: "IG DM needs both recipient and body." }
-  }
-
-  const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  const pageToken = tryDecryptSecret(shop?.instagram_page_access_token_enc)
-  if (!shop || !pageToken) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error: "Connect Instagram in /settings before approving DMs.",
-    }
-  }
-
-  let sentId: string | null
-  try {
-    const sent = await sendInstagramDirectMessage({
-      pageAccessToken: pageToken,
-      recipientId: proposal.recipient_id,
-      text: proposal.body,
-    })
-    sentId = sent.messageId
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? `Meta: ${err.message}`
-          : "IG DM send failed.",
-    }
-  }
-
-  // Resolve the customer FK (best-effort). The recipient_id IS the
-  // page-scoped sender id we stored in customers.instagram_handle on
-  // inbound, so we can look it up directly.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      instagramHandle: proposal.recipient_id,
-    })
-    if (customer) customerId = customer.id
-  }
-
-  const interaction = await recordInteraction(supabase, {
-    shopId: claimed.shop_id,
-    customerId,
-    channel: "instagram",
-    role: "gradia",
-    content: proposal.body,
-    metadata: {
-      direction: "outbound",
-      meta_message_id: sentId,
-      recipient_id: proposal.recipient_id,
-      pending_action_id: claimed.id,
-      reason: proposal.reason ?? null,
-    },
-  })
-
-  const resultId = interaction.ok ? interaction.id : (sentId ?? claimed.id)
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: resultId })
-    .eq("id", claimed.id)
-
-  return {
-    ok: true,
-    status: "executed",
-    actionType: "send_instagram_dm",
-    resultId,
-    proposal,
-    messageId: sentId,
-  }
-}
-
-async function executeSendFacebookDm(
-  supabase: SupabaseClient,
-  claimed: ClaimedAction
-): Promise<ApprovalResult> {
-  const proposal = claimed.payload as unknown as FacebookDmProposal
-
-  if (!proposal.recipient_id?.trim() || !proposal.body?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: "FB DM needs both recipient and body." }
-  }
-
-  const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  const pageToken = tryDecryptSecret(shop?.facebook_page_access_token_enc)
-  if (!shop || !pageToken) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error: "Connect Facebook in /settings before approving DMs.",
-    }
-  }
-
-  let sentId: string | null
-  try {
-    const sent = await sendFacebookPageMessage({
-      pageAccessToken: pageToken,
-      recipientId: proposal.recipient_id,
-      text: proposal.body,
-    })
-    sentId = sent.messageId
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        err instanceof Error ? `Meta: ${err.message}` : "FB DM send failed.",
-    }
-  }
-
-  // recipient_id IS the PSID we stored as customers.facebook_id on inbound.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      facebookId: proposal.recipient_id,
-    })
-    if (customer) customerId = customer.id
-  }
-
-  const interaction = await recordInteraction(supabase, {
-    shopId: claimed.shop_id,
-    customerId,
-    channel: "facebook",
-    role: "gradia",
-    content: proposal.body,
-    metadata: {
-      direction: "outbound",
-      meta_message_id: sentId,
-      recipient_id: proposal.recipient_id,
-      pending_action_id: claimed.id,
-      reason: proposal.reason ?? null,
-    },
-  })
-
-  const resultId = interaction.ok ? interaction.id : (sentId ?? claimed.id)
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: resultId })
-    .eq("id", claimed.id)
-
-  return {
-    ok: true,
-    status: "executed",
-    actionType: "send_facebook_dm",
-    resultId,
-    proposal,
-    messageId: sentId,
-  }
-}
-
 function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
   switch (claimed.action_type) {
     case "create_lead":
@@ -1426,33 +1109,12 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         actionType: "cancel_appointment",
         proposal: claimed.payload as unknown as Record<string, unknown>,
       }
-    case "charge_customer":
-      return {
-        ok: true,
-        status: "claimed",
-        actionType: "charge_customer",
-        proposal: claimed.payload as unknown as ChargeProposal,
-      }
     case "send_email":
       return {
         ok: true,
         status: "claimed",
         actionType: "send_email",
         proposal: claimed.payload as unknown as EmailProposal,
-      }
-    case "send_instagram_dm":
-      return {
-        ok: true,
-        status: "claimed",
-        actionType: "send_instagram_dm",
-        proposal: claimed.payload as unknown as InstagramDmProposal,
-      }
-    case "send_facebook_dm":
-      return {
-        ok: true,
-        status: "claimed",
-        actionType: "send_facebook_dm",
-        proposal: claimed.payload as unknown as FacebookDmProposal,
       }
     default:
       return {

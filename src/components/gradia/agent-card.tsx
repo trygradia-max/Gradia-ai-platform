@@ -1,6 +1,5 @@
 import Link from "next/link"
 import {
-  Aperture,
   Brain,
   CalendarDays,
   Check,
@@ -23,7 +22,6 @@ const ICONS: Record<Agent["iconKey"], LucideIcon> = {
   phone: Phone,
   mail: Mail,
   sms: MessageSquare,
-  instagram: Aperture,
   calendar: CalendarDays,
   billing: CreditCard,
   memory: Brain,

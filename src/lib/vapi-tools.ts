@@ -519,8 +519,6 @@ const CHANNEL_PHRASE: Record<InteractionChannel, string> = {
   voice: "called us",
   sms: "texted us",
   email: "emailed us",
-  instagram: "messaged us on Instagram",
-  facebook: "messaged us on Facebook",
   web: "reached out from our site",
   note: "left a note for us",
 }

@@ -5,7 +5,6 @@ import { verifyTwilioSignature } from "@/lib/twilio"
 import { verifyStripeSignature } from "@/lib/stripe"
 import { verifyAurinkoSignature } from "@/lib/aurinko"
 import { verifySlackSignature } from "@/lib/slack"
-import { verifyMetaSignature } from "@/lib/meta"
 
 /**
  * Tier 1 (pure) — webhook signature verification. Every inbound webhook is a
@@ -20,7 +19,6 @@ const SECRETS: Record<string, string> = {
   STRIPE_WEBHOOK_SECRET: "whsec_test_secret",
   AURINKO_SIGNING_SECRET: "aurinko_test_secret",
   SLACK_SIGNING_SECRET: "slack_test_secret",
-  META_APP_SECRET: "meta_test_secret",
 }
 
 const saved: Record<string, string | undefined> = {}
@@ -136,25 +134,5 @@ describe("Slack (v0= HMAC-SHA256 over `v0:ts:body`, 5-min window)", () => {
   })
   it("rejects a missing signature", () => {
     expect(verifySlackSignature({ rawBody: body, timestamp: String(nowSec()), signature: null })).toBe(false)
-  })
-})
-
-describe("Meta (sha256= HMAC over raw body)", () => {
-  const body = JSON.stringify({ object: "page", entry: [] })
-  const sign = (b = body, secret = SECRETS.META_APP_SECRET) =>
-    "sha256=" + createHmac("sha256", secret).update(b).digest("hex")
-
-  it("accepts a valid signature", () => {
-    expect(verifyMetaSignature({ rawBody: body, signature: sign() })).toBe(true)
-  })
-  it("rejects a tampered body", () => {
-    expect(verifyMetaSignature({ rawBody: body + "!", signature: sign() })).toBe(false)
-  })
-  it("rejects the wrong scheme prefix (sha1=)", () => {
-    const hex = createHmac("sha256", SECRETS.META_APP_SECRET).update(body).digest("hex")
-    expect(verifyMetaSignature({ rawBody: body, signature: `sha1=${hex}` })).toBe(false)
-  })
-  it("rejects a missing signature", () => {
-    expect(verifyMetaSignature({ rawBody: body, signature: null })).toBe(false)
   })
 })

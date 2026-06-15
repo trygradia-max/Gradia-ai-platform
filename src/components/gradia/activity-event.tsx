@@ -2,7 +2,6 @@ import Link from "next/link"
 import {
   Calendar,
   Check,
-  DollarSign,
   Mail,
   MessageSquare,
   StickyNote,
@@ -23,7 +22,6 @@ const ICONS: Record<string, LucideIcon> = {
   create_lead: UserPlus,
   add_note: StickyNote,
   book_appointment: Calendar,
-  charge_customer: DollarSign,
 }
 
 function ago(iso: string): string {

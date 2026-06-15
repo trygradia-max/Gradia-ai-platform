@@ -37,8 +37,6 @@ function channelHints(c: CustomerWithCounts): string {
   const parts: string[] = []
   if (c.phone) parts.push("phone")
   if (c.email) parts.push("email")
-  if (c.instagram_handle) parts.push("IG")
-  if (c.facebook_id) parts.push("FB")
   return parts.join(" · ") || "—"
 }
 

@@ -27,12 +27,7 @@ import { Input } from "@/components/ui/input"
 const SEARCH_DEBOUNCE_MS = 220
 
 function identifierHints(c: MergeCandidate): string {
-  return [
-    c.name?.trim(),
-    c.phone?.trim(),
-    c.email?.trim(),
-    c.instagram_handle ? `@${c.instagram_handle}` : null,
-  ]
+  return [c.name?.trim(), c.phone?.trim(), c.email?.trim()]
     .filter((s): s is string => Boolean(s))
     .slice(0, 3)
     .join(" · ")
