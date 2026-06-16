@@ -11,6 +11,7 @@ import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
 import { CoOwnerCard } from "@/components/gradia/co-owner-card"
 import { DashboardHero } from "@/components/gradia/dashboard-hero"
+import { HomeFeed } from "@/components/gradia/home-feed"
 import {
   WelcomeModal,
   WELCOME_DISMISSED_COOKIE,
@@ -72,6 +73,11 @@ export default async function DashboardPage() {
         />
       )}
       <CoOwnerCard suggestions={suggestions} />
+
+      {/* The live feed — what's waiting on a yes + what we've handled. Sits
+          right under the nudges so the daily loop (glance → approve) happens
+          on Home (FOCUS spec §4.3, item 3). */}
+      <HomeFeed />
 
       <RevenueTiles />
 

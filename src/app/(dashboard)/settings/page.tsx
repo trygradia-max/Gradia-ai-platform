@@ -1,5 +1,6 @@
 import { headers } from "next/headers"
-import { Briefcase, Calendar, House, Mail, MessageSquare, Phone, Shield } from "lucide-react"
+import Link from "next/link"
+import { Bot, Briefcase, Calendar, ChevronRight, House, Mail, MessageSquare, Phone, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
@@ -222,6 +223,29 @@ export default async function SettingsPage({
       />
 
       <div className="space-y-8 pt-2">
+        {/* "What Gradia does" lives here now that the primary nav is three
+            pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
+        <Link
+          href="/agents"
+          className="group flex items-center gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">
+            <Bot className="size-[18px]" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-lg leading-tight tracking-tight text-foreground">
+              What Gradia does
+            </p>
+            <p className="text-sm text-muted-foreground">
+              See what&apos;s running for us, and tune how much we act on our own.
+            </p>
+          </div>
+          <ChevronRight
+            className="size-5 shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover:translate-x-0.5"
+            aria-hidden
+          />
+        </Link>
+
         <div className="space-y-3">
           <p className="label-eyebrow text-muted-foreground/70">Channels</p>
           <div className="grid gap-3 sm:grid-cols-2">
