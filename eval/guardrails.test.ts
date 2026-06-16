@@ -118,6 +118,27 @@ describe("canonical voice — strictly we/us, never first-person singular", () =
   })
 })
 
+describe("Gradia Agent box — the loop stages but can never send", () => {
+  // Locked principle #1/#2: the conversation loop has read tools + a stage
+  // tool only. No send/execute capability may live in owner-agent.ts — staging
+  // goes through pending_actions to the human gate in /approvals.
+  it("owner-agent exposes preview + stage tools and no send/execute call", () => {
+    const url = new URL("../src/lib/owner-agent.ts", import.meta.url)
+    const src = readFileSync(url, "utf8")
+    expect(src).toContain("preview_outreach")
+    expect(src).toContain("stage_outreach")
+    for (const forbidden of [
+      "executeApproval",
+      "executeSendSms",
+      "executeSendEmail",
+      "sendSms(",
+      "sendEmail(",
+    ]) {
+      expect(src, `the loop must not call ${forbidden}`).not.toContain(forbidden)
+    }
+  })
+})
+
 describe("BI agent is read-only at the source level", () => {
   // Complements the runtime check in bi.eval.test.ts: this scans the source so
   // a write call can't sneak into the BI tool layer even without a live run.

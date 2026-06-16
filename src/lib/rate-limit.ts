@@ -33,6 +33,7 @@ export type RateLimitResult = {
 export const RATE_LIMITS = {
   inbound_classify: { limit: 400, windowSeconds: 86_400 },
   bi_chat: { limit: 20, windowSeconds: 60 },
+  agent_chat: { limit: 20, windowSeconds: 60 },
   whisper: { limit: 20, windowSeconds: 60 },
 } as const
 

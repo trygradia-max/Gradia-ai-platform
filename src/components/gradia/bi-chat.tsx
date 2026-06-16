@@ -71,6 +71,8 @@ const TOOL_LABELS: Record<string, string> = {
   check_setup_status: "Checking what's wired up",
   recommend_next_setup: "Picking the next move",
   link_to_setup: "Finding the right page",
+  preview_outreach: "Sizing up the audience",
+  stage_outreach: "Staging drafts for approval",
 }
 
 function toolLabel(name: string): string {
@@ -103,7 +105,15 @@ const chipItem: Variants = {
   },
 }
 
-export function BiChat({ initial }: { initial: InitialChatState }) {
+export function BiChat({
+  initial,
+  endpoint = "/api/bi/chat",
+}: {
+  initial: InitialChatState
+  /** Which chat backend to stream from. Defaults to Ask Gradia (read-only);
+   *  the Gradia Agent box passes "/api/agent/chat" (read + stage outreach). */
+  endpoint?: string
+}) {
   const router = useRouter()
   const reduce = useReducedMotion()
   const [conversationId, setConversationId] = React.useState<string | null>(
@@ -164,7 +174,7 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
     }))
 
     try {
-      const res = await fetch("/api/bi/chat", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -70,27 +70,27 @@ const SYSTEM_BLOCKS = [
 // ---------- Types ----------
 
 type AnthropicTextBlock = { type: "text"; text: string }
-type AnthropicToolUseBlock = {
+export type AnthropicToolUseBlock = {
   type: "tool_use"
   id: string
   name: string
   input: Record<string, unknown>
 }
-type AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock
+export type AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock
 
 export type ChatMessage = {
   role: "user" | "assistant"
   content: string
 }
 
-type WireToolResult = {
+export type WireToolResult = {
   type: "tool_result"
   tool_use_id: string
   content: string
   is_error?: boolean
 }
 
-type WireMessage =
+export type WireMessage =
   | { role: "user"; content: string }
   | { role: "assistant"; content: AnthropicContentBlock[] }
   | { role: "user"; content: WireToolResult[] }
@@ -132,7 +132,7 @@ function buildToolDefinitions(): ToolDefinition[] {
 
 // ---------- SSE parsing of Anthropic's stream ----------
 
-type StreamTurnResult = {
+export type StreamTurnResult = {
   /** Reassembled content blocks (text + tool_use) from this turn. */
   blocks: AnthropicContentBlock[]
   /** From the final message_delta event. */
@@ -150,8 +150,10 @@ type StreamingState = {
  * they arrive. Resolves with the fully assembled content blocks once
  * the message_stop event lands, so the caller can dispatch tool calls.
  */
-async function* streamOneTurn(
-  messages: WireMessage[]
+export async function* streamOneTurn(
+  messages: WireMessage[],
+  system: unknown = SYSTEM_BLOCKS,
+  tools: unknown = buildToolDefinitions()
 ): AsyncGenerator<AgentEvent, StreamTurnResult, void> {
   const res = await fetch(ANTHROPIC_API, {
     method: "POST",
@@ -164,8 +166,8 @@ async function* streamOneTurn(
     body: JSON.stringify({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_BLOCKS,
-      tools: buildToolDefinitions(),
+      system,
+      tools,
       messages,
       stream: true,
     }),

@@ -36,6 +36,7 @@ import type {
   AppointmentRow,
   CustomAgentRow,
   CustomerRow,
+  FreeformPlan,
   LeadRow,
   PendingActionType,
   ServiceRow,
@@ -1019,6 +1020,185 @@ async function executeFreeformOutreach(
     stats,
     pendingActionIds,
   }
+}
+
+export type OutreachStageSource = {
+  /** "gradia_agent" (owner box) or "custom_agent" (scheduled). */
+  source: string
+  /** Human label on each pending_action (e.g. "Gradia Agent · text Tesla owners"). */
+  reason: string
+  /** User id recorded as requested_by on each pending_action. */
+  requestedBy: string
+  /** Set for scheduled custom agents; null for the owner box. */
+  customAgentId?: string | null
+}
+
+export type OutreachStageResult = {
+  staged: number
+  pendingActionIds: string[]
+  stats: Record<string, number>
+  blocked?: string
+}
+
+/**
+ * Execution layer for outreach — resolves a FreeformPlan's guardrail-filtered
+ * audience and STAGES a per-recipient send_sms/send_email into pending_actions.
+ * NEVER sends: every row lands in /approvals for the human gate. The Gradia
+ * Agent conversation loop calls this only after the owner confirms in chat
+ * (the loop itself has no send tool — locked principle #1/#2).
+ *
+ * Mirrors the staging in executeFreeformOutreach (the scheduled path); the two
+ * can be consolidated onto this once the scheduled executor is migrated.
+ */
+export async function stageOutreachPlan(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  plan: FreeformPlan,
+  src: OutreachStageSource
+): Promise<OutreachStageResult> {
+  let audience
+  try {
+    audience = await resolveFreeformAudience(supabase, shop, plan)
+  } catch (err) {
+    return {
+      staged: 0,
+      pendingActionIds: [],
+      stats: {},
+      blocked: err instanceof Error ? err.message : "audience resolve failed",
+    }
+  }
+  if (audience.blocked) {
+    return { staged: 0, pendingActionIds: [], stats: {}, blocked: audience.blocked }
+  }
+
+  const stats: Record<string, number> = {
+    matched: audience.stats.candidates,
+    proposed: 0,
+    skipped_no_contact: audience.stats.skipped_no_contact,
+    skipped_active: audience.stats.skipped_active,
+    skipped_recent_inbound: audience.stats.skipped_recent_inbound,
+    skipped_cooldown: audience.stats.skipped_cooldown,
+    skipped_opted_out: audience.stats.skipped_opted_out,
+    draft_failed: 0,
+  }
+  const pendingActionIds: string[] = []
+  const { source, reason, requestedBy, customAgentId = null } = src
+
+  for (const t of audience.targets) {
+    if (plan.channel === "sms") {
+      if (!t.phone) continue
+      const body = await draftCustomSmsForCustomer({
+        shopName: shop.name,
+        customerName: t.name ?? "there",
+        vehicle: t.vehicle,
+        service: t.service,
+        intent: plan.message_intent,
+      }).catch(() => null)
+      if (!body) {
+        stats.draft_failed += 1
+        continue
+      }
+      const { data: pending, error: pendingErr } = await supabase
+        .from("pending_actions")
+        .insert({
+          shop_id: shop.id,
+          action_type: "send_sms",
+          payload: {
+            to_phone: t.phone,
+            body,
+            customer_name: t.name,
+            customer_id: t.customerId,
+            reason,
+            source,
+            custom_agent_id: customAgentId,
+            lead_id: t.leadId,
+            ...(await verifyBeforeStaging(supabase, shop, {
+              channel: "sms",
+              body,
+              customerName: t.name,
+            })),
+          },
+          requested_by: requestedBy,
+        })
+        .select("id")
+        .single()
+      if (pendingErr || !pending) {
+        console.error("[agent-runtime] outreach sms insert failed:", pendingErr)
+        continue
+      }
+      try {
+        await sendSmsApprovalRequest({
+          pendingActionId: pending.id,
+          toPhone: t.phone,
+          customerName: t.name,
+          body,
+          reason,
+        })
+      } catch (err) {
+        console.error("[agent-runtime] outreach Slack send failed:", err)
+      }
+      stats.proposed += 1
+      pendingActionIds.push(pending.id)
+    } else {
+      if (!t.email) continue
+      const draft = await draftCustomEmailForCustomer({
+        shopName: shop.name,
+        customerName: t.name ?? "there",
+        service: t.service,
+        when: null,
+        intent: plan.message_intent,
+      }).catch(() => null)
+      if (!draft) {
+        stats.draft_failed += 1
+        continue
+      }
+      const { data: pending, error: pendingErr } = await supabase
+        .from("pending_actions")
+        .insert({
+          shop_id: shop.id,
+          action_type: "send_email",
+          payload: {
+            to_email: t.email,
+            subject: draft.subject,
+            body: draft.body,
+            customer_name: t.name,
+            customer_id: t.customerId,
+            reason,
+            source,
+            custom_agent_id: customAgentId,
+            ...(await verifyBeforeStaging(supabase, shop, {
+              channel: "email",
+              body: draft.body,
+              subject: draft.subject,
+              customerName: t.name,
+            })),
+          },
+          requested_by: requestedBy,
+        })
+        .select("id")
+        .single()
+      if (pendingErr || !pending) {
+        console.error("[agent-runtime] outreach email insert failed:", pendingErr)
+        continue
+      }
+      try {
+        await sendEmailApprovalRequest({
+          pendingActionId: pending.id,
+          toEmail: t.email,
+          customerName: t.name,
+          subject: draft.subject,
+          body: draft.body,
+          reason,
+        })
+      } catch (err) {
+        console.error("[agent-runtime] outreach Slack send failed:", err)
+      }
+      stats.proposed += 1
+      pendingActionIds.push(pending.id)
+    }
+  }
+
+  return { staged: stats.proposed, pendingActionIds, stats }
 }
 
 // ---------- event-driven recipe handlers ----------
