@@ -17,6 +17,7 @@ import {
 } from "@/components/gradia/welcome-modal"
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 import { RevenueTiles } from "@/components/gradia/revenue-tiles"
+import { RoiReceipt } from "@/components/gradia/roi-receipt"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 import { requireShop } from "@/lib/shop"
 
@@ -57,7 +58,12 @@ export default async function DashboardPage() {
         rightSlot={<AddLeadDialog />}
       />
 
-      {/* Nudges first — "what I'd tackle next" beats a wall of stats
+      {/* The receipt is pinned on top — the proof of why we're worth it, the
+          #1 retention lever (FOCUS spec §4.3 / NOW-3). Always visible, even
+          at zero (it carries its own written empty state). */}
+      <RoiReceipt />
+
+      {/* Nudges next — "what I'd tackle next" beats a wall of stats
           (GRADIA_UX_ONBOARDING_SPEC Part 2). */}
       {showCleanup && (
         <CrmCleanupCard

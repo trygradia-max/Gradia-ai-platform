@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/voice-sync",
       "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/roi-receipt",
+      "schedule": "0 16 * * 1"
     }
   ]
 }
