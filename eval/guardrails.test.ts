@@ -38,9 +38,13 @@ describe("HITL floor — money & calendar actions are always human-approved", ()
   it("the floor holds even when the agent's mode is fully autonomous", () => {
     // resolveAgentMode can say "autonomous", but isAutonomyAllowed is the
     // per-action gate the runtime ANDs against — so book/charge still stage.
+    // Autonomy resolves only for Package 2 (active plan + voice add-on) —
+    // see the entitlement-gating suite below.
     const autonomousShop = {
       settings: { autonomy: { default: "autonomous", overrides: {} } },
-    } as unknown as Pick<ShopRow, "settings">
+      plan: "active",
+      voice_addon: true,
+    } as unknown as Pick<ShopRow, "settings" | "plan" | "voice_addon">
 
     expect(resolveAgentMode(autonomousShop, "any-agent")).toBe("autonomous")
     for (const t of ["book_appointment", "reschedule_appointment", "cancel_appointment"] as PendingActionType[]) {
@@ -53,21 +57,50 @@ describe("HITL floor — money & calendar actions are always human-approved", ()
 })
 
 describe("autonomy resolution — safe defaults & override precedence", () => {
+  // All cases here are Package 2 shops (active + voice add-on); the
+  // entitlement gate itself is locked in the suite below.
+  const pkg2 = (settings: unknown) =>
+    ({ settings, plan: "active", voice_addon: true }) as unknown as Pick<
+      ShopRow,
+      "settings" | "plan" | "voice_addon"
+    >
+
   it("defaults to suggest (HITL) when nothing is configured", () => {
     expect(resolveAgentMode(null, "x")).toBe("suggest")
-    expect(resolveAgentMode({ settings: {} } as Pick<ShopRow, "settings">, "x")).toBe(
-      "suggest"
-    )
+    expect(resolveAgentMode(pkg2({}), "x")).toBe("suggest")
   })
 
   it("per-agent override beats the global default", () => {
-    const shop = {
-      settings: {
-        autonomy: { default: "suggest", overrides: { reminder: "autonomous" } },
-      },
-    } as unknown as Pick<ShopRow, "settings">
+    const shop = pkg2({
+      autonomy: { default: "suggest", overrides: { reminder: "autonomous" } },
+    })
     expect(resolveAgentMode(shop, "reminder")).toBe("autonomous")
     expect(resolveAgentMode(shop, "other")).toBe("suggest")
+  })
+})
+
+describe("autonomy is gated by Package 2 (active plan + voice add-on)", () => {
+  // The trust dial is a code guardrail: autonomous mode is a Package 2
+  // capability, so the runtime forces "suggest" without the entitlement no
+  // matter what the shop stored. Free/past_due get nothing (no free packages).
+  const autonomousSettings = { autonomy: { default: "autonomous", overrides: {} } }
+  const mk = (plan: ShopRow["plan"], voice_addon: boolean) =>
+    ({ settings: autonomousSettings, plan, voice_addon }) as unknown as Pick<
+      ShopRow,
+      "settings" | "plan" | "voice_addon"
+    >
+
+  it("Core (active, no add-on) is forced to suggest even when set autonomous", () => {
+    expect(resolveAgentMode(mk("active", false), "any")).toBe("suggest")
+  })
+
+  it("free or past_due with the add-on flag is still suggest (fail-closed)", () => {
+    expect(resolveAgentMode(mk("free", true), "any")).toBe("suggest")
+    expect(resolveAgentMode(mk("past_due", true), "any")).toBe("suggest")
+  })
+
+  it("Package 2 (active + voice add-on) unlocks autonomous", () => {
+    expect(resolveAgentMode(mk("active", true), "any")).toBe("autonomous")
   })
 })
 

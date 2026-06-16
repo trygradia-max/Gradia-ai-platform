@@ -13,6 +13,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { isPaid } from "@/lib/entitlements"
+import { FEATURES } from "@/lib/features"
 import { PLAN } from "@/lib/pricing"
 import type { ShopRow, UsageEventKind } from "@/lib/types/database"
 
@@ -91,18 +93,11 @@ export async function creditsSpentThisPeriod(
   )
 }
 
-/**
- * The shop's credit allowance this period (GRADIA_PRICING.md):
- * plan-included credits (Core = 1,200 while the subscription is active)
- * plus pack purchases and rollover grants since credit_period_start.
- * shops.credit_limit no longer caps spend — it's reserved for the future
- * auto-top-up ceiling. The cap IS the allowance; fail closed past it.
- */
-export async function creditAllowanceThisPeriod(
+/** Credits granted (pack purchases + rollover) since credit_period_start. */
+export async function creditsGrantedThisPeriod(
   supabase: SupabaseClient,
-  shop: ShopCreditFields
+  shop: Pick<ShopRow, "id" | "credit_period_start">
 ): Promise<number> {
-  const included = shop.plan === "active" ? PLAN.CORE_INCLUDED_CREDITS : 0
   const { data, error } = await supabase
     .from("credit_grants")
     .select("credits")
@@ -110,13 +105,26 @@ export async function creditAllowanceThisPeriod(
     .gte("created_at", shop.credit_period_start)
   if (error) {
     console.error("[credits] grants query failed:", error)
-    return included
+    return 0
   }
-  const granted = ((data as { credits: number }[] | null) ?? []).reduce(
+  return ((data as { credits: number }[] | null) ?? []).reduce(
     (sum, r) => sum + (r.credits ?? 0),
     0
   )
-  return included + granted
+}
+
+/**
+ * The shop's credit allowance this period (GRADIA_PRICING.md):
+ * plan-included credits (Core = 1,200 while the subscription is active)
+ * plus pack purchases and rollover grants since credit_period_start.
+ * The cap IS the allowance; fail closed past it.
+ */
+export async function creditAllowanceThisPeriod(
+  supabase: SupabaseClient,
+  shop: ShopCreditFields
+): Promise<number> {
+  const included = shop.plan === "active" ? PLAN.CORE_INCLUDED_CREDITS : 0
+  return included + (await creditsGrantedThisPeriod(supabase, shop))
 }
 
 export async function remainingCredits(
@@ -171,4 +179,93 @@ export async function precheckCredits(
     }
   }
   return { ok: true, remaining }
+}
+
+/**
+ * Loads the credit/plan fields for a shop id (RLS-scoped to the caller's
+ * client). Routes hold a lightweight {id,name} ShopContext; this fetches what
+ * the credit gate needs. Returns null if the row isn't visible/owned.
+ */
+export async function loadShopCreditFields(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<ShopCreditFields | null> {
+  const { data, error } = await supabase
+    .from("shops")
+    .select("id, plan, credit_period_start")
+    .eq("id", shopId)
+    .maybeSingle()
+  if (error || !data) return null
+  return data as ShopCreditFields
+}
+
+export type AutoTopupCheck =
+  | { allowed: true; ceilingRemaining: number | null }
+  | { allowed: false; ceilingRemaining: number; reason: string }
+
+/**
+ * Auto-top-up ceiling (GRADIA_PRICING.md). `shops.credit_limit` is the
+ * owner-set MONTHLY cap on AUTOMATIC credit purchases — the runaway-spend
+ * backstop for Package 2 autonomy. 0 / unset means no ceiling.
+ *
+ * Any auto-top-up flow MUST call this before granting credits, so a stuck
+ * autonomous agent can never infinitely rebuy and bill the owner's card.
+ * Manual, owner-initiated pack purchases are intentionally NOT gated here —
+ * the owner is in the loop for those.
+ */
+export async function checkAutoTopupAllowed(
+  supabase: SupabaseClient,
+  shop: Pick<ShopRow, "id" | "credit_period_start" | "credit_limit">,
+  packCredits: number
+): Promise<AutoTopupCheck> {
+  const ceiling = shop.credit_limit ?? 0
+  if (ceiling <= 0) return { allowed: true, ceilingRemaining: null }
+  const grantedSoFar = await creditsGrantedThisPeriod(supabase, shop)
+  const ceilingRemaining = Math.max(0, ceiling - grantedSoFar)
+  if (packCredits > ceilingRemaining) {
+    return {
+      allowed: false,
+      ceilingRemaining,
+      reason: `Auto-top-up would pass your monthly ceiling of ${ceiling} credits (${grantedSoFar} already added this period). Raise it in Billing to allow more.`,
+    }
+  }
+  return { allowed: true, ceilingRemaining }
+}
+
+export type FeatureAccess =
+  | { ok: true }
+  | { ok: false; status: number; reason: string }
+
+/**
+ * Hard gate for owner-initiated metered surfaces — Gradia Agent, Gradia
+ * Whisper, Ask Gradia, and any future feature that consumes credits. Call it
+ * at the entry of the route, BEFORE doing any work.
+ *
+ * Fail-closed in two ways: an inactive plan (`free`/`past_due`) or an
+ * exhausted credit allowance both shut the feature off until the owner
+ * reactivates or buys a pack. Returns ok when the paywall flag is off so the
+ * gate stays reversible (gate, don't delete). 402 = Payment Required.
+ */
+export async function checkFeatureAccess(
+  supabase: SupabaseClient,
+  shop: ShopCreditFields
+): Promise<FeatureAccess> {
+  if (!FEATURES.paywall) return { ok: true }
+  if (!isPaid(shop)) {
+    return {
+      ok: false,
+      status: 402,
+      reason:
+        "Your Gradia plan is inactive. Reactivate it in Billing to switch Gradia Agent and Whisper back on.",
+    }
+  }
+  if (await isOverCreditLimit(supabase, shop)) {
+    return {
+      ok: false,
+      status: 402,
+      reason:
+        "You're out of credits for this period. Add a credit pack ($10 / 950 credits) in Billing to switch everything back on.",
+    }
+  }
+  return { ok: true }
 }

@@ -31,7 +31,11 @@ export const DEFAULT_PRICING: Pricing = {
   sms_segment: { wholesale_cents: 1.2, retail_cents: 4 },
   email_send: { wholesale_cents: 0.3, retail_cents: 1 },
   outreach_draft: { wholesale_cents: 0.3, retail_cents: 1 },
-  bi_answer: { wholesale_cents: 2.1, retail_cents: 7 },
+  // ~1.5¢ blended with prompt caching on the system + tool prefix
+  // (bi-agent.ts SYSTEM_BLOCKS + buildToolDefinitions, 2026-06-15). First
+  // call in a 5-min window writes the cache (~1.25× the prefix); subsequent
+  // answers read it (~0.1×). Uncached this was ~2.6¢. Margin at 7 credits ≈ 78%.
+  bi_answer: { wholesale_cents: 1.5, retail_cents: 7 },
   whisper_note: { wholesale_cents: 0.9, retail_cents: 3 },
   agentic_plan: { wholesale_cents: 3, retail_cents: 10 },
 }

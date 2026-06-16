@@ -21,8 +21,13 @@ import {
 } from "@/lib/slack"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { recordUsage } from "@/lib/credits"
+import {
+  checkFeatureAccess,
+  loadShopCreditFields,
+  recordUsage,
+} from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
+import { checkRateLimit } from "@/lib/rate-limit"
 import { getOptionalShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import {
@@ -64,6 +69,27 @@ export async function POST(request: Request) {
   const shop = await getOptionalShop()
   if (!shop) {
     return jsonResult({ ok: false, error: "We need to set up our shop first." }, 403)
+  }
+
+  // Fail-closed: an inactive plan or an exhausted credit balance shuts
+  // Whisper off before we spend a cent on transcription.
+  const creditFields = await loadShopCreditFields(supabase, shop.id)
+  if (!creditFields) {
+    return jsonResult({ ok: false, error: "We need to set up our shop first." }, 403)
+  }
+  const access = await checkFeatureAccess(supabase, creditFields)
+  if (!access.ok) {
+    return jsonResult({ ok: false, error: access.reason }, access.status)
+  }
+
+  // Burst guard on top of the credit gate — a stuck client can't hammer
+  // transcription.
+  const burst = await checkRateLimit(shop.id, "whisper")
+  if (!burst.allowed) {
+    return jsonResult(
+      { ok: false, error: "Give us a second to catch up — try again shortly." },
+      429
+    )
   }
 
   let formData: FormData

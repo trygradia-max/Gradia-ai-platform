@@ -13,6 +13,7 @@
  * autonomous mode (and the ActivityEvent render) lands in Chunk 3.
  */
 
+import { hasPackage2 } from "@/lib/entitlements"
 import type { PendingActionType, ShopRow } from "@/lib/types/database"
 
 export type AutonomyMode = "suggest" | "autonomous"
@@ -58,11 +59,19 @@ export function readAutonomy(
   return { default: asMode(raw?.default) ?? "suggest", overrides }
 }
 
-/** Effective mode for a given agent key (override → global default). */
+/**
+ * Effective mode for a given agent key (override → global default).
+ *
+ * Autonomy is a Package 2 capability: without the add-on every agent is
+ * forced to "suggest" no matter what the shop stored — a code guardrail, not
+ * a prompt (locked principle #2). ALWAYS_HITL still applies on top, so even a
+ * Package 2 autonomous agent can never auto-book/charge.
+ */
 export function resolveAgentMode(
-  shop: Pick<ShopRow, "settings"> | null,
+  shop: Pick<ShopRow, "settings" | "plan" | "voice_addon"> | null,
   agentKey: string
 ): AutonomyMode {
+  if (!shop || !hasPackage2(shop)) return "suggest"
   const cfg = readAutonomy(shop)
   return cfg.overrides[agentKey] ?? cfg.default
 }

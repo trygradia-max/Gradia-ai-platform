@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import {
   CREDIT_COST,
+  checkAutoTopupAllowed,
+  checkFeatureAccess,
   creditAllowanceThisPeriod,
   creditsFor,
   isOverCreditLimit,
@@ -117,5 +119,72 @@ describe("fail closed at the allowance", () => {
     })
     const check = await precheckCredits(supabase, shop, 100)
     expect(check).toEqual({ ok: true, remaining: 1000 })
+  })
+})
+
+describe("checkFeatureAccess — feature shutoff for Gradia Agent + Whisper", () => {
+  // The hard gate every owner-initiated metered surface calls before doing
+  // work. Fail-closed on both an inactive plan and an exhausted allowance.
+  it("an active shop with credits left has access", async () => {
+    const supabase = mockSupabase({ spent: [{ credits: 200 }] })
+    expect(await checkFeatureAccess(supabase, shop)).toEqual({ ok: true })
+  })
+
+  it("shuts off when the credit allowance is used up (buy-a-pack message)", async () => {
+    const supabase = mockSupabase({ spent: [{ credits: 1200 }] })
+    const access = await checkFeatureAccess(supabase, shop)
+    expect(access.ok).toBe(false)
+    if (!access.ok) {
+      expect(access.status).toBe(402)
+      expect(access.reason).toContain("credit pack")
+    }
+  })
+
+  it("shuts off a free (pre-subscription) shop before any spend", async () => {
+    const free = { ...shop, plan: "free" as const }
+    const access = await checkFeatureAccess(mockSupabase({}), free)
+    expect(access.ok).toBe(false)
+    if (!access.ok) expect(access.status).toBe(402)
+  })
+
+  it("shuts off a past_due shop (fail-closed, no grace)", async () => {
+    const pastDue = { ...shop, plan: "past_due" as const }
+    const access = await checkFeatureAccess(mockSupabase({}), pastDue)
+    expect(access.ok).toBe(false)
+  })
+})
+
+describe("checkAutoTopupAllowed — runaway auto-rebuy ceiling", () => {
+  const base = { id: "shop-1", credit_period_start: "2026-06-01T00:00:00Z" }
+
+  it("no ceiling set (credit_limit 0) → always allowed", async () => {
+    const check = await checkAutoTopupAllowed(
+      mockSupabase({ grants: [{ credits: 5000 }] }),
+      { ...base, credit_limit: 0 },
+      950
+    )
+    expect(check).toEqual({ allowed: true, ceilingRemaining: null })
+  })
+
+  it("allows an auto-top-up that stays within the monthly ceiling", async () => {
+    const check = await checkAutoTopupAllowed(
+      mockSupabase({ grants: [{ credits: 950 }] }),
+      { ...base, credit_limit: 2000 },
+      950
+    )
+    expect(check.allowed).toBe(true)
+  })
+
+  it("blocks an auto-top-up that would pass the ceiling (runaway agent)", async () => {
+    const check = await checkAutoTopupAllowed(
+      mockSupabase({ grants: [{ credits: 1900 }] }),
+      { ...base, credit_limit: 2000 },
+      950
+    )
+    expect(check.allowed).toBe(false)
+    if (!check.allowed) {
+      expect(check.ceilingRemaining).toBe(100)
+      expect(check.reason).toContain("ceiling")
+    }
   })
 })

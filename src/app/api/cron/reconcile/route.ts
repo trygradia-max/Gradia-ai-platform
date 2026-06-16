@@ -10,6 +10,7 @@
  * `Authorization: Bearer <CRON_SECRET>`; fail closed without it.
  */
 
+import { detectUsageAnomalies } from "@/lib/monitoring"
 import { reconcileTwilioUsage } from "@/lib/reconciliation"
 import { createServiceClient } from "@/lib/supabase/service"
 
@@ -33,13 +34,24 @@ export async function GET(request: Request) {
   }
 
   try {
-    const summary = await reconcileTwilioUsage(createServiceClient())
+    const supabase = createServiceClient()
+    const summary = await reconcileTwilioUsage(supabase)
+    // Piggyback the nightly anomaly scan — spend spikes, sub-floor margin, and
+    // the global daily ceiling. Best-effort; a scan failure must not fail the
+    // reconciliation it rides on.
+    let anomalies = 0
+    try {
+      anomalies = (await detectUsageAnomalies(supabase)).length
+    } catch (scanErr) {
+      console.error("[cron/reconcile] anomaly scan failed:", scanErr)
+    }
     return Response.json({
       ok: true,
       checked: summary.checked,
       skipped: summary.skipped,
       drifting: summary.drifting.length,
       shops: summary.drifting,
+      anomalies,
     })
   } catch (err) {
     console.error("[cron/reconcile] failed:", err)

@@ -31,6 +31,7 @@ import {
   searchShopKnowledge,
 } from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
+import { checkRateLimit } from "@/lib/rate-limit"
 import {
   sendLeadApprovalRequest,
   sendSmsApprovalRequest,
@@ -161,6 +162,18 @@ async function handleMessage(
       num_media: sms.numMedia,
     },
   })
+
+  // Inbound classification is UNMETERED (a Haiku call per message) — its only
+  // cost ceiling. Over the daily per-shop limit (spam flood), capture the
+  // message above but skip the LLM classify + downstream draft.
+  const classifyGate = await checkRateLimit(shop.id, "inbound_classify")
+  if (!classifyGate.allowed) {
+    console.warn(
+      "[twilio sms] inbound-classify ceiling hit — captured without LLM:",
+      shop.id
+    )
+    return
+  }
 
   let classification: SmsClassification | null = null
   try {

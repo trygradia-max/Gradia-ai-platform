@@ -17,7 +17,7 @@ This is the build spec for trimming Gradia to a focused, shippable MVP and then 
 
 ## 1. North star (one paragraph)
 
-Gradia is a SaaS agentic AI office for independent auto detailers, $20/month. It runs on **two agents that share one brain**: a **Voice agent** (answers calls, quotes, books) and a **Chat agent** (works the CRM autonomously — outreach to old leads, follow-ups, reminders). Both read and write the same memory, customer record, knowledge base, and persona, and both act through **human-approved** steps. It plugs into three things: **Calendar, CRM, and Email**. Two signature features sit on top: **Gradia Whisper** (speak an instruction, Gradia stages the action) and **Agentic mode** (describe a workflow in plain English, Gradia plans and runs it on autopilot with approval).
+Gradia is a SaaS agentic AI office for independent auto detailers, from $20/month, sold as **two packages**. **Package 1 — Core ($20):** the headline product is **Gradia Agent** (one chat box that reads/segments the CRM and *acts on request* — find past + current customers, draft follow-ups/reminders/campaigns, create leads + notes, every outbound staged for approval) plus **Gradia Whisper** (speak an instruction, Gradia stages the action). Core is on-request and approve-first by design. **Package 2 — Voice + Chat Autopilot (+$29):** activates the already-built autonomous layer — a **Voice agent** (answers calls, quotes, books) and the **Chat agent running autonomously** (background outreach to old leads, follow-ups, reminders), unlocked by **Autonomous mode**. Every package shares one brain: the same memory, customer record, knowledge base, and persona; money + calendar writes always stay human-approved. It plugs into three things: **Calendar, CRM, and Email**. Pricing source of truth: `_docs/GRADIA_PRICING.md`.
 
 ---
 
@@ -35,7 +35,8 @@ Gradia is a SaaS agentic AI office for independent auto detailers, $20/month. It
 | Hidden for MVP | Instagram, Facebook, and the Billing (charge-customer-by-voice) agent |
 | Kept | SMS (follow-up channel), Ask Gradia BI chat, Knowledge, Developer/MCP |
 | Mechanism | Feature flags — one config, reversible |
-| Price | **Superseded 2026-06-11:** Core $20/mo (1,200 message credits) + Voice Receptionist add-on $29/mo (number + 60 min). Source of truth: `_docs/GRADIA_PRICING.md` |
+| Packaging | **Reframed 2026-06-15:** **Package 1 — Core $20/mo** = Gradia Agent + Whisper (on-request, approve-first). **Package 2 — Voice + Chat Autopilot +$29/mo** = voice receptionist + autonomous Chat agent + Autonomous mode (activates already-built code on upgrade). |
+| Price | **Superseded 2026-06-11:** Core $20/mo (1,200 message credits) + Package 2 $29/mo (number + 60 min + autonomy). Source of truth: `_docs/GRADIA_PRICING.md` |
 
 ### What this supersedes from `PROJECT_BRIEF.md`
 - **7 agents → 2.** Email/SMS/booking become capabilities of the two agents + integrations, not standalone agents. Instagram/Facebook/Billing are hidden.

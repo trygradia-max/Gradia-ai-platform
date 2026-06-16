@@ -17,6 +17,7 @@ import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
+import { isPaid } from "@/lib/entitlements"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
@@ -1466,6 +1467,14 @@ export async function runCustomAgent(
       reason: "shop not found",
     })
   }
+  if (FEATURES.paywall && !isPaid(shop)) {
+    return recordAndReturn({
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "requires a paid plan",
+    })
+  }
   if (FEATURES.paywall && (await isOverCreditLimit(supabase, shop))) {
     return recordAndReturn({
       agentId: agent.id,
@@ -1587,6 +1596,27 @@ export async function runScheduledAgents(
           agentName: agent.name,
           fired: false,
           reason: "shop missing",
+        }
+        outcomes.push(outcome)
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
+        })
+        continue
+      }
+      // Scheduled (background) firing requires a paid plan — Core and
+      // Package 2 both qualify; free/past_due get nothing (no free packages).
+      // Whether a fired agent stages-only or auto-sends is decided downstream
+      // by resolveAgentMode (autonomy = Package 2). This gate only governs
+      // whether the scheduler runs the agent at all.
+      if (FEATURES.paywall && !isPaid(shop)) {
+        const outcome: AgentRunOutcome = {
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "requires a paid plan",
         }
         outcomes.push(outcome)
         await recordAgentRun(supabase, {

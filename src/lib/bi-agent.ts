@@ -51,6 +51,22 @@ Setup engineer mode:
 
 Never invent customer names, vehicle details, prices, counts, or connection states that the tools didn't return.`
 
+/**
+ * System prompt as a cacheable block. The system text + the tool block (see
+ * buildToolDefinitions) are byte-identical on every turn and every call, so a
+ * prompt-cache breakpoint here lets Anthropic serve them from cache (~90% off
+ * input) on turns 2–6 and across calls within the 5-min TTL — the BI answer's
+ * dominant cost driver (cost review 2026-06-15). Combined prefix is ~2.7K
+ * tokens, well above Sonnet's 1024-token cache minimum.
+ */
+const SYSTEM_BLOCKS = [
+  {
+    type: "text" as const,
+    text: SYSTEM_PROMPT,
+    cache_control: { type: "ephemeral" as const },
+  },
+]
+
 // ---------- Types ----------
 
 type AnthropicTextBlock = { type: "text"; text: string }
@@ -93,12 +109,25 @@ function apiKey(): string {
   return k
 }
 
-function buildToolDefinitions() {
-  return BI_TOOLS.map((tool) => ({
+type ToolDefinition = {
+  name: string
+  description: string
+  input_schema: unknown
+  cache_control?: { type: "ephemeral" }
+}
+
+function buildToolDefinitions(): ToolDefinition[] {
+  const tools: ToolDefinition[] = BI_TOOLS.map((tool) => ({
     name: tool.name,
     description: tool.description,
     input_schema: z.toJSONSchema(tool.schema),
   }))
+  // One cache breakpoint on the last tool caches the whole tool block (~2KB,
+  // identical every turn). Tools sit before `system` in the cache prefix, so
+  // this + SYSTEM_BLOCKS together cache the full static preamble.
+  const last = tools[tools.length - 1]
+  if (last) last.cache_control = { type: "ephemeral" }
+  return tools
 }
 
 // ---------- SSE parsing of Anthropic's stream ----------
@@ -135,7 +164,7 @@ async function* streamOneTurn(
     body: JSON.stringify({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_BLOCKS,
       tools: buildToolDefinitions(),
       messages,
       stream: true,
