@@ -1,9 +1,10 @@
 /**
  * Cross-model draft verification — sharpening brief P1 ("de-noising").
  *
- * Before an outreach draft is staged to pending_actions, a SEPARATE
- * critic call (distinct prompt from the drafter; self-review has blind
- * spots) checks:
+ * Before an outreach draft is staged to pending_actions, a SEPARATE critic
+ * call runs on a DIFFERENT model than the drafter (Haiku drafts → Sonnet
+ * verifies) so it's genuine cross-model review, not a model grading itself —
+ * self-review has blind spots. It checks:
  *   1. persona/tone vs persona.ts (we/us, no first-person singular)
  *   2. factual grounding — a quoted price/service must exist in the menu
  *   3. compliance — no fabricated availability or hard commitments
@@ -25,7 +26,9 @@ import { z } from "zod"
 import { GRADIA_SIGNATURE_RULE, GRADIA_VOICE } from "@/lib/persona"
 import type { ServiceRow } from "@/lib/types/database"
 
-const CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+// Sonnet 4.6 — a stronger, independent model than the Haiku drafters, so the
+// verifier is a real second opinion. Unmetered plumbing (runs once per draft).
+const CLAUDE_MODEL = "claude-sonnet-4-6"
 const TOOL_NAME = "verify_draft"
 
 export type VerifierResult = {

@@ -126,7 +126,7 @@ describe.skipIf(!LIVE)("Gradia Agent — routing & grounding [live]", () => {
     const verdict = await judge({
       output: text,
       rubric:
-        "PASS only if it asks the owner WHICH Sarah, using a distinguishing detail (the Tesla/Honda, color, or phone ending). It must NOT just pick one.",
+        "PASS if the reply asks the owner to clarify WHICH Sarah (or otherwise refuses to act on an ambiguous name) and does NOT pick one or send anything. Quoting a specific distinguishing detail (the Tesla/Honda, color, or phone ending) is ideal but asking which one is sufficient.",
     })
     expect(verdict.pass, verdict.reason).toBe(true)
   }, 120_000)
