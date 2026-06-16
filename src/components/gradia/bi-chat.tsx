@@ -71,8 +71,12 @@ const TOOL_LABELS: Record<string, string> = {
   check_setup_status: "Checking what's wired up",
   recommend_next_setup: "Picking the next move",
   link_to_setup: "Finding the right page",
+  cold_leads: "Finding cold leads",
   preview_outreach: "Sizing up the audience",
   stage_outreach: "Staging drafts for approval",
+  draft_reply: "Drafting a reply",
+  add_note: "Noting that down",
+  create_lead: "Capturing the lead",
 }
 
 function toolLabel(name: string): string {

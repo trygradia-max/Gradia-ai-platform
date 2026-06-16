@@ -38,8 +38,10 @@ import {
 } from "@/lib/bi-agent"
 import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 import { precheckCredits, recordUsage } from "@/lib/credits"
+import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { GRADIA_IDENTITY, GRADIA_VOICE } from "@/lib/persona"
 import { getPricing, priceUsage } from "@/lib/pricing"
+import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
 import { stageOutreachPlan } from "@/lib/agent-runtime"
 import type { FreeformPlan, ShopRow } from "@/lib/types/database"
 
@@ -52,13 +54,18 @@ You are the shop owner's assistant — you answer questions about their business
 ${GRADIA_VOICE}
 
 What you can do:
-- ANSWER questions about the shop using the read tools (lead counts, recent leads, customers, channel volume, upcoming appointments, memory search, revenue, heat scores, setup status). Always call a tool for data — never guess a number.
-- ACT on outreach: text or email a segment of leads/customers (follow-ups, win-backs, reminders, announcements).
+- ANSWER questions about the shop using the read tools (lead counts, recent leads, customers, channel volume, upcoming appointments, memory search, knowledge search, revenue, heat scores, COLD leads, setup status). Always call a tool for data — never guess a number.
+- DIAGNOSE and propose. When the owner asks an open question like "what's falling through the cracks?" or "come up with a cold lead revival", investigate with the read tools first (e.g. cold_leads to find revival candidates, search_knowledge for the offer/policy to lean on), THEN propose the concrete fix as a staged action.
+- ACT on a segment: text or email a group of leads/customers (follow-ups, win-backs, reminders, announcements) via preview_outreach → stage_outreach.
+- ACT on ONE person: draft_reply (reply to a specific customer), add_note (log something on their file), create_lead (capture a new lead).
 
-How to take an action — ALWAYS this sequence, no shortcuts:
-1. Call preview_outreach first. It returns the exact recipient count, why people were skipped, a cost estimate, and 2–3 real sample messages. NOTHING is sent or staged by a preview.
-2. Show the owner the count, the cost, and the samples, then ASK for explicit confirmation ("Want us to stage these 23 texts for your approval?").
-3. Only after the owner clearly says yes, call stage_outreach. This queues a draft per recipient in the owner's Approvals inbox — it does NOT send. The owner sends from /approvals.
+How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
+1. DIAGNOSE: call cold_leads (and search_knowledge if you need the right offer/policy) so you know who and what you're working with.
+2. PREVIEW: call preview_outreach. It returns the exact recipient count, why people were skipped, a cost estimate, and 2–3 real sample messages drafted from each customer's data + the shop's knowledge. NOTHING is sent or staged by a preview.
+3. CONFIRM: show the owner the count, the cost, and the samples, then ASK for explicit confirmation ("Want us to stage these 23 revival texts for your approval?").
+4. STAGE: only after the owner clearly says yes, call stage_outreach. This queues a draft per recipient in the owner's Approvals inbox — it does NOT send. The owner sends from /approvals.
+
+For a single person, draft_reply / add_note / create_lead stage one action the same way — show what you'll do, then stage it for approval.
 
 Hard rules:
 - You can only preview and stage. You cannot send, book, reschedule, charge, or move money — never claim you did. If asked, explain those happen elsewhere (Approvals for sends; the calendar for bookings).
@@ -130,6 +137,92 @@ function channelBlock(shop: ShopRow, channel: "sms" | "email"): string | null {
   return null
 }
 
+// ---------- per-customer action tools (L1) ----------
+
+const draftReplySchema = z.object({
+  customer_query: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe("name, phone, or email of the person to reply to"),
+  channel: z.enum(["sms", "email"]),
+  reply_intent: z
+    .string()
+    .min(3)
+    .max(500)
+    .describe("what to say back, in plain English"),
+})
+
+const addNoteSchema = z.object({
+  customer_name: z.string().min(1).max(120),
+  phone: z.string().max(40).optional(),
+  note: z.string().min(1).max(1000),
+})
+
+const createLeadSchema = z.object({
+  customer_name: z.string().min(1).max(120),
+  phone: z.string().min(3).max(40),
+  vehicle: z.string().max(120).optional(),
+  note: z.string().max(500).optional(),
+})
+
+type CustomerMatch = {
+  id: string
+  name: string | null
+  phone: string | null
+  email: string | null
+}
+
+/** Find a customer by name / phone / email (best-effort, shop-scoped). */
+async function resolveCustomer(
+  supabase: SupabaseClient,
+  shopId: string,
+  query: string
+): Promise<CustomerMatch[]> {
+  const q = query.replace(/[%,()]/g, "").trim()
+  if (!q) return []
+  const ors = [`name.ilike.%${q}%`]
+  if (q.includes("@")) ors.push(`email.eq.${q}`)
+  const digits = q.replace(/\D/g, "")
+  if (digits.length >= 4) ors.push(`phone.ilike.%${digits}%`)
+  const { data } = await supabase
+    .from("customers")
+    .select("id, name, phone, email")
+    .eq("shop_id", shopId)
+    .or(ors.join(","))
+    .limit(5)
+  return (data as CustomerMatch[] | null) ?? []
+}
+
+/** Stage a single pending_action (the human gate is /approvals). */
+async function stageSingle(
+  ctx: OwnerAgentContext,
+  actionType: string,
+  payload: Record<string, unknown>
+): Promise<boolean> {
+  const { error } = await ctx.supabase.from("pending_actions").insert({
+    shop_id: ctx.shop.id,
+    action_type: actionType,
+    payload,
+    requested_by: ctx.ownerId,
+  })
+  if (error) {
+    console.error("[owner-agent] stage failed:", actionType, error)
+    return false
+  }
+  return true
+}
+
+async function meterOneDraft(ctx: OwnerAgentContext): Promise<void> {
+  const priced = priceUsage(await getPricing(ctx.supabase), "outreach_draft", 1)
+  await recordUsage(ctx.supabase, ctx.shop.id, "outreach_draft", {
+    quantity: 1,
+    credits: priced.credits,
+    wholesaleCost: priced.wholesale_cost,
+    retailCost: priced.retail_cost,
+  })
+}
+
 function buildOwnerToolDefinitions(): unknown[] {
   const read = BI_TOOLS.map((t) => ({
     name: t.name,
@@ -148,6 +241,24 @@ function buildOwnerToolDefinitions(): unknown[] {
       description:
         "Queue a draft per recipient into the owner's Approvals inbox. Does NOT send — the owner approves and sends from /approvals. Call ONLY after the owner has confirmed a previewed plan.",
       input_schema: z.toJSONSchema(outreachSchema),
+    },
+    {
+      name: "draft_reply",
+      description:
+        "Draft a reply to ONE specific person (by name, phone, or email) and stage it for approval. Use for 'reply to Mike', 'text Sarah back about her ceramic quote'. Grounded in the shop's voice + knowledge. Does NOT send — staged in Approvals. If more than one person matches, it returns candidates — ask the owner which one.",
+      input_schema: z.toJSONSchema(draftReplySchema),
+    },
+    {
+      name: "add_note",
+      description:
+        "Add a note to a customer's file (staged for approval). Use for 'note that Mike prefers mornings', 'log that the Audi needs a clay bar'.",
+      input_schema: z.toJSONSchema(addNoteSchema),
+    },
+    {
+      name: "create_lead",
+      description:
+        "Create a new lead (staged for approval) for someone who reached out. Use for 'add a lead for the guy who called about a full detail on his truck'.",
+      input_schema: z.toJSONSchema(createLeadSchema),
     },
   ]
   const all = [...read, ...action] as Array<{ cache_control?: unknown }>
@@ -240,6 +351,118 @@ async function runOwnerTool(
       }),
       isError: false,
     }
+  }
+
+  if (block.name === "draft_reply") {
+    const parsed = draftReplySchema.safeParse(block.input)
+    if (!parsed.success) {
+      return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
+    }
+    const { customer_query, channel, reply_intent } = parsed.data
+    const blocked = channelBlock(ctx.shop, channel)
+    if (blocked) return { content: json({ blocked }), isError: false }
+
+    const matches = await resolveCustomer(ctx.supabase, ctx.shop.id, customer_query)
+    if (matches.length === 0) {
+      return { content: json({ blocked: `Couldn't find anyone matching "${customer_query}".` }), isError: false }
+    }
+    if (matches.length > 1) {
+      return {
+        content: json({
+          candidates: matches.map((m) => ({ name: m.name, phone: m.phone, email: m.email })),
+          note: "More than one match — ask the owner which one before drafting.",
+        }),
+        isError: false,
+      }
+    }
+    const c = matches[0]
+    const to = channel === "sms" ? c.phone : c.email
+    if (!to) {
+      return {
+        content: json({ blocked: `${c.name ?? "That customer"} has no ${channel === "sms" ? "phone" : "email"} on file.` }),
+        isError: false,
+      }
+    }
+
+    if (channel === "sms") {
+      const body = await draftCustomSmsForCustomer({
+        shopName: ctx.shop.name,
+        customerName: c.name ?? "there",
+        vehicle: null,
+        service: null,
+        intent: reply_intent,
+      }).catch(() => null)
+      if (!body) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
+      const ok = await stageSingle(ctx, "send_sms", {
+        to_phone: to,
+        body,
+        customer_name: c.name,
+        customer_id: c.id,
+        reason: `Gradia Agent · reply to ${c.name ?? "customer"}`,
+        source: "gradia_agent",
+      })
+      if (!ok) return { content: json({ error: "Couldn't stage that." }), isError: true }
+      await meterOneDraft(ctx)
+      return { content: json({ staged: 1, channel, to, preview: body, where: "Staged in Approvals — review and send there." }), isError: false }
+    }
+
+    const draft = await draftCustomEmailForCustomer({
+      shopName: ctx.shop.name,
+      customerName: c.name ?? "there",
+      service: null,
+      when: null,
+      intent: reply_intent,
+    }).catch(() => null)
+    if (!draft) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
+    const ok = await stageSingle(ctx, "send_email", {
+      to_email: to,
+      subject: draft.subject,
+      body: draft.body,
+      customer_name: c.name,
+      customer_id: c.id,
+      reason: `Gradia Agent · reply to ${c.name ?? "customer"}`,
+      source: "gradia_agent",
+    })
+    if (!ok) return { content: json({ error: "Couldn't stage that." }), isError: true }
+    await meterOneDraft(ctx)
+    return {
+      content: json({ staged: 1, channel, to, preview: { subject: draft.subject, body: draft.body }, where: "Staged in Approvals — review and send there." }),
+      isError: false,
+    }
+  }
+
+  if (block.name === "add_note") {
+    const parsed = addNoteSchema.safeParse(block.input)
+    if (!parsed.success) {
+      return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
+    }
+    const { customer_name, phone, note } = parsed.data
+    const ok = await stageSingle(ctx, "add_note", {
+      content: note,
+      customer_name,
+      phone: phone ?? null,
+      source: "gradia_agent",
+    })
+    if (!ok) return { content: json({ error: "Couldn't stage that note." }), isError: true }
+    return { content: json({ staged: 1, where: "Staged in Approvals." }), isError: false }
+  }
+
+  if (block.name === "create_lead") {
+    const parsed = createLeadSchema.safeParse(block.input)
+    if (!parsed.success) {
+      return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
+    }
+    const { customer_name, phone, vehicle, note } = parsed.data
+    const ok = await stageSingle(ctx, "create_lead", {
+      customer_name,
+      phone,
+      car_info: vehicle ?? null,
+      pin_notes: note ?? null,
+      status: "new",
+      source: "gradia_agent",
+    })
+    if (!ok) return { content: json({ error: "Couldn't stage that lead." }), isError: true }
+    return { content: json({ staged: 1, where: "Staged in Approvals." }), isError: false }
   }
 
   // Read tools (BI) — shop-scoped, read-only.

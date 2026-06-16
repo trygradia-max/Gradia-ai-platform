@@ -662,6 +662,51 @@ export type BiToolDefinition = {
   handler: BiToolHandler
 }
 
+const coldLeadsSchema = z.object({
+  min_age_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(3650)
+    .default(14)
+    .describe("only leads at least this many days old"),
+  limit: z.number().int().min(1).max(50).default(20),
+})
+
+/**
+ * Revival candidates: leads that never booked and have been sitting. Oldest
+ * first (coldest). Backs "find cold leads to revive" — the diagnose half of a
+ * win-back. Read-only.
+ */
+async function coldLeads(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: z.infer<typeof coldLeadsSchema>
+) {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id, customer_name, phone, car_info, status, created_at")
+    .eq("shop_id", shopId)
+    .neq("status", "booked")
+    .lte("created_at", isoDaysBack(params.min_age_days))
+    .order("created_at", { ascending: true })
+    .limit(params.limit)
+  if (error) throw new Error(`cold_leads: ${error.message}`)
+  const leads = (data as LeadRow[] | null) ?? []
+  return {
+    count: leads.length,
+    window: `new/quoted leads with no booking, at least ${params.min_age_days} days old`,
+    matches: leads.map((l) => ({
+      lead_id: l.id,
+      customer_name: l.customer_name,
+      phone: l.phone,
+      car_info: l.car_info,
+      status: l.status,
+      created_at: l.created_at,
+    })),
+  }
+}
+
 export const BI_TOOLS: BiToolDefinition[] = [
   {
     name: "count_leads",
@@ -760,6 +805,14 @@ export const BI_TOOLS: BiToolDefinition[] = [
     schema: linkToSetupSchema,
     handler: (_supabase, _shopId, params) =>
       linkToSetup(linkToSetupSchema.parse(params)),
+  },
+  {
+    name: "cold_leads",
+    description:
+      "List leads that have gone cold — new/quoted leads with no booking, at least N days old (oldest first). Use for 'find cold leads to revive', 'who have we lost touch with', 'who quoted but never booked'. These are the revival candidates for a win-back campaign; pair with preview_outreach to draft the revival.",
+    schema: coldLeadsSchema,
+    handler: (supabase, shopId, params) =>
+      coldLeads(supabase, shopId, coldLeadsSchema.parse(params)),
   },
 ]
 
