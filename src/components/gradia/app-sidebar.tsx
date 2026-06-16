@@ -5,7 +5,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
-  Bot,
   Contact,
   Inbox,
   LayoutDashboard,
@@ -36,14 +35,14 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// Five sturdy destinations (BUILD_REFERENCE §2). Ask Gradia moved to a top-bar
-// ⌘K action; Leads folds into Customers and Schedule into Home/Customers —
-// their routes still exist, they're just off the primary nav.
+// Three sturdy destinations + Settings (FOCUS spec §4.4). Ask Gradia is the
+// ⌘K command bar, not a place; Leads folds into Customers, Schedule into
+// Home/Customers, and "What Gradia does" (/agents) drops off the primary nav.
+// All those routes still exist — they're just no longer top-level.
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/customers", label: "Customers", icon: Contact },
   { href: "/approvals", label: "Approvals", icon: Inbox },
-  { href: "/agents", label: "What Gradia does", icon: Bot },
+  { href: "/customers", label: "Customers", icon: Contact },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 

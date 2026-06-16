@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/gradia/app-sidebar"
 import { AskGradiaButton } from "@/components/gradia/ask-gradia-button"
+import { CommandBar } from "@/components/gradia/command-bar"
+import { MobileComposer } from "@/components/gradia/mobile-composer"
 import { SetupProgressPill } from "@/components/gradia/setup-progress-pill"
 import { countOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
 import { FEATURES } from "@/lib/features"
@@ -68,8 +70,17 @@ export default async function DashboardLayout({
             <SetupProgressPill />
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-8 p-6">{children}</div>
+        {/* Extra bottom padding on mobile so the fixed composer never covers
+            the last card. */}
+        <div className="flex flex-1 flex-col gap-8 p-6 pb-28 sm:pb-6">
+          {children}
+        </div>
       </SidebarInset>
+
+      {/* Gradia Agent everywhere: ⌘K / top-bar overlay (desktop) + the
+          bottom-anchored tap-to-talk composer (mobile). */}
+      <CommandBar />
+      <MobileComposer />
     </SidebarProvider>
   )
 }

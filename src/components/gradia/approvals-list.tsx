@@ -149,12 +149,20 @@ const TONE_STYLE: Record<
   },
 }
 
-export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
+export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[] }) {
   const router = useRouter()
   const reduce = useReducedMotion()
-  const [busyId, setBusyId] = React.useState<string | null>(null)
+  // Track only what we've optimistically dropped, derived against the server
+  // list at render — no effect, no re-seeding. A decided card slides out the
+  // instant it's tapped (optimistic, no reload — FOCUS spec §4.4); after the
+  // background refresh the server list no longer carries it anyway.
+  const [removed, setRemoved] = React.useState<Set<string>>(new Set())
+  // Guards a double-tap in the window before the card animates away.
+  const inFlight = React.useRef<Set<string>>(new Set())
 
-  if (items.length === 0) {
+  const visible = serverItems.filter((i) => !removed.has(i.id))
+
+  if (visible.length === 0) {
     return <EmptyState />
   }
 
@@ -162,39 +170,50 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
     id: string,
     decision: "approve" | "reject"
   ): Promise<void> {
-    const key = `${id}:${decision}`
-    setBusyId(key)
+    if (inFlight.current.has(id)) return
+    if (!serverItems.some((i) => i.id === id)) return
+    inFlight.current.add(id)
+
+    // Optimistic: hide the card now; "Sent ✓" is implied by the toast.
+    setRemoved((prev) => new Set(prev).add(id))
+
     const result =
       decision === "approve"
         ? await approveFromDashboard(id)
         : await rejectFromDashboard(id)
-    setBusyId(null)
 
     if (!result.ok) {
+      // Reconcile failure — un-hide the card so the owner can retry.
+      setRemoved((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      inFlight.current.delete(id)
       toast.error(result.error)
       return
     }
 
     if (result.alreadyDecided) {
-      toast.message("Already decided — refreshing.")
+      toast.message("Already decided.")
     } else if (decision === "approve") {
       toast.success("Approved — it's on its way.")
     } else {
       toast.success("Dropped. Nothing went out.")
     }
 
+    // Background reconcile: refresh the badge + any server-derived state. The
+    // card is already gone, so this never blocks the interaction.
+    inFlight.current.delete(id)
     router.refresh()
   }
 
   return (
     <PageStagger className="grid gap-3">
       <AnimatePresence initial={false}>
-        {items.map((item) => {
+        {visible.map((item) => {
           const meta = ACTION_META[item.action_type]
           const isEditRequested = item.status === "edit_requested"
-          const approveBusy = busyId === `${item.id}:approve`
-          const rejectBusy = busyId === `${item.id}:reject`
-          const anyBusy = approveBusy || rejectBusy
 
           return (
             <motion.div
@@ -211,9 +230,9 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                   item={item}
                   meta={meta}
                   isEditRequested={isEditRequested}
-                  approveBusy={approveBusy}
-                  rejectBusy={rejectBusy}
-                  anyBusy={anyBusy}
+                  approveBusy={false}
+                  rejectBusy={false}
+                  anyBusy={false}
                   onDecision={handleDecision}
                 />
               </StaggerItem>

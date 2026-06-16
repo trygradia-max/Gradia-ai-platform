@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { Loader2, Mic, Square } from "lucide-react"
@@ -11,25 +10,8 @@ import { MotionCard } from "@/components/gradia/motion/motion-card"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { PulseDot } from "@/components/gradia/motion/pulse-dot"
 import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { useWhisperRecorder } from "@/lib/use-whisper-recorder"
 import { cn } from "@/lib/utils"
-
-type RecordingState = "idle" | "requesting" | "recording" | "processing"
-
-function pickMimeType(): string {
-  if (typeof window === "undefined" || typeof MediaRecorder === "undefined") {
-    return ""
-  }
-  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm"
-  if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4"
-  if (MediaRecorder.isTypeSupported("audio/ogg")) return "audio/ogg"
-  return ""
-}
-
-function fileExtFor(mime: string): string {
-  if (mime.includes("mp4")) return "m4a"
-  if (mime.includes("ogg")) return "ogg"
-  return "webm"
-}
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60)
@@ -40,116 +22,18 @@ function formatTime(seconds: number): string {
 export function WhisperButton() {
   const router = useRouter()
   const reduce = useReducedMotion()
-  const [state, setState] = React.useState<RecordingState>("idle")
-  const [duration, setDuration] = React.useState(0)
-  const recorderRef = React.useRef<MediaRecorder | null>(null)
-  const chunksRef = React.useRef<Blob[]>([])
-  const streamRef = React.useRef<MediaStream | null>(null)
-  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
-  const mimeRef = React.useRef<string>("")
-
-  React.useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }, [])
-
-  async function startRecording() {
-    if (typeof navigator === "undefined" || !navigator.mediaDevices) {
-      toast.error("Mic isn't available in this browser.")
-      return
-    }
-    const mimeType = pickMimeType()
-    if (!mimeType) {
-      toast.error("Mic recording isn't supported in this browser.")
-      return
-    }
-
-    setState("requesting")
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      const recorder = new MediaRecorder(stream, { mimeType })
-      recorderRef.current = recorder
-      chunksRef.current = []
-      mimeRef.current = mimeType
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
-      }
-
-      recorder.onstop = async () => {
-        streamRef.current?.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
-        if (timerRef.current) {
-          clearInterval(timerRef.current)
-          timerRef.current = null
-        }
-
-        const blob = new Blob(chunksRef.current, { type: mimeRef.current })
-        await processBlob(blob)
-      }
-
-      recorder.start(250)
-      setState("recording")
-      setDuration(0)
-      timerRef.current = setInterval(() => {
-        setDuration((d) => d + 1)
-      }, 1000)
-    } catch (err) {
-      console.error("[whisper] mic permission denied or failed:", err)
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-      setState("idle")
-      toast.error("We need mic access — enable it in your browser.")
-    }
-  }
-
-  function stopRecording() {
-    const rec = recorderRef.current
-    if (rec && rec.state !== "inactive") {
-      setState("processing")
-      rec.stop()
-    }
-  }
-
-  async function processBlob(blob: Blob) {
-    const ext = fileExtFor(mimeRef.current)
-    const formData = new FormData()
-    formData.append("audio", blob, `whisper.${ext}`)
-
-    try {
-      const res = await fetch("/api/whisper/process", {
-        method: "POST",
-        body: formData,
-      })
-      const result = (await res.json()) as
-        | {
-            ok: true
-            transcript: string
-            reply: string
-            tools: string[]
-          }
-        | { ok: false; error: string; transcript?: string }
-
-      if (!result.ok) {
-        toast.error(result.error)
-        setState("idle")
-        return
-      }
-
-      // The agent already decided and acted (capture saved, outbound staged,
-      // out-of-registry refused) and wrote its own read-back. Surface its words.
-      toast.success(result.reply || "Got it.", { duration: 6000 })
+  // The agent already acted on the transcript (NOW-2) and wrote its own
+  // read-back; we just surface its words and refresh.
+  const { state, duration, start, stop } = useWhisperRecorder({
+    onResult: ({ reply }) => {
+      toast.success(reply, { duration: 6000 })
       router.refresh()
-    } catch (err) {
-      console.error("[whisper] upload failed:", err)
-      toast.error("Couldn't reach the server — try again.")
-    } finally {
-      setState("idle")
-    }
-  }
+    },
+    onError: (msg) => toast.error(msg),
+  })
+
+  const startRecording = () => void start()
+  const stopRecording = () => stop()
 
   const isActive = state === "recording" || state === "processing"
 

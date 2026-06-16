@@ -114,11 +114,15 @@ const chipItem: Variants = {
 export function BiChat({
   initial,
   endpoint = "/api/bi/chat",
+  resetHref = "/chat",
 }: {
   initial: InitialChatState
   /** Which chat backend to stream from. Defaults to Ask Gradia (read-only);
    *  the Gradia Agent box passes "/api/agent/chat" (read + stage outreach). */
   endpoint?: string
+  /** Where "New chat" drops the ?c= param. Pass null when hosted in an overlay
+   *  (the command bar) so resetting doesn't navigate the page underneath. */
+  resetHref?: string | null
 }) {
   const router = useRouter()
   const reduce = useReducedMotion()
@@ -152,9 +156,10 @@ export function BiChat({
     setConversationId(null)
     setMessages([])
     setInput("")
-    // Drop the ?c=<id> param so a reload doesn't snap back to the
-    // previous thread. router.replace keeps it cheap (no history entry).
-    router.replace("/chat")
+    // Drop the ?c=<id> param so a reload doesn't snap back to the previous
+    // thread. router.replace keeps it cheap (no history entry). Skipped in
+    // overlay mode (resetHref=null) so we don't navigate the page underneath.
+    if (resetHref) router.replace(resetHref)
   }
 
   async function send(content: string) {
