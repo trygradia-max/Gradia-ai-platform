@@ -125,6 +125,10 @@ export async function resolveFreeformAudience(
           `car_info.ilike.%${kw}%,pin_notes.ilike.%${kw}%,customer_name.ilike.%${kw}%`
         )
     }
+    if (f.vehicle_make) q = q.ilike("vehicle_make", f.vehicle_make)
+    if (f.vehicle_model) q = q.ilike("vehicle_model", `%${f.vehicle_model}%`)
+    if (f.vehicle_year_min != null) q = q.gte("vehicle_year", f.vehicle_year_min)
+    if (f.vehicle_year_max != null) q = q.lte("vehicle_year", f.vehicle_year_max)
     q = q.order("created_at", { ascending: false }).limit(fetchLimit)
     const { data, error } = await q
     if (error) throw new Error(`audience (leads) query failed: ${error.message}`)
@@ -140,26 +144,49 @@ export async function resolveFreeformAudience(
   } else {
     let q = supabase
       .from("customers")
-      .select("id, name, phone, email")
+      .select(
+        "id, name, phone, email, vehicle_make, vehicle_model, vehicle_year, last_visit_at"
+      )
       .eq("shop_id", shop.id)
     if (f.keyword) {
       const kw = safeKeyword(f.keyword)
       if (kw) q = q.ilike("name", `%${kw}%`)
+    }
+    if (f.vehicle_make) q = q.ilike("vehicle_make", f.vehicle_make)
+    if (f.vehicle_model) q = q.ilike("vehicle_model", `%${f.vehicle_model}%`)
+    if (f.vehicle_year_min != null) q = q.gte("vehicle_year", f.vehicle_year_min)
+    if (f.vehicle_year_max != null) q = q.lte("vehicle_year", f.vehicle_year_max)
+    if (f.not_visited_in_days != null) {
+      // No booked visit in the window — or never visited (null).
+      q = q.or(`last_visit_at.is.null,last_visit_at.lte.${iso(f.not_visited_in_days)}`)
     }
     q = q.order("updated_at", { ascending: false }).limit(fetchLimit)
     const { data, error } = await q
     if (error)
       throw new Error(`audience (customers) query failed: ${error.message}`)
     targets = (
-      (data as Pick<CustomerRow, "id" | "name" | "phone" | "email">[] | null) ??
-      []
+      (data as
+        | Pick<
+            CustomerRow,
+            | "id"
+            | "name"
+            | "phone"
+            | "email"
+            | "vehicle_make"
+            | "vehicle_model"
+            | "vehicle_year"
+          >[]
+        | null) ?? []
     ).map((c) => ({
       customerId: c.id,
       leadId: null,
       name: c.name,
       phone: c.phone,
       email: c.email,
-      vehicle: null,
+      vehicle:
+        [c.vehicle_year, c.vehicle_make, c.vehicle_model]
+          .filter(Boolean)
+          .join(" ") || null,
       service: null,
     }))
   }

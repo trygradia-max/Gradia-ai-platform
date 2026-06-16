@@ -185,6 +185,9 @@ export type LeadRow = {
   customer_name: string
   phone: string
   car_info: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_year: number | null
   pin_notes: string | null
   status: LeadStatus
   created_at: string
@@ -197,6 +200,10 @@ export type CustomerRow = {
   name: string | null
   phone: string | null
   email: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_year: number | null
+  last_visit_at: string | null
   jobber_client_id: string | null
   housecallpro_customer_id: string | null
   created_at: string
@@ -460,6 +467,16 @@ export type FreeformFilters = {
   inactive_days?: number
   /** case-insensitive keyword matched against name / vehicle / notes */
   keyword?: string
+  /** structured vehicle make, e.g. "Tesla" (case-insensitive exact) */
+  vehicle_make?: string
+  /** structured vehicle model substring, e.g. "Model 3" */
+  vehicle_model?: string
+  /** vehicle model year at least this */
+  vehicle_year_min?: number
+  /** vehicle model year at most this */
+  vehicle_year_max?: number
+  /** customers only: no booked visit in at least this many days (or never) */
+  not_visited_in_days?: number
 }
 
 export type FreeformPlan = {

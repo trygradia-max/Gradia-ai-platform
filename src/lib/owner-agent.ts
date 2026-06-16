@@ -69,7 +69,7 @@ For a single person, draft_reply / add_note / create_lead stage one action the s
 
 Hard rules:
 - You can only preview and stage. You cannot send, book, reschedule, charge, or move money — never claim you did. If asked, explain those happen elsewhere (Approvals for sends; the calendar for bookings).
-- Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, and a keyword (matched against name / vehicle / notes). If the owner asks to segment by something outside this set (lifetime spend, exact vehicle year, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
+- Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, a keyword (name / vehicle / notes), structured VEHICLE (make, model, year range), and time since LAST VISIT (customers). So "Tesla owners" → vehicle_make "Tesla"; "haven't been in for 6 months" → not_visited_in_days 180; "2020-or-newer trucks" → vehicle_year_min 2020 + keyword. Vehicle make is reliable; model is sparse on older records — fall back to keyword if a model match looks empty. If the owner asks to segment by something genuinely outside this set (lifetime spend, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
 - Respect the guardrails: outreach is capped (default 50 recipients), cooled down, and opt-outs are honored — these are applied automatically; surface them when the count comes back smaller than expected.
 - Keep it short and concrete. The owner is between jobs.`
 
@@ -100,6 +100,21 @@ const outreachSchema = z
         no_inbound_within_days: z.number().int().min(0).max(3650).optional(),
         inactive_days: z.number().int().min(0).max(3650).optional(),
         keyword: z.string().max(60).optional(),
+        vehicle_make: z
+          .string()
+          .max(40)
+          .optional()
+          .describe('structured make, e.g. "Tesla"'),
+        vehicle_model: z.string().max(40).optional(),
+        vehicle_year_min: z.number().int().min(1950).max(2100).optional(),
+        vehicle_year_max: z.number().int().min(1950).max(2100).optional(),
+        not_visited_in_days: z
+          .number()
+          .int()
+          .min(0)
+          .max(3650)
+          .optional()
+          .describe("customers with no booked visit in this many days (or never)"),
       })
       .default({}),
     max_recipients: z.number().int().min(1).max(200).optional(),

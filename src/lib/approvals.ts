@@ -25,6 +25,7 @@ import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
+import { parseVehicle } from "@/lib/vehicle"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { smsGateForShop } from "@/lib/telephony-provider"
@@ -235,6 +236,10 @@ async function executeCreateLead(
     }
   }
 
+  // Structured vehicle (L3) — parse car_info once, store on the lead and carry
+  // to the customer record if it has none yet.
+  const vehicle = parseVehicle(proposal.car_info)
+
   const { data: created, error: insertErr } = await supabase
     .from("leads")
     .insert({
@@ -243,6 +248,9 @@ async function executeCreateLead(
       customer_name: proposal.customer_name,
       phone: proposal.phone,
       car_info: proposal.car_info,
+      vehicle_make: vehicle.make,
+      vehicle_model: vehicle.model,
+      vehicle_year: vehicle.year,
       pin_notes: proposal.pin_notes,
       status: proposal.status,
     })
@@ -252,6 +260,18 @@ async function executeCreateLead(
   if (insertErr || !created) {
     await rollbackClaim(supabase, claimed.id)
     return { ok: false, error: insertErr?.message ?? "Lead insert failed" }
+  }
+
+  if (vehicle.make) {
+    await supabase
+      .from("customers")
+      .update({
+        vehicle_make: vehicle.make,
+        vehicle_model: vehicle.model,
+        vehicle_year: vehicle.year,
+      })
+      .eq("id", customerResult.customer.id)
+      .is("vehicle_make", null)
   }
 
   await supabase
@@ -682,6 +702,7 @@ async function executeBookAppointment(
 
   // Lead row tracks the customer relationship; appointment row tracks
   // the calendar event itself. Both link back through customer_id.
+  const vehicle = parseVehicle(proposal.car_info)
   const { data: lead, error: leadErr } = await supabase
     .from("leads")
     .insert({
@@ -690,6 +711,9 @@ async function executeBookAppointment(
       customer_name: proposal.customer_name,
       phone: proposal.phone,
       car_info: proposal.car_info,
+      vehicle_make: vehicle.make,
+      vehicle_model: vehicle.model,
+      vehicle_year: vehicle.year,
       pin_notes: proposal.pin_notes,
       status: "booked",
     })
@@ -699,6 +723,25 @@ async function executeBookAppointment(
   if (leadErr || !lead) {
     await rollbackClaim(supabase, claimed.id)
     return { ok: false, error: leadErr?.message ?? "Lead insert failed" }
+  }
+
+  // L3: advance the customer's last-visit recency (excludes them from win-back
+  // for a while), and carry vehicle to the customer record if it has none.
+  await supabase
+    .from("customers")
+    .update({ last_visit_at: start.toISOString() })
+    .eq("id", customerResult.customer.id)
+    .or(`last_visit_at.is.null,last_visit_at.lt.${start.toISOString()}`)
+  if (vehicle.make) {
+    await supabase
+      .from("customers")
+      .update({
+        vehicle_make: vehicle.make,
+        vehicle_model: vehicle.model,
+        vehicle_year: vehicle.year,
+      })
+      .eq("id", customerResult.customer.id)
+      .is("vehicle_make", null)
   }
 
   const { data: appointment } = await supabase
