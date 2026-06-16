@@ -43,6 +43,32 @@ export type CrmHealth = {
   duplicateClusters: DuplicateCluster[]
 }
 
+/**
+ * Flags that the shop just connected a CRM, so the cleanup card auto-pops on
+ * Home next time the owner lands. Best-effort settings merge; never throws into
+ * the OAuth callback.
+ */
+export async function markCrmJustConnected(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from("shops")
+      .select("settings")
+      .eq("id", shopId)
+      .maybeSingle()
+    const settings =
+      (data as { settings?: Record<string, unknown> } | null)?.settings ?? {}
+    await supabase
+      .from("shops")
+      .update({ settings: { ...settings, crm_just_connected: true } })
+      .eq("id", shopId)
+  } catch (err) {
+    console.error("[crm-health] mark-just-connected failed:", err)
+  }
+}
+
 /** Lowercase, collapse whitespace, drop punctuation — "Sarah J." ~ "sarah j". */
 export function normalizeName(name: string | null | undefined): string {
   return (name ?? "")

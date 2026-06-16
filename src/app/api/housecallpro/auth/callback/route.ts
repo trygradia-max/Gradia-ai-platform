@@ -15,6 +15,7 @@ import {
   exchangeAuthorizationCode,
   fetchCompanyInfo,
 } from "@/lib/housecallpro"
+import { markCrmJustConnected } from "@/lib/crm-health"
 import { finishOauth } from "@/lib/oauth-popup"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -113,6 +114,9 @@ export async function GET(request: Request) {
     console.error("[housecallpro callback] shop update failed:", updateErr)
     return finishOauth(settingsRedirect("save_failed"))
   }
+
+  // Pop the CRM cleanup card on Home next time they land.
+  await markCrmJustConnected(supabase, shop.id)
 
   return finishOauth(settingsRedirect("ok"))
 }

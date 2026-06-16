@@ -59,7 +59,7 @@ What you can do:
 - ANSWER questions about the shop using the read tools (lead counts, recent leads, customers, channel volume, upcoming appointments, memory search, knowledge search, revenue, heat scores, COLD leads, setup status). Always call a tool for data — never guess a number.
 - DIAGNOSE and propose. When the owner asks an open question like "what's falling through the cracks?" or "come up with a cold lead revival", investigate with the read tools first (e.g. cold_leads to find revival candidates, search_knowledge for the offer/policy to lean on), THEN propose the concrete fix as a staged action.
 - ACT on a segment: text or email a group of leads/customers (follow-ups, win-backs, reminders, announcements) via preview_outreach → stage_outreach.
-- ACT on ONE person: draft_reply (reply to a specific customer), add_note (log something on their file), create_lead (capture a new lead), propose_booking (put a specific appointment on the books — always staged, never auto-confirmed).
+- ACT on ONE person: draft_reply (reply to a specific customer), add_note (log something on their file), create_lead (capture a new lead), propose_booking (put a specific appointment on the books — always staged, never auto-confirmed), update_customer (fill in or fix a missing phone, email, or vehicle).
 
 How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
 1. DIAGNOSE: call cold_leads (and search_knowledge if you need the right offer/policy) so you know who and what you're working with.
@@ -72,7 +72,7 @@ For a single person, draft_reply / add_note / create_lead stage one action the s
 Hard rules:
 - You can preview, stage, and propose — you never directly send, confirm a booking, reschedule, cancel, or charge. A proposed booking is staged and ALWAYS needs the owner's approval before it touches the calendar. Never say something is sent or booked; say it's staged for approval.
 - Disambiguation: when a name matches more than one customer, NEVER guess. Ask one short follow-up naming a distinguishing detail from the candidates — their vehicle ("the silver Tesla Sarah or the red Honda one?"), their last visit, or the last 4 digits of their phone. Act only once the owner picks.
-- Messy data: if someone you need is missing a phone, email, or vehicle, say so plainly ("Mike has no email on file") and suggest fixing it in their customer file or the CRM cleanup — don't fail silently or invent details.
+- Messy data: if someone you need is missing a phone, email, or vehicle, say so plainly ("Mike has no email on file"). If the owner gives you the detail, fix it on the spot with update_customer — then continue what they asked. Never invent details.
 - Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, a keyword (name / vehicle / notes), structured VEHICLE (make, model, year range), and time since LAST VISIT (customers). So "Tesla owners" → vehicle_make "Tesla"; "haven't been in for 6 months" → not_visited_in_days 180; "2020-or-newer trucks" → vehicle_year_min 2020 + keyword. Vehicle make is reliable; model is sparse on older records — fall back to keyword if a model match looks empty. If the owner asks to segment by something genuinely outside this set (lifetime spend, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
 - Respect the guardrails: outreach is capped (default 50 recipients), cooled down, and opt-outs are honored — these are applied automatically; surface them when the count comes back smaller than expected.
 - Keep it short and concrete. The owner is between jobs.`
@@ -183,6 +183,20 @@ const createLeadSchema = z.object({
   phone: z.string().min(3).max(40),
   vehicle: z.string().max(120).optional(),
   note: z.string().max(500).optional(),
+})
+
+const updateCustomerSchema = z.object({
+  customer_query: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe("name, phone, or email of the customer to update"),
+  phone: z.string().max(40).optional(),
+  email: z.string().max(200).optional(),
+  vehicle_make: z.string().max(40).optional(),
+  vehicle_model: z.string().max(60).optional(),
+  vehicle_color: z.string().max(30).optional(),
+  vehicle_year: z.number().int().min(1950).max(2100).optional(),
 })
 
 const proposeBookingSchema = z.object({
@@ -353,6 +367,12 @@ function buildOwnerToolDefinitions(): unknown[] {
       description:
         "Propose a booking for a customer (staged for approval). Use for 'book Mike for a full detail Saturday at 3pm'. Compute iso_start_time as an absolute ISO 8601 datetime from today's date. A booking ALWAYS needs the owner's approval — it never auto-confirms and never writes the calendar until approved.",
       input_schema: z.toJSONSchema(proposeBookingSchema),
+    },
+    {
+      name: "update_customer",
+      description:
+        "Fill in or correct a customer's details — phone, email, or vehicle (make/model/color/year). Use for 'Mike's email is mike@x.com' or 'Sarah drives a silver 2021 Tesla Model 3'. Resolves the person by name/phone/email; if several match, ask which first. Applies directly — it's the owner's own CRM data, not an outbound message.",
+      input_schema: z.toJSONSchema(updateCustomerSchema),
     },
   ]
   const all = [...read, ...action] as Array<{ cache_control?: unknown }>
@@ -571,6 +591,52 @@ async function runOwnerTool(
     })
     if (!ok) return { content: json({ error: "Couldn't stage that lead." }), isError: true }
     return { content: json({ staged: 1, where: "Staged in Approvals." }), isError: false }
+  }
+
+  if (block.name === "update_customer") {
+    const parsed = updateCustomerSchema.safeParse(block.input)
+    if (!parsed.success) {
+      return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
+    }
+    const { customer_query, ...fields } = parsed.data
+    const matches = await resolveCustomer(ctx.supabase, ctx.shop.id, customer_query)
+    if (matches.length === 0) {
+      return { content: json({ blocked: `Couldn't find anyone matching "${customer_query}".` }), isError: false }
+    }
+    if (matches.length > 1) {
+      return {
+        content: json({
+          candidates: matches.map(describeCandidate),
+          note: "More than one match — ask the owner which one before updating.",
+        }),
+        isError: false,
+      }
+    }
+    const c = matches[0]
+    const patch: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined || v === null) continue
+      if (typeof v === "string") {
+        if (v.trim()) patch[k] = v.trim()
+      } else {
+        patch[k] = v
+      }
+    }
+    if (Object.keys(patch).length === 0) {
+      return { content: json({ blocked: "No details given to update." }), isError: false }
+    }
+    const { error } = await ctx.supabase
+      .from("customers")
+      .update(patch)
+      .eq("id", c.id)
+      .eq("shop_id", ctx.shop.id)
+    if (error) {
+      return { content: json({ error: "Couldn't save that — the contact may already be on another record." }), isError: true }
+    }
+    return {
+      content: json({ updated: c.name ?? customer_query, fields: Object.keys(patch) }),
+      isError: false,
+    }
   }
 
   if (block.name === "propose_booking") {

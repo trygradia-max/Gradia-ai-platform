@@ -1,10 +1,12 @@
 import { cookies } from "next/headers"
 
+import { getCrmCleanupState } from "@/app/actions/crm-cleanup"
 import { dashboardEyebrow } from "@/lib/eyebrow"
 import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
 import { getCoOwnerSuggestions } from "@/lib/data/co-owner"
 import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
 import { AiLeadSection } from "@/components/gradia/ai-lead-section"
+import { CrmCleanupCard } from "@/components/gradia/crm-cleanup-card"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
 import { CoOwnerCard } from "@/components/gradia/co-owner-card"
@@ -20,12 +22,18 @@ import { requireShop } from "@/lib/shop"
 
 export default async function DashboardPage() {
   const shop = await requireShop()
-  const [leads, channels, suggestions, cookieStore] = await Promise.all([
+  const [leads, channels, suggestions, cleanup, cookieStore] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     getChannelStatusForCurrentShop(),
     getCoOwnerSuggestions(),
+    getCrmCleanupState(),
     cookies(),
   ])
+
+  const showCleanup =
+    cleanup.justConnected ||
+    cleanup.health.duplicateClusters.length > 0 ||
+    cleanup.health.missingContact.length > 0
 
   const connectedCount = channels.filter(
     (c) => c.status === "connected"
@@ -51,6 +59,12 @@ export default async function DashboardPage() {
 
       {/* Nudges first — "what I'd tackle next" beats a wall of stats
           (GRADIA_UX_ONBOARDING_SPEC Part 2). */}
+      {showCleanup && (
+        <CrmCleanupCard
+          health={cleanup.health}
+          justConnected={cleanup.justConnected}
+        />
+      )}
       <CoOwnerCard suggestions={suggestions} />
 
       <RevenueTiles />

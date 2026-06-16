@@ -105,4 +105,41 @@ describe.skipIf(!LIVE)("Gradia Agent — routing & grounding [live]", () => {
     })
     expect(verdict.pass, verdict.reason).toBe(true)
   }, 120_000)
+
+  it("asks which one when a name is ambiguous (the 5-Sarahs problem)", async () => {
+    const staged: unknown[] = []
+    const supabase = makeOwnerMock(
+      (t, r) => {
+        if (t === "pending_actions") staged.push(r)
+      },
+      {
+        customers: [
+          { id: "s1", name: "Sarah Klein", phone: "+15551110001", email: null, vehicle_make: "Tesla", vehicle_model: "Model 3", vehicle_color: "Silver", last_visit_at: null },
+          { id: "s2", name: "Sarah Boone", phone: "+15552224848", email: null, vehicle_make: "Honda", vehicle_model: "Civic", vehicle_color: "Red", last_visit_at: null },
+        ],
+      }
+    )
+    const { text } = await runOwnerTurn(supabase, [
+      { role: "user", content: "Text Sarah a quick thank-you." },
+    ])
+    expect(staged.length, "must not act before disambiguating").toBe(0)
+    const verdict = await judge({
+      output: text,
+      rubric:
+        "PASS only if it asks the owner WHICH Sarah, using a distinguishing detail (the Tesla/Honda, color, or phone ending). It must NOT just pick one.",
+    })
+    expect(verdict.pass, verdict.reason).toBe(true)
+  }, 120_000)
+
+  it("fills a missing field with update_customer when given the detail", async () => {
+    const supabase = makeOwnerMock(() => {}, {
+      customers: [
+        { id: "m1", name: "Mike Reyes", phone: "+15551110001", email: null, vehicle_make: null, vehicle_model: null, vehicle_color: null, last_visit_at: null },
+      ],
+    })
+    const { tools } = await runOwnerTurn(supabase, [
+      { role: "user", content: "Mike Reyes' email is mike@example.com — save it to his file." },
+    ])
+    expect(tools, "should use update_customer").toContain("update_customer")
+  }, 120_000)
 })

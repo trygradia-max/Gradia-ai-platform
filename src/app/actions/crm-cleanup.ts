@@ -17,6 +17,39 @@ export async function getCrmHealthForCurrentShop(): Promise<CrmHealth> {
   return getCrmHealth(supabase, shop.id)
 }
 
+export type CrmCleanupState = { health: CrmHealth; justConnected: boolean }
+
+/** Health + whether a CRM was just connected (drives the Home auto-pop). */
+export async function getCrmCleanupState(): Promise<CrmCleanupState> {
+  await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("shops")
+    .select("settings")
+    .eq("id", shop.id)
+    .single()
+  const settings = (data as { settings?: Record<string, unknown> } | null)?.settings ?? {}
+  const health = await getCrmHealth(supabase, shop.id)
+  return { health, justConnected: settings.crm_just_connected === true }
+}
+
+/** Clears the just-connected flag once the owner has dealt with the cleanup. */
+export async function dismissCrmCleanup(): Promise<CleanupResult> {
+  await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+  const { data } = await supabase.from("shops").select("settings").eq("id", shop.id).single()
+  const settings = (data as { settings?: Record<string, unknown> } | null)?.settings ?? {}
+  const { error } = await supabase
+    .from("shops")
+    .update({ settings: { ...settings, crm_just_connected: false } })
+    .eq("id", shop.id)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/dashboard")
+  return { ok: true }
+}
+
 /** Fields a merge carries from the duplicate into the primary when missing. */
 const FILLABLE = [
   "name",

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { CheckCircle2, Sparkles, Users } from "lucide-react"
 
-import { mergeCustomers } from "@/app/actions/crm-cleanup"
+import { dismissCrmCleanup, mergeCustomers } from "@/app/actions/crm-cleanup"
 import { Button } from "@/components/ui/button"
 import type { CrmHealth, DuplicateCluster } from "@/lib/crm-health"
 
@@ -12,26 +12,53 @@ import type { CrmHealth, DuplicateCluster } from "@/lib/crm-health"
  * missing contact info) and lets the owner fix it in a tap, so Gradia starts
  * with clean data. Merging a cluster folds the rest into the first record.
  */
-export function CrmCleanupCard({ health }: { health: CrmHealth }) {
+export function CrmCleanupCard({
+  health,
+  justConnected = false,
+}: {
+  health: CrmHealth
+  justConnected?: boolean
+}) {
   const [clusters, setClusters] = React.useState<DuplicateCluster[]>(
     health.duplicateClusters
   )
   const missingContact = health.missingContact.length
   const [pending, startTransition] = React.useTransition()
+  const [dismissed, setDismissed] = React.useState(false)
 
   const clean =
     clusters.length === 0 && missingContact === 0 && health.missingVehicle === 0
 
-  if (health.total === 0) return null
+  if (dismissed) return null
+  if (health.total === 0 && !justConnected) return null
+
+  const dismiss = () =>
+    startTransition(async () => {
+      await dismissCrmCleanup()
+      setDismissed(true)
+    })
 
   return (
     <div className="rounded-2xl border border-border/60 bg-card/40 p-5">
-      <div className="flex items-center gap-2">
-        <Users className="size-4 text-primary" aria-hidden />
-        <h3 className="font-display text-lg text-foreground">Tidy up the books</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Users className="size-4 text-primary" aria-hidden />
+          <h3 className="font-display text-lg text-foreground">
+            {justConnected ? "Your CRM is connected — let's tidy it up" : "Tidy up the books"}
+          </h3>
+        </div>
+        {justConnected && (
+          <Button variant="ghost" size="sm" onClick={dismiss} disabled={pending}>
+            Done
+          </Button>
+        )}
       </div>
 
-      {clean ? (
+      {health.total === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          No customers yet — Gradia will keep this clean as they come in.
+        </p>
+      ) : clean ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="size-4 text-[var(--status-live,#3fb950)]" aria-hidden />
           {health.total} customers, all reachable and de-duped. Gradia&rsquo;s
