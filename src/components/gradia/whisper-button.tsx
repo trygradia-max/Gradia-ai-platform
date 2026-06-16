@@ -127,8 +127,9 @@ export function WhisperButton() {
       const result = (await res.json()) as
         | {
             ok: true
-            intent: "create_lead" | "add_note"
             transcript: string
+            reply: string
+            tools: string[]
           }
         | { ok: false; error: string; transcript?: string }
 
@@ -138,8 +139,9 @@ export function WhisperButton() {
         return
       }
 
-      const intentLabel = result.intent === "add_note" ? "note" : "lead"
-      toast.success(`Got it — approve the ${intentLabel} in Slack or Approvals.`)
+      // The agent already decided and acted (capture saved, outbound staged,
+      // out-of-registry refused) and wrote its own read-back. Surface its words.
+      toast.success(result.reply || "Got it.", { duration: 6000 })
       router.refresh()
     } catch (err) {
       console.error("[whisper] upload failed:", err)

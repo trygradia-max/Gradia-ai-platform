@@ -38,8 +38,11 @@ import {
 } from "@/lib/bi-agent"
 import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 import { precheckCredits, recordUsage } from "@/lib/credits"
+import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
+import { recordInteraction } from "@/lib/memory"
+import { parseVehicle } from "@/lib/vehicle"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { GRADIA_IDENTITY, GRADIA_VOICE } from "@/lib/persona"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -67,7 +70,7 @@ How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
 3. CONFIRM: show the owner the count, the cost, and the samples, then ASK for explicit confirmation ("Want us to stage these 23 revival texts for your approval?").
 4. STAGE: only after the owner clearly says yes, call stage_outreach. This queues a draft per recipient in the owner's Approvals inbox — it does NOT send. The owner sends from /approvals.
 
-For a single person, draft_reply / add_note / create_lead stage one action the same way — show what you'll do, then stage it for approval.
+Approval tiers (the friction gradient): capture and data edits — add_note, create_lead, update_customer — save IMMEDIATELY (the owner's own data, reversible), so just confirm you did it. Anything OUTBOUND — draft_reply and campaigns — stages for one-tap approval and never sends itself. Bookings always need approval. Never tell the owner a capture is "staged" — it's done; never tell them an outbound message was "sent" — it's staged.
 
 Hard rules:
 - You can preview, stage, and propose — you never directly send, confirm a booking, reschedule, cancel, or charge. A proposed booking is staged and ALWAYS needs the owner's approval before it touches the calendar. Never say something is sent or booked; say it's staged for approval.
@@ -565,14 +568,21 @@ async function runOwnerTool(
       return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
     }
     const { customer_name, phone, note } = parsed.data
-    const ok = await stageSingle(ctx, "add_note", {
+    // Capture executes immediately — owner's own data, reversible (§3 map).
+    let customerId: string | null = null
+    if (phone) {
+      const c = await findCustomerByChannel(ctx.supabase, ctx.shop.id, { phone })
+      if (c) customerId = c.id
+    }
+    await recordInteraction(ctx.supabase, {
+      shopId: ctx.shop.id,
+      customerId,
+      channel: "note",
+      role: "system",
       content: note,
-      customer_name,
-      phone: phone ?? null,
-      source: "gradia_agent",
+      metadata: { source: "gradia_agent", customer_name },
     })
-    if (!ok) return { content: json({ error: "Couldn't stage that note." }), isError: true }
-    return { content: json({ staged: 1, where: "Staged in Approvals." }), isError: false }
+    return { content: json({ noted: true, customer: customer_name }), isError: false }
   }
 
   if (block.name === "create_lead") {
@@ -581,16 +591,29 @@ async function runOwnerTool(
       return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
     }
     const { customer_name, phone, vehicle, note } = parsed.data
-    const ok = await stageSingle(ctx, "create_lead", {
+    // Capture executes immediately — owner's own data, reversible (§3 map).
+    const v = parseVehicle(vehicle ?? null)
+    const customerResult = await findOrCreateCustomer(ctx.supabase, ctx.shop.id, {
+      name: customer_name,
+      phone,
+    })
+    const { error } = await ctx.supabase.from("leads").insert({
+      shop_id: ctx.shop.id,
+      customer_id: customerResult.ok ? customerResult.customer.id : null,
       customer_name,
       phone,
       car_info: vehicle ?? null,
+      vehicle_make: v.make,
+      vehicle_model: v.model,
+      vehicle_year: v.year,
+      vehicle_color: v.color,
       pin_notes: note ?? null,
       status: "new",
-      source: "gradia_agent",
     })
-    if (!ok) return { content: json({ error: "Couldn't stage that lead." }), isError: true }
-    return { content: json({ staged: 1, where: "Staged in Approvals." }), isError: false }
+    if (error) {
+      return { content: json({ error: "Couldn't save that lead." }), isError: true }
+    }
+    return { content: json({ created: customer_name, immediate: true }), isError: false }
   }
 
   if (block.name === "update_customer") {

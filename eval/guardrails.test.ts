@@ -139,6 +139,36 @@ describe("Gradia Agent box — the loop stages but can never send", () => {
   })
 })
 
+describe("Whisper (voice) routes through the same loop and can never send", () => {
+  // NOW-2: voice is a second modality into ONE engine, not a second engine.
+  // The route must hand the transcript to streamOwnerAgent (so the no-send
+  // invariant above covers voice too) and must not fork its own intent parser
+  // or call any send/execute path directly.
+  it("the whisper route delegates to streamOwnerAgent and never sends", () => {
+    const url = new URL(
+      "../src/app/api/whisper/process/route.ts",
+      import.meta.url
+    )
+    const src = readFileSync(url, "utf8")
+    // Routes through the one engine — same loop the typed box uses.
+    expect(src).toContain("streamOwnerAgent")
+    // No second intent engine, no direct send/execute on the voice path.
+    for (const forbidden of [
+      "parseWhisperIntent",
+      "executeApproval",
+      "executeSendSms",
+      "executeSendEmail",
+      "sendSms(",
+      "sendEmail(",
+    ]) {
+      expect(
+        src,
+        `the voice path must not call ${forbidden}`
+      ).not.toContain(forbidden)
+    }
+  })
+})
+
 describe("BI agent is read-only at the source level", () => {
   // Complements the runtime check in bi.eval.test.ts: this scans the source so
   // a write call can't sneak into the BI tool layer even without a live run.

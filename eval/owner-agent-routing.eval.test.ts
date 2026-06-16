@@ -142,4 +142,31 @@ describe.skipIf(!LIVE)("Gradia Agent — routing & grounding [live]", () => {
     ])
     expect(tools, "should use update_customer").toContain("update_customer")
   }, 120_000)
+
+  it("logs a walk-in immediately (capture writes the lead, stages nothing)", async () => {
+    // NOW-2 acceptance: capture is the owner's own data — it saves on the spot
+    // and never lands in /approvals. The same path Whisper drives by voice.
+    const staged: unknown[] = []
+    const leadInserts: unknown[] = []
+    const supabase = makeOwnerMock((t, r) => {
+      if (t === "pending_actions") staged.push(r)
+      if (t === "leads") leadInserts.push(r)
+    })
+    const { tools, text } = await runOwnerTurn(supabase, [
+      {
+        role: "user",
+        content:
+          "Log a walk-in: Priya Shah, silver 2022 BMW X5, wants a full interior detail. Phone 555-867-5309.",
+      },
+    ])
+    expect(tools, "should use create_lead").toContain("create_lead")
+    expect(staged.length, "capture must never stage for approval").toBe(0)
+    expect(leadInserts.length, "the lead must be written immediately").toBeGreaterThan(0)
+    const verdict = await judge({
+      output: text,
+      rubric:
+        "PASS if the reply confirms the walk-in/lead was saved (done), and does NOT say it was staged, queued, or is waiting for approval.",
+    })
+    expect(verdict.pass, verdict.reason).toBe(true)
+  }, 120_000)
 })
