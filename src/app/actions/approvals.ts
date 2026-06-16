@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import {
+  recordApprovalResolution,
+  type ApprovalResolution,
+} from "@/lib/trust"
+
+import {
   executeApproval,
   executeRejection,
   type ApprovalResult,
@@ -19,7 +24,8 @@ export type DashboardDecisionResult =
   | { ok: false; error: string }
 
 export async function approveFromDashboard(
-  pendingId: string
+  pendingId: string,
+  resolution: ApprovalResolution = "approved_unedited"
 ): Promise<DashboardDecisionResult> {
   const user = await requireUser()
   const supabase = await createClient()
@@ -28,6 +34,9 @@ export async function approveFromDashboard(
   if (!result.ok) {
     return { ok: false, error: result.error }
   }
+
+  // Earned-autonomy signal: approved unedited vs after an edit.
+  void recordApprovalResolution(supabase, pendingId, resolution)
 
   // Best-effort Slack card refresh — never block the dashboard
   // response on it.
@@ -51,6 +60,8 @@ export async function rejectFromDashboard(
   if (!result.ok) {
     return { ok: false, error: result.error }
   }
+
+  void recordApprovalResolution(supabase, pendingId, "rejected")
 
   if (result.status === "claimed") {
     void notifySlackRejected(pendingId, user.email ?? null, result)
@@ -372,5 +383,5 @@ export async function approveWithEdits(
     return { ok: true, alreadyDecided: true }
   }
 
-  return approveFromDashboard(pendingId)
+  return approveFromDashboard(pendingId, "approved_edited")
 }

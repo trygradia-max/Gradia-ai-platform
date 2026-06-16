@@ -7,7 +7,9 @@ import {
   Wand2,
 } from "lucide-react"
 
+import { getAutonomyRecommendationsForCurrentShop } from "@/app/actions/autonomy"
 import { AgentCard } from "@/components/gradia/agent-card"
+import { AutonomyOffers } from "@/components/gradia/autonomy-offers"
 import { CapabilityRow } from "@/components/gradia/capability-row"
 import { CustomAgentCard } from "@/components/gradia/custom-agent-card"
 import { buttonVariants } from "@/components/ui/button"
@@ -51,6 +53,8 @@ export default async function AgentsPage() {
 
   const byId = new Map(agents.map((a) => [a.id, a]))
   const active = (id: string) => byId.get(id)?.status === "active"
+
+  const autonomyOffers = await getAutonomyRecommendationsForCurrentShop()
 
   const reminderCustoms = customAgents.filter(isReminderAgent)
   const followupCustoms = customAgents.filter((a) => !isReminderAgent(a))
@@ -128,6 +132,8 @@ export default async function AgentsPage() {
           Build a new agent
         </Link>
       </header>
+
+      <AutonomyOffers recommendations={autonomyOffers} />
 
       <div className="space-y-3">
         {groups.map((group) => {

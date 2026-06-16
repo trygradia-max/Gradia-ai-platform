@@ -18,7 +18,8 @@ import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
-import { isPaid } from "@/lib/entitlements"
+import { hasPackage2, isPaid } from "@/lib/entitlements"
+import { recordApprovalResolution } from "@/lib/trust"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
@@ -1572,7 +1573,9 @@ async function maybeAutoExecute(
   if (!outcome.fired) return outcome
   const ids = outcome.pendingActionIds ?? []
   if (ids.length === 0) return outcome
-  if (resolveAgentMode(shop, agent.id) !== "autonomous") return outcome
+  // Autonomy is a Package 2 capability; nothing auto-executes without it.
+  if (!hasPackage2(shop)) return outcome
+  const agentAuto = resolveAgentMode(shop, agent.id) === "autonomous"
 
   const { data } = await supabase
     .from("pending_actions")
@@ -1588,11 +1591,19 @@ async function maybeAutoExecute(
   for (const row of rows) {
     if (row.status !== "pending") continue
     if (!isAutonomyAllowed(row.action_type)) continue
+    // Auto-execute when the whole agent is autonomous OR this action type has
+    // earned its own graduation (L6). ALWAYS_HITL is already excluded above.
+    const actionAuto =
+      agentAuto || resolveAgentMode(shop, row.action_type) === "autonomous"
+    if (!actionAuto) continue
     try {
       const result = await executeApproval(supabase, row.id, {
         userId: agent.owner_id,
       })
-      if (result.ok && result.status === "executed") executed += 1
+      if (result.ok && result.status === "executed") {
+        executed += 1
+        void recordApprovalResolution(supabase, row.id, "auto")
+      }
     } catch (err) {
       console.error("[agent-runtime] autonomous execute threw:", err)
     }
