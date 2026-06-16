@@ -135,6 +135,9 @@ Customer name: {customer_name}
 Service / context (if known): {service}
 When (if relevant): {when}
 
+--- OUR SHOP (services + policies; lean on this, never invent or contradict it) ---
+{knowledge}
+
 --- INTENT (from our owner) ---
 {intent}`
 
@@ -149,6 +152,8 @@ export async function draftCustomEmailForCustomer(input: {
   service: string | null
   when: string | null
   intent: string
+  /** Shop services + knowledge block — grounds the draft in real facts. */
+  knowledge?: string | null
 }): Promise<EmailDraft | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -163,6 +168,7 @@ export async function draftCustomEmailForCustomer(input: {
     customer_name: input.customerName.trim() || "there",
     service: input.service?.trim() || "(not specified)",
     when: input.when?.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no shop notes on file yet)",
     intent: input.intent.trim() || "send a warm note",
   })
 

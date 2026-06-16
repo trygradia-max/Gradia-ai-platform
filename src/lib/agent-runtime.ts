@@ -17,6 +17,7 @@ import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
+import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { isPaid } from "@/lib/entitlements"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { findCustomerByChannel } from "@/lib/customers"
@@ -893,6 +894,7 @@ async function executeFreeformOutreach(
   }
   const pendingActionIds: string[] = []
   const reason = `Custom agent · ${agent.name}`
+  const grounding = await buildDrafterGrounding(supabase, shop.id)
 
   for (const t of audience.targets) {
     if (plan.channel === "sms") {
@@ -903,6 +905,7 @@ async function executeFreeformOutreach(
         vehicle: t.vehicle,
         service: t.service,
         intent: plan.message_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (!body) {
         stats.draft_failed += 1
@@ -958,6 +961,7 @@ async function executeFreeformOutreach(
         service: t.service,
         when: null,
         intent: plan.message_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (!draft) {
         stats.draft_failed += 1
@@ -1083,6 +1087,7 @@ export async function stageOutreachPlan(
   }
   const pendingActionIds: string[] = []
   const { source, reason, requestedBy, customAgentId = null } = src
+  const grounding = await buildDrafterGrounding(supabase, shop.id)
 
   for (const t of audience.targets) {
     if (plan.channel === "sms") {
@@ -1093,6 +1098,7 @@ export async function stageOutreachPlan(
         vehicle: t.vehicle,
         service: t.service,
         intent: plan.message_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (!body) {
         stats.draft_failed += 1
@@ -1147,6 +1153,7 @@ export async function stageOutreachPlan(
         service: t.service,
         when: null,
         intent: plan.message_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (!draft) {
         stats.draft_failed += 1

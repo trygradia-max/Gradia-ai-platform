@@ -20,6 +20,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
 import type {
@@ -338,6 +339,7 @@ export async function previewFreeformPlan(
     }
   }
 
+  const grounding = await buildDrafterGrounding(supabase, shop.id)
   const samples: FreeformPreviewSample[] = []
   for (const t of audience.targets.slice(0, sampleCount)) {
     if (plan.channel === "sms") {
@@ -348,6 +350,7 @@ export async function previewFreeformPlan(
         vehicle: t.vehicle,
         service: t.service,
         intent: plan.message_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (body)
         samples.push({ name: t.name, to: t.phone, channel: "sms", message: body })
@@ -359,6 +362,7 @@ export async function previewFreeformPlan(
         service: t.service,
         when: null,
         intent: plan.message_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (draft)
         samples.push({

@@ -296,6 +296,9 @@ Customer name: {customer_name}
 Vehicle (if known): {vehicle}
 Service / context (if known): {service}
 
+--- OUR SHOP (services + policies; lean on this, never invent or contradict it) ---
+{knowledge}
+
 --- INTENT (from our owner) ---
 {intent}`
 
@@ -310,6 +313,8 @@ export async function draftCustomSmsForCustomer(input: {
   vehicle: string | null
   service: string | null
   intent: string
+  /** Shop services + knowledge block — grounds the draft in real facts. */
+  knowledge?: string | null
 }): Promise<string | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -324,6 +329,7 @@ export async function draftCustomSmsForCustomer(input: {
     customer_name: firstName(input.customerName) || "there",
     vehicle: input.vehicle?.trim() || "(not specified)",
     service: input.service?.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no shop notes on file yet)",
     intent: input.intent.trim() || "send a brief friendly check-in",
   })
 

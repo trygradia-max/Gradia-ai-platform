@@ -38,6 +38,7 @@ import {
 } from "@/lib/bi-agent"
 import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 import { precheckCredits, recordUsage } from "@/lib/credits"
+import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { GRADIA_IDENTITY, GRADIA_VOICE } from "@/lib/persona"
@@ -450,6 +451,7 @@ async function runOwnerTool(
       }
     }
 
+    const grounding = await buildDrafterGrounding(ctx.supabase, ctx.shop.id)
     if (channel === "sms") {
       const body = await draftCustomSmsForCustomer({
         shopName: ctx.shop.name,
@@ -457,6 +459,7 @@ async function runOwnerTool(
         vehicle: null,
         service: null,
         intent: reply_intent,
+        knowledge: grounding,
       }).catch(() => null)
       if (!body) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
       const ok = await stageSingle(ctx, "send_sms", {
@@ -483,6 +486,7 @@ async function runOwnerTool(
       service: null,
       when: null,
       intent: reply_intent,
+      knowledge: grounding,
     }).catch(() => null)
     if (!draft) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
     const ok = await stageSingle(ctx, "send_email", {

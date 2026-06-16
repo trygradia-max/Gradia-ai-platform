@@ -22,7 +22,9 @@ import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages"
 const ANTHROPIC_VERSION = "2023-06-01"
-const MODEL = "claude-sonnet-4-6"
+// Env-overridable so the eval harness can A/B the conversation model
+// (GRADIA_LLM_MODEL=… npm run eval). Defaults to the locked choice.
+const MODEL = process.env.GRADIA_LLM_MODEL?.trim() || "claude-sonnet-4-6"
 const MAX_TURNS = 6
 const MAX_TOKENS = 1024
 
