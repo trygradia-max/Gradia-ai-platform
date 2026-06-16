@@ -22,7 +22,7 @@ import { ChatAnthropic } from "@langchain/anthropic"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
 
-import { GRADIA_VOICE } from "@/lib/persona"
+import { GRADIA_SIGNATURE_RULE, GRADIA_VOICE } from "@/lib/persona"
 import type { ServiceRow } from "@/lib/types/database"
 
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001"
@@ -56,17 +56,23 @@ const verdictSchema = z.object({
 const critic = ChatPromptTemplate.fromMessages([
   [
     "system",
-    `You are a skeptical reviewer for a detailing shop's outbound messages — a different reviewer than whoever wrote the draft. Your ONLY job is to catch problems; do not rewrite.
+    `You are a skeptical reviewer for a detailing shop's outbound messages — a different reviewer than whoever wrote the draft. Your ONLY job is to catch real problems; do not rewrite, and do not nitpick.
 
 Canonical voice (must match): ${GRADIA_VOICE}
+Required sign-off — this is CORRECT, never flag it: ${GRADIA_SIGNATURE_RULE}
 
-Fail the draft if ANY of these hold:
-- Tone: uses "I", "me", "my", or "you and I"; reads corporate or robotic.
-- Grounding: quotes a price or service that is NOT on the menu provided. A price on the menu must match exactly.
-- Compliance: confirms a specific appointment time or availability (we never confirm — a human approves first), promises a discount, or pressures someone who asked to stop.
-- Wrong recipient feel: greets a different name than the customer's.
+REQUIRED and correct — do NOT flag any of these (they are the house style, not violations):
+- The sign-off "— Gradia at <shop name>". Signing as Gradia is the shop team's signature; it is NOT "identifying as an individual" and NOT a first-person-singular problem.
+- Inviting the customer to book, reply, or get on the schedule ("ready to book?", "want us to get you in?"). That is an invitation, not a confirmation.
+- Omitting prices, or keeping the message short.
 
-Do NOT fail for: brevity, missing prices (omitting prices is correct), or stylistic taste. Report at most 4 objections, each one sentence, concrete.`,
+Fail the draft ONLY if ANY of these hold:
+- Tone: the MESSAGE BODY (not the signature) uses the singular "I", "me", or "my", or "you and I"; or it reads corporate or robotic.
+- Grounding: quotes a price, or names a service, that is NOT on the menu provided. A price must match the menu exactly.
+- Compliance: states a SPECIFIC time as booked or available ("see you Tuesday at 3", "we have Friday open") — we never confirm a slot, a human approves first; OR promises a discount that wasn't provided; OR keeps pressuring someone who asked to stop.
+- Wrong recipient: greets a different name than the customer's.
+
+Report at most 4 objections, each one concrete sentence. If none of the failure conditions hold, pass.`,
   ],
   [
     "human",

@@ -109,4 +109,17 @@ describe.skipIf(!LIVE)("verifier judgment golden [live]", () => {
     expect(result.verified).toBe(true)
     expect(result.pass).toBe(true)
   }, 30_000)
+
+  it("does NOT flag the canonical signature or a booking invitation", async () => {
+    // Regression from the cold-lead-revival smoke test: the verifier was
+    // flagging "— Gradia at <shop>" as identifying-by-name and "ready to book?"
+    // as a confirmation. Both are house style — they must pass.
+    const result = await verifyDraft({
+      ...baseDraft,
+      customerName: "Mike",
+      body: "Hey Mike! Still thinking about that ceramic for your Model 3? We'd love to get it protected. Ready to book? — Gradia at Pristine Detailing",
+    })
+    expect(result.verified).toBe(true)
+    expect(result.pass, result.objections.join(" | ")).toBe(true)
+  }, 30_000)
 })
