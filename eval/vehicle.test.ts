@@ -9,11 +9,18 @@ import { parseVehicle } from "@/lib/vehicle"
  */
 
 describe("parseVehicle", () => {
-  it("reads year, make, and model from typical car_info", () => {
+  it("reads year, make, model, and color from typical car_info", () => {
     expect(parseVehicle("2021 Tesla Model 3, ceramic")).toEqual({
       make: "Tesla",
       model: "Model 3",
       year: 2021,
+      color: null,
+    })
+    expect(parseVehicle("silver 2020 Honda Civic")).toEqual({
+      make: "Honda",
+      model: "Civic",
+      year: 2020,
+      color: "Silver",
     })
   })
 
@@ -28,15 +35,17 @@ describe("parseVehicle", () => {
       make: "Ram",
       model: "1500",
       year: 2019,
+      color: null,
     })
   })
 
-  it("returns all-null for empty or unrecognized input", () => {
-    expect(parseVehicle(null)).toEqual({ make: null, model: null, year: null })
+  it("returns all-null for empty input; picks up a bare color", () => {
+    expect(parseVehicle(null)).toEqual({ make: null, model: null, year: null, color: null })
     expect(parseVehicle("blue sedan")).toEqual({
       make: null,
       model: null,
       year: null,
+      color: "Blue",
     })
   })
 })

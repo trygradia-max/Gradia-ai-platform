@@ -71,6 +71,8 @@ For a single person, draft_reply / add_note / create_lead stage one action the s
 
 Hard rules:
 - You can preview, stage, and propose — you never directly send, confirm a booking, reschedule, cancel, or charge. A proposed booking is staged and ALWAYS needs the owner's approval before it touches the calendar. Never say something is sent or booked; say it's staged for approval.
+- Disambiguation: when a name matches more than one customer, NEVER guess. Ask one short follow-up naming a distinguishing detail from the candidates — their vehicle ("the silver Tesla Sarah or the red Honda one?"), their last visit, or the last 4 digits of their phone. Act only once the owner picks.
+- Messy data: if someone you need is missing a phone, email, or vehicle, say so plainly ("Mike has no email on file") and suggest fixing it in their customer file or the CRM cleanup — don't fail silently or invent details.
 - Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, a keyword (name / vehicle / notes), structured VEHICLE (make, model, year range), and time since LAST VISIT (customers). So "Tesla owners" → vehicle_make "Tesla"; "haven't been in for 6 months" → not_visited_in_days 180; "2020-or-newer trucks" → vehicle_year_min 2020 + keyword. Vehicle make is reliable; model is sparse on older records — fall back to keyword if a model match looks empty. If the owner asks to segment by something genuinely outside this set (lifetime spend, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
 - Respect the guardrails: outreach is capped (default 50 recipients), cooled down, and opt-outs are honored — these are applied automatically; surface them when the count comes back smaller than expected.
 - Keep it short and concrete. The owner is between jobs.`
@@ -232,6 +234,10 @@ type CustomerMatch = {
   name: string | null
   phone: string | null
   email: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_color: string | null
+  last_visit_at: string | null
 }
 
 /** Find a customer by name / phone / email (best-effort, shop-scoped). */
@@ -248,11 +254,32 @@ async function resolveCustomer(
   if (digits.length >= 4) ors.push(`phone.ilike.%${digits}%`)
   const { data } = await supabase
     .from("customers")
-    .select("id, name, phone, email")
+    .select(
+      "id, name, phone, email, vehicle_make, vehicle_model, vehicle_color, last_visit_at"
+    )
     .eq("shop_id", shopId)
     .or(ors.join(","))
-    .limit(5)
+    .limit(8)
   return (data as CustomerMatch[] | null) ?? []
+}
+
+/** A short distinguishing descriptor so the agent can ask "which one?". */
+function describeCandidate(m: CustomerMatch): {
+  name: string | null
+  vehicle: string | null
+  phone_last4: string | null
+  last_visit: string | null
+} {
+  const vehicle =
+    [m.vehicle_color, m.vehicle_make, m.vehicle_model].filter(Boolean).join(" ") ||
+    null
+  const digits = (m.phone ?? "").replace(/\D/g, "")
+  return {
+    name: m.name,
+    vehicle,
+    phone_last4: digits ? digits.slice(-4) : null,
+    last_visit: m.last_visit_at ? m.last_visit_at.slice(0, 10) : null,
+  }
 }
 
 /** Stage a single pending_action (the human gate is /approvals). */
@@ -436,8 +463,8 @@ async function runOwnerTool(
     if (matches.length > 1) {
       return {
         content: json({
-          candidates: matches.map((m) => ({ name: m.name, phone: m.phone, email: m.email })),
-          note: "More than one match — ask the owner which one before drafting.",
+          candidates: matches.map(describeCandidate),
+          note: "More than one match. Ask the owner a short follow-up that names the distinguishing detail (vehicle, last visit, or phone ending) — don't guess.",
         }),
         isError: false,
       }
@@ -563,8 +590,8 @@ async function runOwnerTool(
     if (matches.length > 1) {
       return {
         content: json({
-          candidates: matches.map((m) => ({ name: m.name, phone: m.phone, email: m.email })),
-          note: "More than one match — ask the owner which one before booking.",
+          candidates: matches.map(describeCandidate),
+          note: "More than one match. Ask the owner a short follow-up naming the distinguishing detail (vehicle, last visit, or phone ending) before booking.",
         }),
         isError: false,
       }

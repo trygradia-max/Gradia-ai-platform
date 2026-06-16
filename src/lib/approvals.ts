@@ -254,6 +254,7 @@ async function executeCreateLead(
       vehicle_make: vehicle.make,
       vehicle_model: vehicle.model,
       vehicle_year: vehicle.year,
+      vehicle_color: vehicle.color,
       pin_notes: proposal.pin_notes,
       status: proposal.status,
     })
@@ -272,6 +273,7 @@ async function executeCreateLead(
         vehicle_make: vehicle.make,
         vehicle_model: vehicle.model,
         vehicle_year: vehicle.year,
+        vehicle_color: vehicle.color,
       })
       .eq("id", customerResult.customer.id)
       .is("vehicle_make", null)
@@ -717,6 +719,7 @@ async function executeBookAppointment(
       vehicle_make: vehicle.make,
       vehicle_model: vehicle.model,
       vehicle_year: vehicle.year,
+      vehicle_color: vehicle.color,
       pin_notes: proposal.pin_notes,
       status: "booked",
     })
@@ -742,6 +745,7 @@ async function executeBookAppointment(
         vehicle_make: vehicle.make,
         vehicle_model: vehicle.model,
         vehicle_year: vehicle.year,
+        vehicle_color: vehicle.color,
       })
       .eq("id", customerResult.customer.id)
       .is("vehicle_make", null)

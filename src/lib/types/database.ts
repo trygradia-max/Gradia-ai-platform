@@ -192,6 +192,7 @@ export type LeadRow = {
   vehicle_make: string | null
   vehicle_model: string | null
   vehicle_year: number | null
+  vehicle_color: string | null
   pin_notes: string | null
   status: LeadStatus
   created_at: string
@@ -207,6 +208,7 @@ export type CustomerRow = {
   vehicle_make: string | null
   vehicle_model: string | null
   vehicle_year: number | null
+  vehicle_color: string | null
   last_visit_at: string | null
   marketing_consent_at: string | null
   marketing_consent_source: string | null

@@ -11,7 +11,22 @@ export type ParsedVehicle = {
   make: string | null
   model: string | null
   year: number | null
+  color: string | null
 }
+
+const COLORS: Array<[RegExp, string]> = [
+  [/\bblack\b/i, "Black"],
+  [/\bwhite\b/i, "White"],
+  [/\b(silver|grey|gray)\b/i, "Silver"],
+  [/\bred\b/i, "Red"],
+  [/\bblue\b/i, "Blue"],
+  [/\bgreen\b/i, "Green"],
+  [/\bbrown\b/i, "Brown"],
+  [/\b(gold|beige|tan)\b/i, "Tan"],
+  [/\byellow\b/i, "Yellow"],
+  [/\borange\b/i, "Orange"],
+  [/\bpurple\b/i, "Purple"],
+]
 
 const MAKES: Array<[RegExp, string]> = [
   [/\btesla\b/i, "Tesla"],
@@ -54,9 +69,17 @@ const MAKES: Array<[RegExp, string]> = [
 ]
 
 export function parseVehicle(carInfo: string | null | undefined): ParsedVehicle {
-  if (!carInfo) return { make: null, model: null, year: null }
+  if (!carInfo) return { make: null, model: null, year: null, color: null }
   const text = carInfo.trim()
-  if (!text) return { make: null, model: null, year: null }
+  if (!text) return { make: null, model: null, year: null, color: null }
+
+  let color: string | null = null
+  for (const [re, name] of COLORS) {
+    if (re.test(text)) {
+      color = name
+      break
+    }
+  }
 
   let make: string | null = null
   let makeMatch: RegExpMatchArray | null = null
@@ -84,5 +107,5 @@ export function parseVehicle(carInfo: string | null | undefined): ParsedVehicle 
     if (tokens.length) model = tokens.join(" ")
   }
 
-  return { make, model, year }
+  return { make, model, year, color }
 }

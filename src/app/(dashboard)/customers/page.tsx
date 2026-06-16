@@ -1,3 +1,5 @@
+import { getCrmHealthForCurrentShop } from "@/app/actions/crm-cleanup"
+import { CrmCleanupCard } from "@/components/gradia/crm-cleanup-card"
 import { CustomersTable } from "@/components/gradia/customers-table"
 import { listCustomersForCurrentShop } from "@/lib/data/customers"
 
@@ -11,6 +13,8 @@ export default async function CustomersPage({
   const params = await searchParams
   const query = params.q?.trim() ?? ""
   const customers = await listCustomersForCurrentShop(query || null)
+  // Cleanup overview only on the unfiltered view (the "tidy up" first-win).
+  const health = query ? null : await getCrmHealthForCurrentShop()
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
@@ -24,6 +28,8 @@ export default async function CustomersPage({
           file per person. Click in to see the whole thread.
         </p>
       </header>
+
+      {health && <CrmCleanupCard health={health} />}
 
       <CustomersTable initialQuery={query} customers={customers} />
     </div>
