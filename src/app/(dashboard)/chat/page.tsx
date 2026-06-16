@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { BiChat, type InitialChatState } from "@/components/gradia/bi-chat"
+import { FEATURES } from "@/lib/features"
 import {
   getConversationByIdWithMessages,
   getLatestConversationWithMessages,
@@ -15,6 +16,9 @@ export default async function ChatPage({
   searchParams: Promise<{ c?: string }>
 }) {
   await requireShop()
+  // FOCUS spec §1 — the read-only "Ask Gradia" page is demoted; the read+act
+  // Gradia Agent box supersedes it (flag-gated, reversible). Engine stays.
+  if (!FEATURES.askGradiaPage) redirect("/agent")
   const params = await searchParams
   const requestedId = params.c?.trim() ?? null
 

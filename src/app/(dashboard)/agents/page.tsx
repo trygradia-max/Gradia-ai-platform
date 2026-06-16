@@ -14,6 +14,7 @@ import { CapabilityRow } from "@/components/gradia/capability-row"
 import { CustomAgentCard } from "@/components/gradia/custom-agent-card"
 import { buttonVariants } from "@/components/ui/button"
 import { readAutonomy } from "@/lib/autonomy"
+import { FEATURES } from "@/lib/features"
 import {
   getAgentsForCurrentShop,
   getLatestRunsByAgent,
@@ -94,7 +95,9 @@ export default async function AgentsPage() {
       blurb: "Quotes that went quiet and customers we haven't seen in a while.",
       members: ["chat", "memory", "booking"],
       customs: followupCustoms,
-      readyAction: { label: "Plan one with us", href: "/agents/build" },
+      readyAction: FEATURES.workflowBuilder
+        ? { label: "Plan one with us", href: "/agents/build" }
+        : null,
     },
     {
       icon: CalendarClock,
@@ -102,7 +105,9 @@ export default async function AgentsPage() {
       blurb: "A text or email the day before, so nobody no-shows.",
       members: [],
       customs: reminderCustoms,
-      readyAction: { label: "Plan a reminder", href: "/agents/build" },
+      readyAction: FEATURES.workflowBuilder
+        ? { label: "Plan a reminder", href: "/agents/build" }
+        : null,
     },
   ]
 
@@ -124,13 +129,15 @@ export default async function AgentsPage() {
             . Open a row to tune it, or plan something new from scratch.
           </p>
         </div>
-        <Link
-          href="/agents/build"
-          className={cn(buttonVariants({ size: "lg" }), "h-11 gap-2 shrink-0")}
-        >
-          <Wand2 className="size-4" aria-hidden />
-          Build a new agent
-        </Link>
+        {FEATURES.workflowBuilder && (
+          <Link
+            href="/agents/build"
+            className={cn(buttonVariants({ size: "lg" }), "h-11 gap-2 shrink-0")}
+          >
+            <Wand2 className="size-4" aria-hidden />
+            Build a new agent
+          </Link>
+        )}
       </header>
 
       <AutonomyOffers recommendations={autonomyOffers} />

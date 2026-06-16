@@ -32,9 +32,12 @@ export const FEATURES = {
     payments: false, // Stripe Connect customer billing — hidden
   },
   whisper: true,
-  agenticMode: true,
+  agenticMode: true, // campaign drafting via the box; the SELF-SERVE scheduled
+  // -agent builder surface is gated by workflowBuilder below (FOCUS spec §1)
   freeformPlanner: true, // Phase 2 — executor + guardrails landed
-  biChat: true, // Ask Gradia
+  biChat: true, // Ask Gradia engine — kept; the standalone page is gated below
+  workflowBuilder: false, // FOCUS spec §1: hide self-serve scheduled-agent builder for alpha
+  askGradiaPage: false, // FOCUS spec §1: demote /chat page; the /agent box is the surface
   slackApprovals: false, // Phase 1 — Slack is now opt-in
   paywall: true, // Phase 3 — subscription gate + metering live
 } as const
