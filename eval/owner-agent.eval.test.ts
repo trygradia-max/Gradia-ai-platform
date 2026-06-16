@@ -41,10 +41,14 @@ const SHOP = {
 } as unknown as ShopRow
 
 /** Table-aware mock: per-table canned rows + captured inserts. */
-function makeMock(onInsert: (table: string, rows: unknown) => void) {
+function makeMock(
+  onInsert: (table: string, rows: unknown) => void,
+  seed: { customers?: unknown[]; services?: unknown[] } = {}
+) {
   const tables: Record<string, unknown[]> = {
     leads: COLD_LEADS,
-    customers: [],
+    customers: seed.customers ?? [],
+    services: seed.services ?? [],
     interactions: [],
     usage_events: [],
     credit_grants: [],
@@ -154,5 +158,43 @@ describe.skipIf(!LIVE)("Gradia Agent — cold-lead revival [live]", () => {
     // ...and staged real drafts on confirmation.
     expect(allTools, "should stage on confirmation").toContain("stage_outreach")
     expect(staged.length, "should queue at least one draft in Approvals").toBeGreaterThan(0)
-  }, 180_000)
+  }, 240_000)
+
+  it("proposes a booking that stages an always-HITL book_appointment", async () => {
+    const staged: { rows: unknown }[] = []
+    const supabase = makeMock(
+      (table, rows) => {
+        if (table === "pending_actions") staged.push({ rows })
+      },
+      {
+        customers: [
+          { id: "c1", name: "Sam Carter", phone: "+15551110003", email: null, vehicle_make: "Ford", vehicle_model: "F-150", vehicle_year: 2018, last_visit_at: null },
+        ],
+        services: [{ name: "Full detail", price_cents: 25_000, duration_minutes: 120 }],
+      }
+    )
+
+    const history: ChatMessage[] = [
+      { role: "user", content: "Book Sam Carter for a full detail this Saturday at 3pm." },
+    ]
+    const allTools: string[] = []
+    let done = false
+    for (let turn = 0; turn < 3 && !done; turn++) {
+      const { text, tools } = await runTurn(supabase, history)
+      allTools.push(...tools)
+      console.log(`\n=== BOOKING TURN ${turn + 1} ===`)
+      console.log("tools:", tools.join(", ") || "(none)")
+      console.log("gradia:", text.trim().slice(0, 600))
+      history.push({ role: "assistant", content: text })
+      if (tools.includes("propose_booking")) done = true
+      else history.push({ role: "user", content: "Yes, go ahead and stage it." })
+    }
+
+    const types = staged.map(
+      (s) => (s.rows as { action_type?: string }).action_type
+    )
+    console.log("\n=== STAGED ===", JSON.stringify(staged.map((s) => s.rows)))
+    expect(allTools, "should call propose_booking").toContain("propose_booking")
+    expect(types, "should stage a book_appointment (always HITL)").toContain("book_appointment")
+  }, 240_000)
 })

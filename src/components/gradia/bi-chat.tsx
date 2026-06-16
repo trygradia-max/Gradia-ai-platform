@@ -77,6 +77,7 @@ const TOOL_LABELS: Record<string, string> = {
   draft_reply: "Drafting a reply",
   add_note: "Noting that down",
   create_lead: "Capturing the lead",
+  propose_booking: "Putting it on the books",
 }
 
 function toolLabel(name: string): string {

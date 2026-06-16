@@ -38,12 +38,13 @@ import {
 } from "@/lib/bi-agent"
 import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 import { precheckCredits, recordUsage } from "@/lib/credits"
+import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { GRADIA_IDENTITY, GRADIA_VOICE } from "@/lib/persona"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
 import { stageOutreachPlan } from "@/lib/agent-runtime"
-import type { FreeformPlan, ShopRow } from "@/lib/types/database"
+import type { FreeformPlan, ServiceRow, ShopRow } from "@/lib/types/database"
 
 const MAX_TURNS = 8
 
@@ -57,7 +58,7 @@ What you can do:
 - ANSWER questions about the shop using the read tools (lead counts, recent leads, customers, channel volume, upcoming appointments, memory search, knowledge search, revenue, heat scores, COLD leads, setup status). Always call a tool for data — never guess a number.
 - DIAGNOSE and propose. When the owner asks an open question like "what's falling through the cracks?" or "come up with a cold lead revival", investigate with the read tools first (e.g. cold_leads to find revival candidates, search_knowledge for the offer/policy to lean on), THEN propose the concrete fix as a staged action.
 - ACT on a segment: text or email a group of leads/customers (follow-ups, win-backs, reminders, announcements) via preview_outreach → stage_outreach.
-- ACT on ONE person: draft_reply (reply to a specific customer), add_note (log something on their file), create_lead (capture a new lead).
+- ACT on ONE person: draft_reply (reply to a specific customer), add_note (log something on their file), create_lead (capture a new lead), propose_booking (put a specific appointment on the books — always staged, never auto-confirmed).
 
 How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
 1. DIAGNOSE: call cold_leads (and search_knowledge if you need the right offer/policy) so you know who and what you're working with.
@@ -68,7 +69,7 @@ How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
 For a single person, draft_reply / add_note / create_lead stage one action the same way — show what you'll do, then stage it for approval.
 
 Hard rules:
-- You can only preview and stage. You cannot send, book, reschedule, charge, or move money — never claim you did. If asked, explain those happen elsewhere (Approvals for sends; the calendar for bookings).
+- You can preview, stage, and propose — you never directly send, confirm a booking, reschedule, cancel, or charge. A proposed booking is staged and ALWAYS needs the owner's approval before it touches the calendar. Never say something is sent or booked; say it's staged for approval.
 - Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, a keyword (name / vehicle / notes), structured VEHICLE (make, model, year range), and time since LAST VISIT (customers). So "Tesla owners" → vehicle_make "Tesla"; "haven't been in for 6 months" → not_visited_in_days 180; "2020-or-newer trucks" → vehicle_year_min 2020 + keyword. Vehicle make is reliable; model is sparse on older records — fall back to keyword if a model match looks empty. If the owner asks to segment by something genuinely outside this set (lifetime spend, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
 - Respect the guardrails: outreach is capped (default 50 recipients), cooled down, and opt-outs are honored — these are applied automatically; surface them when the count comes back smaller than expected.
 - Keep it short and concrete. The owner is between jobs.`
@@ -181,6 +182,50 @@ const createLeadSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
+const proposeBookingSchema = z.object({
+  customer_query: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe("name, phone, or email of the customer to book"),
+  service: z.string().min(1).max(120).describe("the service to book"),
+  iso_start_time: z
+    .string()
+    .min(10)
+    .describe("absolute ISO 8601 start datetime computed from today's date"),
+  duration_minutes: z.number().int().min(15).max(600).optional(),
+})
+
+/** Shop service menu — grounds the verifier (no fabricated prices/services). */
+async function loadServices(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<Pick<ServiceRow, "name" | "price_cents">[]> {
+  const { data } = await supabase
+    .from("services")
+    .select("name, price_cents")
+    .eq("shop_id", shopId)
+  return (data as Pick<ServiceRow, "name" | "price_cents">[] | null) ?? []
+}
+
+/** Cross-model verify an outbound draft; returns the payload flag fragment. */
+async function verifyOutbound(
+  ctx: OwnerAgentContext,
+  draft: {
+    channel: "sms" | "email"
+    body: string
+    subject?: string | null
+    customerName?: string | null
+  }
+): Promise<Record<string, unknown>> {
+  const result = await verifyDraft({
+    ...draft,
+    shopName: ctx.shop.name,
+    services: await loadServices(ctx.supabase, ctx.shop.id),
+  })
+  return verifierPayloadFragment(result)
+}
+
 type CustomerMatch = {
   id: string
   name: string | null
@@ -274,6 +319,12 @@ function buildOwnerToolDefinitions(): unknown[] {
       description:
         "Create a new lead (staged for approval) for someone who reached out. Use for 'add a lead for the guy who called about a full detail on his truck'.",
       input_schema: z.toJSONSchema(createLeadSchema),
+    },
+    {
+      name: "propose_booking",
+      description:
+        "Propose a booking for a customer (staged for approval). Use for 'book Mike for a full detail Saturday at 3pm'. Compute iso_start_time as an absolute ISO 8601 datetime from today's date. A booking ALWAYS needs the owner's approval — it never auto-confirms and never writes the calendar until approved.",
+      input_schema: z.toJSONSchema(proposeBookingSchema),
     },
   ]
   const all = [...read, ...action] as Array<{ cache_control?: unknown }>
@@ -415,6 +466,11 @@ async function runOwnerTool(
         customer_id: c.id,
         reason: `Gradia Agent · reply to ${c.name ?? "customer"}`,
         source: "gradia_agent",
+        ...(await verifyOutbound(ctx, {
+          channel: "sms",
+          body,
+          customerName: c.name,
+        })),
       })
       if (!ok) return { content: json({ error: "Couldn't stage that." }), isError: true }
       await meterOneDraft(ctx)
@@ -437,6 +493,12 @@ async function runOwnerTool(
       customer_id: c.id,
       reason: `Gradia Agent · reply to ${c.name ?? "customer"}`,
       source: "gradia_agent",
+      ...(await verifyOutbound(ctx, {
+        channel: "email",
+        body: draft.body,
+        subject: draft.subject,
+        customerName: c.name,
+      })),
     })
     if (!ok) return { content: json({ error: "Couldn't stage that." }), isError: true }
     await meterOneDraft(ctx)
@@ -480,6 +542,71 @@ async function runOwnerTool(
     return { content: json({ staged: 1, where: "Staged in Approvals." }), isError: false }
   }
 
+  if (block.name === "propose_booking") {
+    const parsed = proposeBookingSchema.safeParse(block.input)
+    if (!parsed.success) {
+      return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
+    }
+    const { customer_query, service, iso_start_time, duration_minutes } = parsed.data
+    const start = new Date(iso_start_time)
+    if (Number.isNaN(start.getTime())) {
+      return { content: json({ blocked: "That start time isn't a valid date — give a specific day and time." }), isError: false }
+    }
+    const matches = await resolveCustomer(ctx.supabase, ctx.shop.id, customer_query)
+    if (matches.length === 0) {
+      return { content: json({ blocked: `Couldn't find anyone matching "${customer_query}".` }), isError: false }
+    }
+    if (matches.length > 1) {
+      return {
+        content: json({
+          candidates: matches.map((m) => ({ name: m.name, phone: m.phone, email: m.email })),
+          note: "More than one match — ask the owner which one before booking.",
+        }),
+        isError: false,
+      }
+    }
+    const c = matches[0]
+    if (!c.phone) {
+      return { content: json({ blocked: `${c.name ?? "That customer"} has no phone on file — needed to book.` }), isError: false }
+    }
+    let duration = duration_minutes ?? null
+    if (duration == null) {
+      const { data } = await ctx.supabase
+        .from("services")
+        .select("duration_minutes")
+        .eq("shop_id", ctx.shop.id)
+        .ilike("name", service)
+        .limit(1)
+        .maybeSingle()
+      duration = (data as { duration_minutes: number } | null)?.duration_minutes ?? 90
+    }
+    const ok = await stageSingle(ctx, "book_appointment", {
+      customer_name: c.name ?? customer_query,
+      phone: c.phone,
+      email: c.email,
+      car_info: null,
+      service,
+      iso_start_time: start.toISOString(),
+      duration_minutes: duration,
+      timezone: null,
+      pin_notes: null,
+    })
+    if (!ok) return { content: json({ error: "Couldn't stage that booking." }), isError: true }
+    const calendarHint = ctx.shop.aurinko_access_token_enc
+      ? ""
+      : " Note: Google Calendar isn't connected yet — connect it in Settings before approving."
+    return {
+      content: json({
+        staged: 1,
+        who: c.name,
+        service,
+        when: start.toISOString(),
+        where: `Staged in Approvals — a booking ALWAYS needs the owner's approval; review the time and confirm there.${calendarHint}`,
+      }),
+      isError: false,
+    }
+  }
+
   // Read tools (BI) — shop-scoped, read-only.
   const tool = findBiTool(block.name)
   if (!tool) {
@@ -515,6 +642,15 @@ export async function* streamOwnerAgent(input: {
     ownerId: input.ownerId,
   }
   const tools = buildOwnerToolDefinitions()
+  // Cached persona prefix + a tiny uncached "today" block so the model can
+  // resolve relative times ("Saturday 3pm") into absolute ISO for bookings.
+  const system = [
+    ...OWNER_SYSTEM_BLOCKS,
+    {
+      type: "text" as const,
+      text: `Today is ${new Date().toISOString()} (UTC). When the owner gives a relative time like "Saturday 3pm", compute the absolute ISO 8601 datetime from this. If the timezone is ambiguous, note it so the owner can confirm in Approvals.`,
+    },
+  ]
   const messages: WireMessage[] = input.history.map((m) =>
     m.role === "assistant"
       ? { role: "assistant", content: [{ type: "text", text: m.content }] }
@@ -523,7 +659,7 @@ export async function* streamOwnerAgent(input: {
 
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const stream = streamOneTurn(messages, OWNER_SYSTEM_BLOCKS, tools)
+      const stream = streamOneTurn(messages, system, tools)
       let turnResult: StreamTurnResult | null = null
       while (true) {
         const next = await stream.next()
