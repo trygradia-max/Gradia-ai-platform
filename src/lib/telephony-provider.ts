@@ -515,12 +515,22 @@ export async function resendA2pVerificationText(input: {
  * account's).
  */
 export function smsGateForShop(
-  shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status">,
+  shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status" | "byo_sms_verified">,
   fromNumber: string
 ): SmsGate {
   const isGradiaNumber =
     Boolean(shop.gradia_number_e164) && fromNumber === shop.gradia_number_e164
-  if (!isGradiaNumber) return { allowed: true }
+  if (!isGradiaNumber) {
+    // BYO number — Gradia can't see its carrier (A2P 10DLC) registration, so
+    // we can't let it text unconditionally. The owner attests it's registered
+    // (Settings → Business Number) before we'll send through it.
+    if (shop.byo_sms_verified) return { allowed: true }
+    return {
+      allowed: false,
+      reason:
+        "Confirm your own number is registered for A2P 10DLC in Settings → Business Number before texting through it.",
+    }
+  }
   if (shop.a2p_status === "approved") return { allowed: true }
   return {
     allowed: false,

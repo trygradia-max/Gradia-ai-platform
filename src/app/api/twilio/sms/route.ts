@@ -30,6 +30,7 @@ import {
   formatKnowledgeForPrompt,
   searchShopKnowledge,
 } from "@/lib/knowledge"
+import { looksOptedIn, looksOptedOut } from "@/lib/agent-audience"
 import { recordInteraction } from "@/lib/memory"
 import { checkRateLimit } from "@/lib/rate-limit"
 import {
@@ -162,6 +163,26 @@ async function handleMessage(
       num_media: sms.numMedia,
     },
   })
+
+  // Consent ledger (B2): a STOP/START keyword updates the customer's marketing
+  // opt-out / opt-in state — the affirmative-consent signal the send gate reads.
+  if (customerId) {
+    if (looksOptedOut(sms.body)) {
+      await supabase
+        .from("customers")
+        .update({ sms_opted_out_at: new Date().toISOString(), marketing_consent_at: null })
+        .eq("id", customerId)
+    } else if (looksOptedIn(sms.body)) {
+      await supabase
+        .from("customers")
+        .update({
+          marketing_consent_at: new Date().toISOString(),
+          marketing_consent_source: "sms_keyword",
+          sms_opted_out_at: null,
+        })
+        .eq("id", customerId)
+    }
+  }
 
   // Inbound classification is UNMETERED (a Haiku call per message) — its only
   // cost ceiling. Over the daily per-shop limit (spam flood), capture the

@@ -71,6 +71,11 @@ export function looksOptedOut(content: string): boolean {
   )
 }
 
+/** Affirmative marketing opt-in keywords (the STOP→START counterpart). */
+export function looksOptedIn(content: string): boolean {
+  return /\b(start|unstop|subscribe|opt\s?in)\b/i.test(content)
+}
+
 /** Strip characters that would break a PostgREST ilike / or() filter. */
 function safeKeyword(kw: string): string {
   return kw.replace(/[%,()]/g, "").trim()

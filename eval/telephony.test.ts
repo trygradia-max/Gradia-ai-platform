@@ -51,7 +51,7 @@ const shop = {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("A2P SMS gate — blocked in code until carriers approve", () => {
-  const withNumber = { gradia_number_e164: "+16175550142" }
+  const withNumber = { gradia_number_e164: "+16175550142", byo_sms_verified: false }
 
   it("blocks outbound SMS on a Gradia number before approval", () => {
     for (const a2p_status of ["unregistered", "pending"] as const) {
@@ -77,19 +77,23 @@ describe("A2P SMS gate — blocked in code until carriers approve", () => {
     ).toBe(true)
   })
 
-  it("does not gate BYO numbers — their A2P standing is their own account's", () => {
+  it("gates BYO numbers until the owner attests A2P registration (B2 — bypass closed)", () => {
+    // Gradia can't see a shop's own number's carrier standing, so it can't
+    // text unconditionally — the owner must confirm registration first.
+    const byo = { gradia_number_e164: null, a2p_status: "unregistered" as const }
     expect(
-      smsGateForShop(
-        { gradia_number_e164: null, a2p_status: "unregistered" },
-        "+19998887777"
-      ).allowed
+      smsGateForShop({ ...byo, byo_sms_verified: false }, "+19998887777").allowed
+    ).toBe(false)
+    expect(
+      smsGateForShop({ ...byo, byo_sms_verified: true }, "+19998887777").allowed
     ).toBe(true)
+    // Sending from a number other than the Gradia one is also BYO → gated.
     expect(
       smsGateForShop(
         { ...withNumber, a2p_status: "unregistered" },
-        "+19998887777" // sending from a different (BYO) number
+        "+19998887777"
       ).allowed
-    ).toBe(true)
+    ).toBe(false)
   })
 })
 

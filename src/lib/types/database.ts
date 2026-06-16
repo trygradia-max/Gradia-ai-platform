@@ -22,6 +22,10 @@ export type ShopRow = {
   gradia_number_e164: string | null
   gradia_number_sid: string | null
   a2p_status: A2pStatus
+  byo_sms_verified: boolean
+  timezone: string
+  quiet_hours_start: number
+  quiet_hours_end: number
   voice_addon: boolean
   voice_addon_ended_at: string | null
   voice_config: VoiceConfig
@@ -204,6 +208,9 @@ export type CustomerRow = {
   vehicle_model: string | null
   vehicle_year: number | null
   last_visit_at: string | null
+  marketing_consent_at: string | null
+  marketing_consent_source: string | null
+  sms_opted_out_at: string | null
   jobber_client_id: string | null
   housecallpro_customer_id: string | null
   created_at: string

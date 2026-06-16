@@ -25,6 +25,7 @@ import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
+import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
 import { parseVehicle } from "@/lib/vehicle"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
@@ -80,6 +81,8 @@ export type SmsProposal = {
   customer_id: string | null
   /** Source-side context — what prompted this draft (e.g. inbound message ID, agent name). */
   reason: string | null
+  /** Safe-send classification (B2). Marketing needs consent/EBR; defaults transactional. */
+  category?: SendCategory
 }
 
 export type EmailProposal = {
@@ -925,6 +928,18 @@ async function executeSendSms(
   if (!smsGate.allowed) {
     await rollbackClaim(supabase, claimed.id)
     return { ok: false, error: smsGate.reason }
+  }
+
+  // Safe-send policy (B2): quiet hours + opt-out + marketing consent. A held
+  // send is rolled back to staged so it can go out in-window later.
+  const policy = await evaluateSmsSendPolicy(supabase, shop, {
+    toPhone: proposal.to_phone,
+    customerId: proposal.customer_id ?? null,
+    category: proposal.category ?? "transactional",
+  })
+  if (!policy.allowed) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: policy.reason }
   }
 
   let sendResult

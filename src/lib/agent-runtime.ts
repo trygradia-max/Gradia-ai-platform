@@ -924,6 +924,7 @@ async function executeFreeformOutreach(
             customer_id: t.customerId,
             reason,
             source: "custom_agent",
+            category: "marketing",
             custom_agent_id: agent.id,
             lead_id: t.leadId,
             ...(await verifyBeforeStaging(supabase, shop, {
@@ -1116,6 +1117,7 @@ export async function stageOutreachPlan(
             customer_id: t.customerId,
             reason,
             source,
+            category: "marketing",
             custom_agent_id: customAgentId,
             lead_id: t.leadId,
             ...(await verifyBeforeStaging(supabase, shop, {

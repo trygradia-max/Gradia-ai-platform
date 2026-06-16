@@ -115,6 +115,7 @@ describe("pipeline → gate transitions", () => {
   const shopWith = (a2p_status: "unregistered" | "pending" | "approved" | "rejected") => ({
     gradia_number_e164: number,
     a2p_status,
+    byo_sms_verified: false,
   })
 
   it("texting stays blocked through the whole review pipeline", () => {
