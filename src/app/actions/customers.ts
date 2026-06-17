@@ -9,6 +9,42 @@ import type { CustomerRow } from "@/lib/types/database"
 
 const CANDIDATE_LIMIT = 100
 
+const dncSchema = z.object({
+  customer_id: z.string().uuid(),
+  value: z.boolean(),
+})
+
+export type SetDoNotContactResult =
+  | { ok: true; value: boolean }
+  | { ok: false; error: string }
+
+/**
+ * Owner's manual do-not-contact switch (GRADIA_CUSTOMER_RECOVERY_SPEC §3.2 —
+ * "honored ≤10 business days; the flag is immediate"). When on, the audience
+ * resolver hard-blocks this customer from every outreach, recovered or not.
+ */
+export async function setCustomerDoNotContact(
+  input: z.infer<typeof dncSchema>
+): Promise<SetDoNotContactResult> {
+  const parsed = dncSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: "Bad input." }
+
+  await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from("customers")
+    .update({ do_not_contact: parsed.data.value })
+    .eq("id", parsed.data.customer_id)
+    .eq("shop_id", shop.id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/customers/${parsed.data.customer_id}`)
+  revalidatePath("/customers")
+  return { ok: true, value: parsed.data.value }
+}
+
 export type MergeCandidate = Pick<
   CustomerRow,
   "id" | "name" | "phone" | "email" | "updated_at"

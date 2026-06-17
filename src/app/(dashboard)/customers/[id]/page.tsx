@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { CustomerMergeDialog } from "@/components/gradia/customer-merge-dialog"
+import { DoNotContactToggle } from "@/components/gradia/do-not-contact-toggle"
 import { HeatBadge } from "@/components/gradia/heat-badge"
 import { InteractionTimeline } from "@/components/gradia/interaction-timeline"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
@@ -110,6 +111,10 @@ export default async function CustomerDetailPage({
             Back to customers
           </Link>
           <div className="flex items-center gap-2">
+            <DoNotContactToggle
+              customerId={customer.id}
+              initial={customer.do_not_contact}
+            />
             <CustomerMergeDialog
               winnerId={customer.id}
               winnerName={customer.name}
