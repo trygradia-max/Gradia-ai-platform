@@ -11,6 +11,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { listShopKnowledge } from "@/lib/knowledge"
+import { getReviewLink } from "@/lib/review-link"
 import type { ServiceRow } from "@/lib/types/database"
 
 const MAX_CHARS = 2_500
@@ -20,7 +21,7 @@ export async function buildDrafterGrounding(
   supabase: SupabaseClient,
   shopId: string
 ): Promise<string | null> {
-  const [serviceBlock, knowledge] = await Promise.all([
+  const [serviceBlock, knowledge, reviewBlock] = await Promise.all([
     (async () => {
       const { data } = await supabase
         .from("services")
@@ -36,6 +37,17 @@ export async function buildDrafterGrounding(
       return `Service menu:\n${lines.join("\n")}`
     })(),
     listShopKnowledge(supabase, shopId),
+    (async () => {
+      // The review link grounds any review-request draft — including the
+      // on-demand "send Marcus a review request" path through the box.
+      const { data } = await supabase
+        .from("shops")
+        .select("settings")
+        .eq("id", shopId)
+        .maybeSingle()
+      const link = getReviewLink(data as { settings?: Record<string, unknown> } | null)
+      return link ? `Our public review link: ${link}` : ""
+    })(),
   ])
 
   const knowledgeBlock = knowledge
@@ -43,7 +55,10 @@ export async function buildDrafterGrounding(
     .map((k) => `[${k.source_name}] ${k.content}`)
     .join("\n\n")
 
-  const combined = [serviceBlock, knowledgeBlock].filter(Boolean).join("\n\n").trim()
+  const combined = [serviceBlock, knowledgeBlock, reviewBlock]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
   if (!combined) return null
   return combined.length > MAX_CHARS ? `${combined.slice(0, MAX_CHARS)}…` : combined
 }

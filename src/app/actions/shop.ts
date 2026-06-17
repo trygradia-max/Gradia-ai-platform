@@ -9,6 +9,7 @@ import {
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
 } from "@/lib/aurinko"
 import { encryptSecret } from "@/lib/crypto"
+import { normalizeReviewLink, REVIEW_LINK_KEY } from "@/lib/review-link"
 import { createClient } from "@/lib/supabase/server"
 import { ACTIVE_SHOP_COOKIE, getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
@@ -198,6 +199,56 @@ export async function saveVapiAssistantId(
 
   revalidatePath("/settings")
   return { ok: true, shop: data as ShopRow }
+}
+
+const saveReviewLinkSchema = z.object({
+  review_link: z.string().max(500).nullable(),
+})
+
+export type SaveReviewLinkResult =
+  | { ok: true; reviewLink: string | null }
+  | { ok: false; error: string }
+
+/**
+ * Saves the shop's public review link into settings JSON (NEXT-1). Used by the
+ * review-request feature so the ask always carries the real link. An empty
+ * value clears it; a non-URL is rejected.
+ */
+export async function saveReviewLink(
+  input: z.infer<typeof saveReviewLinkSchema>
+): Promise<SaveReviewLinkResult> {
+  const parsed = saveReviewLinkSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: "That link is too long." }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) return { ok: false, error: "Finish onboarding first." }
+
+  const raw = parsed.data.review_link?.trim() ?? ""
+  const link = raw ? normalizeReviewLink(raw) : null
+  if (raw && !link) {
+    return { ok: false, error: "Enter a full link starting with http:// or https://" }
+  }
+
+  const supabase = await createClient()
+  const { data: shopRow } = await supabase
+    .from("shops")
+    .select("settings")
+    .eq("id", existing.id)
+    .single()
+  const settings = {
+    ...(((shopRow as { settings?: Record<string, unknown> } | null)?.settings) ?? {}),
+    [REVIEW_LINK_KEY]: link,
+  }
+
+  const { error } = await supabase
+    .from("shops")
+    .update({ settings })
+    .eq("id", existing.id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath("/settings")
+  return { ok: true, reviewLink: link }
 }
 
 const saveTwilioSchema = z.object({

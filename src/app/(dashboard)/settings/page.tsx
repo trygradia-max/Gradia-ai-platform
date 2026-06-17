@@ -7,6 +7,7 @@ import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
 import { HousecallProSettingsCard } from "@/components/gradia/housecallpro-settings-card"
 import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
+import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
@@ -29,6 +30,7 @@ import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getUsageState } from "@/app/actions/billing"
 import { readAutonomy } from "@/lib/autonomy"
 import { integrationEnabled } from "@/lib/features"
+import { getReviewLink } from "@/lib/review-link"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -204,6 +206,7 @@ export default async function SettingsPage({
     { id: "jobber", label: "Jobber" },
     { id: "housecallpro", label: "Housecall Pro" },
     { id: "knowledge", label: "Knowledge" },
+    { id: "reviews", label: "Reviews" },
     { id: "usage", label: "Usage" },
     { id: "developer", label: "Developer" },
     { id: "soon", label: "More" },
@@ -408,6 +411,10 @@ export default async function SettingsPage({
 
         <section id="knowledge">
           <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
+        </section>
+
+        <section id="reviews">
+          <ReviewLinkCard initial={getReviewLink(shop)} />
         </section>
 
         {/* Human units lead; credits are the fine print (pricing doc copy
