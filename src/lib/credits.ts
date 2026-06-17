@@ -33,7 +33,7 @@ export function creditsFor(kind: UsageEventKind, quantity = 1): number {
   return (CREDIT_COST[kind] ?? 0) * Math.max(0, Math.round(quantity))
 }
 
-type ShopCreditFields = Pick<ShopRow, "id" | "plan" | "credit_period_start">
+export type ShopCreditFields = Pick<ShopRow, "id" | "plan" | "credit_period_start">
 
 /**
  * Append a usage event. Best-effort — logs and swallows errors so metering

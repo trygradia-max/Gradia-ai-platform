@@ -40,6 +40,8 @@ export const FEATURES = {
   askGradiaPage: false, // FOCUS spec §1: demote /chat page; the /agent box is the surface
   slackApprovals: false, // Phase 1 — Slack is now opt-in
   paywall: true, // Phase 3 — subscription gate + metering live
+  customerRecovery: false, // NEXT-3 — import→extract pipeline; off until the
+  // review queue + acceptance land (routes 404 while false; gate, don't delete)
 } as const
 
 export type AgentId = keyof typeof FEATURES.agents
