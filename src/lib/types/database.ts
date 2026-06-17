@@ -213,10 +213,59 @@ export type CustomerRow = {
   marketing_consent_at: string | null
   marketing_consent_source: string | null
   sms_opted_out_at: string | null
+  /** How the record was first found: import, inbound_sms, voice, manual, … */
+  source: string | null
+  /** Best evidence of the last real transaction — drives the 18-mo EBR window. */
+  last_transaction_at: string | null
+  /** Owner's manual, immediate, all-channel block. */
+  do_not_contact: boolean
   jobber_client_id: string | null
   housecallpro_customer_id: string | null
   created_at: string
   updated_at: string
+}
+
+export type ImportSourceType =
+  | "mbox"
+  | "contacts_csv"
+  | "vcard"
+  | "gradia_history"
+
+export type ImportJobStatus =
+  | "pending"
+  | "parsing"
+  | "estimating"
+  | "extracting"
+  | "ready"
+  | "failed"
+
+export type ImportJobRow = {
+  id: string
+  shop_id: string
+  source_type: ImportSourceType
+  file_ref: string | null
+  status: ImportJobStatus
+  counts: Record<string, number>
+  error: string | null
+  estimated_credits: number | null
+  created_at: string
+  updated_at: string
+}
+
+export type ImportMessageRow = {
+  id: string
+  import_job_id: string
+  shop_id: string
+  message_id: string | null
+  from_email: string | null
+  subject: string | null
+  body_ref: string | null
+  has_list_unsubscribe: boolean
+  owner_participated: boolean
+  kept: boolean
+  drop_reason: string | null
+  extraction: Record<string, unknown> | null
+  created_at: string
 }
 
 export type ServiceRow = {
