@@ -535,6 +535,9 @@ export type FreeformFilters = {
   vehicle_year_max?: number
   /** customers only: no booked visit in at least this many days (or never) */
   not_visited_in_days?: number
+  /** customers only: the recovered_customers segment — only customers brought
+   *  in by an import (source='import'). Activates the TCPA win-back gate. */
+  recovered_only?: boolean
 }
 
 export type FreeformPlan = {

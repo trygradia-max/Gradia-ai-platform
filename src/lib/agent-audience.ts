@@ -22,6 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
+import { winbackChannel } from "@/lib/recovery/winback-eligibility"
 import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
 import type {
   CustomerRow,
@@ -52,6 +53,15 @@ export type AudienceStats = {
   skipped_recent_inbound: number
   skipped_cooldown: number
   skipped_opted_out: number
+  /** Do-not-contact blocks + (recovered segment) TCPA channel-ineligibility. */
+  skipped_ineligible: number
+}
+
+/** Win-back gate fields carried alongside a customer candidate. */
+type WinbackFields = {
+  last_transaction_at: string | null
+  sms_opted_out_at: string | null
+  do_not_contact: boolean
 }
 
 export type AudienceResult = {
@@ -103,10 +113,13 @@ export async function resolveFreeformAudience(
     skipped_recent_inbound: 0,
     skipped_cooldown: 0,
     skipped_opted_out: 0,
+    skipped_ineligible: 0,
   }
   const cap = Math.min(Math.max(plan.max_recipients || 50, 1), 200)
   const f = plan.filters ?? {}
   const fetchLimit = Math.min(cap * OVERFETCH, MAX_CANDIDATES)
+  // Win-back gate fields per customer (filled in the customers branch).
+  const winbackById = new Map<string, WinbackFields>()
 
   // Leads carry a phone, not an email — email outreach must target customers.
   if (plan.channel === "email" && plan.entity === "leads") {
@@ -151,9 +164,11 @@ export async function resolveFreeformAudience(
     let q = supabase
       .from("customers")
       .select(
-        "id, name, phone, email, vehicle_make, vehicle_model, vehicle_year, last_visit_at"
+        "id, name, phone, email, vehicle_make, vehicle_model, vehicle_year, last_visit_at, last_transaction_at, sms_opted_out_at, do_not_contact, source"
       )
       .eq("shop_id", shop.id)
+    // The recovered_customers segment: only customers brought in by an import.
+    if (f.recovered_only) q = q.eq("source", "import")
     if (f.keyword) {
       const kw = safeKeyword(f.keyword)
       if (kw) q = q.ilike("name", `%${kw}%`)
@@ -170,7 +185,7 @@ export async function resolveFreeformAudience(
     const { data, error } = await q
     if (error)
       throw new Error(`audience (customers) query failed: ${error.message}`)
-    targets = (
+    const rows =
       (data as
         | Pick<
             CustomerRow,
@@ -181,9 +196,19 @@ export async function resolveFreeformAudience(
             | "vehicle_make"
             | "vehicle_model"
             | "vehicle_year"
+            | "last_transaction_at"
+            | "sms_opted_out_at"
+            | "do_not_contact"
           >[]
         | null) ?? []
-    ).map((c) => ({
+    for (const c of rows) {
+      winbackById.set(c.id, {
+        last_transaction_at: c.last_transaction_at,
+        sms_opted_out_at: c.sms_opted_out_at,
+        do_not_contact: c.do_not_contact,
+      })
+    }
+    targets = rows.map((c) => ({
       customerId: c.id,
       leadId: null,
       name: c.name,
@@ -301,6 +326,42 @@ export async function resolveFreeformAudience(
         return !hit
       })
     }
+  }
+
+  // TCPA / do-not-contact gate (GRADIA_CUSTOMER_RECOVERY_SPEC §3.2). The
+  // manual do_not_contact flag is a hard block on EVERY customer outreach. The
+  // recovered_customers segment additionally enforces the channel gate: SMS
+  // only inside the 18-month established-business-relationship window; everyone
+  // else falls to email. This lives in code, never a prompt.
+  if (plan.entity === "customers") {
+    const now = Date.now()
+    targets = targets.filter((t) => {
+      if (!t.customerId) return true
+      const wb = winbackById.get(t.customerId)
+      if (!wb) return true
+      if (wb.do_not_contact) {
+        stats.skipped_ineligible += 1
+        return false
+      }
+      if (!f.recovered_only) return true
+      const channel = winbackChannel(
+        {
+          phone: t.phone,
+          email: t.email,
+          last_transaction_at: wb.last_transaction_at,
+          sms_opted_out_at: wb.sms_opted_out_at,
+          do_not_contact: wb.do_not_contact,
+        },
+        now
+      )
+      const eligible =
+        plan.channel === "sms" ? channel === "sms" : channel !== "none"
+      if (!eligible) {
+        stats.skipped_ineligible += 1
+        return false
+      }
+      return true
+    })
   }
 
   return { targets: targets.slice(0, cap), stats }

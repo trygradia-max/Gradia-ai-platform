@@ -266,6 +266,12 @@ const planSchema = z.object({
             .describe(
               "Case-insensitive keyword matched against name / vehicle / notes — e.g. 'ceramic', 'Tesla'."
             ),
+          recovered_only: z
+            .boolean()
+            .optional()
+            .describe(
+              "customers only: target the recovered_customers segment — past customers brought in from an import. Set true for a win-back to imported customers; the TCPA channel gate (SMS only within 18 months) is enforced automatically in code."
+            ),
         })
         .describe("Whitelisted filters that narrow the audience. No raw SQL."),
       message_intent: z
