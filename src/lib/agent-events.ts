@@ -58,7 +58,12 @@ export type AgentEvent =
 /** Recipe ids that fire on each event kind. The runtime reads this
  *  to filter enabled agents. */
 const RECIPES_FOR_EVENT: Record<AgentEventKind, string[]> = {
-  payment_received: ["payment_received_thank_you_sms"],
+  payment_received: [
+    "payment_received_thank_you_sms",
+    // Post-job is the natural moment to ask for a review (NEXT-1).
+    "review_request_sms",
+    "review_request_email",
+  ],
   booking_approved: ["booking_approved_prep_email"],
 }
 

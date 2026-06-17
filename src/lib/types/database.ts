@@ -443,6 +443,8 @@ export type AgentRecipeId =
   | "stale_customer_sms"
   | "payment_received_thank_you_sms"
   | "booking_approved_prep_email"
+  | "review_request_sms"
+  | "review_request_email"
 
 /** Events that can fire event-driven custom agents. */
 export type AgentEventKind = "payment_received" | "booking_approved"
@@ -477,6 +479,10 @@ export type PaymentReceivedParams = Record<string, never>
 /** Same — empty params, future-proof shape. */
 export type BookingApprovedParams = Record<string, never>
 
+/** Post-job review ask. No filter params — the ask is identical for everyone
+ *  (FTC: no sentiment-gating), so there is nothing to tune per recipient. */
+export type ReviewRequestParams = Record<string, never>
+
 export type AgentRecipe =
   | { id: "lead_followup_sms"; params: LeadFollowupSmsParams }
   | {
@@ -493,6 +499,8 @@ export type AgentRecipe =
       params: PaymentReceivedParams
     }
   | { id: "booking_approved_prep_email"; params: BookingApprovedParams }
+  | { id: "review_request_sms"; params: ReviewRequestParams }
+  | { id: "review_request_email"; params: ReviewRequestParams }
 
 export type AgentSchedule = {
   cadence: "hourly" | "daily" | "weekly"

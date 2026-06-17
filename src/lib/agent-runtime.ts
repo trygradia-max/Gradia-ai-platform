@@ -19,6 +19,11 @@ import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { hasPackage2, isPaid } from "@/lib/entitlements"
+import { getReviewLink } from "@/lib/review-link"
+import {
+  draftReviewRequestEmail,
+  draftReviewRequestSms,
+} from "@/lib/review-request"
 import { recordApprovalResolution } from "@/lib/trust"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { findCustomerByChannel } from "@/lib/customers"
@@ -1451,6 +1456,173 @@ async function executeBookingApprovedPrepEmail(
   }
 }
 
+/**
+ * Post-job review request (NEXT-1). Fires on payment_received. Sends the SAME
+ * neutral ask to every paying customer with the shop's review link — no
+ * sentiment-gating (FTC / Google policy). Category is "marketing", so the
+ * send-policy still requires consent or an established business relationship
+ * (a paid customer has one). HITL always.
+ */
+async function executeReviewRequestSms(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  event: AgentEvent
+): Promise<AgentRunOutcome> {
+  const no = (reason: string): AgentRunOutcome => ({
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: false,
+    reason,
+  })
+  if (event.kind !== "payment_received") return no("wrong event kind")
+  if (!shop.twilio_phone_number) return no("Twilio number not connected")
+  if (!event.customerPhone) return no("no phone on file for the paying customer")
+  const reviewLink = getReviewLink(shop)
+  if (!reviewLink) return no("no review link set (Settings → Reviews)")
+
+  const grounding = await buildDrafterGrounding(supabase, shop.id)
+  const draft = await draftReviewRequestSms({
+    shopName: shop.name,
+    customerName: event.customerName ?? "there",
+    reviewLink,
+    knowledge: grounding,
+  }).catch(() => null)
+  if (!draft) return no("drafter returned no message")
+
+  const reason = `Custom agent · ${agent.name}`
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "send_sms",
+      payload: {
+        to_phone: event.customerPhone,
+        body: draft,
+        customer_name: event.customerName,
+        customer_id: event.customerId,
+        reason,
+        source: "review_request",
+        category: "marketing",
+        custom_agent_id: agent.id,
+        event_kind: event.kind,
+        ...(await verifyBeforeStaging(supabase, shop, {
+          channel: "sms",
+          body: draft,
+          customerName: event.customerName,
+        })),
+      },
+      requested_by: agent.owner_id,
+    })
+    .select("id")
+    .single()
+  if (pendingErr || !pending) {
+    return no(`pending insert failed: ${pendingErr?.message ?? "unknown"}`)
+  }
+
+  try {
+    await sendSmsApprovalRequest({
+      pendingActionId: pending.id,
+      toPhone: event.customerPhone,
+      customerName: event.customerName,
+      body: draft,
+      reason,
+    })
+  } catch (err) {
+    console.error("[agent-runtime] review-request Slack send failed:", err)
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats: { proposed_sms: 1 },
+    pendingActionIds: [pending.id],
+  }
+}
+
+/** Email variant of the post-job review request (NEXT-1). */
+async function executeReviewRequestEmail(
+  supabase: SupabaseClient,
+  shop: ShopRow,
+  agent: CustomAgentRow,
+  event: AgentEvent
+): Promise<AgentRunOutcome> {
+  const no = (reason: string): AgentRunOutcome => ({
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: false,
+    reason,
+  })
+  if (event.kind !== "payment_received") return no("wrong event kind")
+  if (!shop.aurinko_access_token_enc) return no("Gmail not connected via Aurinko")
+  if (!event.customerEmail) return no("no email on file for the paying customer")
+  const reviewLink = getReviewLink(shop)
+  if (!reviewLink) return no("no review link set (Settings → Reviews)")
+
+  const grounding = await buildDrafterGrounding(supabase, shop.id)
+  const draft = await draftReviewRequestEmail({
+    shopName: shop.name,
+    customerName: event.customerName ?? "there",
+    reviewLink,
+    knowledge: grounding,
+  }).catch(() => null)
+  if (!draft) return no("drafter returned no email")
+
+  const reason = `Custom agent · ${agent.name}`
+  const { data: pending, error: pendingErr } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shop.id,
+      action_type: "send_email",
+      payload: {
+        to_email: event.customerEmail,
+        subject: draft.subject,
+        body: draft.body,
+        customer_name: event.customerName,
+        customer_id: event.customerId,
+        reason,
+        source: "review_request",
+        category: "marketing",
+        custom_agent_id: agent.id,
+        event_kind: event.kind,
+        ...(await verifyBeforeStaging(supabase, shop, {
+          channel: "email",
+          body: draft.body,
+          subject: draft.subject,
+          customerName: event.customerName,
+        })),
+      },
+      requested_by: agent.owner_id,
+    })
+    .select("id")
+    .single()
+  if (pendingErr || !pending) {
+    return no(`pending insert failed: ${pendingErr?.message ?? "unknown"}`)
+  }
+
+  try {
+    await sendEmailApprovalRequest({
+      pendingActionId: pending.id,
+      toEmail: event.customerEmail,
+      customerName: event.customerName,
+      subject: draft.subject,
+      body: draft.body,
+      reason,
+    })
+  } catch (err) {
+    console.error("[agent-runtime] review-request email Slack send failed:", err)
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    fired: true,
+    stats: { proposed_email: 1 },
+    pendingActionIds: [pending.id],
+  }
+}
+
 // ---------- recipe dispatch ----------
 
 type RecipeHandler = (
@@ -1487,9 +1659,12 @@ function resolveScheduledHandler(agent: CustomAgentRow): RecipeHandler | null {
   return null
 }
 
-const EVENT_RECIPE_HANDLERS: Record<string, EventRecipeHandler> = {
+/** Exported for the eval harness — recipes ship gated on tests (#6). */
+export const EVENT_RECIPE_HANDLERS: Record<string, EventRecipeHandler> = {
   payment_received_thank_you_sms: executePaymentReceivedThankYouSms,
   booking_approved_prep_email: executeBookingApprovedPrepEmail,
+  review_request_sms: executeReviewRequestSms,
+  review_request_email: executeReviewRequestEmail,
 }
 
 /**
