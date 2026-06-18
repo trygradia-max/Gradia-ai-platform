@@ -20,6 +20,12 @@ import { toast } from "sonner"
 
 import { addService, deleteService } from "@/app/actions/services"
 import { saveShop } from "@/app/actions/shop"
+import type { A2pState } from "@/app/actions/a2p"
+import {
+  InboxStep,
+  NumberStep,
+  ReceptionistStep,
+} from "@/components/gradia/onboarding-launch-steps"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -30,12 +36,14 @@ import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { cn } from "@/lib/utils"
 import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4 | 5
 
 const STEP_LABELS: Record<Step, string> = {
   1: "Our shop",
   2: "What we offer",
-  3: "Ready to roll",
+  3: "Your inbox",
+  4: "Your number",
+  5: "Your receptionist",
 }
 
 function formatPrice(cents: number): string {
@@ -58,6 +66,9 @@ export function OnboardingWizard({
   initialServices,
   initialStep,
   forceCreate = false,
+  a2pState,
+  voiceOptions,
+  vapiConfigured,
 }: {
   initialShop: ShopRow | null
   initialServices: ServiceRow[]
@@ -65,6 +76,9 @@ export function OnboardingWizard({
   /** "Add another shop" path — insert a new shop row even if the user
    *  already owns one. */
   forceCreate?: boolean
+  a2pState: A2pState
+  voiceOptions: { id: string; label: string; description: string }[]
+  vapiConfigured: boolean
 }) {
   const router = useRouter()
   const [step, setStep] = React.useState<Step>(initialStep)
@@ -74,8 +88,18 @@ export function OnboardingWizard({
 
   const reduce = useReducedMotion()
 
+  // Steps 3–5 embed live cards (OAuth, purchase, voice) that refresh the
+  // server tree — initialShop arrives fresh on each refresh, so prefer it
+  // there over the step-1 client copy.
+  const liveShop = initialShop ?? shop
+
+  const goTo = (next: Step) => {
+    setStep(next)
+    router.refresh() // keep server-derived props current between steps
+  }
+
   return (
-    <Card className="w-full max-w-xl overflow-hidden rounded-2xl border-border/60 bg-card/95 shadow-2xl shadow-black/40 ring-1 ring-foreground/5">
+    <Card className="w-full max-w-2xl overflow-hidden rounded-2xl border-border/60 bg-card/95 shadow-2xl shadow-black/40 ring-1 ring-foreground/5">
       <CardHeader className="space-y-5 border-b border-border/40 pb-5">
         <div className="flex items-center gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25">
@@ -114,17 +138,30 @@ export function OnboardingWizard({
                   setServices((prev) => prev.filter((s) => s.id !== id))
                 }
                 onBack={() => setStep(1)}
-                onContinue={() => setStep(3)}
+                onContinue={() => goTo(3)}
               />
             ) : null}
             {step === 3 ? (
-              <ConfirmStep
-                shop={shop}
-                services={services}
-                onBack={() => setStep(2)}
-                onComplete={() => {
-                  router.push("/dashboard")
-                }}
+              <InboxStep
+                connectedEmail={liveShop?.aurinko_account_email ?? null}
+                onBack={() => goTo(2)}
+                onContinue={() => goTo(4)}
+              />
+            ) : null}
+            {step === 4 && liveShop ? (
+              <NumberStep
+                shop={liveShop}
+                a2pState={a2pState}
+                onBack={() => goTo(3)}
+                onContinue={() => goTo(5)}
+              />
+            ) : null}
+            {step === 5 && liveShop ? (
+              <ReceptionistStep
+                shop={liveShop}
+                voiceOptions={voiceOptions}
+                vapiConfigured={vapiConfigured}
+                onBack={() => goTo(4)}
               />
             ) : null}
           </motion.div>
@@ -143,12 +180,12 @@ function StepIndicator({
   current: Step
   reduce: boolean
 }) {
-  const steps: Step[] = [1, 2, 3]
+  const steps: Step[] = [1, 2, 3, 4, 5]
   return (
     <div className="space-y-3.5">
       <div className="flex items-center justify-between gap-3">
         <p className="label-eyebrow text-muted-foreground/70">
-          Step {current} of 3
+          Step {current} of 5
         </p>
         <p className="text-xs font-medium tracking-tight text-foreground">
           {STEP_LABELS[current]}
@@ -654,93 +691,5 @@ function AddServiceForm({
         ) : null}
       </div>
     </form>
-  )
-}
-
-// --- Step 3: Confirm ------------------------------------------------------
-
-function ConfirmStep({
-  shop,
-  services,
-  onBack,
-  onComplete,
-}: {
-  shop: ShopRow | null
-  services: ServiceRow[]
-  onBack: () => void
-  onComplete: () => void
-}) {
-  return (
-    <div className="grid gap-5">
-      <div className="space-y-1">
-        <h2 className="font-display text-2xl tracking-tight text-foreground">Looking good</h2>
-        <p className="text-sm text-muted-foreground">
-          Quick check before we open the dashboard.
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-border/80 p-4">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Our shop
-        </p>
-        <p className="mt-2 text-sm font-medium">{shop?.name ?? "—"}</p>
-        {shop?.location ? (
-          <p className="text-xs text-muted-foreground">{shop.location}</p>
-        ) : null}
-        {shop?.phone ? (
-          <p className="text-xs tabular-nums text-muted-foreground">
-            {shop.phone}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="rounded-lg border border-border/80 p-4">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          What we offer ({services.length})
-        </p>
-        {services.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            No services yet — we can add them from settings later.
-          </p>
-        ) : (
-          <ul className="mt-2 grid gap-2">
-            {services.map((s) => (
-              <li
-                key={s.id}
-                className="flex items-baseline justify-between gap-3 text-sm"
-              >
-                <span className="min-w-0 truncate">{s.name}</span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {formatPrice(s.price_cents)} ·{" "}
-                  {formatDuration(s.duration_minutes)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <Separator />
-
-      <div className="grid grid-cols-2 gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onBack}
-          className="h-11 gap-2"
-        >
-          <ArrowLeft className="size-4" aria-hidden />
-          Back
-        </Button>
-        <Button
-          type="button"
-          onClick={onComplete}
-          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
-        >
-          Open dashboard
-          <ArrowRight className="size-4" aria-hidden />
-        </Button>
-      </div>
-    </div>
   )
 }

@@ -7,6 +7,26 @@
     {
       "path": "/api/cron/agents",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/voice-sync",
+      "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/roi-receipt",
+      "schedule": "0 16 * * 1"
+    },
+    {
+      "path": "/api/cron/recovery-retention",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/no-show-ladder",
+      "schedule": "15 * * * *"
     }
   ]
 }

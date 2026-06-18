@@ -5,15 +5,11 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
-  Bot,
-  Calendar,
   Contact,
   Inbox,
   LayoutDashboard,
-  MessageCircle,
   Settings,
   Sparkles,
-  Users,
 } from "lucide-react"
 
 import {
@@ -39,14 +35,14 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
+// Three sturdy destinations + Settings (FOCUS spec §4.4). Ask Gradia is the
+// ⌘K command bar, not a place; Leads folds into Customers, Schedule into
+// Home/Customers, and "What Gradia does" (/agents) drops off the primary nav.
+// All those routes still exist — they're just no longer top-level.
 const nav: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/chat", label: "Ask Gradia", icon: MessageCircle },
-  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/approvals", label: "Approvals", icon: Inbox },
   { href: "/customers", label: "Customers", icon: Contact },
-  { href: "/leads", label: "Leads", icon: Users },
-  { href: "/schedule", label: "Schedule", icon: Calendar },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
@@ -59,9 +55,11 @@ const ACTIVE_SPRING = { type: "spring" as const, stiffness: 380, damping: 32 }
 export function AppSidebar({
   shops = [],
   activeShopId,
+  approvalsCount = 0,
 }: {
   shops?: ShopContext[]
   activeShopId?: string
+  approvalsCount?: number
 } = {}) {
   const pathname = usePathname()
   const reduce = useReducedMotion()
@@ -115,6 +113,7 @@ export function AppSidebar({
                     isActive={isActive}
                     index={index}
                     reduce={reduce ?? false}
+                    badge={item.href === "/approvals" ? approvalsCount : 0}
                   />
                 )
               })}
@@ -132,11 +131,13 @@ function NavRow({
   isActive,
   index,
   reduce,
+  badge = 0,
 }: {
   item: NavItem
   isActive: boolean
   index: number
   reduce: boolean
+  badge?: number
 }) {
   const Icon = item.icon
   return (
@@ -200,6 +201,14 @@ function NavRow({
             aria-hidden
           />
           <span className="font-medium">{item.label}</span>
+          {badge > 0 ? (
+            <span
+              className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 text-xs font-semibold tabular-nums text-primary group-data-[collapsible=icon]:hidden"
+              aria-label={`${badge} awaiting approval`}
+            >
+              {badge > 99 ? "99+" : badge}
+            </span>
+          ) : null}
         </SidebarMenuButton>
       </motion.div>
     </SidebarMenuItem>

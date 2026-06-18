@@ -17,6 +17,12 @@ import { ChatAnthropic } from "@langchain/anthropic"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
 
+import {
+  GRADIA_IDENTITY,
+  GRADIA_SIGNATURE_RULE,
+  GRADIA_VOICE,
+} from "@/lib/persona"
+
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 const TOOL_NAME = "draft_sms_reply"
 
@@ -36,10 +42,10 @@ const schema = z
 
 export type SmsDraft = z.infer<typeof schema>
 
-const SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a single SMS reply to a new customer who just texted us. The shop owner will approve before it sends — your job is to make the approval as fast and friction-free as possible by writing something they'd actually send.
+const SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a single SMS reply to a new customer who just texted us. The shop owner will approve before it sends — your job is to make the approval as fast and friction-free as possible by writing something they'd actually send.
 
 Tone rules:
-- Speak as "we" and "us" — never "I" or "you and I".
+- Speak as "we" and "us" — never "I", "me", "my", or "you and I".
 - Warm, confident, specific. No corporate hedging.
 - One clear next step the customer can take (e.g., "want us to send some times?", "what day works?", "got a year/make/model handy?"). Never two questions.
 - Acknowledge what they asked about specifically when the summary tells you what they want.
@@ -48,7 +54,7 @@ Hard rules:
 - Never quote a price unless the shop knowledge below explicitly states one. When in doubt, say "we'll send pricing in a sec".
 - Never confirm a specific time or commitment. The owner approves first; promising anything now is a lie.
 - If the shop knowledge mentions a policy that applies (deposit, weather, hours, etc.), weave it in naturally — don't invent policies that aren't there.
-- Always sign with: — Gradia at {shop_name}
+- ${GRADIA_SIGNATURE_RULE}
 - Aim for under 160 characters total. If you need more, cap at 320.`
 
 const HUMAN = `Draft an SMS reply via the ${TOOL_NAME} tool.
@@ -129,10 +135,10 @@ const confirmationSchema = z
     "Short, warm booking confirmation. Restate the service + day + time + duration. No new commitments."
   )
 
-const CONFIRMATION_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a confirmation SMS that goes to a customer right after the owner approves their booking. The owner will see and approve your draft before it sends — write something they'd actually send.
+const CONFIRMATION_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a confirmation SMS that goes to a customer right after the owner approves their booking. The owner will see and approve your draft before it sends — write something they'd actually send.
 
 Tone rules:
-- Speak as "we" and "us" — never "I".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm, confident, specific. Acknowledge the service + day + time clearly.
 - One optional next step at most (e.g., "any prep questions, just text us back"). Don't load the message with multiple asks.
 
@@ -140,7 +146,7 @@ Hard rules:
 - Restate the booking exactly as given. Don't change the time or service.
 - Don't quote a price.
 - Don't promise anything beyond what's in the booking.
-- Always sign with: — Gradia at {shop_name}
+- ${GRADIA_SIGNATURE_RULE}
 - Aim for under 160 characters total. Cap at 320.`
 
 const CONFIRMATION_HUMAN = `Draft a booking confirmation via the ${CONFIRMATION_TOOL} tool.
@@ -225,10 +231,10 @@ const reminderSchema = z
     "Short, warm reminder. Restate when + service, optional 'any prep, just text us' nudge. No new commitments, no pricing."
   )
 
-const REMINDER_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a 24-hour reminder SMS that goes to a customer the day before their appointment. The owner will approve before it sends.
+const REMINDER_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a 24-hour reminder SMS that goes to a customer the day before their appointment. The owner will approve before it sends.
 
 Tone rules:
-- Speak as "we" and "us" — never "I".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm and casual, like a friend reminding. Not corporate.
 - Restate the service + day + time so the customer can verify.
 - Optional: one soft "anything to know before we get started, just text us" nudge.
@@ -236,7 +242,7 @@ Tone rules:
 Hard rules:
 - Don't change the time or service from what's given.
 - Don't quote a price or make new commitments.
-- Always sign with: — Gradia at {shop_name}
+- ${GRADIA_SIGNATURE_RULE}
 - Aim for under 160 characters. Cap at 320.`
 
 const REMINDER_HUMAN = `Draft a 24h reminder via the ${REMINDER_TOOL} tool.
@@ -270,17 +276,17 @@ const customSchema = z
     "Short, warm message matching the operator's stated intent. No prices, no commitments, signed as us."
   )
 
-const CUSTOM_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. The shop owner set up a custom agent that fires on a schedule. For each customer/lead the agent matches, write one short SMS the owner will approve before it sends.
+const CUSTOM_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} The shop owner set up a custom agent that fires on a schedule. For each customer/lead the agent matches, write one short SMS the owner will approve before it sends.
 
 Tone rules:
-- Speak as "we" and "us" — never "I".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm, specific, brief. The owner is approving on their phone between jobs.
 - Match the stated intent exactly. If the intent says "follow up gently," don't push hard. If it says "thank them for paying," lead with that.
 
 Hard rules:
 - Never quote a price.
 - Never confirm a specific time. Suggest one if the intent calls for it; never lock it in.
-- Always sign with: — Gradia at {shop_name}
+- ${GRADIA_SIGNATURE_RULE}
 - Aim for under 160 characters total. Cap at 320.`
 
 const CUSTOM_HUMAN = `Draft a custom-agent SMS via the ${CUSTOM_TOOL} tool.
@@ -289,6 +295,9 @@ Shop name: {shop_name}
 Customer name: {customer_name}
 Vehicle (if known): {vehicle}
 Service / context (if known): {service}
+
+--- OUR SHOP (services + policies; lean on this, never invent or contradict it) ---
+{knowledge}
 
 --- INTENT (from our owner) ---
 {intent}`
@@ -304,6 +313,8 @@ export async function draftCustomSmsForCustomer(input: {
   vehicle: string | null
   service: string | null
   intent: string
+  /** Shop services + knowledge block — grounds the draft in real facts. */
+  knowledge?: string | null
 }): Promise<string | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -318,6 +329,7 @@ export async function draftCustomSmsForCustomer(input: {
     customer_name: firstName(input.customerName) || "there",
     vehicle: input.vehicle?.trim() || "(not specified)",
     service: input.service?.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no shop notes on file yet)",
     intent: input.intent.trim() || "send a brief friendly check-in",
   })
 

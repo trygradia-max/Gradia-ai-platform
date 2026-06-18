@@ -1,0 +1,32 @@
+[
+  {
+    "name": "clear ceramic lead — all fields present",
+    "input": "Hey it's Marcus, my cell is 503-555-0188 — I've got a 2019 Tesla Model 3 and I want your full ceramic coating package",
+    "expect": {
+      "name": { "contains": "marcus" },
+      "phone": { "digits": "5035550188" },
+      "carInfo": { "matches": "tesla.*model\\s*3" },
+      "service": { "contains": "ceramic" }
+    }
+  },
+  {
+    "name": "partial — name + service only, must NOT invent phone or car",
+    "input": "Hi this is Dana, can you do an interior detail sometime next week?",
+    "expect": {
+      "name": { "contains": "dana" },
+      "phone": { "empty": true },
+      "carInfo": { "empty": true },
+      "service": { "contains": "interior" }
+    }
+  },
+  {
+    "name": "noise — empty-string contract, no lead data at all",
+    "input": "ok sounds good, talk soon!",
+    "expect": {
+      "name": { "empty": true },
+      "phone": { "empty": true },
+      "carInfo": { "empty": true },
+      "service": { "empty": true }
+    }
+  }
+]

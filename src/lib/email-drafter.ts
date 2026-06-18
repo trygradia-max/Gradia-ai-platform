@@ -15,6 +15,12 @@ import { ChatAnthropic } from "@langchain/anthropic"
 import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
 
+import {
+  GRADIA_IDENTITY,
+  GRADIA_SIGNATURE_RULE,
+  GRADIA_VOICE,
+} from "@/lib/persona"
+
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 const TOOL_NAME = "draft_email_reply"
 
@@ -41,10 +47,10 @@ const schema = z
 
 export type EmailDraft = z.infer<typeof schema>
 
-const SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a single email reply to a new customer who just emailed us. The shop owner will approve before it sends — make the approval fast by writing something they'd actually send.
+const SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a single email reply to a new customer who just emailed us. The shop owner will approve before it sends — make the approval fast by writing something they'd actually send.
 
 Tone rules:
-- Speak as "we" and "us" — never "I" or "you and I".
+- Speak as "we" and "us" — never "I", "me", "my", or "you and I".
 - Warm, confident, specific. Acknowledge what they asked about by name when the summary tells you.
 - One clear next step (e.g., "want us to send a few times?", "what year is the Tesla?", "happy to get you on the calendar — just need a day that works"). Never multiple asks.
 
@@ -57,7 +63,7 @@ Hard rules:
 - Never quote a specific price unless the shop knowledge below explicitly states one. If they asked about price and knowledge is silent, say "we'll send a quote once we know the {make/model}".
 - Never confirm a specific time. Bookings need owner approval — say "we'll lock it in shortly" if a time is mentioned, never "you're booked."
 - If the shop knowledge mentions a policy that applies (deposit, weather, hours, etc.), weave it in naturally — don't invent policies that aren't there.
-- Always sign with: — Gradia at {shop_name}
+- ${GRADIA_SIGNATURE_RULE}
 - Plain text only. No HTML tags, no markdown.`
 
 const HUMAN = `Draft an email reply via the ${TOOL_NAME} tool.
@@ -111,16 +117,16 @@ const customEmailSchema = z
     "Email matching the operator's intent. No prices, no commitments."
   )
 
-const CUSTOM_EMAIL_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. The shop owner set up a custom agent that fires on an event (a payment, a booking, etc.). For each event the agent matches, write one short email the owner will approve before it sends.
+const CUSTOM_EMAIL_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} The shop owner set up a custom agent that fires on an event (a payment, a booking, etc.). For each event the agent matches, write one short email the owner will approve before it sends.
 
 Tone rules:
-- Speak as "we" and "us".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Warm, specific, brief. Match the operator's intent exactly.
 
 Hard rules:
 - Plain text only. No HTML, no markdown.
 - Never quote a price or confirm a new commitment.
-- Always sign with: — Gradia at {shop_name}`
+- ${GRADIA_SIGNATURE_RULE}`
 
 const CUSTOM_EMAIL_HUMAN = `Draft a custom-agent email via the ${CUSTOM_EMAIL_TOOL} tool.
 
@@ -128,6 +134,9 @@ Shop name: {shop_name}
 Customer name: {customer_name}
 Service / context (if known): {service}
 When (if relevant): {when}
+
+--- OUR SHOP (services + policies; lean on this, never invent or contradict it) ---
+{knowledge}
 
 --- INTENT (from our owner) ---
 {intent}`
@@ -143,6 +152,8 @@ export async function draftCustomEmailForCustomer(input: {
   service: string | null
   when: string | null
   intent: string
+  /** Shop services + knowledge block — grounds the draft in real facts. */
+  knowledge?: string | null
 }): Promise<EmailDraft | null> {
   const llm = new ChatAnthropic({
     model: CLAUDE_MODEL,
@@ -157,6 +168,7 @@ export async function draftCustomEmailForCustomer(input: {
     customer_name: input.customerName.trim() || "there",
     service: input.service?.trim() || "(not specified)",
     when: input.when?.trim() || "(not specified)",
+    knowledge: input.knowledge?.trim() || "(no shop notes on file yet)",
     intent: input.intent.trim() || "send a warm note",
   })
 
@@ -192,10 +204,10 @@ const reminderSchema = z
     "Appointment reminder email for the day before. Warm, scannable, never confirms a new commitment."
   )
 
-const REMINDER_SYSTEM = `You are Gradia, the AI partner for an auto detailing shop. You're drafting a reminder email about an upcoming appointment. The shop owner will approve before it sends.
+const REMINDER_SYSTEM = `${GRADIA_IDENTITY} ${GRADIA_VOICE} You're drafting a reminder email about an upcoming appointment. The shop owner will approve before it sends.
 
 Rules:
-- Speak as "we" and "us".
+- Speak as "we" and "us" — never "I", "me", or "my".
 - Restate the service + day + time so the customer can verify on a glance.
 - One optional next step ("anything we should know in advance, just hit reply").
 - Don't change the booking. Don't quote a price.

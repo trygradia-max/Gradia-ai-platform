@@ -9,6 +9,7 @@ import {
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
 } from "@/lib/aurinko"
 import { encryptSecret } from "@/lib/crypto"
+import { normalizeReviewLink, REVIEW_LINK_KEY } from "@/lib/review-link"
 import { createClient } from "@/lib/supabase/server"
 import { ACTIVE_SHOP_COOKIE, getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
@@ -115,7 +116,14 @@ export async function saveShop(
 
   const { data, error } = await supabase
     .from("shops")
-    .insert({ ...fields, owner_id: user.id, settings: {} })
+    // onboarding_done:false routes NEW shops through the first-run wizard
+    // until they finish/skip it. Shops created before this flag existed
+    // (no key in settings) are never gated.
+    .insert({
+      ...fields,
+      owner_id: user.id,
+      settings: { onboarding_done: false },
+    })
     .select("*")
     .single()
 
@@ -191,6 +199,56 @@ export async function saveVapiAssistantId(
 
   revalidatePath("/settings")
   return { ok: true, shop: data as ShopRow }
+}
+
+const saveReviewLinkSchema = z.object({
+  review_link: z.string().max(500).nullable(),
+})
+
+export type SaveReviewLinkResult =
+  | { ok: true; reviewLink: string | null }
+  | { ok: false; error: string }
+
+/**
+ * Saves the shop's public review link into settings JSON (NEXT-1). Used by the
+ * review-request feature so the ask always carries the real link. An empty
+ * value clears it; a non-URL is rejected.
+ */
+export async function saveReviewLink(
+  input: z.infer<typeof saveReviewLinkSchema>
+): Promise<SaveReviewLinkResult> {
+  const parsed = saveReviewLinkSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: "That link is too long." }
+
+  await requireUser()
+  const existing = await getOptionalShop()
+  if (!existing) return { ok: false, error: "Finish onboarding first." }
+
+  const raw = parsed.data.review_link?.trim() ?? ""
+  const link = raw ? normalizeReviewLink(raw) : null
+  if (raw && !link) {
+    return { ok: false, error: "Enter a full link starting with http:// or https://" }
+  }
+
+  const supabase = await createClient()
+  const { data: shopRow } = await supabase
+    .from("shops")
+    .select("settings")
+    .eq("id", existing.id)
+    .single()
+  const settings = {
+    ...(((shopRow as { settings?: Record<string, unknown> } | null)?.settings) ?? {}),
+    [REVIEW_LINK_KEY]: link,
+  }
+
+  const { error } = await supabase
+    .from("shops")
+    .update({ settings })
+    .eq("id", existing.id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath("/settings")
+  return { ok: true, reviewLink: link }
 }
 
 const saveTwilioSchema = z.object({
@@ -425,164 +483,6 @@ export async function disconnectSms(): Promise<DisconnectSmsResult> {
   return { ok: true, shop: data as ShopRow }
 }
 
-const saveInstagramSchema = z.object({
-  instagram_business_account_id: z
-    .string()
-    .trim()
-    .min(1, "Business account ID is required.")
-    .max(80),
-  instagram_page_id: z
-    .string()
-    .trim()
-    .min(1, "Facebook Page ID is required.")
-    .max(80),
-  instagram_page_access_token: z
-    .string()
-    .trim()
-    .min(20, "Page access token looks too short."),
-  instagram_account_handle: z
-    .string()
-    .trim()
-    .max(80)
-    .optional()
-    .nullable(),
-})
-
-export type SaveInstagramResult =
-  | { ok: true; shop: ShopRow }
-  | { ok: false; error: string }
-
-export async function saveInstagramCredentials(
-  input: z.infer<typeof saveInstagramSchema>
-): Promise<SaveInstagramResult> {
-  const parsed = saveInstagramSchema.safeParse(input)
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Invalid input.",
-    }
-  }
-
-  await requireUser()
-  const existing = await getOptionalShop()
-  if (!existing) {
-    return { ok: false, error: "Finish onboarding first." }
-  }
-
-  let encryptedToken: string | null
-  try {
-    encryptedToken = encryptSecret(parsed.data.instagram_page_access_token)
-  } catch (err) {
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? `Encryption failed: ${err.message}`
-          : "Encryption failed.",
-    }
-  }
-
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("shops")
-    .update({
-      instagram_business_account_id: parsed.data.instagram_business_account_id,
-      instagram_page_id: parsed.data.instagram_page_id,
-      instagram_page_access_token_enc: encryptedToken,
-      instagram_account_handle:
-        parsed.data.instagram_account_handle?.replace(/^@/, "") || null,
-    })
-    .eq("id", existing.id)
-    .select("*")
-    .single()
-
-  if (error || !data) {
-    if (error?.code === "23505") {
-      return {
-        ok: false,
-        error: "Another shop is already connected to that Facebook Page.",
-      }
-    }
-    return { ok: false, error: error?.message ?? "Could not save." }
-  }
-
-  revalidatePath("/settings")
-  return { ok: true, shop: data as ShopRow }
-}
-
-const saveFacebookSchema = z.object({
-  facebook_page_id: z
-    .string()
-    .trim()
-    .min(1, "Facebook Page ID is required.")
-    .max(80),
-  facebook_page_access_token: z
-    .string()
-    .trim()
-    .min(20, "Page access token looks too short."),
-  facebook_page_name: z.string().trim().max(120).optional().nullable(),
-})
-
-export type SaveFacebookResult =
-  | { ok: true; shop: ShopRow }
-  | { ok: false; error: string }
-
-export async function saveFacebookCredentials(
-  input: z.infer<typeof saveFacebookSchema>
-): Promise<SaveFacebookResult> {
-  const parsed = saveFacebookSchema.safeParse(input)
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Invalid input.",
-    }
-  }
-
-  await requireUser()
-  const existing = await getOptionalShop()
-  if (!existing) {
-    return { ok: false, error: "Finish onboarding first." }
-  }
-
-  let encryptedToken: string | null
-  try {
-    encryptedToken = encryptSecret(parsed.data.facebook_page_access_token)
-  } catch (err) {
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? `Encryption failed: ${err.message}`
-          : "Encryption failed.",
-    }
-  }
-
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("shops")
-    .update({
-      facebook_page_id: parsed.data.facebook_page_id,
-      facebook_page_access_token_enc: encryptedToken,
-      facebook_page_name: parsed.data.facebook_page_name?.trim() || null,
-    })
-    .eq("id", existing.id)
-    .select("*")
-    .single()
-
-  if (error || !data) {
-    if (error?.code === "23505") {
-      return {
-        ok: false,
-        error: "Another shop is already connected to that Facebook Page.",
-      }
-    }
-    return { ok: false, error: error?.message ?? "Could not save." }
-  }
-
-  revalidatePath("/settings")
-  return { ok: true, shop: data as ShopRow }
-}
-
 export type DisconnectJobberResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }
@@ -616,11 +516,11 @@ export async function disconnectJobber(): Promise<DisconnectJobberResult> {
   return { ok: true, shop: data as ShopRow }
 }
 
-export type DisconnectFacebookResult =
+export type DisconnectHousecallProResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }
 
-export async function disconnectFacebook(): Promise<DisconnectFacebookResult> {
+export async function disconnectHousecallPro(): Promise<DisconnectHousecallProResult> {
   await requireUser()
   const existing = await getOptionalShop()
   if (!existing) {
@@ -631,41 +531,11 @@ export async function disconnectFacebook(): Promise<DisconnectFacebookResult> {
   const { data, error } = await supabase
     .from("shops")
     .update({
-      facebook_page_id: null,
-      facebook_page_access_token_enc: null,
-      facebook_page_name: null,
-    })
-    .eq("id", existing.id)
-    .select("*")
-    .single()
-
-  if (error || !data) {
-    return { ok: false, error: error?.message ?? "Could not disconnect." }
-  }
-
-  revalidatePath("/settings")
-  return { ok: true, shop: data as ShopRow }
-}
-
-export type DisconnectInstagramResult =
-  | { ok: true; shop: ShopRow }
-  | { ok: false; error: string }
-
-export async function disconnectInstagram(): Promise<DisconnectInstagramResult> {
-  await requireUser()
-  const existing = await getOptionalShop()
-  if (!existing) {
-    return { ok: false, error: "Finish onboarding first." }
-  }
-
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("shops")
-    .update({
-      instagram_business_account_id: null,
-      instagram_page_id: null,
-      instagram_page_access_token_enc: null,
-      instagram_account_handle: null,
+      housecallpro_account_id: null,
+      housecallpro_account_name: null,
+      housecallpro_access_token_enc: null,
+      housecallpro_refresh_token_enc: null,
+      housecallpro_token_expires_at: null,
     })
     .eq("id", existing.id)
     .select("*")

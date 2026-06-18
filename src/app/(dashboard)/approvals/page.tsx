@@ -1,10 +1,15 @@
+import { ActivityEvent } from "@/components/gradia/activity-event"
 import { ApprovalsList } from "@/components/gradia/approvals-list"
-import { listOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
+import {
+  listOpenApprovalsForCurrentShop,
+  listRecentAgentActivity,
+} from "@/lib/data/pending-actions"
 
 export const dynamic = "force-dynamic"
 
 export default async function ApprovalsPage() {
   const items = await listOpenApprovalsForCurrentShop()
+  const activity = await listRecentAgentActivity()
   const editCount = items.filter(
     (i) => i.status === "edit_requested"
   ).length
@@ -35,6 +40,17 @@ export default async function ApprovalsPage() {
       </header>
 
       <ApprovalsList items={items} />
+
+      {activity.length > 0 ? (
+        <section className="space-y-3">
+          <p className="label-eyebrow text-muted-foreground/70">Done by us</p>
+          <div className="space-y-2">
+            {activity.map((a) => (
+              <ActivityEvent key={a.id} item={a} />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }

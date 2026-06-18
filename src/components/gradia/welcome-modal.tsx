@@ -4,8 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowRight,
-  CreditCard,
-  Globe,
   Mail,
   MessageSquare,
   Phone,
@@ -36,32 +34,20 @@ const STEPS = [
   {
     icon: Phone,
     label: "Voice receptionist",
-    detail: "Vapi takes calls, books, and quotes — when you're under a car.",
+    detail: "Your receptionist takes calls, books, and quotes — when you're under a car.",
     href: "/settings#voice",
   },
   {
     icon: Mail,
     label: "Email + Calendar",
-    detail: "Gmail via Aurinko. One OAuth covers inbound replies + bookings.",
+    detail: "Connect Gmail once — it covers inbound replies + bookings.",
     href: "/settings#email",
   },
   {
     icon: MessageSquare,
     label: "SMS",
-    detail: "Twilio number with auto-drafts on inbound + delivery callbacks.",
+    detail: "Your business number with auto-drafts on every inbound text.",
     href: "/settings#sms",
-  },
-  {
-    icon: CreditCard,
-    label: "Payments",
-    detail: "Stripe Connect. Whisper 'charge Smith $450' from your phone.",
-    href: "/settings#payments",
-  },
-  {
-    icon: Globe,
-    label: "DMs (IG + Facebook)",
-    detail: "Inbound messages get auto-drafted replies for your approval.",
-    href: "/settings#instagram",
   },
 ] as const
 

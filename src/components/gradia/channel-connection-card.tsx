@@ -4,13 +4,11 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowUpRight,
-  AtSign,
   CalendarDays,
   CheckCircle2,
   Circle,
   CircleAlert,
   CreditCard,
-  Globe,
   Mail,
   MessageSquare,
   Phone,
@@ -33,8 +31,6 @@ const ICONS: Record<ChannelId, typeof Phone> = {
   sms: MessageSquare,
   calendar: CalendarDays,
   payments: CreditCard,
-  instagram: AtSign,
-  facebook: Globe,
 }
 
 const STATUS_TONE: Record<ChannelSummary["status"], StatusPillTone> = {

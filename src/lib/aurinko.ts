@@ -24,7 +24,9 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
 import type { ShopRow } from "@/lib/types/database"
 
-const AURINKO_API_BASE = "https://api.aurinko.io/v1"
+// Env-overridable so tests can point the executor at a mock server.
+const AURINKO_API_BASE =
+  process.env.AURINKO_API_BASE?.trim() || "https://api.aurinko.io/v1"
 const REFRESH_BUFFER_MS = 60 * 1000 // refresh when within 60s of expiry
 
 export class AurinkoError extends Error {
@@ -537,6 +539,54 @@ export async function createCalendarEvent(
     throw new AurinkoError(res.status, `Event create failed: ${raw.slice(0, 200)}`)
   }
   return normalizeEvent(JSON.parse(raw) as RawCalendarEvent)
+}
+
+/** Moves an existing event to a new time (reschedule executor). */
+export async function updateCalendarEventTime(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  input: { startIso: string; endIso: string; timezone?: string | null }
+): Promise<void> {
+  const tz = input.timezone ?? "UTC"
+  const res = await fetch(
+    `${AURINKO_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        start: { dateTime: input.startIso, timezone: tz },
+        end: { dateTime: input.endIso, timezone: tz },
+      }),
+    }
+  )
+  if (!res.ok) {
+    const raw = await res.text()
+    throw new AurinkoError(res.status, `Event update failed: ${raw.slice(0, 200)}`)
+  }
+}
+
+/** Removes an event from the calendar (cancel executor). 404 = already gone. */
+export async function deleteCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string
+): Promise<void> {
+  const res = await fetch(
+    `${AURINKO_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  )
+  if (!res.ok && res.status !== 404) {
+    const raw = await res.text()
+    throw new AurinkoError(res.status, `Event delete failed: ${raw.slice(0, 200)}`)
+  }
 }
 
 /**

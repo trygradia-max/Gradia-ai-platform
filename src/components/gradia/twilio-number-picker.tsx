@@ -14,18 +14,19 @@ import { Button } from "@/components/ui/button"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { DEFAULT_PRICING } from "@/lib/pricing"
 import type { TwilioAvailableNumber } from "@/lib/twilio"
 import { cn } from "@/lib/utils"
 
 /**
  * Inline picker that handles area-code search → candidate list →
  * one-click provision. Sits inside the SMS settings card whenever
- * the operator clicks "Pick a Gradia number."
+ * the operator clicks "Pick your business number."
  *
- * Money note: provisioning calls Twilio's IncomingPhoneNumbers API,
- * which starts a ~$1.15/mo rental + per-message charges on Gradia's
- * master account. The picker UI surfaces this clearly before the
- * Buy click — no surprise charges.
+ * Money note: provisioning starts a monthly rental, billed at Gradia's
+ * retail price from pricing_config (white-label shops; metered through
+ * the credits ledger) or to the shop's own account (BYO). The picker
+ * surfaces the retail price before the Buy click — never vendor cost.
  */
 export function TwilioNumberPicker({
   onCancel,
@@ -43,6 +44,9 @@ export function TwilioNumberPicker({
   >([])
   const [provisioning, setProvisioning] = React.useState<string | null>(null)
   const [didSearch, setDidSearch] = React.useState(false)
+  const [retailCents, setRetailCents] = React.useState<number | null>(
+    DEFAULT_PRICING.number_monthly.retail_cents
+  )
 
   async function handleSearch(e?: React.FormEvent<HTMLFormElement>) {
     if (e) e.preventDefault()
@@ -57,8 +61,14 @@ export function TwilioNumberPicker({
       setCandidates([])
       return
     }
+    setRetailCents(result.monthlyRetailCents)
     setCandidates(result.numbers)
   }
+
+  const priceLine =
+    retailCents == null
+      ? "Billed to your connected account."
+      : `$${(retailCents / 100).toFixed(2)}/month, billed through Gradia — no other accounts needed.`
 
   async function handleProvision(phoneNumber: string) {
     setProvisioning(phoneNumber)
@@ -85,11 +95,10 @@ export function TwilioNumberPicker({
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="label-eyebrow text-muted-foreground/70">
-              Pick a Gradia number
+              Pick your business number
             </p>
             <p className="text-sm text-foreground">
-              Search by area code, pick one, we wire it up. ~$1.15/month
-              billed through Gradia, no separate Twilio account needed.
+              Search by area code, pick one, we wire it up. {priceLine}
             </p>
           </div>
           <button

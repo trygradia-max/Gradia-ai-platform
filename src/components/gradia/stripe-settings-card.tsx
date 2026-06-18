@@ -53,11 +53,11 @@ const CALLBACK_MESSAGES: Record<
   },
   fetch_failed: {
     kind: "error",
-    text: "Couldn't refresh Stripe status — check the server logs.",
+    text: "Couldn't refresh payment status — try again in a minute.",
   },
   account_create_failed: {
     kind: "error",
-    text: "Couldn't create the Stripe account — check the server logs.",
+    text: "Couldn't set up payments — try again in a minute.",
   },
   link_failed: {
     kind: "error",

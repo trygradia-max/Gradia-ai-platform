@@ -1,16 +1,24 @@
 import { headers } from "next/headers"
-import { Shield } from "lucide-react"
+import Link from "next/link"
+import { Bot, Briefcase, Calendar, ChevronRight, House, Mail, MessageSquare, Phone, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
-import { FacebookSettingsCard } from "@/components/gradia/facebook-settings-card"
-import { InstagramSettingsCard } from "@/components/gradia/instagram-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
+import { HousecallProSettingsCard } from "@/components/gradia/housecallpro-settings-card"
+import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
+import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
+import { getA2pState } from "@/app/actions/a2p"
+import { A2pWizard } from "@/components/gradia/a2p-wizard"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
-import { VoiceSettingsCard } from "@/components/gradia/voice-settings-card"
+import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
+import { listVoiceOptions } from "@/lib/voice-provider"
+import { ConnectionTile } from "@/components/gradia/connection-tile"
+import { SectionHeader } from "@/components/gradia/section-header"
+import { AutonomyDefaultCard } from "@/components/gradia/autonomy-default-card"
 import {
   Card,
   CardContent,
@@ -19,8 +27,10 @@ import {
 } from "@/components/ui/card"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
-import { getPendingMetaPages } from "@/app/actions/meta-oauth"
-import { MetaCallbackToast } from "@/components/gradia/meta-callback-toast"
+import { getUsageState } from "@/app/actions/billing"
+import { readAutonomy } from "@/lib/autonomy"
+import { integrationEnabled } from "@/lib/features"
+import { getReviewLink } from "@/lib/review-link"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -73,32 +83,15 @@ const KNOWN_JOBBER_STATUSES = new Set([
   "save_failed",
 ])
 
-const KNOWN_META_STATUSES = new Set([
+const KNOWN_HOUSECALLPRO_STATUSES = new Set([
   "ok",
-  "pick",
   "denied",
   "missing_params",
   "state_mismatch",
-  "not_signed_in",
   "token_exchange_failed",
-  "page_list_failed",
-  "no_pages",
-  "subscribe_failed",
+  "account_fetch_failed",
   "save_failed",
 ])
-
-type MetaCallbackStatus =
-  | "ok"
-  | "pick"
-  | "denied"
-  | "missing_params"
-  | "state_mismatch"
-  | "not_signed_in"
-  | "token_exchange_failed"
-  | "page_list_failed"
-  | "no_pages"
-  | "subscribe_failed"
-  | "save_failed"
 
 export default async function SettingsPage({
   searchParams,
@@ -107,7 +100,7 @@ export default async function SettingsPage({
     email?: string
     stripe?: string
     jobber?: string
-    meta?: string
+    housecallpro?: string
   }>
 }) {
   const shopCtx = await requireShop()
@@ -120,23 +113,15 @@ export default async function SettingsPage({
     .single()
 
   const shop = (data as ShopRow | null) ?? null
+  const autonomyDefault = readAutonomy(shop).default
   const knowledgeEntries = await listShopKnowledge(supabase, shopCtx.id)
   const mcpTokens = await listMcpTokensForCurrentShop()
   const baseUrl = await resolveWebhookBaseUrl()
-  const webhookUrl = `${baseUrl}/api/vapi/webhook`
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`
-  const metaWebhookUrl = `${baseUrl}/api/meta/webhook`
-  const webhookSecretConfigured = Boolean(
-    process.env.VAPI_WEBHOOK_SECRET?.trim()
-  )
   const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
   const aurinkoConfigured = Boolean(
     process.env.AURINKO_CLIENT_ID?.trim() &&
       process.env.AURINKO_CLIENT_SECRET?.trim()
-  )
-  const metaConfigured = Boolean(
-    process.env.META_APP_SECRET?.trim() &&
-      process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()
   )
   const twilioConfigured = Boolean(
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
@@ -149,6 +134,10 @@ export default async function SettingsPage({
   const jobberConfigured = Boolean(
     process.env.JOBBER_CLIENT_ID?.trim() &&
       process.env.JOBBER_CLIENT_SECRET?.trim()
+  )
+  const housecallProConfigured = Boolean(
+    process.env.HOUSECALLPRO_CLIENT_ID?.trim() &&
+      process.env.HOUSECALLPRO_CLIENT_SECRET?.trim()
   )
 
   const params = await searchParams
@@ -191,56 +180,181 @@ export default async function SettingsPage({
           | "save_failed")
       : null
 
-  const rawMetaStatus = params.meta ?? null
-  const metaStatus: MetaCallbackStatus | null =
-    rawMetaStatus && KNOWN_META_STATUSES.has(rawMetaStatus)
-      ? (rawMetaStatus as MetaCallbackStatus)
+  const rawHousecallproStatus = params.housecallpro ?? null
+  const housecallproStatus =
+    rawHousecallproStatus &&
+    KNOWN_HOUSECALLPRO_STATUSES.has(rawHousecallproStatus)
+      ? (rawHousecallproStatus as
+          | "ok"
+          | "denied"
+          | "missing_params"
+          | "state_mismatch"
+          | "token_exchange_failed"
+          | "account_fetch_failed"
+          | "save_failed")
       : null
 
-  // Multi-page picker payload — populated when the OAuth callback
-  // returned more than one Page and stashed the candidates in a
-  // short-lived cookie.
-  const pendingMetaPages = await getPendingMetaPages()
+  const usageState = await getUsageState()
+  const a2pState = await getA2pState()
+  const voiceOptions = listVoiceOptions()
 
   const sections = [
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
     { id: "sms", label: "SMS" },
     { id: "payments", label: "Payments" },
-    { id: "instagram", label: "Instagram" },
-    { id: "facebook", label: "Facebook" },
     { id: "jobber", label: "Jobber" },
+    { id: "housecallpro", label: "Housecall Pro" },
     { id: "knowledge", label: "Knowledge" },
+    { id: "reviews", label: "Reviews" },
+    { id: "usage", label: "Usage" },
     { id: "developer", label: "Developer" },
     { id: "soon", label: "More" },
-  ]
+  ].filter((s) => !["payments"].includes(s.id) || integrationEnabled(s.id))
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <header className="space-y-2 pt-2 pb-6">
-        <p className="label-eyebrow text-muted-foreground/70">Settings</p>
-        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
-          The <span className="italic">wiring</span> behind the scenes.
-        </h1>
-        <p className="max-w-prose text-sm text-muted-foreground">
-          Shop, integrations, knowledge, and developer access — everything we
-          plug into to run the AI office.
-        </p>
-      </header>
+      <SectionHeader
+        className="pt-2 pb-6"
+        eyebrow="Connections"
+        title={
+          <>
+            The <em className="italic">wiring</em> behind the scenes.
+          </>
+        }
+        subhead="The channels and tools we run on. Connect once — we handle the rest."
+      />
 
-      <MetaCallbackToast status={metaStatus} />
+      <div className="space-y-8 pt-2">
+        {/* "What Gradia does" lives here now that the primary nav is three
+            pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
+        <Link
+          href="/agents"
+          className="group flex items-center gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">
+            <Bot className="size-[18px]" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-lg leading-tight tracking-tight text-foreground">
+              What Gradia does
+            </p>
+            <p className="text-sm text-muted-foreground">
+              See what&apos;s running for us, and tune how much we act on our own.
+            </p>
+          </div>
+          <ChevronRight
+            className="size-5 shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover:translate-x-0.5"
+            aria-hidden
+          />
+        </Link>
 
-      <SettingsSectionNav sections={sections} />
+        <div className="space-y-3">
+          <p className="label-eyebrow text-muted-foreground/70">Channels</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConnectionTile
+              icon={Phone}
+              name="Voice"
+              description="Answers calls, quotes, and books — in our voice."
+              connected={Boolean(shop?.vapi_assistant_id)}
+              available={vapiConfigured}
+              connectedLabel="Assistant linked"
+              connectedDetail="Answering calls"
+              connectHref="#voice"
+              manageHref="#voice"
+            />
+            <ConnectionTile
+              icon={Mail}
+              name="Email"
+              description="Reads leads and drafts replies for our approval."
+              connected={Boolean(shop?.aurinko_account_email)}
+              available={aurinkoConfigured}
+              connectedLabel={shop?.aurinko_account_email}
+              connectedDetail="Reading + drafting"
+              connectHref="/api/aurinko/auth/start"
+              popup
+              manageHref="#email"
+            />
+            <ConnectionTile
+              icon={MessageSquare}
+              name="SMS"
+              description="Catches every text and drafts a reply in a minute."
+              connected={Boolean(shop?.twilio_phone_number)}
+              available={twilioConfigured}
+              connectedLabel={shop?.twilio_phone_number}
+              connectedDetail="Texting back"
+              connectHref="#sms"
+              manageHref="#sms"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="label-eyebrow text-muted-foreground/70">
+            Your business
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConnectionTile
+              icon={Calendar}
+              name="Calendar"
+              description="Puts approved bookings on our calendar."
+              connected={Boolean(shop?.aurinko_account_email)}
+              available={aurinkoConfigured}
+              connectedLabel={
+                shop?.aurinko_account_email ? "Google Calendar" : null
+              }
+              connectedDetail="On the books"
+              connectHref="/api/aurinko/auth/start"
+              popup
+              manageHref="#email"
+            />
+            <ConnectionTile
+              icon={Briefcase}
+              name="Jobs — Jobber"
+              description="Pushes approved leads and bookings to Jobber."
+              connected={Boolean(shop?.jobber_account_name)}
+              available={jobberConfigured}
+              connectedLabel={shop?.jobber_account_name}
+              connectedDetail="Synced to Jobber"
+              connectHref="/api/jobber/auth/start"
+              popup
+              manageHref="#jobber"
+            />
+            <ConnectionTile
+              icon={House}
+              name="Jobs — Housecall Pro"
+              description="Pushes approved leads and bookings to Housecall Pro."
+              connected={Boolean(shop?.housecallpro_account_name)}
+              available={housecallProConfigured}
+              connectedLabel={shop?.housecallpro_account_name}
+              connectedDetail="Synced to Housecall Pro"
+              connectHref="/api/housecallpro/auth/start"
+              popup
+              manageHref="#housecallpro"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-8">
+        <AutonomyDefaultCard initialMode={autonomyDefault} />
+      </div>
+
+      <details className="pt-10">
+        <summary className="label-eyebrow cursor-pointer select-none text-muted-foreground/70 transition-colors hover:text-foreground">
+          Manage individual connections
+        </summary>
+        <SettingsSectionNav sections={sections} />
 
       <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
         <section id="voice">
-          <VoiceSettingsCard
-            initialAssistantId={shop?.vapi_assistant_id ?? null}
-            webhookUrl={webhookUrl}
-            webhookSecretConfigured={webhookSecretConfigured}
-            shopName={shop?.name ?? null}
-            vapiConfigured={vapiConfigured}
-          />
+          {shop ? (
+            <VoiceBuilderCard
+              shop={shop}
+              voiceOptions={voiceOptions}
+              vapiConfigured={vapiConfigured}
+            />
+          ) : null}
         </section>
 
         <section id="email">
@@ -251,7 +365,7 @@ export default async function SettingsPage({
           />
         </section>
 
-        <section id="sms">
+        <section id="sms" className="space-y-4">
           <SmsSettingsCard
             initialPhoneNumber={shop?.twilio_phone_number ?? null}
             webhookUrl={smsWebhookUrl}
@@ -260,39 +374,24 @@ export default async function SettingsPage({
               shop?.twilio_account_sid_enc && shop?.twilio_auth_token_enc
             )}
           />
+          {/* Carrier verification — only for Gradia-provisioned numbers;
+              BYO shops handle A2P on their own Twilio account. */}
+          {shop?.gradia_number_e164 &&
+          shop.twilio_phone_number === shop.gradia_number_e164 ? (
+            <A2pWizard initial={a2pState} />
+          ) : null}
         </section>
 
-        <section id="payments">
-          <StripeSettingsCard
-            connected={Boolean(shop?.stripe_account_id)}
-            chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
-            stripeConfigured={stripeConfigured}
-            callbackStatus={stripeStatus}
-          />
-        </section>
-
-        <section id="instagram">
-          <InstagramSettingsCard
-            initialPageId={shop?.instagram_page_id ?? null}
-            initialBusinessAccountId={
-              shop?.instagram_business_account_id ?? null
-            }
-            initialHandle={shop?.instagram_account_handle ?? null}
-            webhookUrl={metaWebhookUrl}
-            metaConfigured={metaConfigured}
-            pendingPages={pendingMetaPages}
-          />
-        </section>
-
-        <section id="facebook">
-          <FacebookSettingsCard
-            initialPageId={shop?.facebook_page_id ?? null}
-            initialPageName={shop?.facebook_page_name ?? null}
-            webhookUrl={metaWebhookUrl}
-            metaConfigured={metaConfigured}
-            pendingPages={pendingMetaPages}
-          />
-        </section>
+        {integrationEnabled("payments") && (
+          <section id="payments">
+            <StripeSettingsCard
+              connected={Boolean(shop?.stripe_account_id)}
+              chargesEnabled={Boolean(shop?.stripe_charges_enabled)}
+              stripeConfigured={stripeConfigured}
+              callbackStatus={stripeStatus}
+            />
+          </section>
+        )}
 
         <section id="jobber">
           <JobberSettingsCard
@@ -302,12 +401,50 @@ export default async function SettingsPage({
           />
         </section>
 
+        <section id="housecallpro">
+          <HousecallProSettingsCard
+            initialAccountName={shop?.housecallpro_account_name ?? null}
+            housecallProConfigured={housecallProConfigured}
+            callbackStatus={housecallproStatus}
+          />
+        </section>
+
         <section id="knowledge">
           <KnowledgeSettingsCard initialEntries={knowledgeEntries} />
         </section>
 
+        <section id="reviews">
+          <ReviewLinkCard initial={getReviewLink(shop)} />
+        </section>
+
+        {/* Human units lead; credits are the fine print (pricing doc copy
+            rule + UX spec Part 3). The old credit-limit editor is gone —
+            the cap IS the allowance now; packs extend it from Billing. */}
+        <section id="usage">
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="font-display text-lg tracking-tight">
+                Plan &amp; usage
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <UsageMeters usage={usageState} />
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Developer mode — off (collapsed) by default; everything
+            technical relocates here, nothing is deleted
+            (GRADIA_UX_ONBOARDING_SPEC Part 2). */}
         <section id="developer">
-          <McpTokensCard initialTokens={mcpTokens} />
+          <details className="rounded-xl border border-border/40 bg-card/30 px-4 py-1">
+            <summary className="cursor-pointer list-none py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              Developer — API tokens and integration internals
+            </summary>
+            <div className="pb-4 pt-2">
+              <McpTokensCard initialTokens={mcpTokens} />
+            </div>
+          </details>
         </section>
 
         <section id="soon">
@@ -334,6 +471,7 @@ export default async function SettingsPage({
           </Card>
         </section>
       </div>
+      </details>
     </div>
   )
 }

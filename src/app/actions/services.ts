@@ -6,6 +6,7 @@ import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
 import type { ServiceRow } from "@/lib/types/database"
+import { markVoiceStale } from "@/lib/voice-provider"
 
 const addServiceSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
@@ -64,6 +65,7 @@ export async function addService(
     return { ok: false, error: error?.message ?? "Could not save service." }
   }
 
+  await markVoiceStale(supabase, shop.id) // menu changed — re-sync voice
   revalidatePath("/onboarding")
   revalidatePath("/settings")
   return { ok: true, service: data as ServiceRow }
@@ -74,7 +76,7 @@ export async function deleteService(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!id) return { ok: false, error: "Missing service id" }
 
-  await requireShop()
+  const shop = await requireShop()
   const supabase = await createClient()
   const { error } = await supabase.from("services").delete().eq("id", id)
 
@@ -82,6 +84,7 @@ export async function deleteService(
     return { ok: false, error: error.message }
   }
 
+  await markVoiceStale(supabase, shop.id)
   revalidatePath("/onboarding")
   revalidatePath("/settings")
   return { ok: true }

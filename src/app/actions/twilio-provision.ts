@@ -11,8 +11,11 @@ import {
   searchAvailableNumbers,
   type TwilioAvailableNumber,
 } from "@/lib/twilio"
+import { getPricing } from "@/lib/pricing"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
+import { purchaseNumber } from "@/lib/telephony-provider"
 import type { ShopRow } from "@/lib/types/database"
 
 async function resolveOrigin(): Promise<string> {
@@ -44,7 +47,13 @@ async function loadShop(): Promise<ShopRow | null> {
 }
 
 export type SearchTwilioNumbersResult =
-  | { ok: true; numbers: TwilioAvailableNumber[] }
+  | {
+      ok: true
+      numbers: TwilioAvailableNumber[]
+      /** Gradia's retail monthly price in cents (from pricing_config).
+       * Null for BYO shops — their rental bills to their own account. */
+      monthlyRetailCents: number | null
+    }
   | { ok: false; error: string }
 
 /**
@@ -65,7 +74,7 @@ export async function searchTwilioNumbers(input: {
   if (!creds) {
     return {
       ok: false,
-      error: "Twilio isn't configured on the server yet.",
+      error: "We're finishing texting setup on our side — check back soon.",
     }
   }
 
@@ -76,7 +85,11 @@ export async function searchTwilioNumbers(input: {
       limit: 8,
       creds,
     })
-    return { ok: true, numbers }
+    const byo = Boolean(shop.twilio_account_sid_enc)
+    const monthlyRetailCents = byo
+      ? null
+      : (await getPricing(createServiceClient())).number_monthly.retail_cents
+    return { ok: true, numbers, monthlyRetailCents }
   } catch (err) {
     console.error("[twilio-provision] search failed:", err)
     return {
@@ -84,7 +97,7 @@ export async function searchTwilioNumbers(input: {
       error:
         err instanceof Error
           ? err.message
-          : "Couldn't reach Twilio — try again.",
+          : "Couldn't load numbers — try again.",
     }
   }
 }
@@ -94,11 +107,17 @@ export type ProvisionTwilioNumberResult =
   | { ok: false; error: string }
 
 /**
- * Buys a specific number, wires up the SmsUrl + StatusCallback to
- * point at Gradia's webhooks, and persists the result on the shop
- * row. The encoded SmsUrl is shared across all shops on Gradia's
- * master account — the inbound webhook handler routes by the `To`
- * number, so one URL is fine.
+ * Buys a specific number for the shop.
+ *
+ * White-label shops (no BYO credentials) go through the telephony seam:
+ * credit pre-check → per-shop subaccount → provision under it → metered
+ * `number_monthly` at retail → A2P gate armed. Uses the service client —
+ * the owner is already authorized via requireShop, and pricing_config /
+ * the purchase write-path are server-only.
+ *
+ * BYO shops keep the legacy path: provision on their own account, wire
+ * the SmsUrl + StatusCallback at Gradia, persist the number. (Their
+ * rental bills to their Twilio account, so no Gradia metering.)
  */
 export async function provisionTwilioNumber(input: {
   phoneNumber: string
@@ -106,11 +125,25 @@ export async function provisionTwilioNumber(input: {
   const shop = await loadShop()
   if (!shop) return { ok: false, error: "Finish onboarding first." }
 
+  const byo = Boolean(shop.twilio_account_sid_enc)
+  if (!byo) {
+    const origin = await resolveOrigin()
+    const result = await purchaseNumber({
+      supabase: createServiceClient(),
+      shop,
+      e164: input.phoneNumber,
+      origin,
+    })
+    if (!result.ok) return { ok: false, error: result.error }
+    revalidatePath("/settings")
+    return { ok: true, phoneNumber: result.e164 }
+  }
+
   const creds = resolveTwilioCredentials(shop)
   if (!creds) {
     return {
       ok: false,
-      error: "Twilio isn't configured on the server yet.",
+      error: "We're finishing texting setup on our side — check back soon.",
     }
   }
 
@@ -187,15 +220,23 @@ export async function releaseTwilioNumber(): Promise<ReleaseTwilioNumberResult> 
   if (!creds) {
     return {
       ok: false,
-      error: "Twilio isn't configured on the server yet.",
+      error: "We're finishing texting setup on our side — check back soon.",
     }
   }
 
+  // White-label numbers: resolveTwilioCredentials already returned the
+  // subaccount creds (the number only exists there), and the sid is stored.
+  const isGradiaNumber =
+    Boolean(shop.gradia_number_e164) &&
+    shop.twilio_phone_number === shop.gradia_number_e164
+
   try {
-    const sid = await findIncomingPhoneNumberSid({
-      phoneNumber: shop.twilio_phone_number,
-      creds,
-    })
+    const sid =
+      (isGradiaNumber ? shop.gradia_number_sid : null) ??
+      (await findIncomingPhoneNumberSid({
+        phoneNumber: shop.twilio_phone_number,
+        creds,
+      }))
     if (sid) {
       await releasePhoneNumber({ sid, creds })
     }
@@ -203,7 +244,16 @@ export async function releaseTwilioNumber(): Promise<ReleaseTwilioNumberResult> 
     const supabase = await createClient()
     const { error } = await supabase
       .from("shops")
-      .update({ twilio_phone_number: null })
+      .update({
+        twilio_phone_number: null,
+        ...(isGradiaNumber
+          ? {
+              gradia_number_e164: null,
+              gradia_number_sid: null,
+              a2p_status: "unregistered" as const,
+            }
+          : {}),
+      })
       .eq("id", shop.id)
     if (error) {
       return { ok: false, error: error.message }

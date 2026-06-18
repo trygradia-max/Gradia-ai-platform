@@ -1,0 +1,125 @@
+import { ArrowRight, CalendarCheck, Clock, Send, UserPlus } from "lucide-react"
+import Link from "next/link"
+
+import {
+  formatReceiptDollars,
+  formatReceiptHours,
+  getRoiReceiptForCurrentShop,
+  type RoiReceipt,
+} from "@/lib/data/roi-receipt"
+import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { cn } from "@/lib/utils"
+
+/**
+ * The ROI receipt, pinned to the top of Home (FOCUS spec NOW-3 / §4.3).
+ * Always visible — even at zero, where it shows written, we/us copy that
+ * points at the next action instead of a blank panel (BUILD_REFERENCE §1).
+ *
+ * Every figure traces to a real row (see lib/data/roi-receipt.ts). Money is
+ * "in play," not "earned"; hours are a conservative "~" estimate. The receipt
+ * under-claims on purpose — it's a trust artifact.
+ */
+export async function RoiReceipt() {
+  const receipt = await getRoiReceiptForCurrentShop()
+  return <RoiReceiptView receipt={receipt} />
+}
+
+function StatCell({
+  icon: Icon,
+  value,
+  label,
+}: {
+  icon: typeof UserPlus
+  value: string
+  label: string
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Icon className="size-4 text-primary" aria-hidden />
+      <p className="font-display text-2xl leading-none text-foreground sm:text-3xl">
+        {value}
+      </p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  )
+}
+
+export function RoiReceiptView({ receipt }: { receipt: RoiReceipt }) {
+  const { leadsCaught, messagesSent, bookingsMade, moneyInPlayCents } = receipt
+
+  return (
+    <section className="space-y-5">
+      <SectionHeader
+        eyebrow="This week"
+        title={
+          <>
+            What we did, <span className="italic">together</span>.
+          </>
+        }
+        subtitle="A running receipt of the work we caught and handled for you — counted conservatively, traced to your own records."
+      />
+
+      <div
+        className={cn(
+          "rounded-2xl border border-border/60 bg-card p-6 sm:p-8",
+          receipt.isEmpty && "bg-card/40"
+        )}
+      >
+        {receipt.isEmpty ? (
+          // Written zero-state — never a blank box.
+          <div className="space-y-1.5 py-2">
+            <p className="font-display text-xl text-foreground">
+              Nothing on the books <span className="italic">yet</span>.
+            </p>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Connect your number and Gradia starts catching leads today — the
+              moment we do, it shows up right here.
+            </p>
+            <Link
+              href="/settings#voice"
+              className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              Connect a channel
+              <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Money in play — the headline figure, framed honestly. */}
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="font-display text-4xl text-foreground sm:text-5xl">
+                {formatReceiptDollars(moneyInPlayCents)}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                in booked work this week
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-4">
+              <StatCell
+                icon={UserPlus}
+                value={String(leadsCaught)}
+                label={leadsCaught === 1 ? "lead caught" : "leads caught"}
+              />
+              <StatCell
+                icon={Send}
+                value={String(messagesSent)}
+                label={messagesSent === 1 ? "reply sent for you" : "replies sent for you"}
+              />
+              <StatCell
+                icon={CalendarCheck}
+                value={String(bookingsMade)}
+                label={bookingsMade === 1 ? "booking secured" : "bookings secured"}
+              />
+              <StatCell
+                icon={Clock}
+                value={formatReceiptHours(receipt.minutesSaved)}
+                label="of your time saved"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}

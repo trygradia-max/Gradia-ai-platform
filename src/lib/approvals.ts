@@ -15,26 +15,28 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { dispatchAgentEvent } from "@/lib/agent-events"
 import {
   createCalendarEvent,
+  deleteCalendarEvent,
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
   sendEmailMessage,
+  updateCalendarEventTime,
 } from "@/lib/aurinko"
-import { tryDecryptSecret } from "@/lib/crypto"
+import { recordUsage } from "@/lib/credits"
+import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
-import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
+import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
-import {
-  sendFacebookPageMessage,
-  sendInstagramDirectMessage,
-} from "@/lib/meta"
+import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
+import { parseVehicle } from "@/lib/vehicle"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
-import { chargeCustomerViaInvoice, type StripeInvoice } from "@/lib/stripe"
+import { smsGateForShop } from "@/lib/telephony-provider"
 import {
   defaultStatusCallbackUrl,
   resolveTwilioCredentials,
   sendOutboundSms,
 } from "@/lib/twilio"
 import type {
+  AppointmentRow,
   LeadStatus,
   PendingActionStatus,
   PendingActionType,
@@ -79,39 +81,13 @@ export type SmsProposal = {
   customer_id: string | null
   /** Source-side context — what prompted this draft (e.g. inbound message ID, agent name). */
   reason: string | null
-}
-
-export type ChargeProposal = {
-  customer_name: string
-  customer_email: string
-  customer_id: string | null
-  amount_cents: number
-  description: string
+  /** Safe-send classification (B2). Marketing needs consent/EBR; defaults transactional. */
+  category?: SendCategory
 }
 
 export type EmailProposal = {
   to_email: string
   subject: string
-  body: string
-  customer_name: string | null
-  customer_id: string | null
-  reason: string | null
-}
-
-export type InstagramDmProposal = {
-  /** Page-scoped sender id we DM back. Same value we stored as the
-   *  customer's instagram_handle on inbound. */
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  customer_id: string | null
-  reason: string | null
-}
-
-export type FacebookDmProposal = {
-  /** PSID (page-scoped sender id) we DM back. Same value we stored as
-   *  the customer's facebook_id on inbound. */
-  recipient_id: string
   body: string
   customer_name: string | null
   customer_id: string | null
@@ -147,6 +123,18 @@ export type ApprovalSuccess =
     }
   | {
       status: "executed"
+      actionType: "reschedule_appointment"
+      resultId: string
+      proposal: Record<string, unknown>
+    }
+  | {
+      status: "executed"
+      actionType: "cancel_appointment"
+      resultId: string
+      proposal: Record<string, unknown>
+    }
+  | {
+      status: "executed"
       actionType: "send_sms"
       resultId: string
       proposal: SmsProposal
@@ -154,30 +142,9 @@ export type ApprovalSuccess =
     }
   | {
       status: "executed"
-      actionType: "charge_customer"
-      resultId: string
-      proposal: ChargeProposal
-      invoiceUrl: string | null
-    }
-  | {
-      status: "executed"
       actionType: "send_email"
       resultId: string
       proposal: EmailProposal
-    }
-  | {
-      status: "executed"
-      actionType: "send_instagram_dm"
-      resultId: string
-      proposal: InstagramDmProposal
-      messageId: string | null
-    }
-  | {
-      status: "executed"
-      actionType: "send_facebook_dm"
-      resultId: string
-      proposal: FacebookDmProposal
-      messageId: string | null
     }
   | { status: "already_decided" }
 
@@ -196,20 +163,15 @@ export type DecisionSuccess =
   | { status: "claimed"; actionType: "send_sms"; proposal: SmsProposal }
   | {
       status: "claimed"
-      actionType: "charge_customer"
-      proposal: ChargeProposal
+      actionType: "reschedule_appointment"
+      proposal: Record<string, unknown>
+    }
+  | {
+      status: "claimed"
+      actionType: "cancel_appointment"
+      proposal: Record<string, unknown>
     }
   | { status: "claimed"; actionType: "send_email"; proposal: EmailProposal }
-  | {
-      status: "claimed"
-      actionType: "send_instagram_dm"
-      proposal: InstagramDmProposal
-    }
-  | {
-      status: "claimed"
-      actionType: "send_facebook_dm"
-      proposal: FacebookDmProposal
-    }
   | { status: "already_decided" }
 
 export type DecisionResult =
@@ -277,6 +239,10 @@ async function executeCreateLead(
     }
   }
 
+  // Structured vehicle (L3) — parse car_info once, store on the lead and carry
+  // to the customer record if it has none yet.
+  const vehicle = parseVehicle(proposal.car_info)
+
   const { data: created, error: insertErr } = await supabase
     .from("leads")
     .insert({
@@ -285,6 +251,10 @@ async function executeCreateLead(
       customer_name: proposal.customer_name,
       phone: proposal.phone,
       car_info: proposal.car_info,
+      vehicle_make: vehicle.make,
+      vehicle_model: vehicle.model,
+      vehicle_year: vehicle.year,
+      vehicle_color: vehicle.color,
       pin_notes: proposal.pin_notes,
       status: proposal.status,
     })
@@ -296,14 +266,28 @@ async function executeCreateLead(
     return { ok: false, error: insertErr?.message ?? "Lead insert failed" }
   }
 
+  if (vehicle.make) {
+    await supabase
+      .from("customers")
+      .update({
+        vehicle_make: vehicle.make,
+        vehicle_model: vehicle.model,
+        vehicle_year: vehicle.year,
+        vehicle_color: vehicle.color,
+      })
+      .eq("id", customerResult.customer.id)
+      .is("vehicle_make", null)
+  }
+
   await supabase
     .from("pending_actions")
     .update({ result_id: created.id })
     .eq("id", claimed.id)
 
-  // Best-effort Jobber push. Never blocks the approval.
+  // Best-effort CRM push (Jobber, Housecall Pro, …). Never blocks the
+  // approval; the seam pushes to every connected CRM independently.
   try {
-    await pushLeadToJobber({
+    await pushLeadToCrm({
       supabase,
       shopId: claimed.shop_id,
       customerId: customerResult.customer.id,
@@ -311,7 +295,7 @@ async function executeCreateLead(
       phone: proposal.phone || null,
     })
   } catch (err) {
-    console.warn("[approvals] Jobber lead push failed:", err)
+    console.warn("[approvals] CRM lead push failed:", err)
   }
 
   return {
@@ -408,16 +392,14 @@ export async function executeApproval(
       return executeAddNote(supabase, claimed)
     case "book_appointment":
       return executeBookAppointment(supabase, claimed)
+    case "reschedule_appointment":
+      return executeRescheduleAppointment(supabase, claimed)
+    case "cancel_appointment":
+      return executeCancelAppointment(supabase, claimed)
     case "send_sms":
       return executeSendSms(supabase, claimed)
-    case "charge_customer":
-      return executeChargeCustomer(supabase, claimed)
     case "send_email":
       return executeSendEmail(supabase, claimed)
-    case "send_instagram_dm":
-      return executeSendInstagramDm(supabase, claimed)
-    case "send_facebook_dm":
-      return executeSendFacebookDm(supabase, claimed)
     default:
       await rollbackClaim(supabase, claimed.id)
       return {
@@ -437,6 +419,217 @@ async function loadShopWithToken(
     .eq("id", shopId)
     .maybeSingle()
   return (data as ShopRow | null) ?? null
+}
+
+type AppointmentChangeProposal = {
+  appointment_id?: string | null
+  current_scheduled_at?: string | null
+  service?: string | null
+  customer_name?: string | null
+  phone?: string | null
+  new_when?: string | null
+  iso_new_start_time?: string | null
+  reason?: string | null
+}
+
+async function loadAppointmentForChange(
+  supabase: SupabaseClient,
+  shopId: string,
+  proposal: AppointmentChangeProposal
+): Promise<AppointmentRow | null> {
+  if (!proposal.appointment_id) return null
+  const { data } = await supabase
+    .from("appointments")
+    .select("*")
+    .eq("shop_id", shopId)
+    .eq("id", proposal.appointment_id)
+    .maybeSingle()
+  return (data as AppointmentRow | null) ?? null
+}
+
+/**
+ * Reschedule executor (ALWAYS_HITL — runs only on human approve). Moves
+ * the calendar event when one is linked, then the appointments row. Needs
+ * a parseable new time — without one the approver edits the card first.
+ */
+async function executeRescheduleAppointment(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as AppointmentChangeProposal
+
+  const newStart = proposal.iso_new_start_time
+    ? new Date(proposal.iso_new_start_time)
+    : null
+  if (!newStart || Number.isNaN(newStart.getTime())) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: `No exact new time on this request ("${proposal.new_when ?? "?"}") — edit it in before approving.`,
+    }
+  }
+
+  const appointment = await loadAppointmentForChange(
+    supabase,
+    claimed.shop_id,
+    proposal
+  )
+  if (!appointment) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Couldn't match this to a booking — find it in Schedule and move it there.",
+    }
+  }
+
+  const durationMinutes = appointment.duration_minutes ?? 90
+  const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000)
+
+  if (appointment.aurinko_event_id && appointment.aurinko_calendar_id) {
+    const shop = await loadShopWithToken(supabase, claimed.shop_id)
+    let accessToken: string | null = null
+    if (shop) {
+      try {
+        accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+      } catch (err) {
+        console.warn("[approvals] Aurinko token refresh failed:", err)
+      }
+    }
+    if (!accessToken) {
+      await rollbackClaim(supabase, claimed.id)
+      return {
+        ok: false,
+        error: "Calendar isn't connected — reconnect it in /settings, then approve.",
+      }
+    }
+    try {
+      await updateCalendarEventTime(
+        accessToken,
+        appointment.aurinko_calendar_id,
+        appointment.aurinko_event_id,
+        {
+          startIso: newStart.toISOString(),
+          endIso: newEnd.toISOString(),
+          timezone: appointment.timezone,
+        }
+      )
+    } catch (err) {
+      await rollbackClaim(supabase, claimed.id)
+      return {
+        ok: false,
+        error: `Calendar move failed: ${err instanceof Error ? err.message : String(err)}`,
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("appointments")
+    .update({ scheduled_at: newStart.toISOString() })
+    .eq("id", appointment.id)
+  if (error) {
+    return { ok: false, error: `Appointment update failed: ${error.message}` }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: appointment.id })
+    .eq("id", claimed.id)
+
+  await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId: appointment.customer_id,
+    channel: "voice",
+    role: "system",
+    content: `Rescheduled ${proposal.service ?? "appointment"} to ${newStart.toISOString()} (was ${proposal.current_scheduled_at ?? "?"}).`,
+    metadata: { pending_action_id: claimed.id },
+  })
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "reschedule_appointment",
+    resultId: appointment.id,
+    proposal,
+  }
+}
+
+/** Cancel executor (ALWAYS_HITL). Deletes the linked calendar event when
+ *  present, then removes the appointments row. */
+async function executeCancelAppointment(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as AppointmentChangeProposal
+
+  const appointment = await loadAppointmentForChange(
+    supabase,
+    claimed.shop_id,
+    proposal
+  )
+  if (!appointment) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: "Couldn't match this to a booking — find it in Schedule and cancel it there.",
+    }
+  }
+
+  if (appointment.aurinko_event_id && appointment.aurinko_calendar_id) {
+    const shop = await loadShopWithToken(supabase, claimed.shop_id)
+    let accessToken: string | null = null
+    if (shop) {
+      try {
+        accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
+      } catch (err) {
+        console.warn("[approvals] Aurinko token refresh failed:", err)
+      }
+    }
+    if (accessToken) {
+      try {
+        await deleteCalendarEvent(
+          accessToken,
+          appointment.aurinko_calendar_id,
+          appointment.aurinko_event_id
+        )
+      } catch (err) {
+        await rollbackClaim(supabase, claimed.id)
+        return {
+          ok: false,
+          error: `Calendar delete failed: ${err instanceof Error ? err.message : String(err)}`,
+        }
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("appointments")
+    .delete()
+    .eq("id", appointment.id)
+  if (error) {
+    return { ok: false, error: `Appointment delete failed: ${error.message}` }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: appointment.id })
+    .eq("id", claimed.id)
+
+  await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId: appointment.customer_id,
+    channel: "voice",
+    role: "system",
+    content: `Cancelled ${proposal.service ?? "appointment"} scheduled for ${proposal.current_scheduled_at ?? "?"}${proposal.reason ? ` — reason: ${proposal.reason}` : ""}.`,
+    metadata: { pending_action_id: claimed.id },
+  })
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "cancel_appointment",
+    resultId: appointment.id,
+    proposal,
+  }
 }
 
 async function executeBookAppointment(
@@ -514,6 +707,7 @@ async function executeBookAppointment(
 
   // Lead row tracks the customer relationship; appointment row tracks
   // the calendar event itself. Both link back through customer_id.
+  const vehicle = parseVehicle(proposal.car_info)
   const { data: lead, error: leadErr } = await supabase
     .from("leads")
     .insert({
@@ -522,6 +716,10 @@ async function executeBookAppointment(
       customer_name: proposal.customer_name,
       phone: proposal.phone,
       car_info: proposal.car_info,
+      vehicle_make: vehicle.make,
+      vehicle_model: vehicle.model,
+      vehicle_year: vehicle.year,
+      vehicle_color: vehicle.color,
       pin_notes: proposal.pin_notes,
       status: "booked",
     })
@@ -531,6 +729,26 @@ async function executeBookAppointment(
   if (leadErr || !lead) {
     await rollbackClaim(supabase, claimed.id)
     return { ok: false, error: leadErr?.message ?? "Lead insert failed" }
+  }
+
+  // L3: advance the customer's last-visit recency (excludes them from win-back
+  // for a while), and carry vehicle to the customer record if it has none.
+  await supabase
+    .from("customers")
+    .update({ last_visit_at: start.toISOString() })
+    .eq("id", customerResult.customer.id)
+    .or(`last_visit_at.is.null,last_visit_at.lt.${start.toISOString()}`)
+  if (vehicle.make) {
+    await supabase
+      .from("customers")
+      .update({
+        vehicle_make: vehicle.make,
+        vehicle_model: vehicle.model,
+        vehicle_year: vehicle.year,
+        vehicle_color: vehicle.color,
+      })
+      .eq("id", customerResult.customer.id)
+      .is("vehicle_make", null)
   }
 
   const { data: appointment } = await supabase
@@ -567,12 +785,12 @@ async function executeBookAppointment(
     )
   }
 
-  // Best-effort Jobber push — find-or-create the client + create a
-  // request with the agreed time. Failures never roll back the
-  // booking; logs only.
+  // Best-effort CRM push — find-or-create the customer + create a
+  // job/request with the agreed time in every connected CRM. Failures
+  // never roll back the booking; logs only.
   if (appointmentId) {
     try {
-      await pushBookingToJobber({
+      await pushBookingToCrm({
         supabase,
         shopId: claimed.shop_id,
         appointmentId,
@@ -585,7 +803,7 @@ async function executeBookAppointment(
         carInfo: proposal.car_info,
       })
     } catch (err) {
-      console.warn("[approvals] Jobber booking push failed:", err)
+      console.warn("[approvals] CRM booking push failed:", err)
     }
   }
 
@@ -604,7 +822,7 @@ async function executeBookAppointment(
         serviceName: proposal.service,
         isoStartTime: start.toISOString(),
         timezone: proposal.timezone,
-        appointmentId: null,
+        appointmentId,
       },
       supabase
     )
@@ -708,6 +926,26 @@ async function executeSendSms(
     }
   }
 
+  // A2P gate — a Gradia-provisioned number can't text until carriers
+  // approve its campaign. Enforced here at the send boundary, in code.
+  const smsGate = smsGateForShop(shop, shop.twilio_phone_number)
+  if (!smsGate.allowed) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: smsGate.reason }
+  }
+
+  // Safe-send policy (B2): quiet hours + opt-out + marketing consent. A held
+  // send is rolled back to staged so it can go out in-window later.
+  const policy = await evaluateSmsSendPolicy(supabase, shop, {
+    toPhone: proposal.to_phone,
+    customerId: proposal.customer_id ?? null,
+    category: proposal.category ?? "transactional",
+  })
+  if (!policy.allowed) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: policy.reason }
+  }
+
   let sendResult
   try {
     sendResult = await sendOutboundSms({
@@ -760,6 +998,20 @@ async function executeSendSms(
     .update({ result_id: resultId })
     .eq("id", claimed.id)
 
+  // Locked menu: 4 credits per SMS segment, metered on send.
+  {
+    const segments = smsSegments(proposal.body)
+    const priced = priceUsage(await getPricing(supabase), "sms_segment", segments)
+    await recordUsage(supabase, claimed.shop_id, "sms_segment", {
+      quantity: segments,
+      credits: priced.credits,
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+      vendorRef: sendResult.messageSid,
+      refId: claimed.id,
+    })
+  }
+
   return {
     ok: true,
     status: "executed",
@@ -767,86 +1019,6 @@ async function executeSendSms(
     resultId,
     proposal,
     messageSid: sendResult.messageSid,
-  }
-}
-
-async function executeChargeCustomer(
-  supabase: SupabaseClient,
-  claimed: ClaimedAction
-): Promise<ApprovalResult> {
-  const proposal = claimed.payload as unknown as ChargeProposal
-
-  if (!proposal.customer_email?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        "Charge needs the customer's email — open the editor and add it before approving.",
-    }
-  }
-  if (!proposal.amount_cents || proposal.amount_cents <= 0) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: "Charge amount must be greater than zero." }
-  }
-
-  const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  if (!shop?.stripe_account_id || !shop.stripe_charges_enabled) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        "Finish Stripe onboarding in /settings before approving any charge.",
-    }
-  }
-
-  let invoice: StripeInvoice
-  try {
-    invoice = await chargeCustomerViaInvoice({
-      stripeAccount: shop.stripe_account_id,
-      customerEmail: proposal.customer_email,
-      customerName: proposal.customer_name || null,
-      amountCents: Math.round(proposal.amount_cents),
-      description: proposal.description?.trim() || "Detailing service",
-    })
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        err instanceof Error ? `Stripe: ${err.message}` : "Stripe charge failed.",
-    }
-  }
-
-  // Log on the customer's timeline so it shows up in shared memory.
-  await recordInteraction(supabase, {
-    shopId: claimed.shop_id,
-    customerId: proposal.customer_id,
-    channel: "note",
-    role: "gradia",
-    content: `Sent invoice for $${(proposal.amount_cents / 100).toFixed(2)} — ${
-      proposal.description?.trim() || "detailing service"
-    }`,
-    metadata: {
-      stripe_invoice_id: invoice.id,
-      stripe_invoice_number: invoice.number,
-      stripe_invoice_url: invoice.hosted_invoice_url,
-      amount_cents: proposal.amount_cents,
-      pending_action_id: claimed.id,
-    },
-  })
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: invoice.id })
-    .eq("id", claimed.id)
-
-  return {
-    ok: true,
-    status: "executed",
-    actionType: "charge_customer",
-    resultId: invoice.id,
-    proposal,
-    invoiceUrl: invoice.hosted_invoice_url,
   }
 }
 
@@ -935,174 +1107,23 @@ async function executeSendEmail(
     .update({ result_id: resultId })
     .eq("id", claimed.id)
 
+  // Locked menu: 1 credit per email send.
+  {
+    const priced = priceUsage(await getPricing(supabase), "email_send", 1)
+    await recordUsage(supabase, claimed.shop_id, "email_send", {
+      credits: priced.credits,
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+      refId: claimed.id,
+    })
+  }
+
   return {
     ok: true,
     status: "executed",
     actionType: "send_email",
     resultId,
     proposal,
-  }
-}
-
-async function executeSendInstagramDm(
-  supabase: SupabaseClient,
-  claimed: ClaimedAction
-): Promise<ApprovalResult> {
-  const proposal = claimed.payload as unknown as InstagramDmProposal
-
-  if (!proposal.recipient_id?.trim() || !proposal.body?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: "IG DM needs both recipient and body." }
-  }
-
-  const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  const pageToken = tryDecryptSecret(shop?.instagram_page_access_token_enc)
-  if (!shop || !pageToken) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error: "Connect Instagram in /settings before approving DMs.",
-    }
-  }
-
-  let sentId: string | null
-  try {
-    const sent = await sendInstagramDirectMessage({
-      pageAccessToken: pageToken,
-      recipientId: proposal.recipient_id,
-      text: proposal.body,
-    })
-    sentId = sent.messageId
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? `Meta: ${err.message}`
-          : "IG DM send failed.",
-    }
-  }
-
-  // Resolve the customer FK (best-effort). The recipient_id IS the
-  // page-scoped sender id we stored in customers.instagram_handle on
-  // inbound, so we can look it up directly.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      instagramHandle: proposal.recipient_id,
-    })
-    if (customer) customerId = customer.id
-  }
-
-  const interaction = await recordInteraction(supabase, {
-    shopId: claimed.shop_id,
-    customerId,
-    channel: "instagram",
-    role: "gradia",
-    content: proposal.body,
-    metadata: {
-      direction: "outbound",
-      meta_message_id: sentId,
-      recipient_id: proposal.recipient_id,
-      pending_action_id: claimed.id,
-      reason: proposal.reason ?? null,
-    },
-  })
-
-  const resultId = interaction.ok ? interaction.id : (sentId ?? claimed.id)
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: resultId })
-    .eq("id", claimed.id)
-
-  return {
-    ok: true,
-    status: "executed",
-    actionType: "send_instagram_dm",
-    resultId,
-    proposal,
-    messageId: sentId,
-  }
-}
-
-async function executeSendFacebookDm(
-  supabase: SupabaseClient,
-  claimed: ClaimedAction
-): Promise<ApprovalResult> {
-  const proposal = claimed.payload as unknown as FacebookDmProposal
-
-  if (!proposal.recipient_id?.trim() || !proposal.body?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: "FB DM needs both recipient and body." }
-  }
-
-  const shop = await loadShopWithToken(supabase, claimed.shop_id)
-  const pageToken = tryDecryptSecret(shop?.facebook_page_access_token_enc)
-  if (!shop || !pageToken) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error: "Connect Facebook in /settings before approving DMs.",
-    }
-  }
-
-  let sentId: string | null
-  try {
-    const sent = await sendFacebookPageMessage({
-      pageAccessToken: pageToken,
-      recipientId: proposal.recipient_id,
-      text: proposal.body,
-    })
-    sentId = sent.messageId
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error:
-        err instanceof Error ? `Meta: ${err.message}` : "FB DM send failed.",
-    }
-  }
-
-  // recipient_id IS the PSID we stored as customers.facebook_id on inbound.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      facebookId: proposal.recipient_id,
-    })
-    if (customer) customerId = customer.id
-  }
-
-  const interaction = await recordInteraction(supabase, {
-    shopId: claimed.shop_id,
-    customerId,
-    channel: "facebook",
-    role: "gradia",
-    content: proposal.body,
-    metadata: {
-      direction: "outbound",
-      meta_message_id: sentId,
-      recipient_id: proposal.recipient_id,
-      pending_action_id: claimed.id,
-      reason: proposal.reason ?? null,
-    },
-  })
-
-  const resultId = interaction.ok ? interaction.id : (sentId ?? claimed.id)
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: resultId })
-    .eq("id", claimed.id)
-
-  return {
-    ok: true,
-    status: "executed",
-    actionType: "send_facebook_dm",
-    resultId,
-    proposal,
-    messageId: sentId,
   }
 }
 
@@ -1136,12 +1157,19 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         actionType: "send_sms",
         proposal: claimed.payload as unknown as SmsProposal,
       }
-    case "charge_customer":
+    case "reschedule_appointment":
       return {
         ok: true,
         status: "claimed",
-        actionType: "charge_customer",
-        proposal: claimed.payload as unknown as ChargeProposal,
+        actionType: "reschedule_appointment",
+        proposal: claimed.payload as unknown as Record<string, unknown>,
+      }
+    case "cancel_appointment":
+      return {
+        ok: true,
+        status: "claimed",
+        actionType: "cancel_appointment",
+        proposal: claimed.payload as unknown as Record<string, unknown>,
       }
     case "send_email":
       return {
@@ -1149,20 +1177,6 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
         status: "claimed",
         actionType: "send_email",
         proposal: claimed.payload as unknown as EmailProposal,
-      }
-    case "send_instagram_dm":
-      return {
-        ok: true,
-        status: "claimed",
-        actionType: "send_instagram_dm",
-        proposal: claimed.payload as unknown as InstagramDmProposal,
-      }
-    case "send_facebook_dm":
-      return {
-        ok: true,
-        status: "claimed",
-        actionType: "send_facebook_dm",
-        proposal: claimed.payload as unknown as FacebookDmProposal,
       }
     default:
       return {

@@ -28,9 +28,16 @@ import {
   type ChatMessage,
 } from "@/lib/bi-agent"
 import {
+  checkFeatureAccess,
+  loadShopCreditFields,
+  recordUsage,
+} from "@/lib/credits"
+import {
   appendMessage,
   ensureConversation,
 } from "@/lib/data/bi-conversations"
+import { checkRateLimit } from "@/lib/rate-limit"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -99,6 +106,36 @@ export async function POST(request: Request) {
 
   const supabase = await createClient()
 
+  // Fail-closed: an inactive plan or an exhausted credit balance shuts the
+  // Gradia Agent / Ask Gradia surface off before we run a single LLM turn.
+  const creditFields = await loadShopCreditFields(supabase, shop.id)
+  if (!creditFields) {
+    return Response.json(
+      { ok: false, error: "We need to set up our shop first." },
+      { status: 403 }
+    )
+  }
+  const access = await checkFeatureAccess(supabase, creditFields)
+  if (!access.ok) {
+    return Response.json(
+      { ok: false, error: access.reason },
+      { status: access.status }
+    )
+  }
+
+  // Burst guard — smooth a hot loop before it hammers our vendor or burns the
+  // shop's allowance. The credit gate above is the hard cost ceiling.
+  const burst = await checkRateLimit(shop.id, "bi_chat")
+  if (!burst.allowed) {
+    return Response.json(
+      {
+        ok: false,
+        error: "One thing at a time — give us a few seconds and ask again.",
+      },
+      { status: 429, headers: { "Retry-After": String(burst.resetInSeconds) } }
+    )
+  }
+
   // Resolve / create the conversation BEFORE streaming so we know the
   // ID to emit on the wire and so the user's turn lands even if the
   // agent errors out.
@@ -162,6 +199,15 @@ export async function POST(request: Request) {
             shopId: shop.id,
             role: "assistant",
             content: assistantText.trim(),
+          })
+          // Locked menu: 7 credits per completed Ask Gradia answer.
+          // Errored/empty turns are never metered (trust rule).
+          const priced = priceUsage(await getPricing(supabase), "bi_answer", 1)
+          await recordUsage(supabase, shop.id, "bi_answer", {
+            credits: priced.credits,
+            wholesaleCost: priced.wholesale_cost,
+            retailCost: priced.retail_cost,
+            refId: conversationId,
           })
         }
       } catch (err) {

@@ -2,8 +2,6 @@
 
 import * as React from "react"
 import {
-  AtSign,
-  Globe,
   Mail,
   MessageSquare,
   Phone,
@@ -43,16 +41,6 @@ const CHANNEL_META: Record<
     icon: Mail,
     label: "Email",
     tile: "bg-sky-500/12 text-sky-500 ring-sky-500/25 dark:text-sky-400",
-  },
-  instagram: {
-    icon: AtSign,
-    label: "Instagram",
-    tile: "bg-pink-500/12 text-pink-500 ring-pink-500/25 dark:text-pink-400",
-  },
-  facebook: {
-    icon: Globe,
-    label: "Facebook",
-    tile: "bg-indigo-500/12 text-indigo-500 ring-indigo-500/25 dark:text-indigo-400",
   },
   web: {
     icon: Sparkles,

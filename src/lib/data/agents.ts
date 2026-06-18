@@ -1,3 +1,4 @@
+import { agentEnabled } from "@/lib/features"
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
 import type {
@@ -22,7 +23,6 @@ export type Agent = {
     | "phone"
     | "mail"
     | "sms"
-    | "instagram"
     | "calendar"
     | "billing"
     | "memory"
@@ -92,29 +92,6 @@ function buildAgents(shop: ShopRow): Agent[] {
     },
   ]
 
-  // ---- Instagram DM agent ----
-  const instagramConnected = Boolean(
-    shop.instagram_page_id && shop.instagram_page_access_token_enc
-  )
-  const metaConfigured =
-    envHas("META_APP_SECRET") && envHas("META_WEBHOOK_VERIFY_TOKEN")
-  const instagramPrereqs: AgentPrerequisite[] = [
-    {
-      label: "Instagram Page + access token connected in /settings",
-      done: instagramConnected,
-      ctaHref: SETTINGS,
-      ctaLabel: instagramConnected ? undefined : "Connect Instagram",
-    },
-    {
-      label: "Meta App secret + verify token on server",
-      done: metaConfigured,
-    },
-    {
-      label: "Anthropic key on server (classifier)",
-      done: anthropicReady,
-    },
-  ]
-
   // ---- SMS agent ----
   const smsPrereqs: AgentPrerequisite[] = [
     {
@@ -175,7 +152,7 @@ function buildAgents(shop: ShopRow): Agent[] {
     },
   ]
 
-  return [
+  const agents: Agent[] = [
     {
       id: "voice",
       name: "Voice receptionist",
@@ -223,22 +200,6 @@ function buildAgents(shop: ShopRow): Agent[] {
       ],
       status: status(smsPrereqs),
       prerequisites: smsPrereqs,
-    },
-    {
-      id: "instagram",
-      name: "Instagram DM agent",
-      iconKey: "instagram",
-      oneLiner: "Catches inbound DMs as they land, files leads for our review.",
-      description:
-        "When customers slide into our IG DMs, Gradia classifies the message, flags real inquiries with the cross-channel context we have, and stages them as approval cards. Outbound DM replies are queued for a follow-up build.",
-      capabilities: [
-        "Verifies Meta's X-Hub-Signature-256 on every webhook delivery",
-        "Skips echoes — outbound copies of our own DMs don't loop back as leads",
-        "Records every DM in the shared memory layer (channel=instagram)",
-        "Dedups customers by their page-scoped IG sender id",
-      ],
-      status: status(instagramPrereqs),
-      prerequisites: instagramPrereqs,
     },
     {
       id: "booking",
@@ -289,6 +250,7 @@ function buildAgents(shop: ShopRow): Agent[] {
       prerequisites: memoryPrereqs,
     },
   ]
+  return agents.filter((agent) => agentEnabled(agent.id))
 }
 
 export async function getAgentsForCurrentShop(): Promise<Agent[]> {

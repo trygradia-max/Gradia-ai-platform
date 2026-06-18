@@ -14,7 +14,9 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 
-const STRIPE_API_BASE = "https://api.stripe.com/v1"
+// Env-overridable so tests can point the executor at a mock server.
+const STRIPE_API_BASE =
+  process.env.STRIPE_API_BASE?.trim() || "https://api.stripe.com/v1"
 const STRIPE_API_VERSION = "2024-06-20"
 
 const WEBHOOK_TOLERANCE_SECONDS = 300
@@ -210,106 +212,6 @@ export async function createAccountSession(input: {
   })
 }
 
-// ---------- Customers (on the connected account) ----------
-
-type StripeListResponse<T> = { data: T[]; has_more: boolean }
-
-export type StripeCustomer = {
-  id: string
-  email: string | null
-  name: string | null
-}
-
-export async function findOrCreateStripeCustomer(input: {
-  stripeAccount: string
-  email: string
-  name: string | null
-}): Promise<StripeCustomer> {
-  const list = await stripeFetch<StripeListResponse<StripeCustomer>>({
-    method: "GET",
-    path: "/customers",
-    body: { email: input.email, limit: 1 },
-    stripeAccount: input.stripeAccount,
-  })
-  if (list.data.length > 0) return list.data[0]
-
-  return stripeFetch<StripeCustomer>({
-    method: "POST",
-    path: "/customers",
-    body: { email: input.email, name: input.name ?? undefined },
-    stripeAccount: input.stripeAccount,
-  })
-}
-
-// ---------- Invoice charge ----------
-
-export type StripeInvoice = {
-  id: string
-  status: string
-  hosted_invoice_url: string | null
-  number: string | null
-  total: number
-}
-
-/**
- * One-shot "charge $X" via a sent invoice:
- *   1. Ensure a Stripe customer exists on the connected account.
- *   2. Stage an invoice item (the line we're charging for).
- *   3. Create an invoice that pulls in pending items, with
- *      collection_method=send_invoice so Stripe emails the customer.
- *   4. Send it — Stripe auto-finalizes and emails the hosted-payment URL.
- */
-export async function chargeCustomerViaInvoice(input: {
-  stripeAccount: string
-  customerEmail: string
-  customerName: string | null
-  amountCents: number
-  description: string
-  daysUntilDue?: number
-}): Promise<StripeInvoice> {
-  if (input.amountCents <= 0) {
-    throw new StripeError(400, "Charge amount must be greater than zero.")
-  }
-
-  const customer = await findOrCreateStripeCustomer({
-    stripeAccount: input.stripeAccount,
-    email: input.customerEmail,
-    name: input.customerName,
-  })
-
-  await stripeFetch({
-    method: "POST",
-    path: "/invoiceitems",
-    body: {
-      customer: customer.id,
-      amount: input.amountCents,
-      currency: "usd",
-      description: input.description,
-    },
-    stripeAccount: input.stripeAccount,
-  })
-
-  const invoice = await stripeFetch<StripeInvoice>({
-    method: "POST",
-    path: "/invoices",
-    body: {
-      customer: customer.id,
-      collection_method: "send_invoice",
-      days_until_due: input.daysUntilDue ?? 7,
-      pending_invoice_items_behavior: "include",
-    },
-    stripeAccount: input.stripeAccount,
-  })
-
-  // /send finalizes + emails. Returns the updated invoice with
-  // hosted_invoice_url populated.
-  return stripeFetch<StripeInvoice>({
-    method: "POST",
-    path: `/invoices/${encodeURIComponent(invoice.id)}/send`,
-    stripeAccount: input.stripeAccount,
-  })
-}
-
 // ---------- Listing paid invoices (backfill) ----------
 
 export type StripePaidInvoice = {
@@ -359,6 +261,169 @@ export async function* iteratePaidInvoices(
     if (!page.has_more || page.data.length === 0) break
     startingAfter = page.data[page.data.length - 1].id
   }
+}
+
+// ---------- Subscription (platform-side: the Gradia plan) ----------
+
+function subscriptionPriceId(): string {
+  const p = process.env.STRIPE_PRICE_ID?.trim()
+  if (!p) {
+    throw new StripeError(500, "STRIPE_PRICE_ID is not configured")
+  }
+  return p
+}
+
+export type StripeCheckoutSession = {
+  id: string
+  url: string | null
+}
+
+/** Voice Receptionist add-on price (+$29/mo, second item on the same
+ *  subscription). Null when not configured — voice purchase paths
+ *  surface a clear error instead of a broken checkout. */
+export function voiceAddonPriceId(): string | null {
+  return process.env.STRIPE_PRICE_VOICE_ADDON?.trim() || null
+}
+
+function packPriceId(pack: "credit" | "minute"): string {
+  const p =
+    pack === "credit"
+      ? process.env.STRIPE_PRICE_CREDIT_PACK?.trim()
+      : process.env.STRIPE_PRICE_MINUTE_PACK?.trim()
+  if (!p) {
+    throw new StripeError(
+      500,
+      `STRIPE_PRICE_${pack === "credit" ? "CREDIT" : "MINUTE"}_PACK is not configured`
+    )
+  }
+  return p
+}
+
+/**
+ * Creates a Checkout Session for the Gradia subscription on the PLATFORM
+ * account (no Stripe-Account header) — distinct from the Connect flow that
+ * charges the detailer's own customers. Core $20/mo always; the Voice
+ * Receptionist add-on rides as a SECOND line item on the same subscription
+ * when requested (GRADIA_PRICING.md SKU model). shop_id rides along as
+ * client_reference_id + metadata so the webhook can mark the shop active.
+ */
+export async function createSubscriptionCheckoutSession(input: {
+  shopId: string
+  customerEmail?: string | null
+  successUrl: string
+  cancelUrl: string
+  includeVoiceAddon?: boolean
+}): Promise<StripeCheckoutSession> {
+  const body: Record<string, string | number | undefined> = {
+    mode: "subscription",
+    "line_items[0][price]": subscriptionPriceId(),
+    "line_items[0][quantity]": 1,
+    client_reference_id: input.shopId,
+    "metadata[shop_id]": input.shopId,
+    "subscription_data[metadata][shop_id]": input.shopId,
+    customer_email: input.customerEmail ?? undefined,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  }
+  if (input.includeVoiceAddon) {
+    const voicePrice = voiceAddonPriceId()
+    if (!voicePrice) {
+      throw new StripeError(500, "STRIPE_PRICE_VOICE_ADDON is not configured")
+    }
+    body["line_items[1][price]"] = voicePrice
+    body["line_items[1][quantity]"] = 1
+  }
+  return stripeFetch<StripeCheckoutSession>({
+    method: "POST",
+    path: "/checkout/sessions",
+    body,
+  })
+}
+
+/**
+ * One-time top-up packs ($10 credit pack / $10 minute pack). mode=payment;
+ * metadata carries shop_id + pack so the webhook can insert the
+ * credit_grant idempotently (session id = stripe_ref).
+ */
+export async function createPackCheckoutSession(input: {
+  shopId: string
+  pack: "credit" | "minute"
+  customerEmail?: string | null
+  successUrl: string
+  cancelUrl: string
+}): Promise<StripeCheckoutSession> {
+  return stripeFetch<StripeCheckoutSession>({
+    method: "POST",
+    path: "/checkout/sessions",
+    body: {
+      mode: "payment",
+      "line_items[0][price]": packPriceId(input.pack),
+      "line_items[0][quantity]": 1,
+      client_reference_id: input.shopId,
+      "metadata[shop_id]": input.shopId,
+      "metadata[pack]": input.pack,
+      customer_email: input.customerEmail ?? undefined,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+    },
+  })
+}
+
+type StripeSubscriptionItems = {
+  items?: {
+    data?: Array<{ id?: string; price?: { id?: string } }>
+  }
+}
+
+/** Reads a subscription's line items (price ids) — used to detect the
+ *  voice add-on and to find the item id for removal. */
+export async function getSubscriptionItems(
+  subscriptionId: string
+): Promise<Array<{ itemId: string; priceId: string }>> {
+  const sub = await stripeFetch<StripeSubscriptionItems>({
+    method: "GET",
+    path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+  })
+  return (sub.items?.data ?? [])
+    .filter((i): i is { id: string; price: { id: string } } =>
+      Boolean(i.id && i.price?.id)
+    )
+    .map((i) => ({ itemId: i.id, priceId: i.price.id }))
+}
+
+/** Adds the voice add-on as a second item on an existing subscription. */
+export async function addVoiceAddonItem(subscriptionId: string): Promise<void> {
+  const voicePrice = voiceAddonPriceId()
+  if (!voicePrice) {
+    throw new StripeError(500, "STRIPE_PRICE_VOICE_ADDON is not configured")
+  }
+  await stripeFetch<unknown>({
+    method: "POST",
+    path: "/subscription_items",
+    body: {
+      subscription: subscriptionId,
+      price: voicePrice,
+      quantity: 1,
+      proration_behavior: "create_prorations",
+    },
+  })
+}
+
+/** Removes the voice add-on item (the receptionist disables next-call;
+ *  the number stays reserved 30 days — handled app-side). */
+export async function removeVoiceAddonItem(
+  subscriptionId: string
+): Promise<void> {
+  const voicePrice = voiceAddonPriceId()
+  if (!voicePrice) return
+  const items = await getSubscriptionItems(subscriptionId)
+  const voiceItem = items.find((i) => i.priceId === voicePrice)
+  if (!voiceItem) return
+  await stripeFetch<unknown>({
+    method: "DELETE",
+    path: `/subscription_items/${encodeURIComponent(voiceItem.itemId)}`,
+    body: { proration_behavior: "create_prorations" },
+  })
 }
 
 // ---------- Webhook signature verification ----------

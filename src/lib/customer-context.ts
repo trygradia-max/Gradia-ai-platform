@@ -21,8 +21,6 @@ const CHANNEL_VERB: Record<InteractionChannel, string> = {
   voice: "called",
   sms: "texted",
   email: "emailed",
-  instagram: "messaged on Instagram",
-  facebook: "messaged on Facebook",
   web: "reached out on our site",
   note: "left a note",
 }

@@ -1,5 +1,7 @@
 export type LeadStatus = "new" | "quoted" | "booked"
 
+export type ShopPlan = "free" | "active" | "past_due"
+
 export type ShopRow = {
   id: string
   name: string
@@ -15,22 +17,168 @@ export type ShopRow = {
   twilio_phone_number: string | null
   twilio_account_sid_enc: string | null
   twilio_auth_token_enc: string | null
+  twilio_subaccount_sid: string | null
+  twilio_subaccount_token_enc: string | null
+  gradia_number_e164: string | null
+  gradia_number_sid: string | null
+  a2p_status: A2pStatus
+  byo_sms_verified: boolean
+  timezone: string
+  quiet_hours_start: number
+  quiet_hours_end: number
+  voice_addon: boolean
+  voice_addon_ended_at: string | null
+  voice_config: VoiceConfig
+  voice_live: boolean
+  voice_test_called_at: string | null
+  vapi_phone_number_id: string | null
+  vapi_stale: boolean
+  vapi_server_secret_enc: string | null
+  voice_minutes_budget: number | null
   stripe_account_id: string | null
   stripe_charges_enabled: boolean
-  instagram_business_account_id: string | null
-  instagram_page_id: string | null
-  instagram_page_access_token_enc: string | null
-  instagram_account_handle: string | null
-  facebook_page_id: string | null
-  facebook_page_access_token_enc: string | null
-  facebook_page_name: string | null
+  plan: ShopPlan
+  stripe_subscription_id: string | null
+  credit_limit: number
+  credit_period_start: string
   jobber_account_id: string | null
   jobber_account_name: string | null
   jobber_access_token_enc: string | null
   jobber_refresh_token_enc: string | null
   jobber_token_expires_at: string | null
+  housecallpro_account_id: string | null
+  housecallpro_account_name: string | null
+  housecallpro_access_token_enc: string | null
+  housecallpro_refresh_token_enc: string | null
+  housecallpro_token_expires_at: string | null
   settings: Record<string, unknown>
   created_at: string
+  updated_at: string
+}
+
+export type A2pStatus = "unregistered" | "pending" | "approved" | "rejected"
+
+/**
+ * Voice receptionist builder form answers (guardrailed form — never a
+ * prompt editor). The system prompt is composed server-side from
+ * persona.ts + KB + services + this config.
+ */
+export type VoiceConfig = {
+  greeting?: string | null
+  tone?: "warm" | "professional" | "playful" | null
+  voice?: string | null
+  /** After-hours behavior: read a message, or take a message (lead capture). */
+  after_hours?: "message_only" | "take_message" | null
+  hours_text?: string | null
+  /** Booking rule: stage propose_booking approvals, or read out a link. */
+  booking_mode?: "propose_booking" | "calendar_link" | null
+  calendar_link?: string | null
+  /** Transfer-to-human number for escalations. */
+  escalation_phone?: string | null
+}
+
+export type A2pRegistrationStatus =
+  | "draft"
+  | "brand_pending"
+  | "campaign_pending"
+  | "approved"
+  | "rejected"
+
+/** Owner-submitted compliance details, kept verbatim for resubmission.
+ *  has_ein forks the carrier path: true → Low-Volume Standard;
+ *  false → SOLE_PROPRIETOR (no tax ID; mobile_phone gets the OTP text). */
+export type A2pBusinessDetails = {
+  has_ein?: boolean
+  legal_name: string
+  ein: string | null
+  mobile_phone?: string | null
+  business_type: string
+  website_url: string | null
+  address: {
+    street: string
+    city: string
+    region: string
+    postal_code: string
+  }
+  contact: {
+    first_name: string
+    last_name: string
+    email: string
+    phone: string
+    job_position: string
+  }
+}
+
+export type A2pRegistrationRow = {
+  id: string
+  shop_id: string
+  status: A2pRegistrationStatus
+  business: A2pBusinessDetails
+  customer_profile_sid: string | null
+  trust_product_sid: string | null
+  brand_sid: string | null
+  messaging_service_sid: string | null
+  campaign_sid: string | null
+  failure_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type UsageEventKind =
+  | "agent_run" // legacy rows only — new writers use the menu kinds below
+  | "message" // legacy rows only
+  | "voice_minute"
+  | "sms_segment"
+  | "number_monthly"
+  | "email_send"
+  | "outreach_draft"
+  | "bi_answer"
+  | "whisper_note"
+  | "agentic_plan"
+
+export type UsageEventRow = {
+  id: string
+  shop_id: string
+  kind: UsageEventKind
+  quantity: number
+  credits: number
+  /** Vendor cost in cents (what Gradia pays). Null on legacy/LLM-only rows. */
+  wholesale_cost: number | null
+  /** Shop-facing cost in cents (what the shop pays). Null on legacy rows. */
+  retail_cost: number | null
+  /** Twilio/Vapi record id for nightly reconciliation. */
+  vendor_ref: string | null
+  ref_id: string | null
+  created_at: string
+}
+
+export type PricingKey =
+  | "number_monthly"
+  | "voice_minute"
+  | "sms_segment"
+  | "email_send"
+  | "outreach_draft"
+  | "bi_answer"
+  | "whisper_note"
+  | "agentic_plan"
+
+export type CreditGrantKind = "credit_pack" | "minute_pack" | "rollover"
+
+export type CreditGrantRow = {
+  id: string
+  shop_id: string
+  kind: CreditGrantKind
+  credits: number
+  minutes: number
+  stripe_ref: string | null
+  created_at: string
+}
+
+export type PricingConfigRow = {
+  key: PricingKey
+  wholesale_cents: number
+  retail_cents: number
+  note: string | null
   updated_at: string
 }
 
@@ -41,6 +189,10 @@ export type LeadRow = {
   customer_name: string
   phone: string
   car_info: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_year: number | null
+  vehicle_color: string | null
   pin_notes: string | null
   status: LeadStatus
   created_at: string
@@ -53,11 +205,67 @@ export type CustomerRow = {
   name: string | null
   phone: string | null
   email: string | null
-  instagram_handle: string | null
-  facebook_id: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_year: number | null
+  vehicle_color: string | null
+  last_visit_at: string | null
+  marketing_consent_at: string | null
+  marketing_consent_source: string | null
+  sms_opted_out_at: string | null
+  /** How the record was first found: import, inbound_sms, voice, manual, … */
+  source: string | null
+  /** Best evidence of the last real transaction — drives the 18-mo EBR window. */
+  last_transaction_at: string | null
+  /** Owner's manual, immediate, all-channel block. */
+  do_not_contact: boolean
   jobber_client_id: string | null
+  housecallpro_customer_id: string | null
   created_at: string
   updated_at: string
+}
+
+export type ImportSourceType =
+  | "mbox"
+  | "contacts_csv"
+  | "vcard"
+  | "gradia_history"
+
+export type ImportJobStatus =
+  | "pending"
+  | "parsing"
+  | "estimating"
+  | "extracting"
+  | "ready"
+  | "failed"
+
+export type ImportJobRow = {
+  id: string
+  shop_id: string
+  source_type: ImportSourceType
+  file_ref: string | null
+  status: ImportJobStatus
+  counts: Record<string, number>
+  error: string | null
+  estimated_credits: number | null
+  created_at: string
+  updated_at: string
+}
+
+export type ImportMessageRow = {
+  id: string
+  import_job_id: string
+  shop_id: string
+  message_id: string | null
+  from_email: string | null
+  subject: string | null
+  body_ref: string | null
+  has_list_unsubscribe: boolean
+  owner_participated: boolean
+  kept: boolean
+  drop_reason: string | null
+  extraction: Record<string, unknown> | null
+  created_at: string
 }
 
 export type ServiceRow = {
@@ -83,7 +291,12 @@ export type AppointmentRow = {
   aurinko_event_id: string | null
   timezone: string | null
   reminder_pending_action_id: string | null
+  /** Set when the customer confirmed (replied YES) — no-show ladder (NEXT-2). */
+  confirmed_at: string | null
+  /** Idempotency stamp for the confirm-by-text cron. */
+  confirm_pending_action_id: string | null
   jobber_request_id: string | null
+  housecallpro_job_id: string | null
   created_at: string
   updated_at: string
 }
@@ -92,11 +305,10 @@ export type PendingActionType =
   | "create_lead"
   | "add_note"
   | "book_appointment"
+  | "reschedule_appointment"
+  | "cancel_appointment"
   | "send_sms"
-  | "charge_customer"
   | "send_email"
-  | "send_instagram_dm"
-  | "send_facebook_dm"
 
 export type PendingActionStatus =
   | "pending"
@@ -125,8 +337,6 @@ export type InteractionChannel =
   | "voice"
   | "sms"
   | "email"
-  | "instagram"
-  | "facebook"
   | "web"
   | "note"
 
@@ -233,9 +443,12 @@ export type PaymentRow = {
 export type AgentRecipeId =
   | "lead_followup_sms"
   | "appointment_reminder_email"
+  | "appointment_reminder_sms"
   | "stale_customer_sms"
   | "payment_received_thank_you_sms"
   | "booking_approved_prep_email"
+  | "review_request_sms"
+  | "review_request_email"
 
 /** Events that can fire event-driven custom agents. */
 export type AgentEventKind = "payment_received" | "booking_approved"
@@ -253,6 +466,9 @@ export type AppointmentReminderEmailParams = {
   window_hours: number
 }
 
+/** Same window shape as the email variant — the channel differs. */
+export type AppointmentReminderSmsParams = AppointmentReminderEmailParams
+
 export type StaleCustomerSmsParams = {
   /** Customer last had any interaction at least this many days ago. */
   inactive_days: number
@@ -267,11 +483,19 @@ export type PaymentReceivedParams = Record<string, never>
 /** Same — empty params, future-proof shape. */
 export type BookingApprovedParams = Record<string, never>
 
+/** Post-job review ask. No filter params — the ask is identical for everyone
+ *  (FTC: no sentiment-gating), so there is nothing to tune per recipient. */
+export type ReviewRequestParams = Record<string, never>
+
 export type AgentRecipe =
   | { id: "lead_followup_sms"; params: LeadFollowupSmsParams }
   | {
       id: "appointment_reminder_email"
       params: AppointmentReminderEmailParams
+    }
+  | {
+      id: "appointment_reminder_sms"
+      params: AppointmentReminderSmsParams
     }
   | { id: "stale_customer_sms"; params: StaleCustomerSmsParams }
   | {
@@ -279,6 +503,8 @@ export type AgentRecipe =
       params: PaymentReceivedParams
     }
   | { id: "booking_approved_prep_email"; params: BookingApprovedParams }
+  | { id: "review_request_sms"; params: ReviewRequestParams }
+  | { id: "review_request_email"; params: ReviewRequestParams }
 
 export type AgentSchedule = {
   cadence: "hourly" | "daily" | "weekly"
@@ -286,6 +512,56 @@ export type AgentSchedule = {
   hour_of_day?: number
   /** 0-6, Sunday=0. Used for weekly. */
   day_of_week?: number
+}
+
+export type FreeformAudienceEntity = "leads" | "customers"
+
+export type FreeformChannel = "sms" | "email"
+
+/**
+ * Safe, whitelisted audience filter for free-form outreach — never raw SQL.
+ * The resolver maps each field to a constrained Supabase query, so the
+ * free-form planner can target an audience without ever executing operator
+ * (or model) supplied query text.
+ */
+export type FreeformFilters = {
+  /** leads only: target lead status */
+  lead_status?: LeadStatus
+  /** record created at least this many days ago */
+  min_age_days?: number
+  /** record created at most this many days ago */
+  max_age_days?: number
+  /** skip targets the customer contacted us within the last N days */
+  no_inbound_within_days?: number
+  /** customers only: last interaction at least this many days ago */
+  inactive_days?: number
+  /** case-insensitive keyword matched against name / vehicle / notes */
+  keyword?: string
+  /** structured vehicle make, e.g. "Tesla" (case-insensitive exact) */
+  vehicle_make?: string
+  /** structured vehicle model substring, e.g. "Model 3" */
+  vehicle_model?: string
+  /** vehicle model year at least this */
+  vehicle_year_min?: number
+  /** vehicle model year at most this */
+  vehicle_year_max?: number
+  /** customers only: no booked visit in at least this many days (or never) */
+  not_visited_in_days?: number
+  /** customers only: the recovered_customers segment — only customers brought
+   *  in by an import (source='import'). Activates the TCPA win-back gate. */
+  recovered_only?: boolean
+}
+
+export type FreeformPlan = {
+  entity: FreeformAudienceEntity
+  channel: FreeformChannel
+  filters: FreeformFilters
+  /** plain-English message intent; drafted per recipient in we/us voice */
+  message_intent: string
+  /** hard cap on recipients per run (owner-configurable; default 50) */
+  max_recipients: number
+  /** don't re-contact the same recipient within this many days */
+  cooldown_days: number
 }
 
 export type AgentConfig = {
@@ -307,6 +583,7 @@ export type AgentConfig = {
   prerequisites_needed: string[]
   human_in_the_loop_note: string
   recipe?: AgentRecipe
+  freeform?: FreeformPlan
   schedule?: AgentSchedule
 }
 

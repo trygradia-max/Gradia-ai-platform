@@ -26,8 +26,16 @@ import {
   sendPaymentReceivedNotice,
   sendPaymentRefundedNotice,
 } from "@/lib/slack"
-import { verifyStripeSignature } from "@/lib/stripe"
+import { creditsSpentThisPeriod } from "@/lib/credits"
+import { PLAN, rolloverCredits } from "@/lib/pricing"
+import {
+  getSubscriptionItems,
+  verifyStripeSignature,
+  voiceAddonPriceId,
+} from "@/lib/stripe"
 import { createServiceClient } from "@/lib/supabase/service"
+import type { ShopPlan, ShopRow } from "@/lib/types/database"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -35,6 +43,7 @@ export const maxDuration = 30
 
 type StripeInvoice = {
   id?: string
+  subscription?: string | null
   number?: string | null
   hosted_invoice_url?: string | null
   status?: string
@@ -66,11 +75,237 @@ type StripeCharge = {
   } | null
 }
 
+type StripeCheckoutSessionObj = {
+  client_reference_id?: string | null
+  subscription?: string | null
+  mode?: string | null
+  metadata?: { shop_id?: string } | null
+}
+
+type StripeSubscriptionObj = {
+  id?: string
+  status?: string
+  metadata?: { shop_id?: string } | null
+  items?: { data?: Array<{ price?: { id?: string } }> } | null
+}
+
 type StripeEvent = {
   id?: string
   type?: string
   account?: string
-  data?: { object?: StripeInvoice | StripeCharge }
+  data?: {
+    object?:
+      | StripeInvoice
+      | StripeCharge
+      | StripeCheckoutSessionObj
+      | StripeSubscriptionObj
+  }
+}
+
+function planFromSubStatus(status: string | undefined | null): ShopPlan {
+  switch (status) {
+    case "active":
+    case "trialing":
+      return "active"
+    case "past_due":
+    case "unpaid":
+      return "past_due"
+    default:
+      return "free"
+  }
+}
+
+/**
+ * Subscription lifecycle for the $20/mo Gradia plan. These are PLATFORM
+ * events (no `account` envelope), distinct from the Connect invoice/charge
+ * events below. The shop is resolved by client_reference_id (checkout) or
+ * stripe_subscription_id (updates).
+ */
+async function handleSubscriptionEvent(
+  eventType: string,
+  event: StripeEvent
+): Promise<Response> {
+  const supabase = createServiceClient()
+
+  if (eventType === "checkout.session.completed") {
+    const session = event.data?.object as StripeCheckoutSessionObj | undefined
+    if (session?.mode === "payment") {
+      return handlePackPurchase(supabase, session, event.id ?? null)
+    }
+    if (session?.mode !== "subscription") {
+      return Response.json({ ok: true, ignored: "non-subscription checkout" })
+    }
+    const shopId =
+      session.client_reference_id ?? session.metadata?.shop_id ?? null
+    if (!shopId) return Response.json({ ok: true, ignored: "no shop ref" })
+
+    // Did this checkout include the voice add-on as the second item?
+    let voiceAddon = false
+    const voicePrice = voiceAddonPriceId()
+    if (session.subscription && voicePrice) {
+      try {
+        const items = await getSubscriptionItems(session.subscription)
+        voiceAddon = items.some((i) => i.priceId === voicePrice)
+      } catch (err) {
+        console.error("[stripe webhook] items lookup failed:", err)
+      }
+    }
+
+    const { error } = await supabase
+      .from("shops")
+      .update({
+        plan: "active",
+        stripe_subscription_id: session.subscription ?? null,
+        ...(voiceAddon ? { voice_addon: true, voice_addon_ended_at: null } : {}),
+      })
+      .eq("id", shopId)
+    if (error) console.error("[stripe webhook] sub activate failed:", error)
+    revalidatePath("/billing")
+    return Response.json({ ok: true })
+  }
+
+  const sub = event.data?.object as StripeSubscriptionObj | undefined
+  if (!sub?.id) return Response.json({ ok: true, ignored: "no subscription id" })
+  const deleted = eventType === "customer.subscription.deleted"
+  const plan: ShopPlan = deleted ? "free" : planFromSubStatus(sub.status)
+
+  // Voice add-on tracking: the add-on is a second item on the same
+  // subscription (GRADIA_PRICING.md). Toggling it off disables the
+  // receptionist on the NEXT call (vapi_stale → sync PATCHes the
+  // fallback in); the number stays reserved — the 30-day release warning
+  // keys off voice_addon_ended_at.
+  const voicePrice = voiceAddonPriceId()
+  const itemPrices = (sub.items?.data ?? [])
+    .map((i) => i.price?.id)
+    .filter(Boolean)
+  const hasVoice =
+    !deleted && Boolean(voicePrice) && itemPrices.includes(voicePrice as string)
+
+  const { data: shopRow } = await supabase
+    .from("shops")
+    .select("id, voice_addon")
+    .eq("stripe_subscription_id", sub.id)
+    .maybeSingle()
+  const shop = (shopRow as { id: string; voice_addon: boolean } | null) ?? null
+
+  const update: Record<string, unknown> = { plan }
+  if (shop && itemPrices.length > 0 && voicePrice) {
+    if (hasVoice && !shop.voice_addon) {
+      update.voice_addon = true
+      update.voice_addon_ended_at = null
+      update.vapi_stale = true
+    } else if (!hasVoice && shop.voice_addon) {
+      update.voice_addon = false
+      update.voice_addon_ended_at = new Date().toISOString()
+      update.voice_live = false
+      update.vapi_stale = true
+    }
+  } else if (deleted && shop?.voice_addon) {
+    update.voice_addon = false
+    update.voice_addon_ended_at = new Date().toISOString()
+    update.voice_live = false
+    update.vapi_stale = true
+  }
+
+  const { error } = await supabase
+    .from("shops")
+    .update(update)
+    .eq("stripe_subscription_id", sub.id)
+  if (error) console.error("[stripe webhook] sub update failed:", error)
+  revalidatePath("/billing")
+  return Response.json({ ok: true })
+}
+
+/**
+ * One-time pack purchase (mode=payment, metadata.pack). The grant insert
+ * is idempotent across webhook retries — stripe_ref (session/event id)
+ * carries a partial unique index; a duplicate insert errors and is
+ * treated as already-processed.
+ */
+async function handlePackPurchase(
+  supabase: SupabaseClient,
+  session: StripeCheckoutSessionObj & { id?: string },
+  eventId: string | null
+): Promise<Response> {
+  const shopId =
+    session.client_reference_id ?? session.metadata?.shop_id ?? null
+  const pack = (session.metadata as { pack?: string } | null)?.pack ?? null
+  if (!shopId || (pack !== "credit" && pack !== "minute")) {
+    return Response.json({ ok: true, ignored: "not a pack purchase" })
+  }
+  const { error } = await supabase.from("credit_grants").insert({
+    shop_id: shopId,
+    kind: pack === "credit" ? "credit_pack" : "minute_pack",
+    credits: pack === "credit" ? PLAN.CREDIT_PACK.credits : 0,
+    minutes: pack === "minute" ? PLAN.MINUTE_PACK.minutes : 0,
+    stripe_ref: session.id ?? eventId,
+  })
+  if (error) {
+    // 23505 = duplicate stripe_ref → webhook retry, already granted.
+    if ((error as { code?: string }).code === "23505") {
+      return Response.json({ ok: true, ignored: "duplicate grant" })
+    }
+    console.error("[stripe webhook] pack grant failed:", error)
+    return Response.json({ ok: false }, { status: 500 })
+  }
+  revalidatePath("/billing")
+  return Response.json({ ok: true, granted: pack })
+}
+
+/**
+ * Platform subscription renewal (invoice.paid, no Connect account
+ * envelope): advance the credit period and apply rollover — up to 25% of
+ * unused INCLUDED credits carry one month (as a grant in the NEW period).
+ * Idempotent via the invoice id on the grant's stripe_ref.
+ */
+async function handlePlatformRenewal(
+  supabase: SupabaseClient,
+  invoice: { id?: string; subscription?: string | null }
+): Promise<Response> {
+  const subId = invoice.subscription ?? null
+  if (!subId || !invoice.id) {
+    return Response.json({ ok: true, ignored: "no platform subscription" })
+  }
+  const { data } = await supabase
+    .from("shops")
+    .select("id, plan, credit_period_start")
+    .eq("stripe_subscription_id", subId)
+    .maybeSingle()
+  const shop =
+    (data as Pick<ShopRow, "id" | "plan" | "credit_period_start"> | null) ??
+    null
+  if (!shop) return Response.json({ ok: true, ignored: "no shop for sub" })
+
+  const spent = await creditsSpentThisPeriod(supabase, shop)
+  const rollover = rolloverCredits({
+    includedCredits: PLAN.CORE_INCLUDED_CREDITS,
+    spentCredits: spent,
+  })
+
+  const now = new Date().toISOString()
+  const { error: periodError } = await supabase
+    .from("shops")
+    .update({ credit_period_start: now })
+    .eq("id", shop.id)
+  if (periodError) {
+    console.error("[stripe webhook] period advance failed:", periodError)
+    return Response.json({ ok: false }, { status: 500 })
+  }
+
+  if (rollover > 0) {
+    const { error } = await supabase.from("credit_grants").insert({
+      shop_id: shop.id,
+      kind: "rollover",
+      credits: rollover,
+      minutes: 0,
+      stripe_ref: invoice.id,
+    })
+    if (error && (error as { code?: string }).code !== "23505") {
+      console.error("[stripe webhook] rollover grant failed:", error)
+    }
+  }
+  revalidatePath("/billing")
+  return Response.json({ ok: true, rollover })
 }
 
 export async function POST(request: Request) {
@@ -93,6 +328,14 @@ export async function POST(request: Request) {
     return handleChargeRefunded(event)
   }
 
+  if (
+    eventType === "checkout.session.completed" ||
+    eventType === "customer.subscription.updated" ||
+    eventType === "customer.subscription.deleted"
+  ) {
+    return handleSubscriptionEvent(eventType, event)
+  }
+
   if (eventType !== "invoice.paid" && eventType !== "invoice.payment_failed") {
     return Response.json({ ok: true, ignored: eventType || "unknown" })
   }
@@ -103,6 +346,13 @@ export async function POST(request: Request) {
   }
 
   const supabase = createServiceClient()
+
+  // PLATFORM invoice (no Connect account envelope) = a Gradia
+  // subscription renewal → advance the credit period + apply rollover.
+  // Connect invoices (event.account set) continue below unchanged.
+  if (!event.account && eventType === "invoice.paid") {
+    return handlePlatformRenewal(supabase, invoice)
+  }
 
   // Resolve the connected account → shop up front. We'll reuse it for
   // both the interaction lookup AND the payments mirror insert.

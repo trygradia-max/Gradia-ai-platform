@@ -20,12 +20,14 @@ import {
   runCustomAgentNow,
   setCustomAgentEnabled,
 } from "@/app/actions/custom-agents"
+import { AgentModeControl } from "@/components/gradia/agent-mode-control"
 import { AgentRunsSheet } from "@/components/gradia/agent-runs-sheet"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import { PulseDot } from "@/components/gradia/motion/pulse-dot"
 import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { StatusPill } from "@/components/ui/status-pill"
+import type { AutonomyMode } from "@/lib/autonomy"
 import type {
   AgentConfig,
   CustomAgentRow,
@@ -68,9 +70,11 @@ function statsSummary(stats: Record<string, number> | null): string | null {
 export function CustomAgentCard({
   agent,
   lastRun,
+  initialMode,
 }: {
   agent: CustomAgentRow
   lastRun: CustomAgentRunRow | null
+  initialMode: AutonomyMode
 }) {
   const router = useRouter()
   const { confirm, dialog: confirmDialog } = useConfirm()
@@ -79,7 +83,7 @@ export function CustomAgentCard({
   >(null)
   const [enabled, setEnabled] = React.useState(agent.enabled)
   const config = agent.config
-  const runnable = Boolean(config.recipe?.id)
+  const runnable = Boolean(config.recipe?.id || config.freeform)
   const isLive = enabled && runnable
 
   async function handleDelete() {
@@ -116,9 +120,17 @@ export function CustomAgentCard({
       return
     }
     const stats = result.outcome.stats
-    const summary = stats?.proposed_sms
-      ? `Staged ${stats.proposed_sms} draft${stats.proposed_sms === 1 ? "" : "s"} in Approvals.`
-      : "Ran, no targets matched."
+    const auto = stats?.auto_executed ?? 0
+    const proposed =
+      (stats?.proposed_sms ?? 0) +
+      (stats?.proposed_email ?? 0) +
+      (stats?.proposed ?? 0)
+    const summary =
+      auto > 0
+        ? `Sent ${auto} automatically.`
+        : proposed > 0
+          ? `Staged ${proposed} draft${proposed === 1 ? "" : "s"} in Approvals.`
+          : "Ran — no targets matched."
     toast.success(summary)
     router.refresh()
   }
@@ -225,6 +237,13 @@ export function CustomAgentCard({
         ) : null}
 
         <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-2">
+          {runnable ? (
+            <AgentModeControl
+              agentKey={agent.id}
+              initialMode={initialMode}
+              className="mr-auto"
+            />
+          ) : null}
           <AgentRunsSheet agentId={agent.id} agentName={agent.name} />
           <Button
             type="button"
@@ -338,7 +357,10 @@ function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
             <p className="label-eyebrow text-muted-foreground/70">
               Last run
             </p>
-            <p className="text-xs tabular-nums text-muted-foreground">
+            <p
+              suppressHydrationWarning
+              className="text-xs tabular-nums text-muted-foreground"
+            >
               {relativeAgo(run.created_at)}
             </p>
           </div>

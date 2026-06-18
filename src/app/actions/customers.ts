@@ -9,15 +9,45 @@ import type { CustomerRow } from "@/lib/types/database"
 
 const CANDIDATE_LIMIT = 100
 
+const dncSchema = z.object({
+  customer_id: z.string().uuid(),
+  value: z.boolean(),
+})
+
+export type SetDoNotContactResult =
+  | { ok: true; value: boolean }
+  | { ok: false; error: string }
+
+/**
+ * Owner's manual do-not-contact switch (GRADIA_CUSTOMER_RECOVERY_SPEC §3.2 —
+ * "honored ≤10 business days; the flag is immediate"). When on, the audience
+ * resolver hard-blocks this customer from every outreach, recovered or not.
+ */
+export async function setCustomerDoNotContact(
+  input: z.infer<typeof dncSchema>
+): Promise<SetDoNotContactResult> {
+  const parsed = dncSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: "Bad input." }
+
+  await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from("customers")
+    .update({ do_not_contact: parsed.data.value })
+    .eq("id", parsed.data.customer_id)
+    .eq("shop_id", shop.id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/customers/${parsed.data.customer_id}`)
+  revalidatePath("/customers")
+  return { ok: true, value: parsed.data.value }
+}
+
 export type MergeCandidate = Pick<
   CustomerRow,
-  | "id"
-  | "name"
-  | "phone"
-  | "email"
-  | "instagram_handle"
-  | "facebook_id"
-  | "updated_at"
+  "id" | "name" | "phone" | "email" | "updated_at"
 >
 
 /**
@@ -37,7 +67,7 @@ export async function listMergeCandidates(input: {
   let req = supabase
     .from("customers")
     .select(
-      "id, name, phone, email, instagram_handle, facebook_id, updated_at"
+      "id, name, phone, email, updated_at"
     )
     .eq("shop_id", shop.id)
     .neq("id", input.excludeId)
@@ -51,8 +81,6 @@ export async function listMergeCandidates(input: {
         `name.ilike.${pattern}`,
         `phone.ilike.${pattern}`,
         `email.ilike.${pattern}`,
-        `instagram_handle.ilike.${pattern}`,
-        `facebook_id.ilike.${pattern}`,
       ].join(",")
     )
   }
@@ -175,8 +203,6 @@ export async function mergeCustomers(
       name: null,
       phone: null,
       email: null,
-      instagram_handle: null,
-      facebook_id: null,
     })
     .eq("id", loser.id)
 
@@ -186,14 +212,6 @@ export async function mergeCustomers(
     { field: "name", value: winner.name ? null : loser.name },
     { field: "phone", value: winner.phone ? null : loser.phone },
     { field: "email", value: winner.email ? null : loser.email },
-    {
-      field: "instagram_handle",
-      value: winner.instagram_handle ? null : loser.instagram_handle,
-    },
-    {
-      field: "facebook_id",
-      value: winner.facebook_id ? null : loser.facebook_id,
-    },
   ]
 
   for (const { field, value } of absorbCandidates) {

@@ -8,6 +8,7 @@ import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
+import { smsGateForShop } from "@/lib/telephony-provider"
 import {
   defaultStatusCallbackUrl,
   resolveTwilioCredentials,
@@ -144,6 +145,12 @@ export async function sendOperatorSms(
       ok: false,
       error: "Connect a Twilio number in /settings first.",
     }
+  }
+
+  // A2P gate — Gradia-provisioned numbers can't text until carrier approval.
+  const smsGate = smsGateForShop(shop, shop.twilio_phone_number)
+  if (!smsGate.allowed) {
+    return { ok: false, error: smsGate.reason }
   }
 
   let sendResult

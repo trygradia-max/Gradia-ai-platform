@@ -3,15 +3,23 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import {
+  previewFreeformPlan,
+  type FreeformPreview,
+} from "@/lib/agent-audience"
 import { planAgentFromProblem } from "@/lib/agent-planner"
 import { listAgentRunsForShop } from "@/lib/agent-runs"
+import { recordUsage } from "@/lib/credits"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { runCustomAgent, type AgentRunOutcome } from "@/lib/agent-runtime"
+import { FEATURES } from "@/lib/features"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type {
   AgentConfig,
   CustomAgentRow,
   CustomAgentRunRow,
+  ShopRow,
 } from "@/lib/types/database"
 
 export type PlanAgentResult =
@@ -20,8 +28,60 @@ export type PlanAgentResult =
 
 export async function planAgent(problem: string): Promise<PlanAgentResult> {
   await requireUser()
-  await requireShop()
-  return planAgentFromProblem(problem)
+  const shop = await requireShop()
+  const result = await planAgentFromProblem(problem)
+  if (result.ok) {
+    // Locked menu: 10 credits per agentic-mode plan.
+    const supabase = await createClient()
+    const priced = priceUsage(await getPricing(supabase), "agentic_plan", 1)
+    await recordUsage(supabase, shop.id, "agentic_plan", {
+      credits: priced.credits,
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+    })
+  }
+  return result
+}
+
+export type PreviewAgentResult =
+  | { ok: true; preview: FreeformPreview }
+  | { ok: false; error: string }
+
+/**
+ * Dry-run a free-form plan before enabling it: returns the resolved recipient
+ * count + a few real sample drafts. Reads only — stages and sends nothing.
+ */
+export async function previewCustomAgentPlan(
+  config: AgentConfig
+): Promise<PreviewAgentResult> {
+  await requireUser()
+  const shopCtx = await requireShop()
+  if (!FEATURES.freeformPlanner) {
+    return { ok: false, error: "Free-form preview isn't enabled yet." }
+  }
+  if (!config?.freeform) {
+    return {
+      ok: false,
+      error: "This plan has no free-form audience to preview.",
+    }
+  }
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("shops")
+    .select("*")
+    .eq("id", shopCtx.id)
+    .single()
+  const shop = data as ShopRow | null
+  if (!shop) return { ok: false, error: "Shop not found." }
+  try {
+    const preview = await previewFreeformPlan(supabase, shop, config.freeform)
+    return { ok: true, preview }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Couldn't build a preview.",
+    }
+  }
 }
 
 const saveSchema = z.object({
@@ -64,7 +124,7 @@ export async function saveCustomAgent(input: {
       description: config.short_description,
       problem_text: parsed.data.problem_text,
       config,
-      enabled: false, // runtime executor not built yet
+      enabled: false, // operator enables intentionally after previewing
     })
     .select("*")
     .single()
@@ -164,9 +224,8 @@ export type SetEnabledResult =
   | { ok: false; error: string }
 
 /**
- * Toggle is wired but the runtime executor doesn't exist yet, so
- * "enabled" is currently informational. We surface that to the
- * operator in the UI ("Saved · runtime coming soon").
+ * Enable/disable a custom agent. Enabled agents are picked up by the
+ * scheduled-agents cron — both coded recipes and free-form plans.
  */
 export async function setCustomAgentEnabled(input: {
   agent_id: string

@@ -5,8 +5,6 @@ import type { CustomerRow } from "@/lib/types/database"
 export type ChannelIdentifiers = {
   phone?: string | null
   email?: string | null
-  instagramHandle?: string | null
-  facebookId?: string | null
 }
 
 export type CustomerInput = ChannelIdentifiers & {
@@ -32,35 +30,15 @@ export function normalizeEmail(raw: string | null | undefined): string | null {
   return trimmed || null
 }
 
-export function normalizeInstagramHandle(
-  raw: string | null | undefined
-): string | null {
-  if (!raw) return null
-  const trimmed = raw.trim().replace(/^@/, "").toLowerCase()
-  return trimmed || null
-}
-
-export function normalizeFacebookId(
-  raw: string | null | undefined
-): string | null {
-  if (!raw) return null
-  const trimmed = raw.trim()
-  return trimmed || null
-}
-
 type NormalizedIdentifiers = {
   phone: string | null
   email: string | null
-  instagram_handle: string | null
-  facebook_id: string | null
 }
 
 function normalizeIdentifiers(input: ChannelIdentifiers): NormalizedIdentifiers {
   return {
     phone: normalizePhone(input.phone),
     email: normalizeEmail(input.email),
-    instagram_handle: normalizeInstagramHandle(input.instagramHandle),
-    facebook_id: normalizeFacebookId(input.facebookId),
   }
 }
 
@@ -68,9 +46,6 @@ function buildOrFilter(ids: NormalizedIdentifiers): string | null {
   const parts: string[] = []
   if (ids.phone) parts.push(`phone.eq.${ids.phone}`)
   if (ids.email) parts.push(`email.eq.${ids.email}`)
-  if (ids.instagram_handle)
-    parts.push(`instagram_handle.eq.${ids.instagram_handle}`)
-  if (ids.facebook_id) parts.push(`facebook_id.eq.${ids.facebook_id}`)
   return parts.length > 0 ? parts.join(",") : null
 }
 
@@ -125,8 +100,7 @@ export async function findOrCreateCustomer(
   if (!orFilter) {
     return {
       ok: false,
-      error:
-        "At least one identifier (phone, email, instagram, or facebook) is required.",
+      error: "At least one identifier (phone or email) is required.",
     }
   }
 
@@ -149,10 +123,6 @@ export async function findOrCreateCustomer(
     if (!target.name && cleanName) updates.name = cleanName
     if (!target.phone && ids.phone) updates.phone = ids.phone
     if (!target.email && ids.email) updates.email = ids.email
-    if (!target.instagram_handle && ids.instagram_handle)
-      updates.instagram_handle = ids.instagram_handle
-    if (!target.facebook_id && ids.facebook_id)
-      updates.facebook_id = ids.facebook_id
 
     if (Object.keys(updates).length === 0) {
       return { ok: true, customer: target, created: false }
@@ -187,8 +157,6 @@ export async function findOrCreateCustomer(
       name: cleanName,
       phone: ids.phone,
       email: ids.email,
-      instagram_handle: ids.instagram_handle,
-      facebook_id: ids.facebook_id,
     })
     .select("*")
     .single()

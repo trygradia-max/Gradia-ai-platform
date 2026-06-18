@@ -10,6 +10,7 @@ import {
 } from "@/lib/knowledge"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import { markVoiceStale } from "@/lib/voice-provider"
 
 export type SaveKnowledgeResult =
   | { ok: true; id: string }
@@ -23,6 +24,7 @@ export async function saveKnowledgeEntry(
   const supabase = await createClient()
   const result = await addShopKnowledge(supabase, shop.id, input)
   if (!result.ok) return result
+  await markVoiceStale(supabase, shop.id) // voice must not drift from KB
   revalidatePath("/settings")
   return result
 }
@@ -39,6 +41,7 @@ export async function saveKnowledgeBulkEntry(
   const supabase = await createClient()
   const result = await addShopKnowledgeBulk(supabase, shop.id, input)
   if (!result.ok) return result
+  await markVoiceStale(supabase, shop.id)
   revalidatePath("/settings")
   return { ok: true, inserted: result.inserted }
 }
@@ -55,6 +58,7 @@ export async function deleteKnowledgeEntry(
   const supabase = await createClient()
   const result = await deleteShopKnowledge(supabase, shop.id, id)
   if (!result.ok) return result
+  await markVoiceStale(supabase, shop.id)
   revalidatePath("/settings")
   return result
 }

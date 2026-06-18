@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation"
 import {
   ArrowUpRight,
   Calendar,
+  CalendarClock,
   Flame,
   Hourglass,
   Loader2,
+  Plug,
   Send,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -61,8 +63,8 @@ export function CoOwnerCard({
         }
         subtitle={
           suggestions.length === 0
-            ? "Quiet right now — we&apos;re caught up on follow-ups."
-            : "Real nudges from what I&apos;m seeing. One tap and a draft is waiting for you."
+            ? "Quiet right now — we're caught up on follow-ups."
+            : "Real nudges from what I'm seeing. One tap and a draft is waiting for you."
         }
       />
 
@@ -77,15 +79,20 @@ export function CoOwnerCard({
         <PageStagger className="grid gap-2">
           {suggestions.map((s) => {
             const key =
-              s.kind === "upcoming_appointment"
-                ? `appt:${s.appointmentId}`
-                : `${s.kind}:${s.leadId}`
+              s.kind === "setup"
+                ? s.id
+                : s.kind === "upcoming_appointment" ||
+                    s.kind === "unconfirmed_appointment"
+                  ? `appt:${s.appointmentId}`
+                  : `${s.kind}:${s.leadId}`
             return (
               <StaggerItem key={key}>
                 <SuggestionRow
                   suggestion={s}
                   busy={
                     s.kind !== "upcoming_appointment" &&
+                    s.kind !== "unconfirmed_appointment" &&
+                    s.kind !== "setup" &&
                     busyId === s.leadId
                   }
                   disabled={busyId !== null}
@@ -104,6 +111,11 @@ const TONE_BY_KIND: Record<
   CoOwnerSuggestion["kind"],
   { icon: typeof Flame; ringClass: string; iconClass: string }
 > = {
+  setup: {
+    icon: Plug,
+    ringClass: "",
+    iconClass: "text-primary",
+  },
   hot_lead_followup: {
     icon: Flame,
     ringClass:
@@ -120,6 +132,12 @@ const TONE_BY_KIND: Record<
     ringClass: "",
     iconClass: "text-foreground",
   },
+  unconfirmed_appointment: {
+    icon: CalendarClock,
+    ringClass:
+      "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    iconClass: "text-amber-500 dark:text-amber-400",
+  },
 }
 
 function SuggestionRow({
@@ -135,6 +153,31 @@ function SuggestionRow({
 }) {
   const tone = TONE_BY_KIND[suggestion.kind]
   const Icon = tone.icon
+
+  // Setup the owner deferred in the wizard — one quiet row, one button.
+  if (suggestion.kind === "setup") {
+    return (
+      <MotionCard interactive className="group relative overflow-hidden p-0">
+        <Link
+          href={suggestion.href}
+          className="flex items-start gap-3 px-4 py-3.5"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60 ring-1 ring-border/60">
+            <Icon className={cn("size-4", tone.iconClass)} aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">
+              {suggestion.title}
+            </p>
+            <p className="text-xs text-muted-foreground">{suggestion.body}</p>
+          </div>
+          <span className="mt-0.5 shrink-0 text-xs font-medium text-primary">
+            {suggestion.cta}
+          </span>
+        </Link>
+      </MotionCard>
+    )
+  }
 
   if (suggestion.kind === "upcoming_appointment") {
     const when = new Intl.DateTimeFormat(undefined, {
@@ -165,6 +208,45 @@ function SuggestionRow({
               {suggestion.service
                 ? `${suggestion.service} · on the books soon`
                 : "On the books soon — make sure they confirmed."}
+            </p>
+          </div>
+          <ArrowUpRight
+            className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+            aria-hidden
+          />
+        </Link>
+      </MotionCard>
+    )
+  }
+
+  if (suggestion.kind === "unconfirmed_appointment") {
+    const when = new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(suggestion.whenIso))
+    return (
+      <MotionCard
+        interactive
+        className={cn("group relative overflow-hidden p-0", tone.ringClass &&
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-['']",
+          tone.ringClass)}
+      >
+        <Link href="/schedule" className="flex items-start gap-3 px-4 py-3.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60 ring-1 ring-border/60">
+            <Icon className={cn("size-4", tone.iconClass)} aria-hidden />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              {suggestion.customerName}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {when}
+              </span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {suggestion.service
+                ? `${suggestion.service} — hasn't confirmed yet. Nudge them or backfill the slot.`
+                : "Hasn't confirmed yet. Nudge them or backfill the slot."}
             </p>
           </div>
           <ArrowUpRight

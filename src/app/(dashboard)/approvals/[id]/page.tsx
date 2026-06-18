@@ -49,33 +49,9 @@ type SmsPayload = {
   source?: string
 }
 
-type ChargePayload = {
-  customer_name?: string
-  customer_email?: string
-  amount_cents?: number
-  description?: string
-  source?: string
-}
-
 type EmailPayload = {
   to_email?: string
   subject?: string
-  body?: string
-  customer_name?: string | null
-  reason?: string | null
-  source?: string
-}
-
-type InstagramDmPayload = {
-  recipient_id?: string
-  body?: string
-  customer_name?: string | null
-  reason?: string | null
-  source?: string
-}
-
-type FacebookDmPayload = {
-  recipient_id?: string
   body?: string
   customer_name?: string | null
   reason?: string | null
@@ -293,24 +269,6 @@ function buildEditorProps(
     }
   }
 
-  if (pending.action_type === "charge_customer") {
-    const p = pending.payload as ChargePayload
-    return {
-      pendingId: pending.id,
-      source: typeof p.source === "string" ? p.source : null,
-      submittedAt: pending.created_at,
-      status,
-      initial: {
-        type: "charge_customer",
-        customer_name: p.customer_name ?? "",
-        customer_email: p.customer_email ?? "",
-        amount_cents:
-          typeof p.amount_cents === "number" ? p.amount_cents : 0,
-        description: p.description ?? "",
-      },
-    }
-  }
-
   if (pending.action_type === "send_email") {
     const p = pending.payload as EmailPayload
     return {
@@ -322,40 +280,6 @@ function buildEditorProps(
         type: "send_email",
         to_email: p.to_email ?? "",
         subject: p.subject ?? "",
-        body: p.body ?? "",
-        customer_name: p.customer_name ?? null,
-        reason: p.reason ?? null,
-      },
-    }
-  }
-
-  if (pending.action_type === "send_instagram_dm") {
-    const p = pending.payload as InstagramDmPayload
-    return {
-      pendingId: pending.id,
-      source: typeof p.source === "string" ? p.source : null,
-      submittedAt: pending.created_at,
-      status,
-      initial: {
-        type: "send_instagram_dm",
-        recipient_id: p.recipient_id ?? "",
-        body: p.body ?? "",
-        customer_name: p.customer_name ?? null,
-        reason: p.reason ?? null,
-      },
-    }
-  }
-
-  if (pending.action_type === "send_facebook_dm") {
-    const p = pending.payload as FacebookDmPayload
-    return {
-      pendingId: pending.id,
-      source: typeof p.source === "string" ? p.source : null,
-      submittedAt: pending.created_at,
-      status,
-      initial: {
-        type: "send_facebook_dm",
-        recipient_id: p.recipient_id ?? "",
         body: p.body ?? "",
         customer_name: p.customer_name ?? null,
         reason: p.reason ?? null,

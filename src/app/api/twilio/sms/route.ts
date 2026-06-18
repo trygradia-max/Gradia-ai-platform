@@ -30,7 +30,11 @@ import {
   formatKnowledgeForPrompt,
   searchShopKnowledge,
 } from "@/lib/knowledge"
+import { looksOptedIn, looksOptedOut } from "@/lib/agent-audience"
+import { FEATURES } from "@/lib/features"
 import { recordInteraction } from "@/lib/memory"
+import { looksLikeConfirm } from "@/lib/no-show-ladder"
+import { checkRateLimit } from "@/lib/rate-limit"
 import {
   sendLeadApprovalRequest,
   sendSmsApprovalRequest,
@@ -161,6 +165,66 @@ async function handleMessage(
       num_media: sms.numMedia,
     },
   })
+
+  // Consent ledger (B2): a STOP/START keyword updates the customer's marketing
+  // opt-out / opt-in state — the affirmative-consent signal the send gate reads.
+  if (customerId) {
+    if (looksOptedOut(sms.body)) {
+      await supabase
+        .from("customers")
+        .update({ sms_opted_out_at: new Date().toISOString(), marketing_consent_at: null })
+        .eq("id", customerId)
+    } else if (looksOptedIn(sms.body)) {
+      await supabase
+        .from("customers")
+        .update({
+          marketing_consent_at: new Date().toISOString(),
+          marketing_consent_source: "sms_keyword",
+          sms_opted_out_at: null,
+        })
+        .eq("id", customerId)
+    }
+  }
+
+  // No-show ladder (NEXT-2): a YES-style reply confirms the customer's nearest
+  // upcoming unconfirmed appointment, dropping it off the at-risk/backfill list.
+  // STOP wins over a confirm; never treat an opt-out as a confirmation.
+  if (
+    FEATURES.noShowLadder &&
+    customerId &&
+    !looksOptedOut(sms.body) &&
+    looksLikeConfirm(sms.body)
+  ) {
+    const nowIso = new Date().toISOString()
+    const { data: appt } = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("customer_id", customerId)
+      .is("confirmed_at", null)
+      .gt("scheduled_at", nowIso)
+      .order("scheduled_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (appt) {
+      await supabase
+        .from("appointments")
+        .update({ confirmed_at: nowIso })
+        .eq("id", (appt as { id: string }).id)
+    }
+  }
+
+  // Inbound classification is UNMETERED (a Haiku call per message) — its only
+  // cost ceiling. Over the daily per-shop limit (spam flood), capture the
+  // message above but skip the LLM classify + downstream draft.
+  const classifyGate = await checkRateLimit(shop.id, "inbound_classify")
+  if (!classifyGate.allowed) {
+    console.warn(
+      "[twilio sms] inbound-classify ceiling hit — captured without LLM:",
+      shop.id
+    )
+    return
+  }
 
   let classification: SmsClassification | null = null
   try {

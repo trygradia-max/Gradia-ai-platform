@@ -39,6 +39,7 @@ import {
   searchShopKnowledge,
 } from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
+import { checkRateLimit } from "@/lib/rate-limit"
 import {
   sendEmailApprovalRequest,
   sendLeadApprovalRequest,
@@ -181,6 +182,18 @@ async function handleMessage(
   })
 
   if (!senderEmail) return false
+
+  // Inbound classification is UNMETERED (a Haiku call per email) — its only
+  // cost ceiling. Over the daily per-shop limit (inbox flood), the message is
+  // captured above; skip the LLM classify + the lead proposal it would drive.
+  const classifyGate = await checkRateLimit(shop.id, "inbound_classify")
+  if (!classifyGate.allowed) {
+    console.warn(
+      "[aurinko webhook] inbound-classify ceiling hit — captured without LLM:",
+      shop.id
+    )
+    return false
+  }
 
   let classification: EmailClassification | null = null
   try {

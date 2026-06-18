@@ -40,8 +40,6 @@ export async function listCustomersForCurrentShop(
         `name.ilike.${pattern}`,
         `phone.ilike.${pattern}`,
         `email.ilike.${pattern}`,
-        `instagram_handle.ilike.${pattern}`,
-        `facebook_id.ilike.${pattern}`,
       ].join(",")
     )
   }

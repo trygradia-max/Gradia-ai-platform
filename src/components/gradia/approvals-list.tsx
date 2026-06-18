@@ -5,10 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import {
-  AtSign,
   Calendar,
-  CreditCard,
-  Globe,
   Loader2,
   Mail,
   MessageSquare,
@@ -71,40 +68,12 @@ type SmsProposal = {
   reason: string | null
 }
 
-type ChargeProposal = {
-  customer_name: string
-  customer_email: string
-  amount_cents: number
-  description: string
-}
-
 type EmailProposal = {
   to_email: string
   subject: string
   body: string
   customer_name: string | null
   reason: string | null
-}
-
-type InstagramDmProposal = {
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  reason: string | null
-}
-
-type FacebookDmProposal = {
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  reason: string | null
-}
-
-function formatMoney(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100)
 }
 
 function formatBookingWhen(iso: string, minutes: number): string {
@@ -143,11 +112,10 @@ const ACTION_META: Record<PendingActionType, ActionMeta> = {
   create_lead: { icon: User, label: "Lead", tone: "lead" },
   add_note: { icon: StickyNote, label: "Note", tone: "note" },
   book_appointment: { icon: Calendar, label: "Booking", tone: "booking" },
+  reschedule_appointment: { icon: Calendar, label: "Reschedule", tone: "booking" },
+  cancel_appointment: { icon: Calendar, label: "Cancellation", tone: "booking" },
   send_sms: { icon: MessageSquare, label: "SMS", tone: "outbound" },
   send_email: { icon: Mail, label: "Email", tone: "outbound" },
-  send_instagram_dm: { icon: AtSign, label: "IG DM", tone: "outbound" },
-  send_facebook_dm: { icon: Globe, label: "FB DM", tone: "outbound" },
-  charge_customer: { icon: CreditCard, label: "Charge", tone: "money" },
 }
 
 const TONE_STYLE: Record<
@@ -181,12 +149,20 @@ const TONE_STYLE: Record<
   },
 }
 
-export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
+export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[] }) {
   const router = useRouter()
   const reduce = useReducedMotion()
-  const [busyId, setBusyId] = React.useState<string | null>(null)
+  // Track only what we've optimistically dropped, derived against the server
+  // list at render — no effect, no re-seeding. A decided card slides out the
+  // instant it's tapped (optimistic, no reload — FOCUS spec §4.4); after the
+  // background refresh the server list no longer carries it anyway.
+  const [removed, setRemoved] = React.useState<Set<string>>(new Set())
+  // Guards a double-tap in the window before the card animates away.
+  const inFlight = React.useRef<Set<string>>(new Set())
 
-  if (items.length === 0) {
+  const visible = serverItems.filter((i) => !removed.has(i.id))
+
+  if (visible.length === 0) {
     return <EmptyState />
   }
 
@@ -194,39 +170,50 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
     id: string,
     decision: "approve" | "reject"
   ): Promise<void> {
-    const key = `${id}:${decision}`
-    setBusyId(key)
+    if (inFlight.current.has(id)) return
+    if (!serverItems.some((i) => i.id === id)) return
+    inFlight.current.add(id)
+
+    // Optimistic: hide the card now; "Sent ✓" is implied by the toast.
+    setRemoved((prev) => new Set(prev).add(id))
+
     const result =
       decision === "approve"
         ? await approveFromDashboard(id)
         : await rejectFromDashboard(id)
-    setBusyId(null)
 
     if (!result.ok) {
+      // Reconcile failure — un-hide the card so the owner can retry.
+      setRemoved((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      inFlight.current.delete(id)
       toast.error(result.error)
       return
     }
 
     if (result.alreadyDecided) {
-      toast.message("Already decided — refreshing.")
+      toast.message("Already decided.")
     } else if (decision === "approve") {
       toast.success("Approved — it's on its way.")
     } else {
       toast.success("Dropped. Nothing went out.")
     }
 
+    // Background reconcile: refresh the badge + any server-derived state. The
+    // card is already gone, so this never blocks the interaction.
+    inFlight.current.delete(id)
     router.refresh()
   }
 
   return (
     <PageStagger className="grid gap-3">
       <AnimatePresence initial={false}>
-        {items.map((item) => {
+        {visible.map((item) => {
           const meta = ACTION_META[item.action_type]
           const isEditRequested = item.status === "edit_requested"
-          const approveBusy = busyId === `${item.id}:approve`
-          const rejectBusy = busyId === `${item.id}:reject`
-          const anyBusy = approveBusy || rejectBusy
 
           return (
             <motion.div
@@ -243,9 +230,9 @@ export function ApprovalsList({ items }: { items: PendingActionRow[] }) {
                   item={item}
                   meta={meta}
                   isEditRequested={isEditRequested}
-                  approveBusy={approveBusy}
-                  rejectBusy={rejectBusy}
-                  anyBusy={anyBusy}
+                  approveBusy={false}
+                  rejectBusy={false}
+                  anyBusy={false}
                   onDecision={handleDecision}
                 />
               </StaggerItem>
@@ -366,10 +353,7 @@ function ApprovalCard({
 const ACTION_CTA: Partial<Record<PendingActionType, string>> = {
   send_sms: "Send it",
   send_email: "Send it",
-  send_instagram_dm: "Send it",
-  send_facebook_dm: "Send it",
   book_appointment: "Book it",
-  charge_customer: "Charge it",
   create_lead: "Save the lead",
   add_note: "Save the note",
 }
@@ -412,25 +396,9 @@ function ActionHeader({ item }: { item: PendingActionRow }) {
       )
     case "send_sms":
       return <SmsHeader proposal={item.payload as unknown as SmsProposal} />
-    case "charge_customer":
-      return (
-        <ChargeHeader proposal={item.payload as unknown as ChargeProposal} />
-      )
     case "send_email":
       return (
         <EmailHeader proposal={item.payload as unknown as EmailProposal} />
-      )
-    case "send_instagram_dm":
-      return (
-        <InstagramHeader
-          proposal={item.payload as unknown as InstagramDmProposal}
-        />
-      )
-    case "send_facebook_dm":
-      return (
-        <FacebookHeader
-          proposal={item.payload as unknown as FacebookDmProposal}
-        />
       )
     case "create_lead":
     default:
@@ -448,24 +416,8 @@ function ActionBody({ item }: { item: PendingActionRow }) {
       )
     case "send_sms":
       return <SmsBody proposal={item.payload as unknown as SmsProposal} />
-    case "charge_customer":
-      return (
-        <ChargeBody proposal={item.payload as unknown as ChargeProposal} />
-      )
     case "send_email":
       return <EmailBody proposal={item.payload as unknown as EmailProposal} />
-    case "send_instagram_dm":
-      return (
-        <InstagramBody
-          proposal={item.payload as unknown as InstagramDmProposal}
-        />
-      )
-    case "send_facebook_dm":
-      return (
-        <FacebookBody
-          proposal={item.payload as unknown as FacebookDmProposal}
-        />
-      )
     case "create_lead":
     default:
       return <LeadBody proposal={item.payload as unknown as LeadProposal} />
@@ -568,32 +520,26 @@ function SmsHeader({ proposal }: { proposal: SmsProposal }) {
   )
 }
 
-function SmsBody({ proposal }: { proposal: SmsProposal }) {
-  return <MessagePreview body={proposal.body} />
-}
-
-function ChargeHeader({ proposal }: { proposal: ChargeProposal }) {
+/** Cross-model verifier objection (sharpening brief P1) — the draft was
+ *  staged anyway, flagged so the approver knows what smells off. */
+function VerifierFlag({ proposal }: { proposal: Record<string, unknown> }) {
+  const verifier = proposal.verifier as
+    | { flagged?: boolean; objections?: string[] }
+    | undefined
+  if (!verifier?.flagged) return null
   return (
-    <span>
-      {proposal.customer_name || "Unknown customer"}
-      <span className="ml-2 align-middle text-sm font-normal text-muted-foreground">
-        {formatMoney(proposal.amount_cents)}
-      </span>
-    </span>
+    <p className="mt-1.5 rounded-md border border-amber-500/25 bg-amber-500/8 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+      ⚠ Our reviewer flagged this draft:{" "}
+      {(verifier.objections ?? []).join(" ") || "double-check before sending."}
+    </p>
   )
 }
 
-function ChargeBody({ proposal }: { proposal: ChargeProposal }) {
+function SmsBody({ proposal }: { proposal: SmsProposal }) {
   return (
     <>
-      <p className="text-sm text-foreground/90">
-        <span className="font-medium">
-          {proposal.description || "Detailing service"}
-        </span>
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {proposal.customer_email || "Email missing — tweak to add"}
-      </p>
+      <MessagePreview body={proposal.body} />
+      <VerifierFlag proposal={proposal as unknown as Record<string, unknown>} />
     </>
   )
 }
@@ -616,47 +562,12 @@ function EmailBody({ proposal }: { proposal: EmailProposal }) {
     proposal.body.length > 240
       ? `${proposal.body.slice(0, 240).trim()}…`
       : proposal.body
-  return <MessagePreview body={preview} />
-}
-
-function InstagramHeader({ proposal }: { proposal: InstagramDmProposal }) {
-  const target =
-    proposal.customer_name?.trim() ||
-    (proposal.recipient_id ? `IG ${proposal.recipient_id}` : "Unknown")
   return (
-    <span className="break-words">
-      To {target}
-      {proposal.reason ? (
-        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
-          {proposal.reason}
-        </span>
-      ) : null}
-    </span>
+    <>
+      <MessagePreview body={preview} />
+      <VerifierFlag proposal={proposal as unknown as Record<string, unknown>} />
+    </>
   )
-}
-
-function InstagramBody({ proposal }: { proposal: InstagramDmProposal }) {
-  return <MessagePreview body={proposal.body} />
-}
-
-function FacebookHeader({ proposal }: { proposal: FacebookDmProposal }) {
-  const target =
-    proposal.customer_name?.trim() ||
-    (proposal.recipient_id ? `FB ${proposal.recipient_id}` : "Unknown")
-  return (
-    <span className="break-words">
-      To {target}
-      {proposal.reason ? (
-        <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
-          {proposal.reason}
-        </span>
-      ) : null}
-    </span>
-  )
-}
-
-function FacebookBody({ proposal }: { proposal: FacebookDmProposal }) {
-  return <MessagePreview body={proposal.body} />
 }
 
 function MessagePreview({ body }: { body: string }) {

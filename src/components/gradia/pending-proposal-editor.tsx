@@ -4,11 +4,8 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
-  AtSign,
   Calendar,
   Check,
-  CreditCard,
-  Globe,
   Loader2,
   Mail,
   MessageSquare,
@@ -77,34 +74,10 @@ type SmsInitial = {
   reason: string | null
 }
 
-type ChargeInitial = {
-  type: "charge_customer"
-  customer_name: string
-  customer_email: string
-  amount_cents: number
-  description: string
-}
-
 type EmailInitial = {
   type: "send_email"
   to_email: string
   subject: string
-  body: string
-  customer_name: string | null
-  reason: string | null
-}
-
-type InstagramDmInitial = {
-  type: "send_instagram_dm"
-  recipient_id: string
-  body: string
-  customer_name: string | null
-  reason: string | null
-}
-
-type FacebookDmInitial = {
-  type: "send_facebook_dm"
-  recipient_id: string
   body: string
   customer_name: string | null
   reason: string | null
@@ -120,10 +93,7 @@ export type PendingProposalEditorProps = {
     | NoteInitial
     | BookingInitial
     | SmsInitial
-    | ChargeInitial
     | EmailInitial
-    | InstagramDmInitial
-    | FacebookDmInitial
 }
 
 function toLocalInputValue(iso: string): string {
@@ -147,10 +117,7 @@ type ProposalKind =
   | "add_note"
   | "book_appointment"
   | "send_sms"
-  | "charge_customer"
   | "send_email"
-  | "send_instagram_dm"
-  | "send_facebook_dm"
 
 type EditorMeta = {
   icon: LucideIcon
@@ -190,32 +157,11 @@ const EDITOR_META: Record<ProposalKind, EditorMeta> = {
     approveCta: "Send the text",
     tone: "outbound",
   },
-  charge_customer: {
-    icon: CreditCard,
-    eyebrow: "Charge",
-    title: "Tweak the charge",
-    approveCta: "Charge it",
-    tone: "money",
-  },
   send_email: {
     icon: Mail,
     eyebrow: "Email",
     title: "Tweak the email",
     approveCta: "Send the email",
-    tone: "outbound",
-  },
-  send_instagram_dm: {
-    icon: AtSign,
-    eyebrow: "IG DM",
-    title: "Tweak the DM",
-    approveCta: "Send the DM",
-    tone: "outbound",
-  },
-  send_facebook_dm: {
-    icon: Globe,
-    eyebrow: "FB DM",
-    title: "Tweak the DM",
-    approveCta: "Send the DM",
     tone: "outbound",
   },
 }
@@ -260,27 +206,14 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
     kind === "book_appointment" ? (props.initial as BookingInitial) : null
   const noteInit = kind === "add_note" ? (props.initial as NoteInitial) : null
   const smsInit = kind === "send_sms" ? (props.initial as SmsInitial) : null
-  const chargeInit =
-    kind === "charge_customer" ? (props.initial as ChargeInitial) : null
   const emailInit =
     kind === "send_email" ? (props.initial as EmailInitial) : null
-  const igInit =
-    kind === "send_instagram_dm"
-      ? (props.initial as InstagramDmInitial)
-      : null
-  const fbInit =
-    kind === "send_facebook_dm"
-      ? (props.initial as FacebookDmInitial)
-      : null
 
   const [customerName, setCustomerName] = React.useState(
     leadInit?.customer_name ??
       bookingInit?.customer_name ??
       smsInit?.customer_name ??
-      chargeInit?.customer_name ??
       emailInit?.customer_name ??
-      igInit?.customer_name ??
-      fbInit?.customer_name ??
       noteInit?.customer_name ??
       ""
   )
@@ -290,25 +223,6 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
   )
   const [emailBody, setEmailBody] = React.useState(emailInit?.body ?? "")
   const [emailReason, setEmailReason] = React.useState(emailInit?.reason ?? "")
-  const [igRecipient, setIgRecipient] = React.useState(
-    igInit?.recipient_id ?? ""
-  )
-  const [igBody, setIgBody] = React.useState(igInit?.body ?? "")
-  const [igReason, setIgReason] = React.useState(igInit?.reason ?? "")
-  const [fbRecipient, setFbRecipient] = React.useState(
-    fbInit?.recipient_id ?? ""
-  )
-  const [fbBody, setFbBody] = React.useState(fbInit?.body ?? "")
-  const [fbReason, setFbReason] = React.useState(fbInit?.reason ?? "")
-  const [chargeEmail, setChargeEmail] = React.useState(
-    chargeInit?.customer_email ?? ""
-  )
-  const [chargeAmountDollars, setChargeAmountDollars] = React.useState(
-    chargeInit ? (chargeInit.amount_cents / 100).toFixed(2) : ""
-  )
-  const [chargeDescription, setChargeDescription] = React.useState(
-    chargeInit?.description ?? ""
-  )
   const [phone, setPhone] = React.useState(
     leadInit?.phone ?? bookingInit?.phone ?? noteInit?.phone ?? ""
   )
@@ -366,19 +280,6 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
         reason: smsReason.trim() ? smsReason : null,
       }
     }
-    if (kind === "charge_customer") {
-      const dollars = Number.parseFloat(chargeAmountDollars)
-      const amountCents = Number.isFinite(dollars)
-        ? Math.round(dollars * 100)
-        : 0
-      return {
-        type: "charge_customer",
-        customer_name: customerName,
-        customer_email: chargeEmail.trim(),
-        amount_cents: amountCents,
-        description: chargeDescription,
-      }
-    }
     if (kind === "send_email") {
       return {
         type: "send_email",
@@ -387,24 +288,6 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
         body: emailBody,
         customer_name: customerName.trim() ? customerName : null,
         reason: emailReason.trim() ? emailReason : null,
-      }
-    }
-    if (kind === "send_instagram_dm") {
-      return {
-        type: "send_instagram_dm",
-        recipient_id: igRecipient.trim(),
-        body: igBody,
-        customer_name: customerName.trim() ? customerName : null,
-        reason: igReason.trim() ? igReason : null,
-      }
-    }
-    if (kind === "send_facebook_dm") {
-      return {
-        type: "send_facebook_dm",
-        recipient_id: fbRecipient.trim(),
-        body: fbBody,
-        customer_name: customerName.trim() ? customerName : null,
-        reason: fbReason.trim() ? fbReason : null,
       }
     }
     return {
@@ -712,59 +595,6 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
               />
             </div>
           </>
-        ) : kind === "charge_customer" ? (
-          <>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="customer-name">Customer name</Label>
-                <Input
-                  id="customer-name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="e.g. Sam Rivera"
-                  autoComplete="off"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="charge-email">Email</Label>
-                <Input
-                  id="charge-email"
-                  value={chargeEmail}
-                  onChange={(e) => setChargeEmail(e.target.value)}
-                  placeholder="sam@example.com"
-                  autoComplete="off"
-                  inputMode="email"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="charge-amount">Amount (USD)</Label>
-                <Input
-                  id="charge-amount"
-                  value={chargeAmountDollars}
-                  onChange={(e) => setChargeAmountDollars(e.target.value)}
-                  placeholder="450.00"
-                  inputMode="decimal"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="charge-description">What for</Label>
-                <Input
-                  id="charge-description"
-                  value={chargeDescription}
-                  onChange={(e) => setChargeDescription(e.target.value)}
-                  placeholder="e.g. Ceramic coating"
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              On approve, Stripe creates an invoice on our connected
-              account and emails the customer a hosted-payment link. No
-              card on file required.
-            </p>
-          </>
         ) : kind === "send_email" ? (
           <>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -821,104 +651,6 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
                 value={emailReason}
                 onChange={(e) => setEmailReason(e.target.value)}
                 placeholder="e.g. Reply to inquiry about ceramic"
-                autoComplete="off"
-              />
-            </div>
-          </>
-        ) : kind === "send_instagram_dm" ? (
-          <>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="ig-recipient">IG recipient ID</Label>
-                <Input
-                  id="ig-recipient"
-                  value={igRecipient}
-                  onChange={(e) => setIgRecipient(e.target.value)}
-                  placeholder="Page-scoped sender id"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="customer-name">Customer (optional)</Label>
-                <Input
-                  id="customer-name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="e.g. Sam Rivera"
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="ig-body">Message</Label>
-              <Textarea
-                id="ig-body"
-                value={igBody}
-                onChange={(e) => setIgBody(e.target.value)}
-                placeholder="Hey — thanks for reaching out…"
-                rows={5}
-              />
-              <p className="text-xs text-muted-foreground">
-                {igBody.length} / 900 characters
-              </p>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="ig-reason">Why we&apos;re sending</Label>
-              <Input
-                id="ig-reason"
-                value={igReason}
-                onChange={(e) => setIgReason(e.target.value)}
-                placeholder="e.g. Reply to ceramic inquiry"
-                autoComplete="off"
-              />
-            </div>
-          </>
-        ) : kind === "send_facebook_dm" ? (
-          <>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="fb-recipient">FB recipient ID (PSID)</Label>
-                <Input
-                  id="fb-recipient"
-                  value={fbRecipient}
-                  onChange={(e) => setFbRecipient(e.target.value)}
-                  placeholder="Page-scoped sender id"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="customer-name">Customer (optional)</Label>
-                <Input
-                  id="customer-name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="e.g. Sam Rivera"
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="fb-body">Message</Label>
-              <Textarea
-                id="fb-body"
-                value={fbBody}
-                onChange={(e) => setFbBody(e.target.value)}
-                placeholder="Hey — thanks for reaching out…"
-                rows={5}
-              />
-              <p className="text-xs text-muted-foreground">
-                {fbBody.length} / 900 characters
-              </p>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="fb-reason">Why we&apos;re sending</Label>
-              <Input
-                id="fb-reason"
-                value={fbReason}
-                onChange={(e) => setFbReason(e.target.value)}
-                placeholder="e.g. Reply to ceramic inquiry"
                 autoComplete="off"
               />
             </div>

@@ -1,0 +1,29 @@
+[
+  {
+    "name": "lead — quote request with name, phone, vehicle",
+    "from": "tara@example.com",
+    "subject": "Quote for Tahoe full detail",
+    "body": "Hi, I'm Tara — looking to get my 2018 Chevy Tahoe fully detailed inside and out before I sell it. Best number to reach me is 971-555-0110. Thanks!",
+    "expect": {
+      "is_lead": true,
+      "customer_name": { "contains": "tara" },
+      "phone": { "digits": "9715550110" },
+      "vehicle": { "matches": "tahoe" },
+      "service": { "contains": "detail" }
+    }
+  },
+  {
+    "name": "noise — marketing blast, must not stage a lead",
+    "from": "deals@autopartsweekly.com",
+    "subject": "25% off wax and accessories this week only",
+    "body": "Shop our biggest sale of the season. Free shipping over $50. Unsubscribe anytime.",
+    "expect": {
+      "is_lead": false,
+      "customer_name": { "empty": true },
+      "phone": { "empty": true },
+      "vehicle": { "empty": true },
+      "service": { "empty": true },
+      "summary": { "empty": true }
+    }
+  }
+]

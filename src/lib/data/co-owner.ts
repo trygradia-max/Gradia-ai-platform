@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { listScoredLeadsForCurrentShop, type ScoredLead } from "@/lib/data/leads"
+import { FEATURES } from "@/lib/features"
+import { noShowLadderState } from "@/lib/no-show-ladder"
 import { requireShop } from "@/lib/shop"
 import type { AppointmentRow, CustomerRow } from "@/lib/types/database"
 
@@ -11,6 +13,14 @@ const DAY_MS = 24 * 60 * 60 * 1000
  * *why* we're suggesting this.
  */
 export type CoOwnerSuggestion =
+  | {
+      kind: "setup"
+      id: string
+      title: string
+      body: string
+      href: string
+      cta: string
+    }
   | {
       kind: "hot_lead_followup"
       leadId: string
@@ -36,6 +46,15 @@ export type CoOwnerSuggestion =
       service: string | null
       whenIso: string
     }
+  | {
+      // No-show ladder (NEXT-2): imminent appointment, still unconfirmed —
+      // at risk of a no-show. Owner can nudge to confirm or backfill the slot.
+      kind: "unconfirmed_appointment"
+      appointmentId: string
+      customerName: string
+      service: string | null
+      whenIso: string
+    }
 
 /**
  * Top-N proactive suggestions for what the operator should tackle
@@ -50,7 +69,7 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
   const shop = await requireShop()
   const supabase = await createClient()
 
-  const [scored, recentOutboundRes, upcomingRes] = await Promise.all([
+  const [scored, recentOutboundRes, upcomingRes, shopRowRes] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     // Last outbound message per customer in the last 24h. Used to
     // skip "you should follow up" for customers we already pinged.
@@ -68,6 +87,13 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
       .lte("scheduled_at", new Date(Date.now() + DAY_MS).toISOString())
       .order("scheduled_at", { ascending: true })
       .limit(3),
+    supabase
+      .from("shops")
+      .select(
+        "aurinko_account_email, twilio_phone_number, voice_addon, voice_live, settings"
+      )
+      .eq("id", shop.id)
+      .maybeSingle(),
   ])
 
   const recentlyContacted = new Set<string>()
@@ -79,6 +105,47 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
 
   const suggestions: CoOwnerSuggestion[] = []
   const now = Date.now()
+
+  // 0. Setup the owner skipped in the wizard — surfaced here per the UX
+  //    spec ("do later" moves it to a Today-page nudge). One at a time:
+  //    the next missing wire, not a checklist wall.
+  const shopRow = (shopRowRes.data as {
+    aurinko_account_email: string | null
+    twilio_phone_number: string | null
+    voice_addon: boolean
+    voice_live: boolean
+    settings?: Record<string, unknown>
+  } | null) ?? null
+  if (shopRow && shopRow.settings?.onboarding_done !== false) {
+    if (!shopRow.aurinko_account_email) {
+      suggestions.push({
+        kind: "setup",
+        id: "setup-email",
+        title: "Connect Gmail",
+        body: "Thirty seconds, one button — then inbound emails come with a drafted reply waiting on your yes.",
+        href: "/settings#email",
+        cta: "Connect",
+      })
+    } else if (!shopRow.twilio_phone_number) {
+      suggestions.push({
+        kind: "setup",
+        id: "setup-number",
+        title: "Get your business number",
+        body: "A line customers call and text. Calls work the moment you pick it.",
+        href: "/settings#sms",
+        cta: "Pick a number",
+      })
+    } else if (shopRow.voice_addon && !shopRow.voice_live) {
+      suggestions.push({
+        kind: "setup",
+        id: "setup-voice",
+        title: "Finish your receptionist",
+        body: "It's part of your plan — do the test call and flip it live.",
+        href: "/settings#voice",
+        cta: "Finish setup",
+      })
+    }
+  }
 
   // 1. Hottest leads we haven't pinged today.
   const hot = scored
@@ -122,12 +189,34 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
     })
   }
 
-  // 3. Upcoming appointments in the next 24h (passive nudge).
   type JoinedAppt = AppointmentRow & {
     customer: Pick<CustomerRow, "name"> | null
   }
-  for (const appt of (upcomingRes.data as JoinedAppt[] | null) ?? []) {
+  const upcomingAppts = (upcomingRes.data as JoinedAppt[] | null) ?? []
+  const atRisk = new Set<string>()
+
+  // 2.5. At-risk appointments — imminent + still unconfirmed (no-show ladder).
+  //      Actionable, so they lead the passive upcoming nudges.
+  if (FEATURES.noShowLadder) {
+    for (const appt of upcomingAppts) {
+      if (suggestions.length >= limit) break
+      if (noShowLadderState(appt, now) !== "awaiting_confirm") continue
+      atRisk.add(appt.id)
+      suggestions.push({
+        kind: "unconfirmed_appointment",
+        appointmentId: appt.id,
+        customerName: appt.customer?.name?.trim() || "a customer",
+        service: appt.service_name ?? null,
+        whenIso: appt.scheduled_at,
+      })
+    }
+  }
+
+  // 3. Upcoming appointments in the next 24h (passive nudge) — skip the at-risk
+  //    ones already surfaced above.
+  for (const appt of upcomingAppts) {
     if (suggestions.length >= limit) break
+    if (atRisk.has(appt.id)) continue
     suggestions.push({
       kind: "upcoming_appointment",
       appointmentId: appt.id,

@@ -71,10 +71,18 @@ const TOOL_LABELS: Record<string, string> = {
   check_setup_status: "Checking what's wired up",
   recommend_next_setup: "Picking the next move",
   link_to_setup: "Finding the right page",
+  cold_leads: "Finding cold leads",
+  preview_outreach: "Sizing up the audience",
+  stage_outreach: "Staging drafts for approval",
+  draft_reply: "Drafting a reply",
+  add_note: "Noting that down",
+  create_lead: "Capturing the lead",
+  propose_booking: "Putting it on the books",
+  update_customer: "Updating their file",
 }
 
 function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? `Running ${name}`
+  return TOOL_LABELS[name] ?? `Running ${name.replace(/_/g, " ")}`
 }
 
 const messageEnter: Variants = {
@@ -103,7 +111,19 @@ const chipItem: Variants = {
   },
 }
 
-export function BiChat({ initial }: { initial: InitialChatState }) {
+export function BiChat({
+  initial,
+  endpoint = "/api/bi/chat",
+  resetHref = "/chat",
+}: {
+  initial: InitialChatState
+  /** Which chat backend to stream from. Defaults to Ask Gradia (read-only);
+   *  the Gradia Agent box passes "/api/agent/chat" (read + stage outreach). */
+  endpoint?: string
+  /** Where "New chat" drops the ?c= param. Pass null when hosted in an overlay
+   *  (the command bar) so resetting doesn't navigate the page underneath. */
+  resetHref?: string | null
+}) {
   const router = useRouter()
   const reduce = useReducedMotion()
   const [conversationId, setConversationId] = React.useState<string | null>(
@@ -136,9 +156,10 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
     setConversationId(null)
     setMessages([])
     setInput("")
-    // Drop the ?c=<id> param so a reload doesn't snap back to the
-    // previous thread. router.replace keeps it cheap (no history entry).
-    router.replace("/chat")
+    // Drop the ?c=<id> param so a reload doesn't snap back to the previous
+    // thread. router.replace keeps it cheap (no history entry). Skipped in
+    // overlay mode (resetHref=null) so we don't navigate the page underneath.
+    if (resetHref) router.replace(resetHref)
   }
 
   async function send(content: string) {
@@ -164,7 +185,7 @@ export function BiChat({ initial }: { initial: InitialChatState }) {
     }))
 
     try {
-      const res = await fetch("/api/bi/chat", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
