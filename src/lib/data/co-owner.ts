@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { listScoredLeadsForCurrentShop, type ScoredLead } from "@/lib/data/leads"
+import { FEATURES } from "@/lib/features"
+import { noShowLadderState } from "@/lib/no-show-ladder"
 import { requireShop } from "@/lib/shop"
 import type { AppointmentRow, CustomerRow } from "@/lib/types/database"
 
@@ -39,6 +41,15 @@ export type CoOwnerSuggestion =
     }
   | {
       kind: "upcoming_appointment"
+      appointmentId: string
+      customerName: string
+      service: string | null
+      whenIso: string
+    }
+  | {
+      // No-show ladder (NEXT-2): imminent appointment, still unconfirmed —
+      // at risk of a no-show. Owner can nudge to confirm or backfill the slot.
+      kind: "unconfirmed_appointment"
       appointmentId: string
       customerName: string
       service: string | null
@@ -178,12 +189,34 @@ export async function getCoOwnerSuggestions(limit = 4): Promise<
     })
   }
 
-  // 3. Upcoming appointments in the next 24h (passive nudge).
   type JoinedAppt = AppointmentRow & {
     customer: Pick<CustomerRow, "name"> | null
   }
-  for (const appt of (upcomingRes.data as JoinedAppt[] | null) ?? []) {
+  const upcomingAppts = (upcomingRes.data as JoinedAppt[] | null) ?? []
+  const atRisk = new Set<string>()
+
+  // 2.5. At-risk appointments — imminent + still unconfirmed (no-show ladder).
+  //      Actionable, so they lead the passive upcoming nudges.
+  if (FEATURES.noShowLadder) {
+    for (const appt of upcomingAppts) {
+      if (suggestions.length >= limit) break
+      if (noShowLadderState(appt, now) !== "awaiting_confirm") continue
+      atRisk.add(appt.id)
+      suggestions.push({
+        kind: "unconfirmed_appointment",
+        appointmentId: appt.id,
+        customerName: appt.customer?.name?.trim() || "a customer",
+        service: appt.service_name ?? null,
+        whenIso: appt.scheduled_at,
+      })
+    }
+  }
+
+  // 3. Upcoming appointments in the next 24h (passive nudge) — skip the at-risk
+  //    ones already surfaced above.
+  for (const appt of upcomingAppts) {
     if (suggestions.length >= limit) break
+    if (atRisk.has(appt.id)) continue
     suggestions.push({
       kind: "upcoming_appointment",
       appointmentId: appt.id,

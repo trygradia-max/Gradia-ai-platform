@@ -42,6 +42,8 @@ export const FEATURES = {
   paywall: true, // Phase 3 — subscription gate + metering live
   customerRecovery: false, // NEXT-3 — import→extract pipeline; off until the
   // review queue + acceptance land (routes 404 while false; gate, don't delete)
+  noShowLadder: true, // NEXT-2 — confirm-by-text + backfill nudge around
+  // appointments. Sends are HITL-staged like the reminder; flag for easy disable.
 } as const
 
 export type AgentId = keyof typeof FEATURES.agents

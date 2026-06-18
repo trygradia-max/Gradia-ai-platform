@@ -291,6 +291,10 @@ export type AppointmentRow = {
   aurinko_event_id: string | null
   timezone: string | null
   reminder_pending_action_id: string | null
+  /** Set when the customer confirmed (replied YES) — no-show ladder (NEXT-2). */
+  confirmed_at: string | null
+  /** Idempotency stamp for the confirm-by-text cron. */
+  confirm_pending_action_id: string | null
   jobber_request_id: string | null
   housecallpro_job_id: string | null
   created_at: string

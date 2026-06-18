@@ -822,7 +822,7 @@ async function executeBookAppointment(
         serviceName: proposal.service,
         isoStartTime: start.toISOString(),
         timezone: proposal.timezone,
-        appointmentId: null,
+        appointmentId,
       },
       supabase
     )

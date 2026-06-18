@@ -31,7 +31,9 @@ import {
   searchShopKnowledge,
 } from "@/lib/knowledge"
 import { looksOptedIn, looksOptedOut } from "@/lib/agent-audience"
+import { FEATURES } from "@/lib/features"
 import { recordInteraction } from "@/lib/memory"
+import { looksLikeConfirm } from "@/lib/no-show-ladder"
 import { checkRateLimit } from "@/lib/rate-limit"
 import {
   sendLeadApprovalRequest,
@@ -181,6 +183,34 @@ async function handleMessage(
           sms_opted_out_at: null,
         })
         .eq("id", customerId)
+    }
+  }
+
+  // No-show ladder (NEXT-2): a YES-style reply confirms the customer's nearest
+  // upcoming unconfirmed appointment, dropping it off the at-risk/backfill list.
+  // STOP wins over a confirm; never treat an opt-out as a confirmation.
+  if (
+    FEATURES.noShowLadder &&
+    customerId &&
+    !looksOptedOut(sms.body) &&
+    looksLikeConfirm(sms.body)
+  ) {
+    const nowIso = new Date().toISOString()
+    const { data: appt } = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("customer_id", customerId)
+      .is("confirmed_at", null)
+      .gt("scheduled_at", nowIso)
+      .order("scheduled_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (appt) {
+      await supabase
+        .from("appointments")
+        .update({ confirmed_at: nowIso })
+        .eq("id", (appt as { id: string }).id)
     }
   }
 
