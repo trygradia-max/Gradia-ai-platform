@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { pushLeadToCrm } from "@/lib/crm-provider"
 import { FEATURES } from "@/lib/features"
 import { recordInteraction } from "@/lib/memory"
 import {
@@ -68,6 +69,16 @@ export async function approveRecoveryCandidates(
         content: "Updated from a customer-recovery import.",
         metadata: { source: "customer_recovery", import_job_id: jobId },
       })
+      // Land the imported customer in any connected CRM through the same seam
+      // as lead/booking approvals (NEXT-4). No-op for the CRM-less majority.
+      await pushLeadToCrm({
+        supabase,
+        shopId: shop.id,
+        customerId,
+        customerName: existing.name ?? input.name ?? "Recovered customer",
+        phone: existing.phone ?? input.phone,
+        email: existing.email ?? input.email,
+      })
     } else {
       // new (or owner-approved ambiguous) → insert; never auto-merge.
       const { data, error } = await supabase
@@ -76,14 +87,24 @@ export async function approveRecoveryCandidates(
         .select("id")
         .single()
       if (error || !data) continue
+      const newId = (data as { id: string }).id
       added += 1
       await recordInteraction(supabase, {
         shopId: shop.id,
-        customerId: (data as { id: string }).id,
+        customerId: newId,
         channel: "note",
         role: "system",
         content: "Recovered from a customer-recovery import.",
         metadata: { source: "customer_recovery", import_job_id: jobId },
+      })
+      // Same CRM seam as lead/booking approvals (NEXT-4). No-op if no CRM.
+      await pushLeadToCrm({
+        supabase,
+        shopId: shop.id,
+        customerId: newId,
+        customerName: input.name ?? "Recovered customer",
+        phone: input.phone,
+        email: input.email,
       })
     }
   }
