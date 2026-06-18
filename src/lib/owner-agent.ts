@@ -305,6 +305,13 @@ async function stageSingle(
   actionType: string,
   payload: Record<string, unknown>
 ): Promise<boolean> {
+  // Shadow Mode backstop — never write a pending_action while simulating.
+  // runOwnerTool already gates the staging tools; this guarantees the floor
+  // holds for any future caller too (guardrails live in code, not prompts).
+  if (ctx.shop.simulation_mode) {
+    console.info("[owner-agent] shadow mode — not staging", actionType)
+    return false
+  }
   const { error } = await ctx.supabase.from("pending_actions").insert({
     shop_id: ctx.shop.id,
     action_type: actionType,
@@ -397,11 +404,28 @@ function estimateCredits(plan: FreeformPlan, count: number): number {
   return count * PER_RECIPIENT_CREDITS[plan.channel]
 }
 
+/** Tools that create a pending_action (outbound or calendar). Shadow Mode
+ *  blocks exactly these; reads, previews, and CRM capture stay available. */
+const STAGING_TOOLS = new Set(["stage_outreach", "draft_reply", "propose_booking"])
+
 async function runOwnerTool(
   ctx: OwnerAgentContext,
   block: AnthropicToolUseBlock
 ): Promise<{ content: string; isError: boolean }> {
   const json = (v: unknown) => JSON.stringify(v)
+
+  // Shadow Mode (shops.simulation_mode): compute and draft, but stage nothing
+  // for real send. Hard floor at the dispatch so no staging tool can run.
+  if (ctx.shop.simulation_mode && STAGING_TOOLS.has(block.name)) {
+    return {
+      content: json({
+        shadow_mode: true,
+        staged: 0,
+        note: "Shadow Mode is on — I worked this out and can preview it, but I didn't queue anything for sending or booking. Turn off Shadow Mode in Settings to act for real.",
+      }),
+      isError: false,
+    }
+  }
 
   if (block.name === "preview_outreach" || block.name === "stage_outreach") {
     const parsed = outreachSchema.safeParse(block.input)

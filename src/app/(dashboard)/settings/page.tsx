@@ -19,6 +19,7 @@ import { listVoiceOptions } from "@/lib/voice-provider"
 import { ConnectionTile } from "@/components/gradia/connection-tile"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { AutonomyDefaultCard } from "@/components/gradia/autonomy-default-card"
+import { SimulationModeCard } from "@/components/gradia/simulation-mode-card"
 import {
   Card,
   CardContent,
@@ -336,8 +337,9 @@ export default async function SettingsPage({
         </div>
       </div>
 
-      <div className="pt-8">
+      <div className="grid gap-4 pt-8 lg:grid-cols-2">
         <AutonomyDefaultCard initialMode={autonomyDefault} />
+        <SimulationModeCard initialEnabled={shop?.simulation_mode ?? false} />
       </div>
 
       <details className="pt-10">

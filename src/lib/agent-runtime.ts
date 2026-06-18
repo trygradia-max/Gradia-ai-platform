@@ -1067,6 +1067,15 @@ export async function stageOutreachPlan(
   plan: FreeformPlan,
   src: OutreachStageSource
 ): Promise<OutreachStageResult> {
+  // Shadow Mode — bulk staging is suppressed wholesale while simulating.
+  if (shop.simulation_mode) {
+    return {
+      staged: 0,
+      pendingActionIds: [],
+      stats: {},
+      blocked: "Shadow Mode is on — nothing was staged.",
+    }
+  }
   let audience
   try {
     audience = await resolveFreeformAudience(supabase, shop, plan)
@@ -1711,6 +1720,21 @@ export async function runEventRecipe(
     })
     return outcome
   }
+  if (shop.simulation_mode) {
+    const outcome: AgentRunOutcome = {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "shadow mode — nothing staged",
+    }
+    await recordAgentRun(supabase, {
+      agentId: agent.id,
+      shopId: shop.id,
+      triggerSource,
+      outcome,
+    })
+    return outcome
+  }
   const outcome = await maybeAutoExecute(
     supabase,
     shop,
@@ -1857,6 +1881,14 @@ export async function runCustomAgent(
       fired: false,
       reason:
         "credit allowance used up — add a credit pack in Billing or wait for the next period",
+    })
+  }
+  if (shop.simulation_mode) {
+    return recordAndReturn({
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "shadow mode — nothing staged",
     })
   }
   const outcome = await maybeAutoExecute(
@@ -2008,6 +2040,22 @@ export async function runScheduledAgents(
           agentName: agent.name,
           fired: false,
           reason: "credit limit reached",
+        }
+        outcomes.push(outcome)
+        await recordAgentRun(supabase, {
+          agentId: agent.id,
+          shopId: agent.shop_id,
+          triggerSource: "schedule",
+          outcome,
+        })
+        continue
+      }
+      if (shop.simulation_mode) {
+        const outcome: AgentRunOutcome = {
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "shadow mode — nothing staged",
         }
         outcomes.push(outcome)
         await recordAgentRun(supabase, {
