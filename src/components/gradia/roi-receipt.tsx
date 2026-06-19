@@ -1,9 +1,17 @@
-import { ArrowRight, CalendarCheck, Clock, Send, UserPlus } from "lucide-react"
+import {
+  ArrowRight,
+  CalendarCheck,
+  Clock,
+  HeartHandshake,
+  Send,
+  UserPlus,
+} from "lucide-react"
 import Link from "next/link"
 
 import {
   formatReceiptDollars,
   formatReceiptHours,
+  getFoundMoneyTotalForCurrentShop,
   getRoiReceiptForCurrentShop,
   type RoiReceipt,
 } from "@/lib/data/roi-receipt"
@@ -20,8 +28,13 @@ import { cn } from "@/lib/utils"
  * under-claims on purpose — it's a trust artifact.
  */
 export async function RoiReceipt() {
-  const receipt = await getRoiReceiptForCurrentShop()
-  return <RoiReceiptView receipt={receipt} />
+  const [receipt, found] = await Promise.all([
+    getRoiReceiptForCurrentShop(),
+    getFoundMoneyTotalForCurrentShop(),
+  ])
+  return (
+    <RoiReceiptView receipt={receipt} foundMoneyCents={found.foundMoneyCents} />
+  )
 }
 
 function StatCell({
@@ -44,8 +57,21 @@ function StatCell({
   )
 }
 
-export function RoiReceiptView({ receipt }: { receipt: RoiReceipt }) {
-  const { leadsCaught, messagesSent, bookingsMade, moneyInPlayCents } = receipt
+export function RoiReceiptView({
+  receipt,
+  foundMoneyCents = 0,
+}: {
+  receipt: RoiReceipt
+  /** Cumulative all-time "Found Money" from the shop_metrics ledger. */
+  foundMoneyCents?: number
+}) {
+  const {
+    leadsCaught,
+    messagesSent,
+    bookingsMade,
+    moneyInPlayCents,
+    recoveredLeadsCount,
+  } = receipt
 
   return (
     <section className="space-y-5">
@@ -95,6 +121,15 @@ export function RoiReceiptView({ receipt }: { receipt: RoiReceipt }) {
               </span>
             </div>
 
+            {foundMoneyCents > 0 && (
+              <p className="-mt-3 text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {formatReceiptDollars(foundMoneyCents)}
+                </span>{" "}
+                found to date, together.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-4">
               <StatCell
                 icon={UserPlus}
@@ -116,6 +151,17 @@ export function RoiReceiptView({ receipt }: { receipt: RoiReceipt }) {
                 value={formatReceiptHours(receipt.minutesSaved)}
                 label="of your time saved"
               />
+              {recoveredLeadsCount > 0 && (
+                <StatCell
+                  icon={HeartHandshake}
+                  value={String(recoveredLeadsCount)}
+                  label={
+                    recoveredLeadsCount === 1
+                      ? "customer revived"
+                      : "customers revived"
+                  }
+                />
+              )}
             </div>
           </div>
         )}

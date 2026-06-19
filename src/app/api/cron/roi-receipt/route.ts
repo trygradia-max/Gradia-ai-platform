@@ -86,6 +86,29 @@ export async function GET(request: Request) {
   for (const shop of shops) {
     try {
       const receipt = await computeRoiReceipt(supabase, shop.id, start, end)
+
+      // Persist the snapshot first — the Found Money Ledger keeps every week,
+      // including empty ones, so the cumulative history has no gaps. Upsert on
+      // the period so a re-run updates rather than duplicates.
+      const { error: metricsErr } = await supabase
+        .from("shop_metrics")
+        .upsert(
+          {
+            shop_id: shop.id,
+            period_start: receipt.periodStart,
+            period_end: receipt.periodEnd,
+            attributed_revenue_cents: receipt.moneyInPlayCents,
+            recovered_leads_count: receipt.recoveredLeadsCount,
+            leads_count: receipt.leadsCaught,
+            messages_count: receipt.messagesSent,
+            bookings_count: receipt.bookingsMade,
+          },
+          { onConflict: "shop_id,period_start,period_end" }
+        )
+      if (metricsErr) {
+        console.error("[cron/roi-receipt] metrics upsert failed for", shop.id, metricsErr)
+      }
+
       const body = composeReceiptSms(shop.name, receipt)
       if (!body) {
         skippedEmpty += 1

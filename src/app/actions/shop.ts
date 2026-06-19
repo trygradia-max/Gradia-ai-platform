@@ -483,6 +483,38 @@ export async function disconnectSms(): Promise<DisconnectSmsResult> {
   return { ok: true, shop: data as ShopRow }
 }
 
+const simulationModeSchema = z.boolean()
+
+export type SetSimulationModeResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
+/**
+ * Shadow Mode toggle. When on, the shared agent engine computes and drafts but
+ * stages nothing for real send (see the simulation_mode guard in owner-agent /
+ * agent-runtime). A first-class boolean column on shops — distinct from the
+ * settings.autonomy trust dial.
+ */
+export async function setSimulationMode(
+  enabled: boolean
+): Promise<SetSimulationModeResult> {
+  await requireUser()
+  const parsed = simulationModeSchema.safeParse(enabled)
+  if (!parsed.success) return { ok: false, error: "Bad request." }
+  const existing = await getOptionalShop()
+  if (!existing) return { ok: false, error: "Finish onboarding first." }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("shops")
+    .update({ simulation_mode: parsed.data })
+    .eq("id", existing.id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath("/settings")
+  return { ok: true }
+}
+
 export type DisconnectJobberResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }

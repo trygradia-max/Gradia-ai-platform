@@ -48,6 +48,8 @@ export type RoiReceipt = {
   bookingsMade: number
   /** Booked service value we can actually trace to a real price. "In play." */
   moneyInPlayCents: number
+  /** Leads that reached the 'recovered' revival state this period. */
+  recoveredLeadsCount: number
   /** Conservative time-saved estimate, in whole minutes. */
   minutesSaved: number
   /** True when nothing happened yet — drives the written zero-state. */
@@ -71,7 +73,8 @@ export async function computeRoiReceipt(
   const startIso = start.toISOString()
   const endIso = end.toISOString()
 
-  const [leadsRes, messagesRes, apptRes, servicesRes] = await Promise.all([
+  const [leadsRes, messagesRes, apptRes, servicesRes, recoveredRes] =
+    await Promise.all([
     // Leads caught — count only, no rows pulled.
     supabase
       .from("leads")
@@ -102,10 +105,21 @@ export async function computeRoiReceipt(
       .from("services")
       .select("name, price_cents")
       .eq("shop_id", shopId),
+    // Leads revived this period. No per-status timestamp exists, so we
+    // approximate the recovery moment with updated_at — close enough for the
+    // weekly window and honest about being a rolling count, not an audit trail.
+    supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("shop_id", shopId)
+      .eq("lifecycle_status", "recovered")
+      .gte("updated_at", startIso)
+      .lt("updated_at", endIso),
   ])
 
   const leadsCaught = leadsRes.count ?? 0
   const messagesSent = messagesRes.count ?? 0
+  const recoveredLeadsCount = recoveredRes.count ?? 0
 
   const appts =
     (apptRes.data as { service_name: string | null }[] | null) ?? []
@@ -142,6 +156,7 @@ export async function computeRoiReceipt(
     messagesSent,
     bookingsMade,
     moneyInPlayCents,
+    recoveredLeadsCount,
     minutesSaved,
     isEmpty:
       leadsCaught === 0 &&
@@ -230,8 +245,47 @@ export async function getRoiReceiptForCurrentShop(): Promise<RoiReceipt> {
       messagesSent: 0,
       bookingsMade: 0,
       moneyInPlayCents: 0,
+      recoveredLeadsCount: 0,
       minutesSaved: 0,
       isEmpty: true,
     }
+  }
+}
+
+/**
+ * Cumulative "Found Money" — the all-time roll-up of the weekly snapshots the
+ * cron persists into `shop_metrics`. Distinct from the live weekly receipt: this
+ * is durable history, so it never recomputes and survives past the 7-day window.
+ * Returns zeros on failure so the Home card still renders.
+ */
+export async function getFoundMoneyTotalForCurrentShop(): Promise<{
+  foundMoneyCents: number
+  recoveredLeads: number
+}> {
+  const shop = await requireShop()
+  const supabase = await createClient()
+  try {
+    const { data, error } = await supabase
+      .from("shop_metrics")
+      .select("attributed_revenue_cents, recovered_leads_count")
+      .eq("shop_id", shop.id)
+    if (error) throw error
+    const rows =
+      (data as
+        | { attributed_revenue_cents: number; recovered_leads_count: number }[]
+        | null) ?? []
+    return {
+      foundMoneyCents: rows.reduce(
+        (sum, r) => sum + (r.attributed_revenue_cents ?? 0),
+        0
+      ),
+      recoveredLeads: rows.reduce(
+        (sum, r) => sum + (r.recovered_leads_count ?? 0),
+        0
+      ),
+    }
+  } catch (err) {
+    console.error("[roi receipt] found-money total failed:", err)
+    return { foundMoneyCents: 0, recoveredLeads: 0 }
   }
 }

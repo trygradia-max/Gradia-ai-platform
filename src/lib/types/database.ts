@@ -1,5 +1,8 @@
 export type LeadStatus = "new" | "quoted" | "booked"
 
+/** Lead-revival funnel — orthogonal to LeadStatus (the sales funnel). */
+export type LeadLifecycle = "unresponsive_stale" | "revival_contacted" | "recovered"
+
 export type ShopPlan = "free" | "active" | "past_due"
 
 export type ShopRow = {
@@ -51,6 +54,8 @@ export type ShopRow = {
   housecallpro_access_token_enc: string | null
   housecallpro_refresh_token_enc: string | null
   housecallpro_token_expires_at: string | null
+  /** Shadow Mode: when true the agent computes/logs but stages nothing for real send. */
+  simulation_mode: boolean
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -195,6 +200,8 @@ export type LeadRow = {
   vehicle_color: string | null
   pin_notes: string | null
   status: LeadStatus
+  /** Revival pipeline state; null = not in the revival funnel. */
+  lifecycle_status: LeadLifecycle | null
   created_at: string
   updated_at: string
 }
@@ -295,10 +302,29 @@ export type AppointmentRow = {
   confirmed_at: string | null
   /** Idempotency stamp for the confirm-by-text cron. */
   confirm_pending_action_id: string | null
+  /** No-show ladder rung: 0 none → 1 confirm sent → 2 reminder → 3 owner alert. */
+  escalation_level: number
   jobber_request_id: string | null
   housecallpro_job_id: string | null
   created_at: string
   updated_at: string
+}
+
+/**
+ * Found Money Ledger — one durable snapshot per ROI-receipt period.
+ * Money in cents (house convention). Upserted on (shop_id, period_start, period_end).
+ */
+export type ShopMetricsRow = {
+  id: string
+  shop_id: string
+  period_start: string
+  period_end: string
+  attributed_revenue_cents: number
+  recovered_leads_count: number
+  leads_count: number
+  messages_count: number
+  bookings_count: number
+  created_at: string
 }
 
 export type PendingActionType =
