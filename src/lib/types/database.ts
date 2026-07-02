@@ -639,3 +639,32 @@ export type CustomAgentRunRow = {
   pending_action_ids: string[]
   created_at: string
 }
+
+/** Glass Box (spec §8-A6a): the per-call artifact from Vapi's end-of-call
+ *  report, one row per call. vendor_cost is display data, never billing. */
+export type CallRecordRow = {
+  id: string
+  shop_id: string
+  customer_id: string | null
+  vapi_call_id: string
+  summary: string | null
+  ended_reason: string | null
+  recording_url: string | null
+  duration_seconds: number | null
+  vendor_cost: number | null
+  started_at: string | null
+  ended_at: string | null
+  created_at: string
+}
+
+/** Glass Box (spec §8-A6b): WHY a pending_action was staged — the "because"
+ *  line. Written best-effort at staging time; rendered only where it exists. */
+export type ActionDecisionRow = {
+  id: string
+  shop_id: string
+  pending_action_id: string
+  source: string
+  because: string
+  inputs: Record<string, unknown>
+  created_at: string
+}

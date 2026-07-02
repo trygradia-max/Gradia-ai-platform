@@ -18,6 +18,7 @@ import { revalidatePath } from "next/cache"
 
 import { findCustomerByChannel } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
+import { recordActionDecision } from "@/lib/decision-log"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
 import {
@@ -143,6 +144,19 @@ async function submitLeadProposal(
     console.error("[vapi-tools] pending_action insert failed:", pendingErr)
     return { ok: false, reason: "pending_action_failed" }
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because: `Staged this lead because ${proposal.customerName || "a caller"} shared their details on a call to your receptionist.`,
+    inputs: {
+      rule: "voice_capture_lead",
+      vapi_call_id: ctx.id ?? null,
+      lead_status: proposal.status,
+    },
+  })
 
   // Resolve customer (best-effort) so we can surface cross-channel
   // context on the Slack card.
@@ -306,6 +320,19 @@ async function submitBookingProposal(
     )
     return { ok: false, reason: "pending_action_failed" }
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because: `Staged this booking because the caller agreed to ${proposal.service} on the call — bookings always wait for your approval.`,
+    inputs: {
+      rule: "voice_propose_booking",
+      vapi_call_id: ctx.id ?? null,
+      iso_start_time: proposal.isoStartTime,
+    },
+  })
 
   const customer = await findCustomerByChannel(supabase, shopId, {
     phone: proposal.phone,
@@ -677,16 +704,41 @@ async function stageAppointmentChange(
     console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
     return false
   }
-  const { error } = await supabase.from("pending_actions").insert({
-    shop_id: shopId,
-    action_type: actionType,
-    payload,
-    requested_by: shop.owner_id,
-  })
-  if (error) {
+  const { data: pending, error } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shopId,
+      action_type: actionType,
+      payload,
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+  if (error || !pending) {
     console.error(`[vapi-tools] ${actionType} stage failed:`, error)
     return false
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  const newWhen =
+    typeof payload.new_when === "string" && payload.new_when.trim()
+      ? ` to "${payload.new_when.trim()}"`
+      : ""
+  const because =
+    actionType === "reschedule_appointment"
+      ? `Staged because the caller asked to move their appointment${newWhen} — calendar changes always wait for your approval.`
+      : "Staged because the caller asked to cancel their appointment — calendar changes always wait for your approval."
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because,
+    inputs: {
+      rule: `voice_${actionType}`,
+      vapi_call_id: payload.vapi_call_id ?? null,
+      appointment_id: payload.appointment_id ?? null,
+    },
+  })
   return true
 }
 

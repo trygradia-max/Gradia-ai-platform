@@ -45,6 +45,7 @@ import { timingSafeEqual } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { persistCallRecord } from "@/lib/call-records"
 import { recordUsage } from "@/lib/credits"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
@@ -105,6 +106,8 @@ type VapiMessage = {
   durationMinutes?: number
   startedAt?: string
   endedAt?: string
+  /** Vapi-reported call cost in USD — captured for the call record, never billing. */
+  cost?: number
 }
 
 type VapiPayload = { message?: VapiMessage }
@@ -185,6 +188,23 @@ function callContextFrom(message: VapiMessage): VapiCallContext {
     callerPhone,
     callerName,
   }
+}
+
+/** Actual reported call duration in whole seconds, or null when Vapi sent
+ *  nothing usable — the call record stores what was reported, not a guess.
+ *  (Distinct from callMinutes(), which rounds UP for billing.) */
+function reportedDurationSeconds(message: VapiMessage): number | null {
+  if (typeof message.durationSeconds === "number" && message.durationSeconds > 0)
+    return Math.round(message.durationSeconds)
+  if (message.startedAt && message.endedAt) {
+    const ms =
+      new Date(message.endedAt).getTime() -
+      new Date(message.startedAt).getTime()
+    if (ms > 0) return Math.round(ms / 1000)
+  }
+  if (typeof message.durationMinutes === "number" && message.durationMinutes > 0)
+    return Math.round(message.durationMinutes * 60)
+  return null
 }
 
 /** Billed voice minutes for an ended call. Coarse + post-call by nature —
@@ -425,6 +445,24 @@ async function handleEndOfCall(
       `[vapi] shop ${shopId} at ${budget.usedMinutes}/${budget.budget} voice minutes (≥80%)`
     )
   }
+
+  // Glass Box capture (redesign spec §8-A6a): persist the per-call artifact
+  // (summary, duration, vendor cost, ended reason, recording) that used to
+  // be dropped here after metering. Ordered AFTER metering + budget so the
+  // billing path is untouched; persistCallRecord never throws by contract,
+  // so a capture failure can't fail this webhook.
+  await persistCallRecord(supabase, {
+    shopId,
+    customerId,
+    vapiCallId: message.call?.id,
+    summary: message.summary ?? null,
+    endedReason: message.endedReason ?? null,
+    recordingUrl: message.recordingUrl ?? null,
+    durationSeconds: reportedDurationSeconds(message),
+    vendorCost: typeof message.cost === "number" ? message.cost : null,
+    startedAt: message.startedAt ?? null,
+    endedAt: message.endedAt ?? null,
+  })
 
   revalidatePath("/dashboard")
   revalidatePath("/leads")
