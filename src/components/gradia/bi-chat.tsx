@@ -195,8 +195,29 @@ export function BiChat({
       })
 
       if (!res.ok || !res.body) {
-        const errBody = await res.text()
-        toast.error(errBody || `Server error (${res.status})`)
+        // The API replies { ok:false, error } — surface the friendly message,
+        // not the raw JSON. A 402 means the plan is inactive or out of credits
+        // (GRADIA_PRICING.md: free can explore but not run), so make it an
+        // actionable upgrade instead of a dead-end error.
+        let message = `Server error (${res.status})`
+        try {
+          const data = await res.json()
+          if (data?.error) message = data.error
+        } catch {
+          /* non-JSON body — keep the generic message */
+        }
+        if (res.status === 402) {
+          toast.error(message, {
+            action: {
+              label: "Upgrade",
+              onClick: () => {
+                window.location.href = "/billing"
+              },
+            },
+          })
+        } else {
+          toast.error(message)
+        }
         setMessages(baselineMessages)
         return
       }

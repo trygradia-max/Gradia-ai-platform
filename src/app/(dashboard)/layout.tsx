@@ -12,10 +12,8 @@ import { CommandBar } from "@/components/gradia/command-bar"
 import { MobileComposer } from "@/components/gradia/mobile-composer"
 import { SetupProgressPill } from "@/components/gradia/setup-progress-pill"
 import { countOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
-import { FEATURES } from "@/lib/features"
 import { getOptionalShop, listShopsForCurrentUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
-import type { ShopPlan } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
@@ -30,21 +28,20 @@ export default async function DashboardLayout({
     countOpenApprovalsForCurrentShop(),
   ])
 
-  // Paywall + first-run gates. /billing and /onboarding live outside this
-  // layout group so the redirects can't loop.
+  // First-run gate only. Per GRADIA_PRICING.md, a free (pre-subscription) shop
+  // "can explore, cannot run agents or send" — so there is NO paywall redirect
+  // here. Running/sending is gated downstream and fails closed (the chat box at
+  // api/agent/chat via checkFeatureAccess, and the runtime via isPaid), so
+  // exploring the dashboard is safe without an active plan. /onboarding lives
+  // outside this layout group so the redirect can't loop.
   if (active) {
     const supabase = await createClient()
     const { data } = await supabase
       .from("shops")
-      .select("plan, settings")
+      .select("settings")
       .eq("id", active.id)
       .single()
-    const row =
-      (data as { plan: ShopPlan; settings?: Record<string, unknown> } | null) ??
-      null
-    if (FEATURES.paywall && row?.plan !== "active") {
-      redirect("/billing")
-    }
+    const row = (data as { settings?: Record<string, unknown> } | null) ?? null
     // New shops see the wizard until they finish/skip it (UX spec Part 1).
     // Shops from before the flag (no key) are never gated.
     if (needsOnboarding(row?.settings)) {

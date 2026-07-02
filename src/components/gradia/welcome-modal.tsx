@@ -90,8 +90,9 @@ export function WelcomeModal({
           <DialogTitle>Welcome to Gradia</DialogTitle>
           <DialogDescription>
             We&apos;re your AI office — every inquiry across voice, email,
-            SMS, and DMs becomes a Slack approval card. Connect the
-            channels below and we&apos;ll start catching leads with you.
+            SMS, and DMs becomes a drafted reply waiting in your Approvals.
+            Connect the channels below and we&apos;ll start catching leads
+            with you.
           </DialogDescription>
         </DialogHeader>
 

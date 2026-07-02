@@ -219,6 +219,14 @@ function EmptyState({ searching }: { searching: boolean }) {
           ? "Try a different name or number — we'll keep looking."
           : "Customers land here automatically the moment voice, SMS, email, or DMs come in."}
       </p>
+      {!searching ? (
+        <Link
+          href="/recovery"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          Import your customers →
+        </Link>
+      ) : null}
     </div>
   )
 }

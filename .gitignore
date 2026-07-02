@@ -41,3 +41,6 @@ next-env.d.ts
 
 # supabase CLI local artifacts
 supabase/.temp/
+.env*
+
+SUPABASE_DB_URL postgresql://postgres:Bolderilove4!@db.zfxkzciumhrrgfeacwds.supabase.co:5432/postgres

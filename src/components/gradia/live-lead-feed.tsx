@@ -186,6 +186,12 @@ function EmptyState() {
         When a lead comes in — voice, email, SMS, DM — we&apos;ll catch
         it here together.
       </p>
+      <Link
+        href="/settings"
+        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+      >
+        Connect a channel so leads can arrive →
+      </Link>
     </div>
   )
 }

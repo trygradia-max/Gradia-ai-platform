@@ -41,9 +41,9 @@ type ExtractResponse = {
 }
 
 const SOURCES: { id: ImportSourceType; label: string; accept: string; hint: string }[] = [
-  { id: "mbox", label: "Email (.mbox)", accept: ".mbox", hint: "Your Google Takeout mail export" },
-  { id: "contacts_csv", label: "Contacts (.csv)", accept: ".csv", hint: "Google Contacts export" },
+  { id: "contacts_csv", label: "Customer list (.csv)", accept: ".csv", hint: "A CSV export from your CRM, Google Contacts, or a spreadsheet" },
   { id: "vcard", label: "Contacts (.vcf)", accept: ".vcf,.vcard", hint: "A vCard address book" },
+  { id: "mbox", label: "Email (.mbox)", accept: ".mbox", hint: "A Gmail / Google Takeout export" },
 ]
 
 const DECISION_GROUPS: {
@@ -250,13 +250,13 @@ function UploadStep({
   return (
     <section className="space-y-5">
       <SectionHeader
-        eyebrow="Bring your people"
+        eyebrow="Import your customers"
         title={
           <>
-            Find <span className="italic">everyone</span> you&apos;ve served.
+            Bring your customers <span className="italic">in</span>.
           </>
         }
-        subtitle="Drop your inbox export or contacts. We'll find your past customers and draft the win-backs — you approve before anything sends."
+        subtitle="Upload a CSV from your CRM (or a contacts / email export) — we'll pull out names, phones, and vehicles into your Gradia CRM. You approve before anything's added, and we can draft win-backs for anyone who's gone quiet."
       />
 
       <div className="flex flex-wrap gap-2">
