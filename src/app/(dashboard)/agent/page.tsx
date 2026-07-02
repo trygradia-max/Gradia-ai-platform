@@ -48,7 +48,7 @@ export default async function AgentPage({
     <div className="mx-auto max-w-3xl space-y-10">
       <header className="space-y-2">
         <p className="label-eyebrow text-muted-foreground/70">Gradia Agent</p>
-        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+        <h1 className="font-display text-2xl text-foreground">
           What should we get <span className="italic">done</span>?
         </h1>
         <p className="max-w-prose text-sm text-muted-foreground">

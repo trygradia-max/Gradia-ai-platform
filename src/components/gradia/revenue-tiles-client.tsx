@@ -72,7 +72,7 @@ export function RevenueTilesClient({
         <StaggerItem key={t.key}>
           <MotionCard
             interactive
-            glow={t.feature}
+
             className="relative overflow-hidden p-5 sm:p-6"
           >
             {/* Eyebrow row */}
@@ -85,7 +85,7 @@ export function RevenueTilesClient({
 
             {/* Stat */}
             <div className="mt-4 flex items-baseline gap-1.5">
-              <span className="font-display text-4xl text-foreground sm:text-5xl">
+              <span className="font-data text-2xl font-semibold text-foreground">
                 <Counter
                   to={dollarsFromCents(t.cents)}
                   duration={1.6}

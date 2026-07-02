@@ -19,14 +19,14 @@ export default async function ApprovalsPage() {
     <div className="mx-auto max-w-3xl space-y-10">
       <header className="space-y-2">
         <p className="label-eyebrow text-muted-foreground/70">Approvals</p>
-        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+        <h1 className="font-display text-2xl text-foreground">
           {items.length === 0 ? (
             <>
-              <span className="italic">All</span> clear.
+              <span className="italic">All</span>{" "}clear.
             </>
           ) : (
             <>
-              <span className="italic">Waiting</span> on us.
+              <span className="italic">Waiting</span>{" "}on us.
             </>
           )}
         </h1>

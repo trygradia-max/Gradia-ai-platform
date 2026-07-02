@@ -49,7 +49,7 @@ export function SmsQuickReply({
         <div className="min-w-0 space-y-1">
           <p className="label-eyebrow text-muted-foreground/70">Quick reply</p>
           <h3 className="font-display text-lg leading-tight tracking-tight text-foreground">
-            Text <span className="italic">{target}</span> from here.
+            Text <span className="italic">{target}</span>{" "}from here.
           </h3>
           <p className="text-sm text-muted-foreground">
             Skip the HITL loop — this one goes out under your name the

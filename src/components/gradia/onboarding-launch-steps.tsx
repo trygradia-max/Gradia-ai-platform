@@ -247,7 +247,7 @@ export function ReceptionistStep({
       ) : (
         <div className="space-y-3 rounded-xl border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center">
           <p className="font-display text-lg text-foreground">
-            The receptionist is part of the <span className="italic">voice</span> add-on.
+            The receptionist is part of the <span className="italic">voice</span>{" "}add-on.
           </p>
           <p className="mx-auto max-w-sm text-sm text-muted-foreground">
             +$29/month: it answers your calls, quotes from your menu, and

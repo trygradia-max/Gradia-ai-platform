@@ -61,7 +61,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
   return (
     <MotionCard
       interactive
-      glow={isLive}
+
       className={cn(
         "relative flex h-full flex-col overflow-hidden p-5 sm:p-6",
         RAIL[agent.status]

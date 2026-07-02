@@ -4,13 +4,13 @@ import { cn } from "@/lib/utils"
 
 /**
  * Shared section heading rhythm — 11px uppercase eyebrow stacked
- * above a serif-display title and an optional subtitle. Used by
- * dashboard surfaces to inherit the same vertical rhythm as the
- * hero without each one re-rolling the typography.
+ * above a Geist 600 title and an optional subtitle. Used by dashboard
+ * surfaces to inherit the same vertical rhythm without each one
+ * re-rolling the typography. Hierarchy via weight + text color only
+ * (redesign spec §8-A2); sizes come from the closed fixed scale.
  *
- * `title` and `subtitle` accept inline markup via React children
- * so callers can italicize a phrase or splice in a count without
- * the dangerouslySetInnerHTML escape hatch.
+ * `title` and `subtitle` accept inline markup via React children so
+ * callers can splice in a count without dangerouslySetInnerHTML.
  */
 export function SectionHeader({
   eyebrow,
@@ -34,9 +34,7 @@ export function SectionHeader({
       )}
     >
       <p className="label-eyebrow text-muted-foreground/80">{eyebrow}</p>
-      <h2 className="font-display text-2xl text-foreground sm:text-3xl">
-        {title}
-      </h2>
+      <h2 className="font-display text-xl text-foreground">{title}</h2>
       {subtitle ? (
         <p
           className={cn(

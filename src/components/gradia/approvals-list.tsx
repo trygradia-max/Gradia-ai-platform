@@ -24,7 +24,6 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
-  EASE_OUT_EXPO,
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
@@ -222,7 +221,7 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
               exit={
                 reduce
                   ? { opacity: 0 }
-                  : { opacity: 0, x: 24, transition: { duration: 0.3 } }
+                  : { opacity: 0, x: 24, transition: { duration: 0.15 } }
               }
             >
               <StaggerItem>
@@ -367,11 +366,11 @@ function EmptyState() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: EASE_OUT_EXPO }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
         className="space-y-2"
       >
-        <p className="font-display text-2xl text-foreground sm:text-3xl">
-          <span className="italic">All</span> clear.
+        <p className="font-display text-2xl text-foreground">
+          <span className="italic">All</span>{" "}clear.
         </p>
         <p className="mx-auto max-w-sm text-sm text-muted-foreground">
           Nothing waiting on us right now — we&apos;ll holler the moment

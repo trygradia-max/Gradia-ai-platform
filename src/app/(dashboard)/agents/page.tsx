@@ -118,8 +118,8 @@ export default async function AgentsPage() {
           <p className="label-eyebrow text-muted-foreground/70">
             What Gradia does for you
           </p>
-          <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
-            What&apos;s <span className="italic">running</span> for us.
+          <h1 className="font-display text-2xl text-foreground">
+            What&apos;s <span className="italic">running</span>{" "}for us.
           </h1>
           <p className="max-w-prose text-sm text-muted-foreground">
             {`${activeCount} of ${agents.length} built-ins live`}

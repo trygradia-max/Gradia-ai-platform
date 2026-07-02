@@ -27,8 +27,8 @@ export default async function CustomersPage({
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
           <p className="label-eyebrow text-muted-foreground/70">Customers</p>
-          <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
-            <span className="italic">Everyone</span> we&apos;ve heard from.
+          <h1 className="font-display text-2xl text-foreground">
+            <span className="italic">Everyone</span>{" "}we&apos;ve heard from.
           </h1>
           <p className="max-w-prose text-sm text-muted-foreground">
             Voice, SMS, email, socials, the front desk — all stitched into one

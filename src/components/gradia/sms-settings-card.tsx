@@ -26,7 +26,6 @@ import {
 } from "@/app/actions/shop"
 import { releaseTwilioNumber } from "@/app/actions/twilio-provision"
 import { TwilioNumberPicker } from "@/components/gradia/twilio-number-picker"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -207,7 +206,7 @@ export function SmsSettingsCard({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6 }}
-              transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
             >
               <TwilioNumberPicker onCancel={() => setPicking(false)} />
             </motion.div>
@@ -217,7 +216,7 @@ export function SmsSettingsCard({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6 }}
-              transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="space-y-4"
             >
               <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
@@ -282,7 +281,7 @@ export function SmsSettingsCard({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6 }}
-              transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="space-y-4"
             >
               <p className="text-sm text-muted-foreground">

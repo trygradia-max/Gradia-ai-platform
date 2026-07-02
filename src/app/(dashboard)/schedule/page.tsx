@@ -163,7 +163,7 @@ function ScheduleShell({
     <div className="mx-auto max-w-4xl space-y-10">
       <header className="space-y-2">
         <p className="label-eyebrow text-muted-foreground/70">Schedule</p>
-        <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+        <h1 className="font-display text-2xl text-foreground">
           What&apos;s <span className="italic">on the books</span>.
         </h1>
         <p className="max-w-prose text-sm text-muted-foreground">{subtitle}</p>
@@ -187,7 +187,7 @@ function NotConnectedCard() {
               One quick wire-up
             </p>
             <h2 className="font-display text-xl text-foreground sm:text-2xl">
-              Plug in our <span className="italic">calendar</span> first.
+              Plug in our <span className="italic">calendar</span>{" "}first.
             </h2>
             <p className="max-w-prose text-sm text-muted-foreground">
               Connect Google Calendar through Settings and the AI starts
@@ -251,8 +251,8 @@ function ErrorCard({ error }: { error: string }) {
 function EmptyCard() {
   return (
     <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center sm:py-20">
-      <p className="font-display text-2xl text-foreground sm:text-3xl">
-        <span className="italic">Quiet</span> for the next two weeks.
+      <p className="font-display text-2xl text-foreground">
+        <span className="italic">Quiet</span>{" "}for the next two weeks.
       </p>
       <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
         New bookings land here the moment we approve them — voice, email,

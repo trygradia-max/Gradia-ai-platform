@@ -60,7 +60,7 @@ export function CrmCleanupCard({
         </p>
       ) : clean ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle2 className="size-4 text-[var(--status-live,#3fb950)]" aria-hidden />
+          <CheckCircle2 className="size-4 text-status-success-fg" aria-hidden />
           {health.total} customers, all reachable and de-duped. Gradia&rsquo;s
           working from clean data.
         </p>

@@ -220,7 +220,7 @@ export default async function SettingsPage({
         eyebrow="Connections"
         title={
           <>
-            The <em className="italic">wiring</em> behind the scenes.
+            The <em className="italic">wiring</em>{" "}behind the scenes.
           </>
         }
         subhead="The channels and tools we run on. Connect once — we handle the rest."

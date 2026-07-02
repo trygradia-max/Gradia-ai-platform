@@ -11,7 +11,6 @@ import {
   searchTwilioNumbers,
 } from "@/app/actions/twilio-provision"
 import { Button } from "@/components/ui/button"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DEFAULT_PRICING } from "@/lib/pricing"
@@ -89,7 +88,7 @@ export function TwilioNumberPicker({
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
         className="space-y-4"
       >
         <div className="flex items-start justify-between gap-3">
@@ -164,7 +163,7 @@ export function TwilioNumberPicker({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="grid gap-2"
             >
               {[0, 1, 2].map((i) => (
@@ -180,7 +179,7 @@ export function TwilioNumberPicker({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="grid gap-2"
             >
               {candidates.map((n) => {
@@ -236,7 +235,7 @@ export function TwilioNumberPicker({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="rounded-xl border border-dashed border-border/40 px-4 py-6 text-center text-sm text-muted-foreground"
             >
               No numbers in that area code right now — try a nearby one or
@@ -248,7 +247,7 @@ export function TwilioNumberPicker({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="text-xs text-muted-foreground"
             >
               Leave the area code blank and we&apos;ll pull a handful of

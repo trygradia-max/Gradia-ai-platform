@@ -70,7 +70,7 @@ export function MobileComposer() {
           transition={
             recording
               ? { duration: 1.4, repeat: Infinity, ease: "easeInOut" }
-              : { duration: 0.3 }
+              : { duration: 0.15 }
           }
           className={cn(
             "flex size-11 shrink-0 items-center justify-center rounded-full ring-1 transition-colors active:scale-[0.97]",

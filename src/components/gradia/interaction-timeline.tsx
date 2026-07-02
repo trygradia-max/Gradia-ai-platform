@@ -149,7 +149,7 @@ export function InteractionTimeline({
           className="px-6 py-12 text-center"
         >
           <p className="font-display text-xl text-foreground sm:text-2xl">
-            <span className="italic">Quiet</span> so far.
+            <span className="italic">Quiet</span>{" "}so far.
           </p>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
             We&apos;ll fill this in the moment they call, text, email, or

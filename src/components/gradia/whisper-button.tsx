@@ -7,7 +7,6 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { PulseDot } from "@/components/gradia/motion/pulse-dot"
 import { SectionHeader } from "@/components/gradia/motion/section-header"
 import { useWhisperRecorder } from "@/lib/use-whisper-recorder"
@@ -43,7 +42,7 @@ export function WhisperButton() {
         eyebrow="Voice"
         title={
           <>
-            <span className="italic">Say</span> the work.
+            <span className="italic">Say</span>{" "}the work.
           </>
         }
         subtitle="Tap once, talk like you would to a partner. We'll write it up and drop it in Approvals before anything goes out."
@@ -51,7 +50,7 @@ export function WhisperButton() {
 
       <MotionCard
         interactive={false}
-        glow={isActive}
+
         className={cn(
           "relative overflow-hidden p-6 sm:p-8",
           isActive && "border-primary/40"
@@ -104,7 +103,7 @@ export function WhisperButton() {
               transition={
                 state === "recording"
                   ? { duration: 1.4, repeat: Infinity, ease: "easeInOut" }
-                  : { duration: 0.4, ease: EASE_OUT_EXPO }
+                  : { duration: 0.15, ease: "easeOut" }
               }
               className={cn(
                 "flex size-12 shrink-0 items-center justify-center rounded-xl ring-1 transition-colors",

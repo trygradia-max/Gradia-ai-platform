@@ -12,7 +12,7 @@ export default async function LeadsPage() {
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
           <p className="label-eyebrow text-muted-foreground/70">Leads</p>
-          <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+          <h1 className="font-display text-2xl text-foreground">
             Everyone we&apos;re <span className="italic">working</span>.
           </h1>
           <p className="max-w-prose text-sm text-muted-foreground">

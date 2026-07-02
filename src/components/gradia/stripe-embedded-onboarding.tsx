@@ -67,6 +67,19 @@ export function StripeEmbeddedOnboarding({
     let cancelled = false
     void (async () => {
       try {
+        // Stripe's appearance API can't read CSS variables (and doesn't
+        // parse oklch), so resolve the design tokens to concrete rgb()
+        // values through the browser at runtime — the theme stays the
+        // single source of truth (no hardcoded hex here).
+        const token = (name: string, fallback: string) => {
+          const el = document.createElement("span")
+          el.style.color = `var(${name})`
+          document.body.appendChild(el)
+          const resolved = getComputedStyle(el).color
+          el.remove()
+          return resolved || fallback
+        }
+
         const instance = await loadConnectAndInitialize({
           publishableKey,
           fetchClientSecret: async () => {
@@ -81,11 +94,11 @@ export function StripeEmbeddedOnboarding({
             variables: {
               fontFamily:
                 "var(--font-sans), system-ui, -apple-system, sans-serif",
-              colorPrimary: "#FF6A3D",
+              colorPrimary: token("--accent", "#7c3aed"),
               colorBackground: "transparent",
-              colorText: "#F0F0F0",
-              colorDanger: "#EF4444",
-              borderRadius: "12px",
+              colorText: token("--text-primary", "#fafafa"),
+              colorDanger: token("--status-danger", "#d83a52"),
+              borderRadius: "10px",
               spacingUnit: "6px",
             },
           },

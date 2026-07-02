@@ -58,7 +58,7 @@ export function CoOwnerCard({
         eyebrow="Co-owner"
         title={
           <>
-            What <span className="italic">I&apos;d</span> tackle next.
+            What <span className="italic">I&apos;d</span>{" "}tackle next.
           </>
         }
         subtitle={
@@ -266,7 +266,7 @@ function SuggestionRow({
   return (
     <MotionCard
       interactive
-      glow={suggestion.kind === "hot_lead_followup"}
+
       className={cn(
         "relative overflow-hidden",
         // Accent rail on hot leads — 2px gradient strip down the left

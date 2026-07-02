@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
-  EASE_OUT_EXPO,
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
@@ -102,7 +101,7 @@ export function AiLeadSection() {
         eyebrow="AI · Lead capture"
         title={
           <>
-            A messy note, a <span className="italic">clean</span> lead.
+            A messy note, a <span className="italic">clean</span>{" "}lead.
           </>
         }
         subtitle="Paste anything — a text thread, a walk-in scribble, a voicemail transcript. We'll pull the name, phone, vehicle, and what they want."
@@ -113,7 +112,7 @@ export function AiLeadSection() {
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25"
           >
             <Sparkles className="size-[18px]" aria-hidden />
@@ -187,7 +186,7 @@ export function AiLeadSection() {
                 initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
-                transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
                 className="relative overflow-hidden rounded-xl border border-border/60 bg-muted/20 p-5"
               >
                 <span

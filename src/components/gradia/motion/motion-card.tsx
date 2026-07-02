@@ -30,16 +30,19 @@ export function MotionCard({
   const reduce = useReducedMotion()
   const hover =
     interactive && !reduce
-      ? { y: -4, scale: 1.005 }
+      ? { y: -1 }
       : undefined
   return (
     <motion.div
       whileHover={hover}
-      transition={{ type: "spring", stiffness: 400, damping: 28 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
       className={cn(
-        "relative rounded-2xl border border-border/60 bg-card",
-        "transition-shadow duration-300",
-        interactive && "hover:border-border",
+        // Cards sit on the 10px radius step (spec §2.5); elevation via
+        // hairline border + border strengthen on hover, never glow —
+        // the accent-glow treatment is public-pages-only (§8-A1).
+        "relative rounded-md border border-border/60 bg-card",
+        "transition-[border-color,box-shadow] duration-150",
+        interactive && "hover:border-border-strong",
         glow && "hover:accent-glow",
         className
       )}

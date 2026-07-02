@@ -124,7 +124,7 @@ export default async function CustomerDetailPage({
         <div className="space-y-2">
           <p className="label-eyebrow text-muted-foreground/70">Customer</p>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-display text-[clamp(2rem,5vw,3rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+            <h1 className="font-display text-2xl text-foreground">
               {customer.name?.trim() || "Unknown customer"}
             </h1>
             {hottest ? <HeatBadge heat={hottest} showScore /> : null}
@@ -197,7 +197,7 @@ function IdentityCard({
         eyebrow="Identity"
         title={
           <>
-            How we <span className="italic">reach</span> them.
+            How we <span className="italic">reach</span>{" "}them.
           </>
         }
         subtitle="One record. Every channel we've linked to this person."

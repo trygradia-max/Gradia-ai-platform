@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * A written empty state — never a blank panel (BUILD_REFERENCE §1). Title in
- * the serif voice, one warm sentence, and an optional single action.
+ * the display voice, one plain sentence, and an optional single action.
  */
 export function EmptyState({
   title,

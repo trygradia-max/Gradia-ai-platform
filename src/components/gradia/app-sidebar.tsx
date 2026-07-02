@@ -25,7 +25,6 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { ShopSwitcher } from "@/components/gradia/shop-switcher"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import type { ShopContext } from "@/lib/shop"
 import { cn } from "@/lib/utils"
 
@@ -73,7 +72,7 @@ export function AppSidebar({
         <motion.div
           initial={reduce ? false : { opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
           className="flex items-center gap-2.5"
         >
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25 transition-colors duration-200">
@@ -146,9 +145,9 @@ function NavRow({
         initial={reduce ? false : { opacity: 0, x: -8 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{
-          duration: 0.4,
-          ease: EASE_OUT_EXPO,
-          delay: reduce ? 0 : 0.06 + index * 0.035,
+          duration: 0.15,
+          ease: "easeOut",
+          delay: reduce ? 0 : index * 0.02,
         }}
         className="relative"
       >

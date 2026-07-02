@@ -404,7 +404,7 @@ function ReviewStep({
     return (
       <MotionCard interactive={false} className="px-6 py-16 text-center">
         <p className="font-display text-2xl text-foreground">
-          <span className="italic">All</span> sorted.
+          <span className="italic">All</span>{" "}sorted.
         </p>
         <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">
           Nothing left to review — the customers you approved are in your list now.

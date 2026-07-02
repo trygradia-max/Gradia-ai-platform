@@ -6,7 +6,6 @@ import { Clock, MapPin } from "lucide-react"
 
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
-  EASE_OUT_EXPO,
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
@@ -77,7 +76,7 @@ const rowItem: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.45, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
@@ -124,7 +123,7 @@ export function ScheduleGroups({ groups }: { groups: ScheduleGroup[] }) {
 
               <MotionCard
                 interactive={false}
-                glow={isToday}
+
                 className={cn(
                   "overflow-hidden p-0",
                   isToday && "border-primary/30"
