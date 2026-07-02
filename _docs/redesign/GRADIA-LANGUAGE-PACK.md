@@ -2,6 +2,8 @@
 
 Every string in the product, one voice. Companion to `GRADIA-REDESIGN-SPEC.md`. Implement as a strings module (e.g., `src/lib/strings.ts` or i18n messages file) — no hardcoded UI copy in components, same rule as no hardcoded hex.
 
+> **⚠️ SCOPED by `GRADIA-REDESIGN-SPEC.md` §8-A3 (2026-07-02) — narrator vs character:** this pack's voice governs **UI chrome only**. Anything the agent itself authored (chat bubbles, outbound message previews, transcripts) stays in its eval-locked **we/us** voice — `persona.ts` is no-touch. Also **§8-A8:** the nudge *engine* (§4 triggers/caps/persistence) is deferred post-alpha; only the `NudgeCard` component ships this phase.
+
 ## 1. Voice rules
 
 Gradia talks like a competent employee giving a shift report: plain, specific, brief. Concretely:

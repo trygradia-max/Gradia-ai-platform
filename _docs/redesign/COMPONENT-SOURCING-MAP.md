@@ -2,6 +2,8 @@
 
 Where every UI component comes from and where it goes in the repo. Companion to `GRADIA-REDESIGN-SPEC.md`. Research verified against 21st.dev, shadcn docs, and vendor sites on July 2, 2026.
 
+> **⚠️ AMENDED by `GRADIA-REDESIGN-SPEC.md` §8-A7 (2026-07-02):** shadcn is **already installed** (style `base-nova` — the fresh-init/Rhea assumption below is superseded); destination paths map to the repo's existing `src/components/gradia/` + `src/components/ui/`; **21st.dev membership skipped** (existing ~78 components cover the map); **Recharts approved** for Tremor copy-paste at Layer 3; the Radix/@base-ui dual stack is **frozen** — no new Base UI components. The one absolute rule below (retoken before commit, import only at the layer that uses it) stands unchanged.
+
 ## The one rule that keeps this from becoming Frankenstein UI
 
 **No component ships with its own colors, fonts, or spacing.** Everything pulled from 21st.dev or anywhere else gets adapted to Gradia's tokens (spec §2) before commit. Pulling pretty components from five sites and pasting them as-is is how apps end up looking worse than before the redesign — the token sweep in Layer 1 exists precisely so imports have one system to conform to. Fortunately, 21st.dev components are shadcn-registry format (Tailwind + CSS variables) by requirement, so retokening is usually a variable-mapping exercise, not a rewrite.
