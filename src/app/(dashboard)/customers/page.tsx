@@ -37,7 +37,7 @@ export default async function CustomersPage({
         </div>
         {FEATURES.customerRecovery && (
           <Link
-            href="/recovery"
+            href="/customers/recovery"
             className={cn(buttonVariants({ size: "lg" }), "h-11 shrink-0 gap-2")}
           >
             <Users className="size-4" aria-hidden />

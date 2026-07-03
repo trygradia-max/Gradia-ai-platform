@@ -86,6 +86,36 @@ export const STRINGS = {
     yourReceptionist: "Your receptionist",
   },
 
+  /** Page-level chrome for the A4 shell. */
+  pages: {
+    activity: {
+      eyebrow: "Activity",
+      title: "Everything your receptionist did",
+      subtitle:
+        "Calls answered, texts staged, bookings proposed — routine wins log quietly, anything unsure gets flagged.",
+      filters: { needsReview: "Needs review", handled: "Handled", escalated: "Escalated", all: "All" },
+    },
+    conversations: {
+      eyebrow: "Conversations",
+      title: "Calls, texts, and questions",
+      subtitle:
+        "Customer threads on one side, straight answers about the shop on the other.",
+      threadsHeading: "Threads",
+      /** Honest interim copy while the thread list ships (L4): shown
+       *  when the shop already HAS call/text history. */
+      threadsInterim:
+        "Call and text threads land here next. Until then, every conversation lives on the customer's file.",
+      threadsInterimCta: "View customers",
+      askHeading: "Ask Gradia",
+    },
+    receptionist: {
+      eyebrow: "Receptionist",
+      title: "What your receptionist runs",
+      subtitle:
+        "Answering, follow-ups, reminders — each one shows its status and stages everything for your approval.",
+    },
+  },
+
   /** Error pattern: what happened + what we did + what you can do.
    *  Compose per-surface; this is the canonical example shape. */
   errors: {

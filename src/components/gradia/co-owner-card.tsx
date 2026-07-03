@@ -308,7 +308,7 @@ function SuggestionRow({
             </Button>
           ) : (
             <Link
-              href="/leads"
+              href="/customers"
               className="text-xs text-muted-foreground hover:text-foreground hover:underline"
             >
               Open the lead →

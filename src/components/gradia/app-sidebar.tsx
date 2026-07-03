@@ -5,9 +5,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
+  Activity,
   Contact,
+  CreditCard,
+  Headset,
   Inbox,
   LayoutDashboard,
+  MessagesSquare,
   Settings,
   Sparkles,
 } from "lucide-react"
@@ -22,6 +26,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarFooter,
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { ShopSwitcher } from "@/components/gradia/shop-switcher"
@@ -34,14 +39,21 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// Three sturdy destinations + Settings (FOCUS spec §4.4). Ask Gradia is the
-// ⌘K command bar, not a place; Leads folds into Customers, Schedule into
-// Home/Customers, and "What Gradia does" (/agents) drops off the primary nav.
-// All those routes still exist — they're just no longer top-level.
+// The final IA (redesign spec §8-A4) — exactly these six, in this order,
+// plus the two pinned at the bottom. Old routes (/agents, /agent, /chat,
+// /leads, /recovery) live on as redirects, never as nav items. The ⌘K /
+// Whisper command bar stays the primary composer — a verb, not a place.
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/approvals", label: "Approvals", icon: Inbox },
+  { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/conversations", label: "Conversations", icon: MessagesSquare },
   { href: "/customers", label: "Customers", icon: Contact },
+  { href: "/receptionist", label: "Receptionist", icon: Headset },
+]
+
+const pinnedNav: NavItem[] = [
+  { href: "/billing", label: "Numbers & Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
@@ -120,6 +132,21 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      {/* Pinned bottom (spec §8-A4): Numbers & Billing · Settings. */}
+      <SidebarFooter className="border-t border-sidebar-border/60 px-2 py-3">
+        <SidebarMenu>
+          {pinnedNav.map((item, index) => (
+            <NavRow
+              key={item.href}
+              item={item}
+              isActive={pathname.startsWith(item.href)}
+              index={nav.length + index}
+              reduce={reduce ?? false}
+            />
+          ))}
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

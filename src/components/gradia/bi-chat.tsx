@@ -113,7 +113,7 @@ const chipItem: Variants = {
 export function BiChat({
   initial,
   endpoint = "/api/bi/chat",
-  resetHref = "/chat",
+  resetHref = "/conversations",
 }: {
   initial: InitialChatState
   /** Which chat backend to stream from. Defaults to Ask Gradia (read-only);

@@ -230,7 +230,7 @@ export default async function SettingsPage({
         {/* "What Gradia does" lives here now that the primary nav is three
             pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
         <Link
-          href="/agents"
+          href="/receptionist"
           className="group flex items-center gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
         >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">

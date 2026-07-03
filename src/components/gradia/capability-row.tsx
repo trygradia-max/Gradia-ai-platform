@@ -3,7 +3,6 @@
 import * as React from "react"
 import Link from "next/link"
 import { ChevronDown } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
 
 import { StatusPill } from "@/components/ui/status-pill"
 import { buttonVariants } from "@/components/ui/button"
@@ -17,7 +16,7 @@ import { cn } from "@/lib/utils"
  * prerequisites panel.
  */
 export function CapabilityRow({
-  icon: Icon,
+  icon,
   title,
   blurb,
   on,
@@ -26,7 +25,9 @@ export function CapabilityRow({
   defaultOpen = false,
   children,
 }: {
-  icon: LucideIcon
+  /** A rendered icon element — server pages can't pass component fns
+   *  across the client boundary. */
+  icon: React.ReactNode
   title: string
   blurb: string
   /** Is this capability doing work for the owner right now? */
@@ -55,7 +56,7 @@ export function CapabilityRow({
               : "bg-muted/60 text-muted-foreground ring-border/60"
           )}
         >
-          <Icon className="size-4.5" aria-hidden />
+          {icon}
         </div>
         <button
           type="button"
