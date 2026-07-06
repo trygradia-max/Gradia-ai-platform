@@ -3,15 +3,16 @@ import { cookies } from "next/headers"
 import { getCrmCleanupState } from "@/app/actions/crm-cleanup"
 import { dashboardEyebrow } from "@/lib/eyebrow"
 import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
-import { getCoOwnerSuggestions } from "@/lib/data/co-owner"
+import { getHomeKpis } from "@/lib/data/kpis"
 import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
 import { AiLeadSection } from "@/components/gradia/ai-lead-section"
+import { BookedToday } from "@/components/gradia/booked-today"
 import { CrmCleanupCard } from "@/components/gradia/crm-cleanup-card"
 import { AddLeadDialog } from "@/components/gradia/add-lead-dialog"
 import { ChannelConnectionCard } from "@/components/gradia/channel-connection-card"
-import { CoOwnerCard } from "@/components/gradia/co-owner-card"
 import { DashboardHero } from "@/components/gradia/dashboard-hero"
 import { HomeFeed } from "@/components/gradia/home-feed"
+import { KpiRow } from "@/components/gradia/kpi-row"
 import {
   WelcomeModal,
   WELCOME_DISMISSED_COOKIE,
@@ -24,10 +25,10 @@ import { requireShop } from "@/lib/shop"
 
 export default async function DashboardPage() {
   const shop = await requireShop()
-  const [leads, channels, suggestions, cleanup, cookieStore] = await Promise.all([
+  const [leads, channels, kpis, cleanup, cookieStore] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     getChannelStatusForCurrentShop(),
-    getCoOwnerSuggestions(),
+    getHomeKpis(),
     getCrmCleanupState(),
     cookies(),
   ])
@@ -59,24 +60,26 @@ export default async function DashboardPage() {
         rightSlot={<AddLeadDialog />}
       />
 
-      {/* The receipt is pinned on top — the proof of why we're worth it, the
-          #1 retention lever (FOCUS spec §4.3 / NOW-3). Always visible, even
-          at zero (it carries its own written empty state). */}
+      {/* Home composition per spec §8-A5, top to bottom: the receipt is
+          pinned first (sacred — the #1 retention lever, NOW-3), then the
+          KPI row, then today's bookings (schedule's approved home), then
+          recent activity. Co-owner nudges are OFF Home — they return
+          post-alpha inline-in-context via the nudge engine (§8-A8). */}
       <RoiReceipt />
 
-      {/* Nudges next — "what I'd tackle next" beats a wall of stats
-          (GRADIA_UX_ONBOARDING_SPEC Part 2). */}
+      <KpiRow kpis={kpis} />
+
+      <BookedToday />
+
       {showCleanup && (
         <CrmCleanupCard
           health={cleanup.health}
           justConnected={cleanup.justConnected}
         />
       )}
-      <CoOwnerCard suggestions={suggestions} />
 
-      {/* The live feed — what's waiting on a yes + what we've handled. Sits
-          right under the nudges so the daily loop (glance → approve) happens
-          on Home (FOCUS spec §4.3, item 3). */}
+      {/* Recent activity — what's waiting on a yes + what just happened.
+          The full glass-box feed is the L4 /activity work. */}
       <HomeFeed />
 
       <RevenueTiles />

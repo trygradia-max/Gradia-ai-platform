@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { Button, buttonVariants } from "@/components/ui/button"
+import { STRINGS } from "@/lib/strings"
 import {
   Dialog,
   DialogContent,
@@ -87,13 +88,8 @@ export function WelcomeModal({
           <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
             <Sparkles className="size-4" aria-hidden />
           </div>
-          <DialogTitle>Welcome to Gradia</DialogTitle>
-          <DialogDescription>
-            We&apos;re your AI office — every inquiry across voice, email,
-            SMS, and DMs becomes a drafted reply waiting in your Approvals.
-            Connect the channels below and we&apos;ll start catching leads
-            with you.
-          </DialogDescription>
+          <DialogTitle>{STRINGS.pages.welcome.title}</DialogTitle>
+          <DialogDescription>{STRINGS.pages.welcome.body}</DialogDescription>
         </DialogHeader>
 
         <ul className="grid gap-2">
@@ -132,20 +128,21 @@ export function WelcomeModal({
             onClick={() => handleClose(false)}
             className="h-11 sm:h-9"
           >
-            I&apos;ll set up later
+            {STRINGS.pages.welcome.setUpLater}
           </Button>
           <Link
             href="/settings#voice"
             onClick={() => handleClose(false)}
             className={`${buttonVariants({ variant: "default" })} h-11 sm:h-9`}
           >
-            Start connecting
+            {STRINGS.pages.welcome.startConnecting}
           </Link>
         </DialogFooter>
 
+        {/* One expression — the old element-adjacent text lost its space
+            to the JSX transform ("0 of 4live"). */}
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          {connectedCount} of {totalChannels} live · we&apos;ll keep this
-          out of your way once you&apos;re going.
+          {STRINGS.pages.welcome.progress(connectedCount, totalChannels)}
         </p>
       </DialogContent>
     </Dialog>

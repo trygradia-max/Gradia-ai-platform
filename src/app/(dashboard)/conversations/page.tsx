@@ -1,15 +1,13 @@
-import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ArrowRight } from "lucide-react"
 
 import { BiChat, type InitialChatState } from "@/components/gradia/bi-chat"
-import { EmptyState } from "@/components/gradia/empty-state"
+import { ConversationThreads } from "@/components/gradia/conversation-threads"
 import { FEATURES } from "@/lib/features"
 import {
   getConversationByIdWithMessages,
   getLatestConversationWithMessages,
 } from "@/lib/data/bi-conversations"
-import { hasConversationHistory } from "@/lib/data/interactions"
+import { listConversationThreads } from "@/lib/data/conversations"
 import { requireShop } from "@/lib/shop"
 import { STRINGS } from "@/lib/strings"
 
@@ -31,11 +29,11 @@ export default async function ConversationsPage({
   const params = await searchParams
   const requestedId = params.c?.trim() ?? null
 
-  const [loaded, hasHistory] = await Promise.all([
+  const [loaded, threads] = await Promise.all([
     requestedId
       ? getConversationByIdWithMessages(requestedId)
       : getLatestConversationWithMessages(),
-    hasConversationHistory(),
+    listConversationThreads(),
   ])
 
   // Stale/deleted thread link → drop the param, keep the URL honest.
@@ -65,29 +63,13 @@ export default async function ConversationsPage({
         </p>
       </header>
 
-      {/* Customer threads (calls + SMS, unified). Real list ships with
-          the L4 call-record work. */}
+      {/* Customer threads (calls + SMS, unified) — real rows from stored
+          turns; AI summaries arrive with the L4 call-record work. */}
       <section className="space-y-3">
         <p className="label-eyebrow text-muted-foreground/70">
           {s.threadsHeading}
         </p>
-        {hasHistory ? (
-          <div className="flex flex-col gap-3 rounded-md border border-border/60 bg-card px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">{s.threadsInterim}</p>
-            <Link
-              href="/customers"
-              className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-accent-text hover:underline"
-            >
-              {s.threadsInterimCta}
-              <ArrowRight className="size-3.5" aria-hidden />
-            </Link>
-          </div>
-        ) : (
-          <EmptyState
-            title="No calls yet."
-            description={STRINGS.empty.conversationsFirstUse}
-          />
-        )}
+        <ConversationThreads threads={threads} />
       </section>
 
       {/* Ask Gradia — the read box, now a module here instead of its

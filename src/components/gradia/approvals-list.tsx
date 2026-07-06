@@ -19,7 +19,9 @@ import { toast } from "sonner"
 import {
   approveFromDashboard,
   rejectFromDashboard,
+  undoRejectFromDashboard,
 } from "@/app/actions/approvals"
+import { STRINGS } from "@/lib/strings"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
@@ -196,9 +198,31 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     if (result.alreadyDecided) {
       toast.message("Already decided.")
     } else if (decision === "approve") {
-      toast.success("Approved — it's on its way.")
+      // Approve executed a real send — irreversible, so no undo offered.
+      toast.success("Sent — it's on its way.")
     } else {
-      toast.success("Dropped. Nothing went out.")
+      // Drop is reversible: undo restores the card to the queue.
+      toast.success("Dropped. Nothing went out.", {
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void (async () => {
+              const undo = await undoRejectFromDashboard(id)
+              if (!undo.ok) {
+                toast.error(undo.error)
+                return
+              }
+              setRemoved((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+              })
+              toast.success("Restored to the queue.")
+              router.refresh()
+            })()
+          },
+        },
+      })
     }
 
     // Background reconcile: refresh the badge + any server-derived state. The
@@ -308,17 +332,19 @@ function ApprovalCard({
         </p>
       </div>
 
+      {/* Equal visual weight on all three (founder decision + pack
+          guardrail: no false hierarchy on the decline). */}
       <div className="mt-5 flex flex-col gap-2 pl-0 sm:flex-row sm:items-center sm:pl-[52px]">
         <Button
           onClick={() => onDecision(item.id, "approve")}
           disabled={anyBusy}
-          size="lg"
+          variant="outline"
           className="h-11 gap-2 transition-transform duration-200 active:scale-[0.98] sm:h-10 sm:px-5"
         >
           {approveBusy ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : null}
-          {ACTION_CTA[item.action_type] ?? "Approve"}
+          {ACTION_CTA[item.action_type] ?? "Send it"}
         </Button>
         <div className="grid grid-cols-2 gap-2 sm:contents">
           <Link
@@ -335,8 +361,8 @@ function ApprovalCard({
           <Button
             onClick={() => onDecision(item.id, "reject")}
             disabled={anyBusy}
-            variant="ghost"
-            className="h-11 gap-2 text-muted-foreground transition-colors duration-200 hover:text-destructive sm:h-10"
+            variant="outline"
+            className="h-11 gap-2 transition-colors duration-200 hover:text-status-danger-fg sm:h-10"
           >
             {rejectBusy ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -370,11 +396,10 @@ function EmptyState() {
         className="space-y-2"
       >
         <p className="font-display text-2xl text-foreground">
-          <span className="italic">All</span>{" "}clear.
+          {STRINGS.pages.approvals.titleAllClear}.
         </p>
         <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-          Nothing waiting on us right now — we&apos;ll holler the moment
-          something needs your eyes.
+          {STRINGS.empty.approvalsEmpty}
         </p>
       </motion.div>
     </MotionCard>

@@ -88,6 +88,43 @@ export const STRINGS = {
 
   /** Page-level chrome for the A4 shell. */
   pages: {
+    home: {
+      receiptEyebrow: "This week",
+      receiptTitle: "What your receptionist got done",
+      receiptSubtitle:
+        "A running receipt of the work caught and handled for you — counted conservatively, traced to your own records.",
+      kpisEyebrow: "Today",
+      kpiCalls: "Calls handled",
+      kpiLeads: "Leads captured",
+      kpiBooked: "Appointments booked",
+      kpiNeedsReview: "Needs your review",
+      bookedEyebrow: "On the books",
+      bookedTitle: "Today's appointments",
+      bookedEmpty: "Nothing on the books today.",
+      bookedViewAll: "Full schedule",
+      activityEyebrow: "Recent activity",
+      activityTitle: "What just happened",
+      activityViewAll: "See all activity",
+    },
+    approvals: {
+      eyebrow: "Approvals",
+      titleAllClear: "All clear",
+      titleWaiting: "Waiting on you",
+      subtitleEmpty:
+        "Nothing needs your eyes right now — anything that does lands here the moment it's staged.",
+      subtitleWaiting: (pending: number, edits: number) =>
+        `A quick yes or no before anything leaves the shop — ${pending} pending${
+          edits > 0 ? ` · ${edits} need a tweak` : ""
+        }.`,
+    },
+    welcome: {
+      title: "Welcome to Gradia",
+      body: "Your receptionist answers calls, texts, and emails — every inquiry becomes a drafted reply waiting in Approvals. Connect the channels below and it starts catching leads.",
+      setUpLater: "I'll set up later",
+      startConnecting: "Start connecting",
+      progress: (live: number, total: number) =>
+        `${live} of ${total} live — this card gets out of your way once you're going.`,
+    },
     activity: {
       eyebrow: "Activity",
       title: "Everything your receptionist did",

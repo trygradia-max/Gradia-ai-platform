@@ -16,6 +16,7 @@ import {
   type RoiReceipt,
 } from "@/lib/data/roi-receipt"
 import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 
 /**
@@ -76,13 +77,9 @@ export function RoiReceiptView({
   return (
     <section className="space-y-5">
       <SectionHeader
-        eyebrow="This week"
-        title={
-          <>
-            What we did, <span className="italic">together</span>.
-          </>
-        }
-        subtitle="A running receipt of the work we caught and handled for you — counted conservatively, traced to your own records."
+        eyebrow={STRINGS.pages.home.receiptEyebrow}
+        title={STRINGS.pages.home.receiptTitle}
+        subtitle={STRINGS.pages.home.receiptSubtitle}
       />
 
       <div
@@ -126,7 +123,7 @@ export function RoiReceiptView({
                 <span className="font-medium text-foreground">
                   {formatReceiptDollars(foundMoneyCents)}
                 </span>{" "}
-                found to date, together.
+                found to date.
               </p>
             )}
 

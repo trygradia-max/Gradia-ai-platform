@@ -71,6 +71,45 @@ export async function rejectFromDashboard(
   return { ok: true, alreadyDecided: result.status === "already_decided" }
 }
 
+/**
+ * Undo for "Drop it" (L3 — every reversible mutation gets an undo).
+ * A rejection has no side effects, so restoring it just re-stages the
+ * HITL card: status back to pending, decision fields cleared. Only a
+ * currently-rejected row owned by the caller's shop qualifies — approve
+ * is never undoable (it executed a real send).
+ */
+export async function undoRejectFromDashboard(
+  pendingId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const shop = await requireShop()
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from("pending_actions")
+    .update({
+      status: "pending",
+      decided_at: null,
+      decided_by_slack: null,
+      decided_by_user: null,
+      resolution: null,
+    })
+    .eq("id", pendingId)
+    .eq("shop_id", shop.id)
+    .eq("status", "rejected")
+    .select("id")
+    .maybeSingle()
+
+  if (error) {
+    return { ok: false, error: error.message }
+  }
+  if (!data) {
+    return { ok: false, error: "That one can't be restored." }
+  }
+
+  revalidatePath("/approvals")
+  return { ok: true }
+}
+
 async function notifySlackApproved(
   pendingId: string,
   approverEmail: string | null,
