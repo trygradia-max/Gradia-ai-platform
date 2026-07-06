@@ -131,6 +131,24 @@ export const STRINGS = {
       subtitle:
         "Calls answered, texts staged, bookings proposed — routine wins log quietly, anything unsure gets flagged.",
       filters: { needsReview: "Needs review", handled: "Handled", escalated: "Escalated", all: "All" },
+      escalatedUnavailable:
+        "Escalation tracking arrives with call transfers — nothing to filter yet.",
+      whyLabel: "Why",
+      outcome: { handled: "Handled", needsYou: "Needs you", dropped: "Dropped" },
+      viewCall: "View call",
+    },
+    call: {
+      eyebrow: "Call record",
+      titleFallback: "Call",
+      summaryHeading: "Summary",
+      transcriptHeading: "Transcript",
+      actionsHeading: "From this call",
+      recordingHeading: "Recording",
+      noSummary:
+        "No summary was captured for this call — the full transcript below is the record.",
+      backToActivity: "Back to Activity",
+      caller: "Caller",
+      receptionist: "Receptionist",
     },
     conversations: {
       eyebrow: "Conversations",

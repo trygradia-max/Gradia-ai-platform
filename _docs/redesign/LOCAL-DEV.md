@@ -36,6 +36,11 @@ docker exec supabase_db_gradia-app psql -U postgres -d postgres -c \
 
 Keys shown by `supabase status` (publishable = anon, secret = service role).
 
+**After pulling new migrations:** `supabase start` does NOT apply them to an
+existing local volume — run `supabase migration up`, then **re-run the grant
+block above** (grants only cover tables that existed when they ran; new
+tables come up ungranted).
+
 ## Seeded walkthrough
 
 Seed a dev owner + shop (idempotent), then sign in by minting a magic link
