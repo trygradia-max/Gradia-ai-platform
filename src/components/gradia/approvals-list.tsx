@@ -178,36 +178,56 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     // Optimistic: hide the card now; "Sent ✓" is implied by the toast.
     setRemoved((prev) => new Set(prev).add(id))
 
-    const result =
-      decision === "approve"
-        ? await approveFromDashboard(id)
-        : await rejectFromDashboard(id)
-
-    if (!result.ok) {
-      // Reconcile failure — un-hide the card so the owner can retry.
+    const rollback = () => {
       setRemoved((prev) => {
         const next = new Set(prev)
         next.delete(id)
         return next
       })
       inFlight.current.delete(id)
+    }
+
+    let result: Awaited<ReturnType<typeof approveFromDashboard>>
+    try {
+      result =
+        decision === "approve"
+          ? await approveFromDashboard(id)
+          : await rejectFromDashboard(id)
+    } catch {
+      // Network-level failure (the action never reached the server, or the
+      // response never came back): un-hide the card, say so out loud.
+      // Silent failure is forbidden.
+      rollback()
+      toast.error(STRINGS.toasts.decisionFailed)
+      return
+    }
+
+    if (!result.ok) {
+      // Reconcile failure — un-hide the card so the owner can retry.
+      rollback()
       toast.error(result.error)
       return
     }
 
     if (result.alreadyDecided) {
-      toast.message("Already decided.")
+      toast.message(STRINGS.toasts.alreadyDecided)
     } else if (decision === "approve") {
       // Approve executed a real send — irreversible, so no undo offered.
-      toast.success("Sent — it's on its way.")
+      toast.success(STRINGS.toasts.approvalSent)
     } else {
       // Drop is reversible: undo restores the card to the queue.
-      toast.success("Dropped. Nothing went out.", {
+      toast.success(STRINGS.toasts.approvalDropped, {
         action: {
-          label: "Undo",
+          label: STRINGS.actions.undo,
           onClick: () => {
             void (async () => {
-              const undo = await undoRejectFromDashboard(id)
+              let undo: Awaited<ReturnType<typeof undoRejectFromDashboard>>
+              try {
+                undo = await undoRejectFromDashboard(id)
+              } catch {
+                toast.error(STRINGS.toasts.couldntSave)
+                return
+              }
               if (!undo.ok) {
                 toast.error(undo.error)
                 return
@@ -217,7 +237,7 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
                 next.delete(id)
                 return next
               })
-              toast.success("Restored to the queue.")
+              toast.success(STRINGS.toasts.approvalRestored)
               router.refresh()
             })()
           },

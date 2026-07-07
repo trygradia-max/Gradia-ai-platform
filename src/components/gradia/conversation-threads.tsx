@@ -32,7 +32,7 @@ export function ConversationThreads({
   if (threads.length === 0) {
     return (
       <EmptyState
-        title="No calls yet."
+        title={STRINGS.chrome.noCallsYetTitle}
         description={STRINGS.empty.conversationsFirstUse}
       />
     )
@@ -53,7 +53,7 @@ export function ConversationThreads({
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex items-baseline justify-between gap-3">
                 <p className="truncate text-sm font-medium text-foreground">
-                  {t.customerName ?? "Unknown caller"}
+                  {t.customerName ?? STRINGS.chrome.unknownCaller}
                 </p>
                 <p className="shrink-0 font-data text-xs text-muted-foreground">
                   {relative(t.lastAt)}
@@ -68,12 +68,12 @@ export function ConversationThreads({
                   {t.lastRole === "gradia" ? (
                     <>
                       <Sparkles className="size-3" aria-hidden />
-                      Receptionist replied
+                      {STRINGS.chrome.receptionistReplied}
                     </>
                   ) : (
                     <>
                       <User className="size-3" aria-hidden />
-                      Caller spoke last
+                      {STRINGS.chrome.callerSpokeLast}
                     </>
                   )}
                 </span>

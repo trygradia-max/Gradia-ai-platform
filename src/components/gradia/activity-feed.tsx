@@ -100,7 +100,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
 
       {visible.length === 0 ? (
         <EmptyState
-          title="Nothing logged yet."
+          title={STRINGS.chrome.nothingLoggedTitle}
           description={STRINGS.empty.activityFirstUse}
         />
       ) : (

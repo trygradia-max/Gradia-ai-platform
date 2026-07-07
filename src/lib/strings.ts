@@ -68,6 +68,12 @@ export const STRINGS = {
     saved: "Saved",
     couldntSave:
       "Couldn't save — check your connection. Your edits are still here.",
+    approvalSent: "Sent — it's on its way.",
+    approvalDropped: "Dropped. Nothing went out.",
+    approvalRestored: "Restored to the queue.",
+    alreadyDecided: "Already decided.",
+    decisionFailed:
+      "That didn't go through — check your connection. The card is back in the queue.",
   },
 
   /** Confidence & review — three levels ONLY, never percentages
@@ -84,6 +90,11 @@ export const STRINGS = {
     handledByReceptionist: "Handled by your receptionist",
     handledByYou: "Handled by you",
     yourReceptionist: "Your receptionist",
+    receptionistReplied: "Receptionist replied",
+    callerSpokeLast: "Caller spoke last",
+    unknownCaller: "Unknown caller",
+    noCallsYetTitle: "No calls yet.",
+    nothingLoggedTitle: "Nothing logged yet.",
   },
 
   /** Page-level chrome for the A4 shell. */
