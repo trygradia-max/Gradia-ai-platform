@@ -86,12 +86,7 @@ export function CrmCleanupCard({
               {clusters.slice(0, 8).map((cluster) => {
                 const primary = cluster.members[0]
                 const desc = (m: DuplicateCluster["members"][number]) =>
-                  [m.vehicle_color, m.vehicle_make, m.vehicle_model]
-                    .filter(Boolean)
-                    .join(" ") ||
-                  m.phone ||
-                  m.email ||
-                  "no details"
+                  m.vehicle || m.phone || m.email || "no details"
                 return (
                   <li
                     key={cluster.key}

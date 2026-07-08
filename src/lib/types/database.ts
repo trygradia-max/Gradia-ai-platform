@@ -194,9 +194,17 @@ export type LeadRow = {
   customer_name: string
   phone: string
   car_info: string | null
+  /** Structured vehicle (CRM C1) — only present once the C1 migration is
+   *  applied, so writers link it best-effort AFTER insert, never inside one. */
+  vehicle_id: string | null
+  /** @deprecated Write-through only (CRM C1): keep writing so pre-migration
+   *  DBs and the C1 backfill stay correct; read through lib/vehicles.ts. */
   vehicle_make: string | null
+  /** @deprecated Write-through only — see vehicle_make. */
   vehicle_model: string | null
+  /** @deprecated Write-through only — see vehicle_make. */
   vehicle_year: number | null
+  /** @deprecated Write-through only — see vehicle_make. */
   vehicle_color: string | null
   pin_notes: string | null
   status: LeadStatus
@@ -212,9 +220,16 @@ export type CustomerRow = {
   name: string | null
   phone: string | null
   email: string | null
+  /** @deprecated Write-through only (CRM C1): vehicles live in the
+   *  `vehicles` table; keep writing these until the drop migration lands so
+   *  pre-migration DBs and the C1 backfill stay correct. Read through
+   *  lib/vehicles.ts. */
   vehicle_make: string | null
+  /** @deprecated Write-through only — see vehicle_make. */
   vehicle_model: string | null
+  /** @deprecated Write-through only — see vehicle_make. */
   vehicle_year: number | null
+  /** @deprecated Write-through only — see vehicle_make. */
   vehicle_color: string | null
   last_visit_at: string | null
   marketing_consent_at: string | null
@@ -237,6 +252,9 @@ export type ImportSourceType =
   | "contacts_csv"
   | "vcard"
   | "gradia_history"
+  /** C7 structured-CSV wizard — enum value lands with migration
+   *  20260708150000_structured_csv_source.sql (founder-applied). */
+  | "structured_csv"
 
 export type ImportJobStatus =
   | "pending"
@@ -275,16 +293,148 @@ export type ImportMessageRow = {
   created_at: string
 }
 
+/** A condition multiplier entry in services.condition_multipliers (jsonb). */
+export type ConditionMultiplier = {
+  key: string
+  label?: string
+  multiplier: number
+}
+
 export type ServiceRow = {
   id: string
   shop_id: string
   name: string
   description: string | null
+  /** Flat price — the locked fallback when no size-class price applies. */
   price_cents: number
   duration_minutes: number
+  /** Size-class pricing (CRM C1). jsonb → validated at read time by
+   *  lib/service-pricing.ts — never read these maps directly. */
+  category: string | null
+  base_price_by_size: Record<string, unknown> | null
+  duration_by_size: Record<string, unknown> | null
+  condition_multipliers: ConditionMultiplier[] | null
+  is_addon: boolean
+  addon_eligible: boolean
+  mobile_eligible: boolean
+  active: boolean
   created_at: string
   updated_at: string
 }
+
+export type VehicleSizeClass =
+  | "sedan"
+  | "coupe"
+  | "truck_suv"
+  | "xl_van"
+  | "exotic"
+  | "rv"
+  | "boat"
+  | "motorcycle"
+
+/** First-class vehicle profile (CRM C1) — one customer, many vehicles. */
+export type VehicleRow = {
+  id: string
+  shop_id: string
+  customer_id: string
+  year: number | null
+  make: string | null
+  model: string | null
+  trim: string | null
+  color: string | null
+  size_class: VehicleSizeClass | null
+  plate: string | null
+  vin: string | null
+  photos: string[]
+  paint_condition: number | null
+  paint_condition_note: string | null
+  interior_condition: number | null
+  interior_condition_note: string | null
+  coating: Record<string, unknown> | null
+  ppf: Record<string, unknown> | null
+  tint: Record<string, unknown> | null
+  maintenance_schedule: unknown[]
+  notes: string | null
+  import_job_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type QuoteStatus =
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "accepted"
+  | "declined"
+  | "expired"
+
+export type QuoteLineItem = {
+  service_id: string | null
+  name?: string
+  qty?: number
+  base_cents: number
+  modifiers?: string[]
+  price_cents: number
+}
+
+/** The money object (CRM C1). Agent-created quotes are ALWAYS draft. */
+export type QuoteRow = {
+  id: string
+  shop_id: string
+  customer_id: string
+  vehicle_id: string | null
+  lead_id: string | null
+  status: QuoteStatus
+  line_items: QuoteLineItem[]
+  subtotal_cents: number
+  discount_cents: number
+  total_cents: number
+  is_range: boolean
+  range_low_cents: number | null
+  range_high_cents: number | null
+  customer_note: string | null
+  internal_note: string | null
+  photos: string[]
+  valid_until: string | null
+  sent_via: string | null
+  sent_at: string | null
+  viewed_at: string | null
+  responded_at: string | null
+  created_by: "owner" | "agent" | "whisper"
+  public_token: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** CRM C1 pipeline stage (crm_stage enum) — the pipeline card's source of
+ *  truth once C2 ships; C7 imports map spreadsheet stage values onto it. */
+export type CrmStage =
+  | "new"
+  | "needs_quote"
+  | "quote_sent"
+  | "follow_up"
+  | "booked"
+  | "lost"
+
+/** CRM C1 customer lifecycle — derived nightly by code (lib/lifecycle.ts),
+ *  never by a model. Column exists once the C1 migration is applied. */
+export type CustomerLifecycle =
+  | "lead"
+  | "active"
+  | "maintenance"
+  | "at_risk"
+  | "lapsed"
+  | "won_back"
+
+export type JobStatus =
+  | "booked"
+  | "confirmed"
+  | "checked_in"
+  | "in_progress"
+  | "on_hold"
+  | "completed"
+  | "paid"
+  | "closed"
 
 export type AppointmentRow = {
   id: string

@@ -43,6 +43,11 @@ import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
 import { recordInteraction } from "@/lib/memory"
 import { parseVehicle } from "@/lib/vehicle"
+import {
+  describeVehicle,
+  upsertCustomerVehicle,
+  vehiclesByCustomerIds,
+} from "@/lib/vehicles"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { GRADIA_IDENTITY, GRADIA_VOICE } from "@/lib/persona"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -216,16 +221,25 @@ const proposeBookingSchema = z.object({
   duration_minutes: z.number().int().min(15).max(600).optional(),
 })
 
-/** Shop service menu — grounds the verifier (no fabricated prices/services). */
+/** Shop service menu — grounds the verifier (no fabricated prices/services).
+ *  Carries base_price_by_size so the critic sees resolved size-class prices. */
 async function loadServices(
   supabase: SupabaseClient,
   shopId: string
-): Promise<Pick<ServiceRow, "name" | "price_cents">[]> {
+): Promise<
+  (Pick<ServiceRow, "name" | "price_cents"> &
+    Pick<ServiceRow, "base_price_by_size">)[]
+> {
   const { data } = await supabase
     .from("services")
-    .select("name, price_cents")
+    .select("name, price_cents, base_price_by_size")
     .eq("shop_id", shopId)
-  return (data as Pick<ServiceRow, "name" | "price_cents">[] | null) ?? []
+  return (
+    (data as
+      | (Pick<ServiceRow, "name" | "price_cents"> &
+          Pick<ServiceRow, "base_price_by_size">)[]
+      | null) ?? []
+  )
 }
 
 /** Cross-model verify an outbound draft; returns the payload flag fragment. */
@@ -251,9 +265,8 @@ type CustomerMatch = {
   name: string | null
   phone: string | null
   email: string | null
-  vehicle_make: string | null
-  vehicle_model: string | null
-  vehicle_color: string | null
+  /** Primary-vehicle display line, joined from the `vehicles` table. */
+  vehicle: string | null
   last_visit_at: string | null
 }
 
@@ -271,13 +284,33 @@ async function resolveCustomer(
   if (digits.length >= 4) ors.push(`phone.ilike.%${digits}%`)
   const { data } = await supabase
     .from("customers")
+    // vehicle_* read only as the pre-C1-migration backup (write-through
+    // keeps them current — lib/vehicles.ts).
     .select(
       "id, name, phone, email, vehicle_make, vehicle_model, vehicle_color, last_visit_at"
     )
     .eq("shop_id", shopId)
     .or(ors.join(","))
     .limit(8)
-  return (data as CustomerMatch[] | null) ?? []
+  const rows =
+    (data as (Omit<CustomerMatch, "vehicle"> & {
+      vehicle_make: string | null
+      vehicle_model: string | null
+      vehicle_color: string | null
+    })[]
+      | null) ?? []
+  const vehicles = await vehiclesByCustomerIds(
+    supabase,
+    shopId,
+    rows.map((r) => r.id)
+  )
+  return rows.map(({ vehicle_make, vehicle_model, vehicle_color, ...r }) => ({
+    ...r,
+    vehicle:
+      describeVehicle(vehicles.get(r.id)?.[0]) ??
+      ([vehicle_color, vehicle_make, vehicle_model].filter(Boolean).join(" ") ||
+        null),
+  }))
 }
 
 /** A short distinguishing descriptor so the agent can ask "which one?". */
@@ -287,13 +320,10 @@ function describeCandidate(m: CustomerMatch): {
   phone_last4: string | null
   last_visit: string | null
 } {
-  const vehicle =
-    [m.vehicle_color, m.vehicle_make, m.vehicle_model].filter(Boolean).join(" ") ||
-    null
   const digits = (m.phone ?? "").replace(/\D/g, "")
   return {
     name: m.name,
-    vehicle,
+    vehicle: m.vehicle,
     phone_last4: digits ? digits.slice(-4) : null,
     last_visit: m.last_visit_at ? m.last_visit_at.slice(0, 10) : null,
   }
@@ -621,21 +651,43 @@ async function runOwnerTool(
       name: customer_name,
       phone,
     })
-    const { error } = await ctx.supabase.from("leads").insert({
-      shop_id: ctx.shop.id,
-      customer_id: customerResult.ok ? customerResult.customer.id : null,
-      customer_name,
-      phone,
-      car_info: vehicle ?? null,
-      vehicle_make: v.make,
-      vehicle_model: v.model,
-      vehicle_year: v.year,
-      vehicle_color: v.color,
-      pin_notes: note ?? null,
-      status: "new",
-    })
+    // Structured vehicle lands in the vehicles table on the customer (C1),
+    // with write-through to the deprecated flat columns. vehicle_id links
+    // after insert so a pre-C1-migration DB still saves the lead.
+    const vehicleId = customerResult.ok
+      ? await upsertCustomerVehicle(
+          ctx.supabase,
+          ctx.shop.id,
+          customerResult.customer.id,
+          v
+        )
+      : null
+    const { data: createdLead, error } = await ctx.supabase
+      .from("leads")
+      .insert({
+        shop_id: ctx.shop.id,
+        customer_id: customerResult.ok ? customerResult.customer.id : null,
+        customer_name,
+        phone,
+        car_info: vehicle ?? null,
+        vehicle_make: v.make,
+        vehicle_model: v.model,
+        vehicle_year: v.year,
+        vehicle_color: v.color,
+        pin_notes: note ?? null,
+        status: "new",
+      })
+      .select("id")
+      .single()
     if (error) {
       return { content: json({ error: "Couldn't save that lead." }), isError: true }
+    }
+    if (vehicleId && createdLead) {
+      // Best-effort — leads.vehicle_id exists only post-C1-migration.
+      await ctx.supabase
+        .from("leads")
+        .update({ vehicle_id: vehicleId })
+        .eq("id", (createdLead as { id: string }).id)
     }
     return { content: json({ created: customer_name, immediate: true }), isError: false }
   }
@@ -660,8 +712,12 @@ async function runOwnerTool(
       }
     }
     const c = matches[0]
+    // Vehicle fields land in the vehicles table (C1); contact fields on the
+    // customer record.
+    const { vehicle_make, vehicle_model, vehicle_color, vehicle_year, ...contact } =
+      fields
     const patch: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(fields)) {
+    for (const [k, v] of Object.entries(contact)) {
       if (v === undefined || v === null) continue
       if (typeof v === "string") {
         if (v.trim()) patch[k] = v.trim()
@@ -669,19 +725,35 @@ async function runOwnerTool(
         patch[k] = v
       }
     }
-    if (Object.keys(patch).length === 0) {
+    const vehicle = {
+      make: vehicle_make?.trim() || null,
+      model: vehicle_model?.trim() || null,
+      year: vehicle_year ?? null,
+      color: vehicle_color?.trim() || null,
+    }
+    const hasVehicle = Boolean(
+      vehicle.make || vehicle.model || vehicle.color || vehicle.year != null
+    )
+    if (Object.keys(patch).length === 0 && !hasVehicle) {
       return { content: json({ blocked: "No details given to update." }), isError: false }
     }
-    const { error } = await ctx.supabase
-      .from("customers")
-      .update(patch)
-      .eq("id", c.id)
-      .eq("shop_id", ctx.shop.id)
-    if (error) {
-      return { content: json({ error: "Couldn't save that — the contact may already be on another record." }), isError: true }
+    if (Object.keys(patch).length > 0) {
+      const { error } = await ctx.supabase
+        .from("customers")
+        .update(patch)
+        .eq("id", c.id)
+        .eq("shop_id", ctx.shop.id)
+      if (error) {
+        return { content: json({ error: "Couldn't save that — the contact may already be on another record." }), isError: true }
+      }
+    }
+    const updatedFields = Object.keys(patch)
+    if (hasVehicle) {
+      const vid = await upsertCustomerVehicle(ctx.supabase, ctx.shop.id, c.id, vehicle)
+      if (vid) updatedFields.push("vehicle")
     }
     return {
-      content: json({ updated: c.name ?? customer_query, fields: Object.keys(patch) }),
+      content: json({ updated: c.name ?? customer_query, fields: updatedFields }),
       isError: false,
     }
   }

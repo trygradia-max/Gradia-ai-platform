@@ -21,6 +21,7 @@ import { getCrossChannelHint } from "@/lib/customer-context"
 import { recordActionDecision } from "@/lib/decision-log"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
+import { describePrice, resolveDurationMinutes } from "@/lib/service-pricing"
 import {
   sendBookingApprovalRequest,
   sendLeadApprovalRequest,
@@ -38,11 +39,8 @@ export type VapiCallContext = {
 }
 
 // ---------- formatters tuned for TTS ----------
-
-function speakPrice(cents: number): string {
-  const dollars = cents / 100
-  return dollars % 1 === 0 ? `$${dollars}` : `$${dollars.toFixed(2)}`
-}
+// Prices come from lib/service-pricing (describePrice) — the shared
+// resolution module — so voice quotes and CRM quotes can never disagree.
 
 function speakDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`
@@ -520,7 +518,7 @@ export async function quoteService(
   if (matches.length === 1) {
     const s = matches[0]
     const desc = s.description ? ` ${s.description}.` : ""
-    return `${s.name} is ${speakPrice(s.price_cents)} and runs ${speakDuration(s.duration_minutes)}.${desc} Want us to get that booked?`
+    return `${s.name} is ${describePrice(s)} and runs ${speakDuration(resolveDurationMinutes(s))}.${desc} Want us to get that booked?`
   }
 
   if (matches.length > 1) {
@@ -528,7 +526,7 @@ export async function quoteService(
     const list = top
       .map(
         (s) =>
-          `${s.name} at ${speakPrice(s.price_cents)} (${speakDuration(s.duration_minutes)})`
+          `${s.name} at ${describePrice(s)} (${speakDuration(resolveDurationMinutes(s))})`
       )
       .join(", ")
     return `We have a few options — ${list}. Which sounds right?`
@@ -536,7 +534,7 @@ export async function quoteService(
 
   // No specific match: read the menu (cap at 5).
   const top = services.slice(0, 5)
-  const list = top.map((s) => `${s.name} at ${speakPrice(s.price_cents)}`).join(", ")
+  const list = top.map((s) => `${s.name} at ${describePrice(s)}`).join(", ")
   return `We don't have that exact thing on our menu, but here's what we offer: ${list}. Want one of those?`
 }
 

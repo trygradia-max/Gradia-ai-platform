@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { getCrmHealth, type CrmHealth } from "@/lib/crm-health"
+import { upsertCustomerVehicle } from "@/lib/vehicles"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { CustomerRow } from "@/lib/types/database"
@@ -50,7 +51,9 @@ export async function dismissCrmCleanup(): Promise<CleanupResult> {
   return { ok: true }
 }
 
-/** Fields a merge carries from the duplicate into the primary when missing. */
+/** Fields a merge carries from the duplicate into the primary when missing.
+ *  Flat vehicle_* fields stay for write-through (deprecated — see
+ *  lib/vehicles.ts); the vehicles-table rows re-point to the primary. */
 const FILLABLE = [
   "name",
   "phone",
@@ -89,7 +92,12 @@ export async function mergeCustomers(
   const dupe = rows.find((r) => r.id === dupeId)
   if (!primary || !dupe) return { ok: false, error: "Couldn't find both records." }
 
-  for (const table of ["leads", "interactions", "appointments"] as const) {
+  for (const table of [
+    "leads",
+    "interactions",
+    "appointments",
+    "vehicles",
+  ] as const) {
     await supabase
       .from(table)
       .update({ customer_id: primaryId })
@@ -119,7 +127,8 @@ const updateSchema = z.object({
   vehicle_color: z.string().trim().max(30).optional(),
 })
 
-/** Fill in missing customer details from the cleanup UI. */
+/** Fill in missing customer details from the cleanup UI. Vehicle fields
+ *  land in the `vehicles` table; contact fields on the customer. */
 export async function updateCustomerDetails(
   customerId: string,
   fields: z.infer<typeof updateSchema>
@@ -130,19 +139,36 @@ export async function updateCustomerDetails(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid details." }
   }
+  // Flat vehicle_* fields stay in the customer patch (write-through,
+  // deprecated); the vehicles table gets the same values via the accessor.
   const patch: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(parsed.data)) {
     if (typeof v === "string" && v.trim()) patch[k] = v.trim()
   }
-  if (Object.keys(patch).length === 0) return { ok: false, error: "Nothing to update." }
+  const { vehicle_make, vehicle_model, vehicle_color } = parsed.data
+  const vehicle = {
+    make: vehicle_make?.trim() || null,
+    model: vehicle_model?.trim() || null,
+    year: null,
+    color: vehicle_color?.trim() || null,
+  }
+  const hasVehicle = Boolean(vehicle.make || vehicle.model || vehicle.color)
+  if (Object.keys(patch).length === 0 && !hasVehicle) {
+    return { ok: false, error: "Nothing to update." }
+  }
 
   const supabase = await createClient()
-  const { error } = await supabase
-    .from("customers")
-    .update(patch)
-    .eq("id", customerId)
-    .eq("shop_id", shop.id)
-  if (error) return { ok: false, error: error.message }
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase
+      .from("customers")
+      .update(patch)
+      .eq("id", customerId)
+      .eq("shop_id", shop.id)
+    if (error) return { ok: false, error: error.message }
+  }
+  if (hasVehicle) {
+    await upsertCustomerVehicle(supabase, shop.id, customerId, vehicle)
+  }
   revalidatePath("/customers")
   return { ok: true }
 }

@@ -11,20 +11,19 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { describeVehicle, vehiclesByCustomerIds } from "@/lib/vehicles"
 import type { CustomerRow } from "@/lib/types/database"
 
 export type CustomerLite = Pick<
   CustomerRow,
-  | "id"
-  | "name"
-  | "phone"
-  | "email"
-  | "vehicle_make"
-  | "vehicle_model"
-  | "vehicle_color"
-  | "last_visit_at"
->
+  "id" | "name" | "phone" | "email" | "last_visit_at"
+> & {
+  /** One-line primary-vehicle display ("White Tesla Model 3"), from `vehicles`. */
+  vehicle: string | null
+}
 
+// vehicle_* read here only as the pre-C1-migration backup — write-through
+// keeps them current (lib/vehicles.ts).
 const LITE_COLUMNS =
   "id, name, phone, email, vehicle_make, vehicle_model, vehicle_color, last_visit_at"
 
@@ -120,15 +119,33 @@ export async function getCrmHealth(
       duplicateClusters: [],
     }
   }
-  const customers = (data as CustomerLite[] | null) ?? []
+  type LiteRow = Omit<CustomerLite, "vehicle"> &
+    Pick<CustomerRow, "vehicle_make" | "vehicle_model" | "vehicle_color">
+  const rows = (data as LiteRow[] | null) ?? []
+  const vehicles = await vehiclesByCustomerIds(
+    supabase,
+    shopId,
+    rows.map((c) => c.id)
+  )
   const has = (v: string | null) => Boolean(v && v.trim())
+  const customers: CustomerLite[] = rows.map(
+    ({ vehicle_make, vehicle_model, vehicle_color, ...c }) => ({
+      ...c,
+      vehicle:
+        describeVehicle(vehicles.get(c.id)?.[0]) ??
+        ([vehicle_color, vehicle_make, vehicle_model].filter(Boolean).join(" ") ||
+          null),
+    })
+  )
 
   return {
     total: customers.length,
     missingContact: customers.filter((c) => !has(c.phone) && !has(c.email)),
     missingPhone: customers.filter((c) => !has(c.phone)).length,
     missingEmail: customers.filter((c) => !has(c.email)).length,
-    missingVehicle: customers.filter((c) => !has(c.vehicle_make)).length,
+    missingVehicle: rows.filter(
+      (c) => !vehicles.has(c.id) && !has(c.vehicle_make)
+    ).length,
     duplicateClusters: findDuplicateClusters(customers),
   }
 }

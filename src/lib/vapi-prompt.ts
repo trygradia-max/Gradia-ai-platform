@@ -12,17 +12,17 @@
  */
 
 import { GRADIA_VOICE } from "@/lib/persona"
+import {
+  describePrice,
+  priceSpread,
+  resolveDurationMinutes,
+} from "@/lib/service-pricing"
 import type {
   ServiceRow,
   ShopKnowledgeRow,
   ShopRow,
   VoiceConfig,
 } from "@/lib/types/database"
-
-function formatPrice(cents: number): string {
-  const dollars = cents / 100
-  return dollars % 1 === 0 ? `$${dollars}` : `$${dollars.toFixed(2)}`
-}
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`
@@ -109,11 +109,16 @@ export function synthesizeSystemPrompt(input: SynthesisInput): string {
   lines.push(GRADIA_VOICE)
 
   // 3. Services menu ----------------------------------------------
+  // Prices resolve through lib/service-pricing (the shared module), so the
+  // menu the receptionist quotes from matches CRM quotes exactly.
   if (input.services.length > 0) {
     lines.push("", "Our services:")
+    let anySized = false
     for (const s of input.services.slice(0, 24)) {
-      const price = formatPrice(s.price_cents)
-      const dur = formatDuration(s.duration_minutes)
+      const spread = priceSpread(s)
+      if (spread && spread.low !== spread.high) anySized = true
+      const price = describePrice(s)
+      const dur = formatDuration(resolveDurationMinutes(s))
       const desc = s.description?.trim()
       lines.push(
         `- ${s.name}: ${price}, ${dur}${desc ? ` — ${desc}` : ""}`
@@ -123,6 +128,11 @@ export function synthesizeSystemPrompt(input: SynthesisInput): string {
       "",
       "Use these exact prices and durations when quoting. If a caller asks for something not on this list, say we'll need to look at the car first or take a message."
     )
+    if (anySized) {
+      lines.push(
+        "For services priced by vehicle size, ask what they drive first; if the size is still unclear, give the range and say we'll confirm the exact price."
+      )
+    }
   } else {
     lines.push(
       "",

@@ -27,6 +27,7 @@ import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
 import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
 import { parseVehicle } from "@/lib/vehicle"
+import { upsertCustomerVehicle } from "@/lib/vehicles"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { smsGateForShop } from "@/lib/telephony-provider"
@@ -239,9 +240,17 @@ async function executeCreateLead(
     }
   }
 
-  // Structured vehicle (L3) — parse car_info once, store on the lead and carry
-  // to the customer record if it has none yet.
+  // Structured vehicle (L3/C1) — parse car_info once, land it in the
+  // vehicles table on the customer (also write-through to the deprecated
+  // flat columns), and link the lead to it after insert. vehicle_id lives
+  // OUTSIDE the insert so a pre-C1-migration DB still creates the lead.
   const vehicle = parseVehicle(proposal.car_info)
+  const vehicleId = await upsertCustomerVehicle(
+    supabase,
+    claimed.shop_id,
+    customerResult.customer.id,
+    vehicle
+  )
 
   const { data: created, error: insertErr } = await supabase
     .from("leads")
@@ -266,17 +275,12 @@ async function executeCreateLead(
     return { ok: false, error: insertErr?.message ?? "Lead insert failed" }
   }
 
-  if (vehicle.make) {
+  if (vehicleId) {
+    // Best-effort — only reachable when the C1 migration is applied.
     await supabase
-      .from("customers")
-      .update({
-        vehicle_make: vehicle.make,
-        vehicle_model: vehicle.model,
-        vehicle_year: vehicle.year,
-        vehicle_color: vehicle.color,
-      })
-      .eq("id", customerResult.customer.id)
-      .is("vehicle_make", null)
+      .from("leads")
+      .update({ vehicle_id: vehicleId })
+      .eq("id", created.id)
   }
 
   await supabase
@@ -706,8 +710,16 @@ async function executeBookAppointment(
   }
 
   // Lead row tracks the customer relationship; appointment row tracks
-  // the calendar event itself. Both link back through customer_id.
+  // the calendar event itself. Both link back through customer_id. The
+  // parsed vehicle lands in `vehicles` (write-through to flat columns);
+  // vehicle_id links happen AFTER insert so pre-C1-migration DBs still book.
   const vehicle = parseVehicle(proposal.car_info)
+  const vehicleId = await upsertCustomerVehicle(
+    supabase,
+    claimed.shop_id,
+    customerResult.customer.id,
+    vehicle
+  )
   const { data: lead, error: leadErr } = await supabase
     .from("leads")
     .insert({
@@ -731,25 +743,21 @@ async function executeBookAppointment(
     return { ok: false, error: leadErr?.message ?? "Lead insert failed" }
   }
 
+  if (vehicleId) {
+    // Best-effort — only reachable when the C1 migration is applied.
+    await supabase
+      .from("leads")
+      .update({ vehicle_id: vehicleId })
+      .eq("id", lead.id)
+  }
+
   // L3: advance the customer's last-visit recency (excludes them from win-back
-  // for a while), and carry vehicle to the customer record if it has none.
+  // for a while). The parsed vehicle already landed in `vehicles` above.
   await supabase
     .from("customers")
     .update({ last_visit_at: start.toISOString() })
     .eq("id", customerResult.customer.id)
     .or(`last_visit_at.is.null,last_visit_at.lt.${start.toISOString()}`)
-  if (vehicle.make) {
-    await supabase
-      .from("customers")
-      .update({
-        vehicle_make: vehicle.make,
-        vehicle_model: vehicle.model,
-        vehicle_year: vehicle.year,
-        vehicle_color: vehicle.color,
-      })
-      .eq("id", customerResult.customer.id)
-      .is("vehicle_make", null)
-  }
 
   const { data: appointment } = await supabase
     .from("appointments")
@@ -768,6 +776,14 @@ async function executeBookAppointment(
     .single()
   const appointmentId =
     (appointment as { id: string } | null)?.id ?? null
+
+  if (vehicleId && appointmentId) {
+    // Best-effort — appointments.vehicle_id exists only post-C1-migration.
+    await supabase
+      .from("appointments")
+      .update({ vehicle_id: vehicleId })
+      .eq("id", appointmentId)
+  }
 
   await supabase
     .from("pending_actions")
