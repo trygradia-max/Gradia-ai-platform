@@ -13,6 +13,7 @@ import { checkFeatureAccess, loadShopCreditFields } from "@/lib/credits"
 import { FEATURES } from "@/lib/features"
 import { getPricing } from "@/lib/pricing"
 import { ingestImport } from "@/lib/recovery/ingest"
+import type { CsvMapping } from "@/lib/recovery/structured-csv"
 import { getOptionalShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -25,7 +26,12 @@ export const maxDuration = 300
 
 // Alpha cap. Multi-GB Takeout exports need streamed chunked upload — a follow-up.
 const MAX_BYTES = 60 * 1024 * 1024
-const SOURCE_TYPES: ImportSourceType[] = ["mbox", "contacts_csv", "vcard"]
+const SOURCE_TYPES: ImportSourceType[] = [
+  "mbox",
+  "contacts_csv",
+  "vcard",
+  "structured_csv", // C7 — needs migration 20260708150000 applied
+]
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status })
@@ -85,6 +91,17 @@ export async function POST(request: Request) {
       .map((s) => s.trim()),
   ].filter(Boolean)
 
+  // C7: the wizard's owner-confirmed column mapping (JSON). Absent → auto-map.
+  let csvMapping: CsvMapping | null = null
+  const rawMapping = formData.get("csv_mapping")
+  if (typeof rawMapping === "string" && rawMapping.trim()) {
+    try {
+      csvMapping = JSON.parse(rawMapping) as CsvMapping
+    } catch {
+      return json({ ok: false, error: "Couldn't read the column mapping." }, 400)
+    }
+  }
+
   const pricing = await getPricing(supabase)
   const service = createServiceClient()
 
@@ -94,6 +111,7 @@ export async function POST(request: Request) {
       fileContent,
       ownerEmails,
       pricing,
+      csvMapping,
     })
     return json({ ok: true, ...result })
   } catch (err) {

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 
 import {
   candidateToCustomerInput,
+  candidateVehicle,
   mergePatch,
   shapeReviewCandidate,
   type RecoveredCustomerInput,
@@ -44,7 +45,7 @@ describe("shapeReviewCandidate", () => {
 })
 
 describe("candidateToCustomerInput", () => {
-  it("parses the vehicle and stamps source=import", () => {
+  it("parses the vehicle (write-through flat columns) and stamps source=import", () => {
     const input = candidateToCustomerInput({
       name: "Marcus Webb",
       phones: ["(415) 555-0142"],
@@ -57,6 +58,25 @@ describe("candidateToCustomerInput", () => {
     expect(input.vehicle_make).toBe("Tesla")
     expect(input.vehicle_year).toBe(2021)
     expect(input.last_transaction_at).toBe("2026-03-04")
+  })
+})
+
+describe("candidateVehicle", () => {
+  it("parses the vehicle string for the vehicles-table upsert", () => {
+    const v = candidateVehicle({ vehicle: "2021 Tesla Model 3, white" })
+    expect(v.make).toBe("Tesla")
+    expect(v.model).toBe("Model 3")
+    expect(v.year).toBe(2021)
+    expect(v.color).toBe("White")
+  })
+
+  it("returns all-null for an empty vehicle string", () => {
+    expect(candidateVehicle({ vehicle: null })).toEqual({
+      make: null,
+      model: null,
+      year: null,
+      color: null,
+    })
   })
 })
 

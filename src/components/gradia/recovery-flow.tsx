@@ -13,15 +13,34 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { approveRecoveryCandidates } from "@/app/actions/recovery"
+import {
+  approveRecoveryCandidates,
+  getRecoveryErrorReport,
+  type DuplicateStrategy,
+} from "@/app/actions/recovery"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import { SectionHeader } from "@/components/gradia/motion/section-header"
 import type { ReviewCandidate } from "@/lib/recovery/review"
+import {
+  autoMapColumns,
+  detectHeaderRow,
+  parseCsv,
+  CSV_COLUMN_ROLES,
+  type CsvColumnRole,
+  type CsvMapping,
+} from "@/lib/recovery/structured-csv"
 import type { ImportSourceType } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
 
-type Phase = "idle" | "uploading" | "estimate" | "extracting" | "review"
+type Phase = "idle" | "mapping" | "uploading" | "estimate" | "extracting" | "review"
 
 type ImportResponse = {
   ok: boolean
@@ -41,10 +60,30 @@ type ExtractResponse = {
 }
 
 const SOURCES: { id: ImportSourceType; label: string; accept: string; hint: string }[] = [
+  { id: "structured_csv", label: "Spreadsheet (.csv)", accept: ".csv", hint: "Any spreadsheet with columns — customers, vehicles, stages. Google Sheets: File → Download → CSV" },
   { id: "contacts_csv", label: "Customer list (.csv)", accept: ".csv", hint: "A CSV export from your CRM, Google Contacts, or a spreadsheet" },
   { id: "vcard", label: "Contacts (.vcf)", accept: ".vcf,.vcard", hint: "A vCard address book" },
   { id: "mbox", label: "Email (.mbox)", accept: ".mbox", hint: "A Gmail / Google Takeout export" },
 ]
+
+/** Owner-facing names for the column roles (wizard remap dropdowns). */
+const ROLE_LABELS: Record<CsvColumnRole, string> = {
+  name: "Name",
+  first_name: "First name",
+  last_name: "Last name",
+  phone: "Phone",
+  email: "Email",
+  vehicle: "Vehicle (combined)",
+  vehicle_year: "Vehicle year",
+  vehicle_make: "Vehicle make",
+  vehicle_model: "Vehicle model",
+  vehicle_color: "Vehicle color",
+  services: "Services",
+  stage: "Pipeline stage",
+  source: "Lead source",
+  last_transaction_at: "Last service date",
+  notes: "Keep as note",
+}
 
 const DECISION_GROUPS: {
   kind: ReviewCandidate["decision"]["kind"]
@@ -80,16 +119,44 @@ export function RecoveryFlow({
   )
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const [approving, setApproving] = React.useState(false)
+  const [dupeStrategy, setDupeStrategy] = React.useState<DuplicateStrategy>("update")
+  // C7 mapping step state — parsed client-side (the mapper is pure code).
+  const [mapping, setMapping] = React.useState<CsvMapping | null>(null)
+  const [sampleRows, setSampleRows] = React.useState<string[][]>([])
   const fileRef = React.useRef<HTMLInputElement | null>(null)
 
   const activeSource = SOURCES.find((s) => s.id === source)!
 
-  async function upload() {
+  /** structured_csv detours through the mapping step before upload. */
+  async function scan() {
+    if (!file) return
+    if (source !== "structured_csv") {
+      await upload(null)
+      return
+    }
+    try {
+      const rows = parseCsv(await file.text())
+      if (rows.length === 0) {
+        toast.error("That file looks empty.")
+        return
+      }
+      const auto = autoMapColumns(rows, detectHeaderRow(rows))
+      const dataStart = auto.headerRowIndex !== null ? auto.headerRowIndex + 1 : 0
+      setMapping(auto)
+      setSampleRows(rows.slice(dataStart, dataStart + 3))
+      setPhase("mapping")
+    } catch {
+      toast.error("Couldn't read that file — is it a CSV?")
+    }
+  }
+
+  async function upload(csvMapping: CsvMapping | null) {
     if (!file) return
     setPhase("uploading")
     const fd = new FormData()
     fd.append("file", file)
     fd.append("source_type", source)
+    if (csvMapping) fd.append("csv_mapping", JSON.stringify(csvMapping))
     try {
       const res = await fetch("/api/recovery/import", { method: "POST", body: fd })
       const data = (await res.json()) as ImportResponse
@@ -167,18 +234,37 @@ export function RecoveryFlow({
     if (!jobId || selected.size === 0) return
     setApproving(true)
     const keys = [...selected]
-    const result = await approveRecoveryCandidates(jobId, keys)
+    const result = await approveRecoveryCandidates(jobId, keys, {
+      duplicateStrategy: dupeStrategy,
+    })
     setApproving(false)
     if (!result.ok) {
       toast.error(result.error)
       return
     }
+    const skippedNote = result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
     toast.success(
-      `Added ${result.added} and updated ${result.merged} — they're in your customers now.`
+      `Added ${result.added} and updated ${result.merged}${skippedNote} — they're in your customers now.`
     )
     setCandidates((prev) => prev.filter((c) => !selected.has(c.key)))
     setSelected(new Set())
     router.refresh()
+  }
+
+  async function downloadErrorReport() {
+    if (!jobId) return
+    const result = await getRecoveryErrorReport(jobId)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "import-errors.csv"
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -194,7 +280,17 @@ export function RecoveryFlow({
           accept={activeSource.accept}
           hint={activeSource.hint}
           uploading={phase === "uploading"}
-          onScan={upload}
+          onScan={scan}
+        />
+      ) : null}
+
+      {phase === "mapping" && mapping ? (
+        <MappingStep
+          mapping={mapping}
+          sampleRows={sampleRows}
+          onChange={setMapping}
+          onConfirm={() => upload(mapping)}
+          onCancel={() => setPhase("idle")}
         />
       ) : null}
 
@@ -217,9 +313,96 @@ export function RecoveryFlow({
           onSelectAll={selectAll}
           approving={approving}
           onApprove={approve}
+          dupeStrategy={dupeStrategy}
+          onDupeStrategy={setDupeStrategy}
+          droppedCount={counts?.dropped ?? 0}
+          onErrorReport={downloadErrorReport}
         />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * C7 mapping step — every column with its auto-detected role (header AND
+ * content-based), remappable per column. Unmapped columns become notes, so
+ * nothing is dropped silently.
+ */
+function MappingStep({
+  mapping,
+  sampleRows,
+  onChange,
+  onConfirm,
+  onCancel,
+}: {
+  mapping: CsvMapping
+  sampleRows: string[][]
+  onChange: (m: CsvMapping) => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const setRole = (index: number, role: CsvColumnRole) => {
+    onChange({
+      ...mapping,
+      columns: mapping.columns.map((c) =>
+        c.index === index ? { ...c, role, byContent: false } : c
+      ),
+    })
+  }
+  return (
+    <section className="space-y-5">
+      <SectionHeader
+        eyebrow="Check the columns"
+        title={
+          <>
+            Tell us what&apos;s <span className="italic">what</span>.
+          </>
+        }
+        subtitle="We matched each column by its header and its contents. Fix anything we got wrong — columns marked “Keep as note” land on the customer's file so nothing is lost."
+      />
+      <MotionCard interactive={false} className="divide-y divide-border/60 p-0">
+        {mapping.columns.map((col) => (
+          <div
+            key={col.index}
+            className="flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">{col.header}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {sampleRows
+                  .map((r) => (r[col.index] ?? "").trim())
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join(" · ") || "(empty)"}
+              </p>
+            </div>
+            <Select
+              value={col.role}
+              onValueChange={(v) => setRole(col.index, v as CsvColumnRole)}
+            >
+              <SelectTrigger className="w-48 shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CSV_COLUMN_ROLES.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+      </MotionCard>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button type="button" size="lg" onClick={onConfirm} className="h-11">
+          Looks right — scan it
+        </Button>
+        <Button type="button" variant="ghost" size="lg" onClick={onCancel} className="h-11">
+          Start over
+        </Button>
+      </div>
+    </section>
   )
 }
 
@@ -348,15 +531,27 @@ function EstimateStep({
           {counts.kept} worth a <span className="italic">closer look</span>.
         </p>
         <p className="max-w-prose text-sm text-muted-foreground">
-          We filtered out {counts.dropped} newsletters and automated messages.
-          Reading the rest will use about{" "}
-          <span className="font-medium text-foreground">{estimate.credits} credits</span> —
-          nothing&apos;s saved or sent until you approve it.
+          {counts.dropped > 0
+            ? `We set aside ${counts.dropped} rows we couldn't use. `
+            : null}
+          {estimate.credits > 0 ? (
+            <>
+              Reading the rest will use about{" "}
+              <span className="font-medium text-foreground">
+                {estimate.credits} credits
+              </span>{" "}
+              — nothing&apos;s saved or sent until you approve it.
+            </>
+          ) : (
+            <>Everything mapped cleanly — no credits needed. Nothing&apos;s saved until you approve it.</>
+          )}
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button type="button" size="lg" onClick={onConfirm} className="h-11 gap-2">
-          Read them ({estimate.credits} credits)
+          {estimate.credits > 0
+            ? `Read them (${estimate.credits} credits)`
+            : "Review what we found"}
         </Button>
         <Button type="button" variant="ghost" size="lg" onClick={onCancel} className="h-11">
           Start over
@@ -392,6 +587,10 @@ function ReviewStep({
   onSelectAll,
   approving,
   onApprove,
+  dupeStrategy,
+  onDupeStrategy,
+  droppedCount,
+  onErrorReport,
 }: {
   candidates: ReviewCandidate[]
   selected: Set<string>
@@ -399,6 +598,10 @@ function ReviewStep({
   onSelectAll: (keys: string[]) => void
   approving: boolean
   onApprove: () => void
+  dupeStrategy: DuplicateStrategy
+  onDupeStrategy: (s: DuplicateStrategy) => void
+  droppedCount: number
+  onErrorReport: () => void
 }) {
   if (candidates.length === 0) {
     return (
@@ -437,6 +640,17 @@ function ReviewStep({
         </Button>
       </div>
 
+      {droppedCount > 0 ? (
+        <button
+          type="button"
+          onClick={onErrorReport}
+          className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          {droppedCount} row{droppedCount === 1 ? "" : "s"} couldn&apos;t be imported —
+          download the error report
+        </button>
+      ) : null}
+
       {DECISION_GROUPS.map((g) => {
         const items = candidates.filter((c) => c.decision.kind === g.kind)
         if (items.length === 0) return null
@@ -451,13 +665,30 @@ function ReviewStep({
                 </p>
                 <p className="text-sm text-muted-foreground">{g.blurb}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => onSelectAll(keys)}
-                className="shrink-0 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-              >
-                {allOn ? "Deselect all" : "Select all"}
-              </button>
+              <div className="flex shrink-0 items-center gap-3">
+                {g.kind === "merge_into" ? (
+                  <Select
+                    value={dupeStrategy}
+                    onValueChange={(v) => onDupeStrategy(v as DuplicateStrategy)}
+                  >
+                    <SelectTrigger className="h-8 w-40 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="update">Fill their gaps</SelectItem>
+                      <SelectItem value="skip">Skip them</SelectItem>
+                      <SelectItem value="create">Add as new anyway</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => onSelectAll(keys)}
+                  className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                >
+                  {allOn ? "Deselect all" : "Select all"}
+                </button>
+              </div>
             </div>
             <div className="grid gap-2">
               {items.map((c) => (
@@ -510,6 +741,11 @@ function CandidateRow({
           {candidate.vehicle ? (
             <span className="ml-2 font-normal text-muted-foreground">
               {candidate.vehicle}
+            </span>
+          ) : null}
+          {candidate.stage ? (
+            <span className="ml-2 rounded-full border border-border/60 px-2 py-0.5 text-xs font-normal text-muted-foreground">
+              {candidate.stage.replace(/_/g, " ")}
             </span>
           ) : null}
         </p>
