@@ -1,10 +1,15 @@
-# Gradia — Go-Live Checklist (mvp/phase-0-subtraction → production)
+# Gradia — Go-Live Checklist (redesign/glass-box → production)
 
-_Generated 2026-06-18. Covers the FOCUS NOW queue (NOW-0→4) + NEXT-1→4. Work top
-to bottom; nothing user-facing flips on until its smoke test passes._
+_Generated 2026-06-18; **reconciled 2026-07-08** against the actual branch state. Launch is now **August 7, 2026** (pushed from July 10)._
 
-`main` = production. The branch carries **16 migrations** and **7 crons**. Several
-features are intentionally **flag-gated off** until smoked.
+> **STATUS 2026-07-08 — read this first, the doc below was written for an older world:**
+> - **§0 "Merge the PR" is DONE.** PR #1 (`mvp/phase-0-subtraction`) merged to `main` (`edfea35`). Do not redo it.
+> - **The branch to ship is now `redesign/glass-box`** — 12 commits ahead of `main`: 2 phase-0 leftovers (CRM Specialist schema + recovery UI polish) + the full glass-box redesign (retheme, 6-destination IA with redirects, Activity feed, call-record page). `main` has nothing `glass-box` lacks except the PR-#1 merge commit itself — merge `main` into `glass-box` first (trivial), then open **PR: `redesign/glass-box` → `main`**.
+> - **Migration list below is short by 2.** The branch adds `20260618130000_crm_specialist_metrics` and `20260702120000_glass_box_capture` — **18 total**, still all additive.
+> - `ENCRYPTION_KEY` was missing from §2 (added below). Dev `.env.local` had an empty placeholder — fixed 2026-07-08; **prod needs its own key**.
+> - Suite state on `glass-box` as of 2026-07-08: **282/282 tests pass, lint clean** (verified).
+
+Work top to bottom; nothing user-facing flips on until its smoke test passes. Several features are intentionally **flag-gated off** until smoked.
 
 ---
 
@@ -40,6 +45,7 @@ All 16 are additive (new tables/columns/bucket); none drop or rewrite existing d
 
 ## 2. Env / config (verify present in prod)
 
+- [ ] `ENCRYPTION_KEY` — **64 hex chars (`openssl rand -hex 32`)**; encrypts Twilio subaccount tokens at rest. Generate a **separate** key for prod (never reuse the dev key). Without it, number purchase fails closed. *(Added 2026-07-08 — was missing from this list; dev `.env.local` had an empty placeholder, now fixed.)*
 - [ ] `ANTHROPIC_API_KEY` — all drafting/extraction.
 - [ ] `OPENAI_API_KEY` — **Whisper transcription** (NOW-0 rotated this; confirm the prod value is the rotated one).
 - [ ] `CRON_SECRET` — every cron fails closed without it. All 7 crons need it.

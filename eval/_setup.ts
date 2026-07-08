@@ -9,8 +9,16 @@ try {
     if (!line || line.startsWith("#") || !line.includes("=")) continue
     const eq = line.indexOf("=")
     const key = line.slice(0, eq).trim()
-    const val = line.slice(eq + 1).trim()
-    if (key && !(key in process.env)) process.env[key] = val
+    let val = line.slice(eq + 1).trim()
+    // Strip surrounding quotes, matching `node --env-file` behavior. An
+    // empty quoted value ("") stays unset so tests can supply dummies.
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1)
+    }
+    if (key && val && !(key in process.env)) process.env[key] = val
   }
 } catch {
   // no .env.local — fine; live tests will self-skip without a key

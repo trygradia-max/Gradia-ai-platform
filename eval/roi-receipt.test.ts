@@ -115,6 +115,7 @@ describe("ROI receipt — weekly SMS push copy", () => {
     leadsCaught: 3,
     messagesSent: 4,
     bookingsMade: 2,
+    recoveredLeadsCount: 0,
     moneyInPlayCents: 115000,
     minutesSaved: 38,
     isEmpty: false,
