@@ -363,3 +363,90 @@ _Queue: `RUN_2026-07-09_CRM_C4_C5.md`. Branch `redesign/glass-box`. Baseline in:
 - Smoke on the test shop: one autopilot automation (flip new_lead_instant
   on for a Package-2 shop) and one approval automation (quote_followup) —
   and confirm #5/#6 behavior is unchanged with the catalog untouched.
+
+---
+
+# Run report — 2026-07-10 (CRM C6 Whisper surfaces + C8 Today money rows) — CRM CODE-COMPLETE
+
+_Queue: `RUN_2026-07-10_CRM_C6_C8.md`. Branch `redesign/glass-box`. Baseline in: 375 passing. This closes the CRM foundation: **C1–C8 are code-complete.**_
+
+## Item 1 — structured working hours (C4 carry-over) ✅
+
+- `lib/working-hours.ts` + Settings → Working hours card: per-day open/
+  close + closed days on `shops.settings.calendar.working_hours` (jsonb —
+  NO new migration). Defaults reproduce the old flat 8h/day exactly.
+- Feeds the calendar over-capacity warning per day (closed day = any
+  booking flags) AND the phone agent: when the owner never wrote custom
+  hours text, the receptionist speaks the structured hours
+  ("Mon–Fri 9 AM–5 PM, closed Sun") via a compose-time fallback; saving
+  hours marks voice stale for re-sync. 7 tests.
+
+## Item 2 — C6a Whisper suggestion queue ✅ (eval fixtures FIRST)
+
+- **Golden fixtures shipped before the surface** (`eval/whisper-suggestions
+  .test.ts`): a seeded CRM state in, the exact candidate set out. Candidate
+  picking is PURE CODE (`lib/whisper-suggestions.ts`): stale quotes (≥5d
+  silent), follow-ups past `next_action_at`, revival (21d engaged-then-
+  silent — never-engaged leads are excluded by construction). One
+  suggestion per person, stale-quote priority.
+- **The why is deterministic** from the same rows ("Their $220 quote went
+  out 6 days ago and was opened 4 days ago — no reply since.") — asserted
+  literally in the goldens, which IS the grounding spot-check. The model's
+  only job is the draft copy (the existing single-turn persona drafter).
+- Generation rides the automations cron: idempotent per suggestion ref,
+  ≤3/shop/sweep, **metered per draft with a batch credit pre-check that
+  fails closed**. Each suggestion stages a normal send_sms pending action
+  tagged whisper_suggestion, with a Glass-Box decision row whose because is
+  the why.
+- Today: the queue renders at the very top per the run rail, the ROI
+  receipt keeps its pinned slot immediately after (nothing else moved).
+  Approve = the same dashboard executor as /approvals; Edit hands off to
+  /approvals; Dismiss = reject + a whisper_feedback timeline row.
+
+## Item 3 — C6b draft-anywhere + customer summary ✅
+
+- **Whisper draft** button on the reply box (customer profile + the
+  approvals detail reply): persona-composed by the same drafter voice/chat
+  use, grounded in the menu + the customer's last message, metered
+  (outreach_draft) with credit pre-check. Never sends — it fills the box.
+- **Customer summary**: one tap on the profile → `lib/whisper-summary.ts`
+  builds a pure FACT PACK from jobs/vehicles/quotes/channel history
+  ("3 completed jobs · $1,840 lifetime value · last serviced Aug 2025 ·
+  prefers text"); the metered (whisper_note) single-turn worker may only
+  rephrase the listed facts (source-locked prompt), and the deterministic
+  fact line ships as-is when the model can't run — the surface can never
+  fabricate and never blocks. Fixture spot-checks assert facts are
+  derivable from inputs only; do-not-contact always surfaces.
+
+## Item 4 — C8 Today money + leak rows ✅
+
+- Below the receipt/KPIs/schedule (ordering untouched; BookedToday remains
+  the schedule strip, its "see all" retargeted to /calendar): **money row**
+  (booked this week · completed this week — from exact status-transition
+  timeline events · pipeline value — live-stage cards' quote totals ·
+  quotes outstanding) and **leak row** (new leads today+week · lost this
+  week + top reason · review asks waiting). Every tile nonzero-rendered,
+  every tile links somewhere actionable, single column on mobile.
+- **Attribution line** ("Follow-ups booked $X this month (N bookings from
+  automations)") from automation_runs → leads → quotes joins with the
+  under-claim rule locked by tests: only automation-touched leads that are
+  NOW booked AND quote-backed count. No estimates anywhere.
+
+## Final state — CRM foundation C1–C8 CODE-COMPLETE
+
+- **395 passing / 4 skipped** (375 → +7 hours, +6 golden suggestions,
+  +5 summary, +2 attribution), lint, tsc, `next build` clean after every
+  item. No new migrations this run; no new crons (Whisper rides the
+  existing 5-minute automations cron with fail-closed metering).
+- Remaining before the marketing flip (spec build-order step 9): founder
+  migrations + smokes; `WHAT_GRADIA_DOES.md` claims update only after
+  acceptance passes.
+
+## Founder actions needed
+- Visual pass: Today (suggestion queue at top, money/leak rows below),
+  customer profile (summary + Whisper draft), Settings → Working hours.
+- One end-to-end suggestion approve on the test shop (seed a stale quote,
+  wait a cron tick, approve from Today, confirm the send + timeline).
+- Still pending from prior runs: apply the three migrations (C1
+  foundation, structured_csv enum, job-photos bucket), review the 5-minute
+  automations cron, run seed:smoke, test C7 with a real export.
