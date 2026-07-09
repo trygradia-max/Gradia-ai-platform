@@ -34,6 +34,7 @@ import {
   synthesizeSystemPrompt,
   type SynthesisInput,
 } from "@/lib/vapi-prompt"
+import { formatWorkingHours, readWorkingHours } from "@/lib/working-hours"
 import {
   getIncomingPhoneNumberConfig,
   setNumberSmsWebhook,
@@ -82,18 +83,25 @@ export function composeVoiceAssistant(input: {
   config: VoiceConfig
   services: ServiceRow[]
   knowledge: ShopKnowledgeRow[]
+  /** Structured working-hours line (lib/working-hours) — used only when the
+   *  owner hasn't written custom hours text, so voice and calendar agree. */
+  fallbackHoursText?: string | null
 }): ComposedAssistant {
+  const config: VoiceConfig =
+    !input.config.hours_text?.trim() && input.fallbackHoursText?.trim()
+      ? { ...input.config, hours_text: input.fallbackHoursText.trim() }
+      : input.config
   const synth: SynthesisInput = {
     shop: {
       name: input.shop.name,
       location: input.shop.location,
       phone: input.shop.phone,
-      greeting: input.config.greeting ?? null,
-      tone: input.config.tone ?? null,
+      greeting: config.greeting ?? null,
+      tone: config.tone ?? null,
     },
     services: input.services,
     knowledge: input.knowledge,
-    config: input.config,
+    config,
   }
   return {
     name: `${input.shop.name ?? "Gradia"} — voice receptionist`,
@@ -120,6 +128,7 @@ type VoiceShopFields = Pick<
   | "gradia_number_sid"
   | "twilio_subaccount_sid"
   | "twilio_subaccount_token_enc"
+  | "settings"
 >
 
 export type SyncAssistantResult =
@@ -188,6 +197,7 @@ export async function syncVoiceAssistant(input: {
     config: shop.voice_config ?? {},
     services: (serviceRows as ServiceRow[] | null) ?? [],
     knowledge,
+    fallbackHoursText: formatWorkingHours(readWorkingHours(shop.settings)),
   })
 
   // Fail closed at the minute allowance, and when the voice add-on is

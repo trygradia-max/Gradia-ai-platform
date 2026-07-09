@@ -10,6 +10,7 @@ import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-ca
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { AutomationsCard } from "@/components/gradia/automations-card"
+import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
 import { getAutomationSettings } from "@/app/actions/automations"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
@@ -36,6 +37,7 @@ import { getUsageState } from "@/app/actions/billing"
 import { readAutonomy } from "@/lib/autonomy"
 import { integrationEnabled } from "@/lib/features"
 import { getReviewLink } from "@/lib/review-link"
+import { readWorkingHours } from "@/lib/working-hours"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -207,6 +209,7 @@ export default async function SettingsPage({
 
   const sections = [
     { id: "services", label: "Service menu" },
+    { id: "hours", label: "Working hours" },
     { id: "automations", label: "Automations" },
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
@@ -361,6 +364,11 @@ export default async function SettingsPage({
             and drafts through lib/service-pricing — never edited elsewhere. */}
         <section id="services">
           <ServiceMenuCard initialServices={services} />
+        </section>
+
+        {/* Working hours — calendar capacity + the agent's hours line. */}
+        <section id="hours">
+          <WorkingHoursCard initial={readWorkingHours(shop?.settings)} />
         </section>
 
         {/* C5 catalog — toggles, not a builder. */}

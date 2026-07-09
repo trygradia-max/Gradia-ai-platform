@@ -7,6 +7,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
+import { readWorkingHours, type WorkingHours } from "@/lib/working-hours"
 import { describeVehicle, vehiclesByCustomerIds } from "@/lib/vehicles"
 import type {
   AppointmentRow,
@@ -41,12 +42,10 @@ export type CalendarJob = {
 export type CalendarWeek = {
   weekStartIso: string
   jobs: CalendarJob[]
-  /** Working-hours capacity per day, minutes (code default, owner-tunable
-   *  via shops.settings.calendar.working_hours_per_day). */
-  dailyCapacityMinutes: number
+  /** Per-day working hours (shops.settings.calendar.working_hours) —
+   *  drives the over-capacity warning; closed days = 0 capacity. */
+  workingHours: WorkingHours
 }
-
-const DEFAULT_WORKING_HOURS_PER_DAY = 8
 
 export function startOfWeek(d: Date): Date {
   const out = new Date(d)
@@ -90,14 +89,9 @@ export async function loadCalendarWeek(weekParam?: string): Promise<CalendarWeek
     .select("settings")
     .eq("id", shop.id)
     .maybeSingle()
-  const settings = ((shopRow as Pick<ShopRow, "settings"> | null)?.settings ??
-    {}) as Record<string, unknown>
-  const calendarSettings = (settings.calendar ?? {}) as Record<string, unknown>
-  const workingHours =
-    typeof calendarSettings.working_hours_per_day === "number" &&
-    calendarSettings.working_hours_per_day > 0
-      ? calendarSettings.working_hours_per_day
-      : DEFAULT_WORKING_HOURS_PER_DAY
+  const workingHours = readWorkingHours(
+    (shopRow as Pick<ShopRow, "settings"> | null)?.settings
+  )
 
   const jobs: CalendarJob[] = rows.map((r) => ({
     id: r.id,
@@ -127,6 +121,6 @@ export async function loadCalendarWeek(weekParam?: string): Promise<CalendarWeek
   return {
     weekStartIso: weekStart.toISOString(),
     jobs,
-    dailyCapacityMinutes: workingHours * 60,
+    workingHours,
   }
 }

@@ -26,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { JOB_STATUSES, nextActionsFor } from "@/lib/jobs"
+import { capacityMinutesFor } from "@/lib/working-hours"
 import { setJobStatus } from "@/app/actions/jobs"
 import type { CalendarJob, CalendarWeek } from "@/lib/data/calendar"
 import type { JobStatus } from "@/lib/types/database"
@@ -155,7 +156,8 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
         {days.map((day) => {
           const list = jobsOn(day)
           const booked = bookedMinutes(day)
-          const overCapacity = booked > initial.dailyCapacityMinutes
+          const capacity = capacityMinutesFor(initial.workingHours, day)
+          const overCapacity = booked > capacity
           const isToday = day.toDateString() === new Date().toDateString()
           return (
             <div key={day.toISOString()} className="min-w-0">
