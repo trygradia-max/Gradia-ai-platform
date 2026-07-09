@@ -20,17 +20,23 @@ import {
 import { LiveLeadFeed } from "@/components/gradia/live-lead-feed"
 import { RevenueTiles } from "@/components/gradia/revenue-tiles"
 import { RoiReceipt } from "@/components/gradia/roi-receipt"
+import { TodayMoneyRows } from "@/components/gradia/today-money-rows"
+import { loadTodayMoney } from "@/lib/data/today-money"
+import { WhisperSuggestionQueue } from "@/components/gradia/whisper-suggestion-queue"
+import { listWhisperSuggestions } from "@/app/actions/whisper-queue"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 import { requireShop } from "@/lib/shop"
 
 export default async function DashboardPage() {
   const shop = await requireShop()
-  const [leads, channels, kpis, cleanup, cookieStore] = await Promise.all([
+  const [leads, channels, kpis, cleanup, cookieStore, suggestions, todayMoney] = await Promise.all([
     listScoredLeadsForCurrentShop(),
     getChannelStatusForCurrentShop(),
     getHomeKpis(),
     getCrmCleanupState(),
     cookies(),
+    listWhisperSuggestions(),
+    loadTodayMoney(),
   ])
 
   const showCleanup =
@@ -60,6 +66,12 @@ export default async function DashboardPage() {
         rightSlot={<AddLeadDialog />}
       />
 
+      {/* C6a: Whisper's staged suggestions sit at the very top (run-doc
+          rail: "nudges/suggestions at TOP") — the receipt keeps its pinned
+          slot immediately after and is never displaced by anything else.
+          Renders nothing when the queue is empty. */}
+      <WhisperSuggestionQueue initial={suggestions} />
+
       {/* Home composition per spec §8-A5, top to bottom: the receipt is
           pinned first (sacred — the #1 retention lever, NOW-3), then the
           KPI row, then today's bookings (schedule's approved home), then
@@ -70,6 +82,10 @@ export default async function DashboardPage() {
       <KpiRow kpis={kpis} />
 
       <BookedToday />
+
+      {/* C8 — money + leak rows BELOW the receipt/KPIs/schedule (spec
+          ordering held); every tile nonzero-rendered, every number SQL. */}
+      <TodayMoneyRows data={todayMoney} />
 
       {showCleanup && (
         <CrmCleanupCard

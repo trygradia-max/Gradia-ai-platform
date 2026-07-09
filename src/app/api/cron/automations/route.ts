@@ -12,6 +12,7 @@
 
 import { closeOldPaidJobs } from "@/lib/jobs"
 import { runAutomationSweeps, type SweepStats } from "@/lib/automation-sweeps"
+import { runWhisperSuggestionSweep } from "@/lib/whisper-suggestion-sweep"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -47,15 +48,30 @@ export async function GET(request: Request) {
     >[] | null) ?? []
 
   const perShop: Record<string, SweepStats> = {}
+  let whisperStaged = 0
   for (const shop of shops) {
     try {
       perShop[shop.id] = await runAutomationSweeps(supabase, shop)
     } catch (err) {
       console.error("[cron/automations] sweeps failed for", shop.id, err)
     }
+    try {
+      // C6a Whisper suggestions — metered per draft with credit pre-check
+      // (fail closed inside), idempotent per suggestion ref.
+      const whisper = await runWhisperSuggestionSweep(supabase, shop)
+      whisperStaged += whisper.staged
+    } catch (err) {
+      console.error("[cron/automations] whisper sweep failed for", shop.id, err)
+    }
   }
 
   const closed = await closeOldPaidJobs(supabase)
 
-  return Response.json({ ok: true, shops: shops.length, closed: closed.closed, perShop })
+  return Response.json({
+    ok: true,
+    shops: shops.length,
+    closed: closed.closed,
+    whisperStaged,
+    perShop,
+  })
 }
