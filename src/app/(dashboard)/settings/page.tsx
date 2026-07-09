@@ -9,6 +9,8 @@ import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
+import { AutomationsCard } from "@/components/gradia/automations-card"
+import { getAutomationSettings } from "@/app/actions/automations"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
@@ -201,9 +203,11 @@ export default async function SettingsPage({
   const a2pState = await getA2pState()
   const voiceOptions = listVoiceOptions()
   const services = await listServicesForCurrentShop()
+  const automationEntries = await getAutomationSettings()
 
   const sections = [
     { id: "services", label: "Service menu" },
+    { id: "automations", label: "Automations" },
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
     { id: "sms", label: "SMS" },
@@ -357,6 +361,11 @@ export default async function SettingsPage({
             and drafts through lib/service-pricing — never edited elsewhere. */}
         <section id="services">
           <ServiceMenuCard initialServices={services} />
+        </section>
+
+        {/* C5 catalog — toggles, not a builder. */}
+        <section id="automations">
+          <AutomationsCard initial={automationEntries} />
         </section>
 
         <section id="voice">
