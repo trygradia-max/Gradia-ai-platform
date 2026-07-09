@@ -41,7 +41,7 @@ export async function BookedToday() {
           </h2>
         </div>
         <Link
-          href="/schedule"
+          href="/calendar"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:underline"
         >
           {s.bookedViewAll}
