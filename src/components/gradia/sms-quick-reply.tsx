@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, MessageSquare, Send } from "lucide-react"
+import { Loader2, MessageSquare, Send, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { sendOperatorSms } from "@/app/actions/outbound-sms"
+import { whisperDraftReply } from "@/app/actions/whisper-tools"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -16,12 +17,27 @@ const MAX_CHARS = 1600
 export function SmsQuickReply({
   toPhone,
   customerName,
+  customerId = null,
 }: {
   toPhone: string
   customerName: string | null
+  /** Enables Whisper-draft grounding in this customer's history (C6b). */
+  customerId?: string | null
 }) {
   const [body, setBody] = React.useState("")
   const [pending, setPending] = React.useState(false)
+  const [drafting, setDrafting] = React.useState(false)
+
+  async function handleWhisperDraft() {
+    setDrafting(true)
+    const result = await whisperDraftReply({ toPhone, customerId })
+    setDrafting(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    setBody(result.body.slice(0, MAX_CHARS))
+  }
 
   async function handleSend(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -85,7 +101,23 @@ export function SmsQuickReply({
             {remaining} character{remaining === 1 ? "" : "s"} left
           </p>
         </div>
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between gap-2">
+          {/* C6b draft-anywhere — persona-composed, metered, never sends. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5"
+            disabled={drafting || pending}
+            onClick={handleWhisperDraft}
+          >
+            {drafting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="size-4" aria-hidden />
+            )}
+            Whisper draft
+          </Button>
           <Button
             type="submit"
             disabled={pending || !body.trim()}

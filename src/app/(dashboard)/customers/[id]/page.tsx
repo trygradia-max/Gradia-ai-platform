@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { CustomerMergeDialog } from "@/components/gradia/customer-merge-dialog"
+import { CustomerSummaryCard } from "@/components/gradia/customer-summary-card"
 import { DoNotContactToggle } from "@/components/gradia/do-not-contact-toggle"
 import { HeatBadge } from "@/components/gradia/heat-badge"
 import { InteractionTimeline } from "@/components/gradia/interaction-timeline"
@@ -144,6 +145,9 @@ export default async function CustomerDetailPage({
 
       <IdentityCard customer={customer} />
 
+      {/* C6b — one-tap Whisper summary (metered, DB facts only). */}
+      <CustomerSummaryCard customerId={customer.id} />
+
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <InteractionTimeline interactions={interactions} />
         <PipelineCard leads={leads} appointments={appointments} />
@@ -153,6 +157,7 @@ export default async function CustomerDetailPage({
         <SmsQuickReply
           toPhone={customer.phone!}
           customerName={customer.name}
+          customerId={customer.id}
         />
       ) : null}
     </div>
