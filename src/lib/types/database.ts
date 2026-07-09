@@ -426,6 +426,28 @@ export type CustomerLifecycle =
   | "lapsed"
   | "won_back"
 
+/** CRM C1/C5 — automation catalog mode. */
+export type AutomationMode = "approval" | "autopilot"
+
+export type AutomationRow = {
+  id: string
+  shop_id: string
+  catalog_key: string
+  enabled: boolean
+  mode: AutomationMode
+  template_overrides: Record<string, unknown>
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type AutomationRunStatus =
+  | "staged"
+  | "approved"
+  | "sent"
+  | "dismissed"
+  | "failed"
+
 export type JobStatus =
   | "booked"
   | "confirmed"
@@ -456,9 +478,33 @@ export type AppointmentRow = {
   escalation_level: number
   jobber_request_id: string | null
   housecallpro_job_id: string | null
+  /** CRM C1 job columns — present only once the C1 migration is applied;
+   *  writers use best-effort updates (tolerance pattern). */
+  vehicle_id?: string | null
+  quote_id?: string | null
+  status?: JobStatus | null
+  hold_reason?: JobHoldReason | null
+  ends_at?: string | null
+  location_type?: JobLocationType
+  address?: Record<string, unknown> | null
+  travel_fee_cents?: number | null
+  /** {water, power, gate, parking, bay?} — bay is the shop-lane label. */
+  access_notes?: Record<string, unknown> | null
+  weather_flag?: boolean
+  service_ids?: string[]
+  quoted_amount_cents?: number | null
+  payment_status?: JobPaymentStatus
+  photos_before?: string[]
+  photos_after?: string[]
+  key_tag?: string | null
+  internal_note?: string | null
   created_at: string
   updated_at: string
 }
+
+export type JobHoldReason = "customer" | "weather" | "parts" | "payment"
+export type JobLocationType = "shop" | "mobile"
+export type JobPaymentStatus = "unpaid" | "deposit" | "paid"
 
 /**
  * Found Money Ledger — one durable snapshot per ROI-receipt period.
