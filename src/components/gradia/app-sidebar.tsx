@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
+  CalendarDays,
   Activity,
   Contact,
   CreditCard,
@@ -49,6 +50,7 @@ const nav: NavItem[] = [
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/conversations", label: "Conversations", icon: MessagesSquare },
   { href: "/customers", label: "Customers", icon: Contact },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/receptionist", label: "Receptionist", icon: Headset },
 ]
 
