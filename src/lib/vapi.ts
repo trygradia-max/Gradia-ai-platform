@@ -207,6 +207,29 @@ export const VAPI_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "propose_quote",
+      description:
+        "Stage a written quote for the team to review and send after the call. Use when the caller wants a price in writing or asks about several services. Never promise the quote is sent — the team reviews it first.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer_name: { type: "string" },
+          phone: { type: "string", description: "Caller's phone; defaults to the caller's number" },
+          vehicle: { type: "string", description: "Vehicle make/model/year/color" },
+          services: {
+            type: "array",
+            items: { type: "string" },
+            description: "Menu services to include, by name",
+          },
+          notes: { type: "string", description: "Condition details or anything affecting price" },
+        },
+        required: ["customer_name", "services"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "reschedule_appointment",
       description:
         "Stage a reschedule request for human approval. Never tell the caller the move is confirmed — the team texts to confirm the new time.",

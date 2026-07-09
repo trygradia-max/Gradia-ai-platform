@@ -26,8 +26,10 @@ import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
 import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
+import { moveLeadToStage, stageFromLegacyStatus } from "@/lib/pipeline"
+import { buildQuoteLineItem, computeQuoteTotals } from "@/lib/quotes"
 import { parseVehicle } from "@/lib/vehicle"
-import { upsertCustomerVehicle } from "@/lib/vehicles"
+import { upsertCustomerVehicle, vehiclesByCustomerIds } from "@/lib/vehicles"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { smsGateForShop } from "@/lib/telephony-provider"
@@ -41,6 +43,7 @@ import type {
   LeadStatus,
   PendingActionStatus,
   PendingActionType,
+  ServiceRow,
   ShopRow,
 } from "@/lib/types/database"
 
@@ -147,6 +150,12 @@ export type ApprovalSuccess =
       resultId: string
       proposal: EmailProposal
     }
+  | {
+      status: "executed"
+      actionType: "create_quote"
+      resultId: string
+      proposal: Record<string, unknown>
+    }
   | { status: "already_decided" }
 
 export type ApprovalResult =
@@ -173,6 +182,11 @@ export type DecisionSuccess =
       proposal: Record<string, unknown>
     }
   | { status: "claimed"; actionType: "send_email"; proposal: EmailProposal }
+  | {
+      status: "claimed"
+      actionType: "create_quote"
+      proposal: Record<string, unknown>
+    }
   | { status: "already_decided" }
 
 export type DecisionResult =
@@ -282,6 +296,14 @@ async function executeCreateLead(
       .update({ vehicle_id: vehicleId })
       .eq("id", created.id)
   }
+  // Auto-move (C2, code): an agent-captured lead lands on the board.
+  await moveLeadToStage(
+    supabase,
+    claimed.shop_id,
+    created.id,
+    stageFromLegacyStatus(proposal.status),
+    { by: "system" }
+  )
 
   await supabase
     .from("pending_actions")
@@ -404,6 +426,8 @@ export async function executeApproval(
       return executeSendSms(supabase, claimed)
     case "send_email":
       return executeSendEmail(supabase, claimed)
+    case "create_quote":
+      return executeCreateQuote(supabase, claimed)
     default:
       await rollbackClaim(supabase, claimed.id)
       return {
@@ -750,6 +774,20 @@ async function executeBookAppointment(
       .update({ vehicle_id: vehicleId })
       .eq("id", lead.id)
   }
+  // Auto-move (C2, code): booking approved → booked card + lifecycle flip.
+  await moveLeadToStage(supabase, claimed.shop_id, lead.id, "booked", {
+    by: "system",
+  })
+  {
+    const { error: lifecycleErr } = await supabase
+      .from("customers")
+      .update({ lifecycle: "active" })
+      .eq("id", customerResult.customer.id)
+      .eq("shop_id", claimed.shop_id)
+    if (lifecycleErr) {
+      console.warn("[approvals] lifecycle flip skipped (pre-C1?):", lifecycleErr.message)
+    }
+  }
 
   // L3: advance the customer's last-visit recency (excludes them from win-back
   // for a while). The parsed vehicle already landed in `vehicles` above.
@@ -919,6 +957,131 @@ async function queueBookingConfirmationSms(
     })
   } catch (err) {
     console.error("[approvals] booking confirmation Slack send failed:", err)
+  }
+}
+
+export type QuoteProposal = {
+  customer_name: string
+  phone: string
+  car_info: string | null
+  /** Service names heard on the call, matched against the menu on approve. */
+  services: string[]
+  notes: string | null
+}
+
+/**
+ * create_quote executor (ALWAYS_HITL — runs only on human approve, C3).
+ * Creates a DRAFT quote priced through lib/service-pricing at approve time
+ * (so a menu edit between call and approve prices correctly). NEVER sends —
+ * sending is a separate explicit owner action from the quote surface.
+ */
+async function executeCreateQuote(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<ApprovalResult> {
+  const proposal = claimed.payload as unknown as QuoteProposal
+  if (!proposal.customer_name?.trim() || !proposal.phone?.trim()) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: "Quote proposal is missing the customer." }
+  }
+
+  const customerResult = await findOrCreateCustomer(supabase, claimed.shop_id, {
+    name: proposal.customer_name,
+    phone: proposal.phone,
+  })
+  if (!customerResult.ok) {
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: `Customer resolution failed: ${customerResult.error}` }
+  }
+
+  const vehicle = parseVehicle(proposal.car_info)
+  const vehicleId = await upsertCustomerVehicle(
+    supabase,
+    claimed.shop_id,
+    customerResult.customer.id,
+    vehicle
+  )
+  const vehicles = await vehiclesByCustomerIds(supabase, claimed.shop_id, [
+    customerResult.customer.id,
+  ])
+  const sizeClass =
+    vehicles
+      .get(customerResult.customer.id)
+      ?.find((v) => v.id === vehicleId)?.size_class ?? null
+
+  const { data: svcData } = await supabase
+    .from("services")
+    .select("*")
+    .eq("shop_id", claimed.shop_id)
+  const menu = (svcData as ServiceRow[] | null) ?? []
+  const wanted = (proposal.services ?? [])
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+  const matched = menu.filter((s) =>
+    wanted.some(
+      (w) => s.name.toLowerCase() === w || s.name.toLowerCase().includes(w)
+    )
+  )
+
+  const lineItems = matched.map((s) => buildQuoteLineItem(s, sizeClass))
+  const totals = computeQuoteTotals(lineItems)
+
+  const { data: quote, error: quoteErr } = await supabase
+    .from("quotes")
+    .insert({
+      shop_id: claimed.shop_id,
+      customer_id: customerResult.customer.id,
+      vehicle_id: vehicleId,
+      status: "draft", // locked: agent quotes are ALWAYS draft
+      line_items: lineItems,
+      ...totals,
+      internal_note:
+        [
+          proposal.notes,
+          wanted.length > matched.length
+            ? `Unmatched services from the call: ${proposal.services.join(", ")}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" — ") || null,
+      created_by: "agent",
+    })
+    .select("id")
+    .single()
+
+  if (quoteErr || !quote) {
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: quoteErr?.message ?? "Quote insert failed (is the C1 migration applied?)",
+    }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: (quote as { id: string }).id })
+    .eq("id", claimed.id)
+
+  await recordInteraction(supabase, {
+    shopId: claimed.shop_id,
+    customerId: customerResult.customer.id,
+    channel: "note",
+    role: "system",
+    content: `Draft quote created from a call — ${lineItems.length} item${lineItems.length === 1 ? "" : "s"}.`,
+    metadata: {
+      kind: "quote",
+      quote_id: (quote as { id: string }).id,
+      event: "drafted",
+      source: "voice",
+    },
+  })
+
+  return {
+    ok: true,
+    status: "executed",
+    actionType: "create_quote",
+    resultId: (quote as { id: string }).id,
+    proposal: proposal as unknown as Record<string, unknown>,
   }
 }
 

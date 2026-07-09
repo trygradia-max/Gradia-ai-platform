@@ -170,6 +170,8 @@ function approvedHeadline(
       return "SMS sent"
     case "send_email":
       return "Email sent"
+    case "create_quote":
+      return "Draft quote created"
   }
 }
 
@@ -194,6 +196,8 @@ function approvedSummary(
       return `${result.proposal.customer_name ?? result.proposal.to_phone}`
     case "send_email":
       return `${result.proposal.customer_name ?? result.proposal.to_email}`
+    case "create_quote":
+      return `${(result.proposal.customer_name as string | null) ?? "customer"} — draft in Quotes`
   }
 }
 
@@ -215,6 +219,8 @@ function rejectedSummary(
       return `SMS to ${result.proposal.customer_name ?? result.proposal.to_phone}`
     case "send_email":
       return `email to ${result.proposal.customer_name ?? result.proposal.to_email}`
+    case "create_quote":
+      return `draft quote for ${(result.proposal.customer_name as string | null) ?? "customer"}`
   }
 }
 

@@ -485,6 +485,8 @@ export type PendingActionType =
   | "cancel_appointment"
   | "send_sms"
   | "send_email"
+  /** C3: agent-proposed quote — approve creates a DRAFT quote, never sends. */
+  | "create_quote"
 
 export type PendingActionStatus =
   | "pending"

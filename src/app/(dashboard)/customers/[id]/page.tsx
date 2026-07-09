@@ -111,6 +111,12 @@ export default async function CustomerDetailPage({
             Back to customers
           </Link>
           <div className="flex items-center gap-2">
+            <Link
+              href={`/customers/quotes/new?customer=${customer.id}`}
+              className="inline-flex h-8 items-center rounded-sm bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              New quote
+            </Link>
             <DoNotContactToggle
               customerId={customer.id}
               initial={customer.do_not_contact}

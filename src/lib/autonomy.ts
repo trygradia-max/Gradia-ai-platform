@@ -27,6 +27,9 @@ export const ALWAYS_HITL: ReadonlySet<PendingActionType> = new Set([
   "book_appointment",
   "reschedule_appointment",
   "cancel_appointment",
+  // C3: a quote is a money object — the agent only ever proposes one, and
+  // approval creates it as a DRAFT (sending is a separate owner action).
+  "create_quote",
 ])
 
 export function isAutonomyAllowed(actionType: PendingActionType): boolean {

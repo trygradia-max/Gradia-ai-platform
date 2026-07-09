@@ -60,6 +60,7 @@ import {
   lookupCustomerHistory,
   lookupShopPolicy,
   proposeBooking,
+  proposeQuote,
   quoteService,
   rescheduleAppointment,
   type VapiCallContext,
@@ -287,6 +288,8 @@ async function dispatchTool(
       return proposeBooking(supabase, shopId, params, ctx)
     case "quote_service":
       return quoteService(supabase, shopId, params, ctx)
+    case "propose_quote":
+      return proposeQuote(supabase, shopId, params, ctx)
     case "lookup_customer_history":
       return lookupCustomerHistory(supabase, shopId, params, ctx)
     case "lookup_shop_policy":

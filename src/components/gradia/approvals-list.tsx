@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import {
   Calendar,
+  FileText,
   Loader2,
   Mail,
   MessageSquare,
@@ -117,6 +118,7 @@ const ACTION_META: Record<PendingActionType, ActionMeta> = {
   cancel_appointment: { icon: Calendar, label: "Cancellation", tone: "booking" },
   send_sms: { icon: MessageSquare, label: "SMS", tone: "outbound" },
   send_email: { icon: Mail, label: "Email", tone: "outbound" },
+  create_quote: { icon: FileText, label: "Draft quote", tone: "money" },
 }
 
 const TONE_STYLE: Record<

@@ -648,6 +648,93 @@ export async function lookupShopPolicy(
   return `On ${top.source_name.toLowerCase()}: ${top.content}`
 }
 
+// ---------- propose_quote ----------
+
+/**
+ * Stage a written quote from call details (C3). MONEY ACTION → the pending
+ * action is ALWAYS_HITL (locked in autonomy.ts) and even approval only
+ * creates a DRAFT quote — the owner reviews prices before anything sends.
+ * Pricing resolves through lib/service-pricing at approve time.
+ */
+export async function proposeQuote(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const customerName = readParam(params, "customer_name", "customerName")
+  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const vehicle = readParam(params, "vehicle", "car_info", "carInfo") || null
+  const notes = readParam(params, "notes", "note") || null
+  const rawServices = params.services ?? params.service
+  const services = Array.isArray(rawServices)
+    ? rawServices.map((s) => asString(s).trim()).filter(Boolean)
+    : asString(rawServices)
+        .split(/[,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+
+  if (!customerName || !phone || services.length === 0) {
+    const missing = [
+      !customerName && "the name",
+      !phone && "a phone number",
+      services.length === 0 && "which services to quote",
+    ]
+      .filter(Boolean)
+      .join(", ")
+    return `Happy to get that in writing — I just need ${missing}.`
+  }
+
+  const { data: shop, error: shopErr } = await supabase
+    .from("shops")
+    .select("owner_id")
+    .eq("id", shopId)
+    .single()
+  if (shopErr || !shop?.owner_id) {
+    console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
+    return "Something went wrong on our end — we'll follow up with the quote shortly."
+  }
+
+  const { data: pending, error } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shopId,
+      action_type: "create_quote",
+      payload: {
+        customer_name: customerName,
+        phone,
+        car_info: vehicle,
+        services,
+        notes,
+        source: "voice",
+        vapi_call_id: ctx.id ?? null,
+      },
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+  if (error || !pending) {
+    console.error("[vapi-tools] create_quote stage failed:", error)
+    return "Something went wrong saving that — we'll follow up with the quote shortly."
+  }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because: `Staged a written quote because ${firstName(customerName)} asked for pricing on ${services.join(", ")} — quotes always wait for your review.`,
+    inputs: {
+      rule: "voice_propose_quote",
+      vapi_call_id: ctx.id ?? null,
+      services,
+    },
+  })
+
+  revalidatePath("/approvals")
+  return `You got it, ${firstName(customerName)} — we'll put the quote together and text it over shortly.`
+}
+
 // ---------- reschedule_appointment / cancel_appointment ----------
 //
 // Both are CALENDAR WRITES → ALWAYS_HITL (locked principle #4). The voice
