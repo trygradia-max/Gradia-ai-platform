@@ -9,6 +9,7 @@ import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
+import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
@@ -26,6 +27,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { listServicesForCurrentShop } from "@/lib/data/services"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getUsageState } from "@/app/actions/billing"
@@ -198,8 +200,10 @@ export default async function SettingsPage({
   const usageState = await getUsageState()
   const a2pState = await getA2pState()
   const voiceOptions = listVoiceOptions()
+  const services = await listServicesForCurrentShop()
 
   const sections = [
+    { id: "services", label: "Service menu" },
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
     { id: "sms", label: "SMS" },
@@ -349,6 +353,12 @@ export default async function SettingsPage({
         <SettingsSectionNav sections={sections} />
 
       <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
+        {/* The shop's brain (CRM C3a): one menu feeds quotes, phone answers,
+            and drafts through lib/service-pricing — never edited elsewhere. */}
+        <section id="services">
+          <ServiceMenuCard initialServices={services} />
+        </section>
+
         <section id="voice">
           {shop ? (
             <VoiceBuilderCard
@@ -460,13 +470,12 @@ export default async function SettingsPage({
                   More on the way
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Service menu, team, and billing controls land here next.
+                  Team and billing controls land here next.
                 </p>
               </div>
             </CardHeader>
             <CardContent>
               <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
-                <li>Edit our service menu — prices, durations, descriptions.</li>
                 <li>Invite teammates and manage permissions.</li>
               </ul>
             </CardContent>
