@@ -42,6 +42,7 @@ import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
 import { recordInteraction } from "@/lib/memory"
+import { moveLeadToStage } from "@/lib/pipeline"
 import { parseVehicle } from "@/lib/vehicle"
 import {
   describeVehicle,
@@ -688,6 +689,16 @@ async function runOwnerTool(
         .from("leads")
         .update({ vehicle_id: vehicleId })
         .eq("id", (createdLead as { id: string }).id)
+    }
+    if (createdLead) {
+      // Auto-move (C2, code): owner-captured lead lands on the board as new.
+      await moveLeadToStage(
+        ctx.supabase,
+        ctx.shop.id,
+        (createdLead as { id: string }).id,
+        "new",
+        { by: "system" }
+      )
     }
     return { content: json({ created: customer_name, immediate: true }), isError: false }
   }
