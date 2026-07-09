@@ -257,3 +257,109 @@ _Queue: `RUN_2026-07-09_CRM_C3_C2.md`. Branch `redesign/glass-box`. Baseline goi
   email fallback otherwise) and an accept from the public page.
 - Pick cron slots for `advanceQuoteFollowUps` (pipeline timers) and
   `runLifecycleDerivation` (nightly lifecycle) — both exported, neither wired.
+
+---
+
+# Run report — 2026-07-09 (CRM C4 jobs + calendar, C5 automation catalog)
+
+_Queue: `RUN_2026-07-09_CRM_C4_C5.md`. Branch `redesign/glass-box`. Baseline in: 353 passing / all gates clean._
+
+## Item 1 — C4a job status machine ✅
+
+- `lib/jobs.ts`: the 8-status flow with an explicit transition map (every
+  status reachable from booked, money tail one-way, on_hold pauses live work
+  and resumes, no skipping to completed). Every transition = one owner tap
+  writing the customer timeline with machine-readable refs — the C5 sweeps
+  key off those events. `completed` arms the vehicle's maintenance clock
+  from service-category intervals (code defaults: protection 12mo, detail/
+  interior 6mo, wash 1mo; owner-editable later). `closeOldPaidJobs` sweeps
+  paid → closed after 48h (rides the new automations cron).
+- Job card slide-over (`job-card-sheet.tsx`): status taps + hold-reason
+  picker, manual unpaid/deposit/paid toggle (no new payment features),
+  mobile fields only for mobile jobs (maps link, travel fee, water/power,
+  weather flag — manual, no API), shop fields otherwise (bay, key tag).
+  checked_in prompts walk-around photos, completed prompts after-photos —
+  camera capture into a new PRIVATE `job-photos` bucket (migration
+  `20260709120000_job_photos_bucket.sql`, founder applies; signed URLs).
+- 10 tests: reachability, one-way money tail, hold semantics, maintenance
+  clock arithmetic + idempotent re-arm.
+
+## Item 2 — C4b Calendar page ✅
+
+- **Calendar is the 5th nav destination** (sidebar, after Customers); the
+  old `/schedule` (Aurinko events list) redirects, layer-2-shell pattern.
+- Desktop: week grid, jobs as status-dot-colored blocks positioned by time
+  (status is never color alone), bay chips on shop jobs, weather-risk icon,
+  HTML5 drag-to-reschedule — the MOVE is the owner's own action (calendar
+  event follows best-effort), the customer HEADS-UP stages a send_sms
+  approval per the rail. Block-time support (appointment-shaped, dashed).
+  Capacity warning when a day's booked minutes exceed working hours — code
+  default 8h/day, tunable via `shops.settings.calendar.working_hours_per_day`
+  (no structured booking-rules hours exist yet; the wizard only stores free
+  text — flagged as a spec-vs-reality note).
+- Mobile: drive-order day list (time order; optimization deliberately out
+  of scope) — one-tap next-status button, maps link, the job card for
+  photos. The solo mobile detailer's day, phone-only.
+
+## Item 3 — C5 automation catalog ✅
+
+- **Toggles, not a builder** (`lib/automations.ts`): the 8 catalog entries
+  as plain-English sentences; Settings → Automations shows toggle + mode +
+  editable template ({tokens} fill from code, never a model) + run history
+  ("N sent · N waiting · recovered N bookings" — computed from
+  automation_runs joined to booked leads, in SQL/code, no estimates).
+- **Send discipline:** every automation stages the standard send_sms
+  pending action. approval → waits in /approvals. autopilot → executes via
+  `executeApproval` — the SAME A2P/quiet-hours/opt-out/metering gate as
+  every outbound, with a credit pre-check (fail closed → degrades to
+  staged) and a Package-2 entitlement gate (Core shops stay approve-first;
+  autopilot degrades to staging, never silence, preserving the packaging).
+  Source-lock test: neither the runner nor the sweeps can touch a raw
+  sender.
+- **Hard floor:** `AUTOPILOT_BARRED_AUTOMATIONS` lives in autonomy.ts next
+  to ALWAYS_HITL; barred entries can't be saved OR run as autopilot, and
+  stale DB rows degrade on read. Locked by tests that force the catalog's
+  touchesMoneyOrCalendar flags and the barred set to agree both ways.
+  (None of the launch 8 are barred — the floor exists so a future entry
+  can't quietly cross it.)
+- **Wiring, in code:** #1 new-lead (5-min no-contact) and #2 missed-call
+  (ended-reason keywords or <10s calls, no text since) sweeps; #3 quote
+  follow-up wires `advanceQuoteFollowUps` through the catalog with 2d/5d/
+  12d escalating copy (3 touches max, idempotent per touch); #4 revival
+  (21d silent, must have engaged); #7 job-completed and #8 review-request
+  (4h default, tunable; skips entirely without a review link) key off the
+  C4 timeline events. All idempotent via automation_runs trigger_ref.
+- **#5/#6 ZERO BEHAVIOR CHANGE:** the existing confirm/reminder crons keep
+  their exact machinery (same staging, same idempotency stamps, same
+  drafted/built-in copy) and now consult the catalog: defaults are
+  enabled + approval — i.e., today's behavior byte-for-byte; an owner can
+  disable, re-copy, or opt into autopilot. Source-scan tests lock the
+  machinery AND the consult. Note: the spec table lists #5/#6 as default
+  autopilot — the zero-behavior-change rail wins; flagged for the founder.
+
+## ⚠ New cron entry (flagged for founder review pre-merge)
+
+- `vercel.json` adds `/api/cron/automations` every **5 minutes** (its own
+  commit). The cadence exists for #1 new_lead_instant, where a 5-minute SLA
+  is the point; everything it runs is idempotent (trigger_ref dedupe),
+  stages through pending_actions, and sends only through the gated path —
+  a fast cadence cannot double-send. It also hosts the C4 close sweep.
+  #5/#6 stay on their existing hourly crons.
+
+## Final state
+
+- **375 passing / 4 skipped** (353 → +10 jobs, +12 automations), lint, tsc,
+  `next build` clean after every item.
+- Rails held: money/calendar HITL (reschedule notifications stage; floor
+  extended + locked), one send path, pre-migration tolerance everywhere,
+  no team roles / weather API / route optimization / payment features.
+
+## Founder actions needed
+- Apply migration `20260709120000_job_photos_bucket.sql` (plus the two
+  still-pending C1/C7 migrations if not yet applied).
+- **Review the new 5-minute cron** (`/api/cron/automations`) before merge.
+- Visual pass: Calendar (desktop week + mobile day list) and Settings →
+  Automations.
+- Smoke on the test shop: one autopilot automation (flip new_lead_instant
+  on for a Package-2 shop) and one approval automation (quote_followup) —
+  and confirm #5/#6 behavior is unchanged with the catalog untouched.
