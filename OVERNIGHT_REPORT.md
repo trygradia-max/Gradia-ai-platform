@@ -161,3 +161,99 @@ Gate: 331 passing (was 282 at baseline), lint clean, tsc clean, `next build` cle
 - Decide the nightly cron slot for `runLifecycleDerivation`
   (`src/lib/lifecycle.ts`) — exported and tested, deliberately not added to
   vercel.json (new cron needs your sign-off).
+
+---
+
+# Run report — 2026-07-09 (CRM C3 service menu + quotes, then C2 pipeline)
+
+_Queue: `RUN_2026-07-09_CRM_C3_C2.md`. Branch `redesign/glass-box`. Baseline going in: 331 passing / lint / tsc clean._
+
+## Item 1 — C3a service menu editor ✅
+
+- Settings gains a **Service menu** section (the page's old "coming soon"
+  bullet, now real): per-service base price + duration, price AND duration
+  per size class (all 8), condition bumps (label × factor), add-on /
+  mobile / active flags, quick-add row, and a one-tap detailer template.
+- **Spec discrepancy, resolved pragmatically:** §C3 says "prefill from the
+  onboarding wizard's template menu — reuse it", but the wizard never
+  shipped a template (owners type services by hand). The template now
+  lives in `src/lib/service-menu.ts` (`DETAILER_TEMPLATE_MENU`, 7 services
+  with size-class pricing) — the wizard can reuse it later.
+- Saves split core columns (always safe) from C1 size-class columns
+  (best-effort, pre-migration tolerant) and call `markVoiceStale` so the
+  receptionist re-syncs — a price edit here changes the phone answer, CRM
+  quotes, and Whisper grounding in one move, through `service-pricing.ts`.
+- Tests: `eval/service-menu.test.ts` (8) — fixture-driven proof that menu
+  edits change `resolvePrice` output, template validity, multiplier hygiene.
+
+## Item 2 — C3b quotes ✅
+
+- **Builder** (`/customers/quotes/new`, linked from customer profiles and
+  pipeline cards): customer picker, vehicle picker with inline create
+  ("2021 Tesla Model Y, white" → vehicles table), service tiles priced live
+  for the vehicle's size class, condition chips, add-ons, discount, note —
+  Save draft / Send by text / Send by email. Client preview and server
+  write both price through `service-pricing.ts`, so they cannot disagree.
+- **Send path reuse (no new send path):** the owner's click stages the
+  exact `send_sms`/`send_email` pending action every outbound uses, then
+  executes it via `executeApproval` in the same breath — A2P gate, quiet
+  hours, opt-out, and consent all apply. A held send stays visible in
+  /approvals instead of silently dropping, and the UI says so.
+- **Public page `/q/[token]`:** line items, total, validity, shop identity,
+  no vendor names, noindex. First open stamps `viewed_at` + timeline.
+  Accept/decline update status + pipeline stage + timeline. **Book Now
+  inherits the shop's existing booking rule (resolved decision #3):**
+  calendar-link shops link out; propose-booking shops get an optional
+  time picker whose accept stages the same `book_appointment` pending
+  action the voice agent uses — calendar writes stay HITL.
+- **Agent staging:** new `propose_quote` voice tool (8th receptionist tool)
+  stages a `create_quote` pending action. `create_quote` is in
+  **ALWAYS_HITL** (locking tests extended, incl. a source-level check that
+  the executor pins `status: "draft"`); even approval only creates a DRAFT
+  priced at approve time. Approvals UI renders the new type.
+- Tests: `eval/quotes.test.ts` (7, incl. the voice/CRM price-identity
+  assertion), guardrails + voice-builder locks extended.
+
+## Item 3 — C2 pipeline UI + hub ✅
+
+- **/customers is now the hub** (resolved 5-page IA): Pipeline (default) ·
+  Customers · Quotes tabs. Old flows intact: customer table + cleanup card
+  under the Customers tab (search preserves the tab), recovery import
+  unchanged, `/leads` still redirects (a lead IS a pipeline card now).
+- **Board:** 6 columns per spec, headers = stage dot + label + count + $
+  total (`.font-data`); card face = name · vehicle · interest chip ·
+  quote $ · amber/red stage-age vs `next_action_at` · source icon · ⚡ when
+  a pending approval touches that person. HTML5 drag on desktop; mobile =
+  stage-grouped list with a Stage select. Table-view toggle. New Lead
+  modal = 3 fields. Right slide-over = contact header, vehicle chip, quote
+  link (or "Quote this"), timeline from `interactions`, next action, note box.
+- **Lost requires a reason** — enforced in the ACTION (code), not just UI.
+- **Auto-moves are code on real events:** agent/owner lead creation → `new`
+  (approvals + owner-agent hooks), quote sent → `quote_sent`, quote
+  declined → `lost`, booking approved → `booked` + customer lifecycle
+  flip to active. Timer sweep `advanceQuoteFollowUps` (quote_sent past
+  `next_action_at` → follow_up) is exported cron-safe but NOT wired into
+  vercel.json — founder picks the slot (same posture as lifecycle.ts).
+  Stage moves flow through ONE helper (`lib/pipeline.ts` `moveLeadToStage`)
+  with history, timers, and legacy-status write-through; everything is
+  pre-C1-migration tolerant.
+- Tests: `eval/pipeline.test.ts` (5) — stage set, timer defaults, legacy
+  fallback, history semantics.
+
+## Final state
+
+- **353 passing / 4 skipped** (331 → +8 menu, +7 quotes, +5 pipeline, +2
+  extended locks), lint clean, tsc clean, `next build` clean after every item.
+- Locked principles held: pricing only through service-pricing (identity
+  eval still passing); money/calendar HITL extended (create_quote), never
+  weakened; no new send path; no C4–C8 work.
+
+## Founder actions needed
+- Apply the two pending migrations (C1 foundation + structured_csv enum) —
+  quotes/pipeline/vehicles run in tolerant fallback until then.
+- Visual review of the three new surfaces: Settings → Service menu,
+  /customers (Pipeline + Quotes tabs) and the builder, /q/[token] public page.
+- Smoke a real quote send on the test shop (SMS with A2P-approved number;
+  email fallback otherwise) and an accept from the public page.
+- Pick cron slots for `advanceQuoteFollowUps` (pipeline timers) and
+  `runLifecycleDerivation` (nightly lifecycle) — both exported, neither wired.
