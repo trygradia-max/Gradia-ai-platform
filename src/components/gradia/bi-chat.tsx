@@ -14,7 +14,6 @@ import { toast } from "sonner"
 
 import { BiChatHistorySheet } from "@/components/gradia/bi-chat-history-sheet"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -90,7 +89,7 @@ const messageEnter: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.4, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
@@ -107,14 +106,14 @@ const chipItem: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.35, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
 export function BiChat({
   initial,
   endpoint = "/api/bi/chat",
-  resetHref = "/chat",
+  resetHref = "/conversations",
 }: {
   initial: InitialChatState
   /** Which chat backend to stream from. Defaults to Ask Gradia (read-only);

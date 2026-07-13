@@ -10,6 +10,9 @@
  */
 export function finishOauth(path: string): Response {
   const safe = JSON.stringify(path.startsWith("/") ? path : "/settings")
+  // Documented hex exception: this is a standalone popup document — the
+  // app's CSS variables don't exist here. Values approximate the dark
+  // theme (canvas / secondary text) for the split-second it's visible.
   const html =
     "<!doctype html><meta charset=utf-8><title>Connecting…</title>" +
     '<body style="font:14px system-ui,sans-serif;color:#9aa;background:#0c0d10;' +

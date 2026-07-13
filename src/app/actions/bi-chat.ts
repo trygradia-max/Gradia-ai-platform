@@ -52,7 +52,7 @@ export type StartNewConversationResult =
 export async function startNewConversation(): Promise<StartNewConversationResult> {
   await requireUser()
   await requireShop()
-  revalidatePath("/chat")
+  revalidatePath("/conversations")
   return { ok: true }
 }
 
@@ -77,6 +77,6 @@ export async function deleteConversation(
     .eq("shop_id", shop.id)
 
   if (error) return { ok: false, error: error.message }
-  revalidatePath("/chat")
+  revalidatePath("/conversations")
   return { ok: true }
 }

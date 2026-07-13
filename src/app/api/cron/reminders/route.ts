@@ -15,6 +15,12 @@
  * the header doesn't match.
  */
 
+import {
+  afterCatalogStage,
+  catalogGateFor,
+  renderTemplate,
+  type AutomationConfig,
+} from "@/lib/automations"
 import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftAppointmentReminderSms } from "@/lib/sms-drafter"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -30,7 +36,7 @@ const WINDOW_UPPER_HOURS = 25
 type JoinedAppointment = AppointmentRow & {
   shop: Pick<
     ShopRow,
-    "id" | "name" | "owner_id" | "twilio_phone_number"
+    "id" | "name" | "owner_id" | "twilio_phone_number" | "plan" | "voice_addon" | "credit_period_start"
   > | null
   customer: Pick<CustomerRow, "id" | "name" | "phone"> | null
 }
@@ -61,7 +67,7 @@ export async function GET(request: Request) {
     .select(
       `
         *,
-        shop:shops!inner(id, name, owner_id, twilio_phone_number),
+        shop:shops!inner(id, name, owner_id, twilio_phone_number, plan, voice_addon, credit_period_start),
         customer:customers(id, name, phone)
       `
     )
@@ -80,6 +86,9 @@ export async function GET(request: Request) {
   let skipped = 0
   let failed = 0
 
+  // C5 catalog gate (#6 appt_reminder) — cached per shop. Defaults are
+  // enabled + approval, i.e. EXACTLY the pre-catalog behavior of this cron.
+  const gates = new Map<string, AutomationConfig>()
   for (const appt of appointments) {
     if (!appt.shop?.twilio_phone_number) {
       skipped += 1
@@ -89,8 +98,17 @@ export async function GET(request: Request) {
       skipped += 1
       continue
     }
+    let gate = gates.get(appt.shop.id)
+    if (!gate) {
+      gate = await catalogGateFor(supabase, appt.shop.id, "appt_reminder")
+      gates.set(appt.shop.id, gate)
+    }
+    if (!gate.enabled) {
+      skipped += 1
+      continue
+    }
     try {
-      const ok = await stageReminder(supabase, appt)
+      const ok = await stageReminder(supabase, appt, gate)
       if (ok) staged += 1
       else skipped += 1
     } catch (err) {
@@ -110,18 +128,27 @@ export async function GET(request: Request) {
 
 async function stageReminder(
   supabase: ReturnType<typeof createServiceClient>,
-  appt: JoinedAppointment
+  appt: JoinedAppointment,
+  gate: AutomationConfig
 ): Promise<boolean> {
   if (!appt.shop || !appt.customer?.phone) return false
 
-  const draft = await draftAppointmentReminderSms({
-    shopName: appt.shop.name,
-    customerName: appt.customer.name ?? "there",
-    service: appt.service_name,
-    isoStartTime: appt.scheduled_at,
-    timezone: appt.timezone,
-    vehicle: null,
-  })
+  // Owner template override wins; the empty default keeps the drafted copy
+  // (pre-catalog behavior, unchanged).
+  const draft = gate.template.trim()
+    ? renderTemplate(gate.template, {
+        customer_name: (appt.customer.name ?? "there").split(/\s+/)[0],
+        shop_name: appt.shop.name,
+        services: appt.service_name ?? "appointment",
+      })
+    : await draftAppointmentReminderSms({
+        shopName: appt.shop.name,
+        customerName: appt.customer.name ?? "there",
+        service: appt.service_name,
+        isoStartTime: appt.scheduled_at,
+        timezone: appt.timezone,
+        vehicle: null,
+      })
   if (!draft) return false
 
   const reason = appt.service_name?.trim()
@@ -175,6 +202,12 @@ async function stageReminder(
   } catch (err) {
     console.error("[cron/reminders] Slack send failed:", err)
   }
+
+  // C5: run history + (owner-opted) autopilot. Approval mode = no-op here.
+  await afterCatalogStage(supabase, appt.shop, gate, pending.id, {
+    customerId: appt.customer.id,
+    triggerRef: `reminder:${appt.id}`,
+  })
 
   return true
 }

@@ -24,6 +24,7 @@ import { ChatPromptTemplate } from "@langchain/core/prompts"
 import { z } from "zod"
 
 import { GRADIA_SIGNATURE_RULE, GRADIA_VOICE } from "@/lib/persona"
+import { describePrice } from "@/lib/service-pricing"
 import type { ServiceRow } from "@/lib/types/database"
 
 // Sonnet 4.6 — a stronger, independent model than the Haiku drafters, so the
@@ -45,7 +46,8 @@ export type DraftToVerify = {
   subject?: string | null
   customerName?: string | null
   shopName: string
-  services: Pick<ServiceRow, "name" | "price_cents">[]
+  services: (Pick<ServiceRow, "name" | "price_cents"> &
+    Partial<Pick<ServiceRow, "base_price_by_size">>)[]
 }
 
 const verdictSchema = z.object({
@@ -150,9 +152,11 @@ export async function verifyDraft(
   }
 
   try {
+    // Same resolved prices the drafters were grounded with (service-pricing),
+    // so a legitimate size-class price never reads as a fabrication.
     const menu =
       draft.services
-        .map((s) => `- ${s.name}: $${(s.price_cents / 100).toFixed(2)}`)
+        .map((s) => `- ${s.name}: ${describePrice(s)}`)
         .join("\n") || "(no menu on file — any quoted price is a fabrication)"
     const verdict = await invoke({
       channel: draft.channel,

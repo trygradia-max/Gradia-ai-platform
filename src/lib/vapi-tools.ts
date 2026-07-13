@@ -18,8 +18,10 @@ import { revalidatePath } from "next/cache"
 
 import { findCustomerByChannel } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
+import { recordActionDecision } from "@/lib/decision-log"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
+import { describePrice, resolveDurationMinutes } from "@/lib/service-pricing"
 import {
   sendBookingApprovalRequest,
   sendLeadApprovalRequest,
@@ -37,11 +39,8 @@ export type VapiCallContext = {
 }
 
 // ---------- formatters tuned for TTS ----------
-
-function speakPrice(cents: number): string {
-  const dollars = cents / 100
-  return dollars % 1 === 0 ? `$${dollars}` : `$${dollars.toFixed(2)}`
-}
+// Prices come from lib/service-pricing (describePrice) — the shared
+// resolution module — so voice quotes and CRM quotes can never disagree.
 
 function speakDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`
@@ -143,6 +142,19 @@ async function submitLeadProposal(
     console.error("[vapi-tools] pending_action insert failed:", pendingErr)
     return { ok: false, reason: "pending_action_failed" }
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because: `Staged this lead because ${proposal.customerName || "a caller"} shared their details on a call to your receptionist.`,
+    inputs: {
+      rule: "voice_capture_lead",
+      vapi_call_id: ctx.id ?? null,
+      lead_status: proposal.status,
+    },
+  })
 
   // Resolve customer (best-effort) so we can surface cross-channel
   // context on the Slack card.
@@ -306,6 +318,19 @@ async function submitBookingProposal(
     )
     return { ok: false, reason: "pending_action_failed" }
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because: `Staged this booking because the caller agreed to ${proposal.service} on the call — bookings always wait for your approval.`,
+    inputs: {
+      rule: "voice_propose_booking",
+      vapi_call_id: ctx.id ?? null,
+      iso_start_time: proposal.isoStartTime,
+    },
+  })
 
   const customer = await findCustomerByChannel(supabase, shopId, {
     phone: proposal.phone,
@@ -493,7 +518,7 @@ export async function quoteService(
   if (matches.length === 1) {
     const s = matches[0]
     const desc = s.description ? ` ${s.description}.` : ""
-    return `${s.name} is ${speakPrice(s.price_cents)} and runs ${speakDuration(s.duration_minutes)}.${desc} Want us to get that booked?`
+    return `${s.name} is ${describePrice(s)} and runs ${speakDuration(resolveDurationMinutes(s))}.${desc} Want us to get that booked?`
   }
 
   if (matches.length > 1) {
@@ -501,7 +526,7 @@ export async function quoteService(
     const list = top
       .map(
         (s) =>
-          `${s.name} at ${speakPrice(s.price_cents)} (${speakDuration(s.duration_minutes)})`
+          `${s.name} at ${describePrice(s)} (${speakDuration(resolveDurationMinutes(s))})`
       )
       .join(", ")
     return `We have a few options — ${list}. Which sounds right?`
@@ -509,7 +534,7 @@ export async function quoteService(
 
   // No specific match: read the menu (cap at 5).
   const top = services.slice(0, 5)
-  const list = top.map((s) => `${s.name} at ${speakPrice(s.price_cents)}`).join(", ")
+  const list = top.map((s) => `${s.name} at ${describePrice(s)}`).join(", ")
   return `We don't have that exact thing on our menu, but here's what we offer: ${list}. Want one of those?`
 }
 
@@ -623,6 +648,93 @@ export async function lookupShopPolicy(
   return `On ${top.source_name.toLowerCase()}: ${top.content}`
 }
 
+// ---------- propose_quote ----------
+
+/**
+ * Stage a written quote from call details (C3). MONEY ACTION → the pending
+ * action is ALWAYS_HITL (locked in autonomy.ts) and even approval only
+ * creates a DRAFT quote — the owner reviews prices before anything sends.
+ * Pricing resolves through lib/service-pricing at approve time.
+ */
+export async function proposeQuote(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): Promise<string> {
+  const customerName = readParam(params, "customer_name", "customerName")
+  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const vehicle = readParam(params, "vehicle", "car_info", "carInfo") || null
+  const notes = readParam(params, "notes", "note") || null
+  const rawServices = params.services ?? params.service
+  const services = Array.isArray(rawServices)
+    ? rawServices.map((s) => asString(s).trim()).filter(Boolean)
+    : asString(rawServices)
+        .split(/[,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+
+  if (!customerName || !phone || services.length === 0) {
+    const missing = [
+      !customerName && "the name",
+      !phone && "a phone number",
+      services.length === 0 && "which services to quote",
+    ]
+      .filter(Boolean)
+      .join(", ")
+    return `Happy to get that in writing — I just need ${missing}.`
+  }
+
+  const { data: shop, error: shopErr } = await supabase
+    .from("shops")
+    .select("owner_id")
+    .eq("id", shopId)
+    .single()
+  if (shopErr || !shop?.owner_id) {
+    console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
+    return "Something went wrong on our end — we'll follow up with the quote shortly."
+  }
+
+  const { data: pending, error } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shopId,
+      action_type: "create_quote",
+      payload: {
+        customer_name: customerName,
+        phone,
+        car_info: vehicle,
+        services,
+        notes,
+        source: "voice",
+        vapi_call_id: ctx.id ?? null,
+      },
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+  if (error || !pending) {
+    console.error("[vapi-tools] create_quote stage failed:", error)
+    return "Something went wrong saving that — we'll follow up with the quote shortly."
+  }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because: `Staged a written quote because ${firstName(customerName)} asked for pricing on ${services.join(", ")} — quotes always wait for your review.`,
+    inputs: {
+      rule: "voice_propose_quote",
+      vapi_call_id: ctx.id ?? null,
+      services,
+    },
+  })
+
+  revalidatePath("/approvals")
+  return `You got it, ${firstName(customerName)} — we'll put the quote together and text it over shortly.`
+}
+
 // ---------- reschedule_appointment / cancel_appointment ----------
 //
 // Both are CALENDAR WRITES → ALWAYS_HITL (locked principle #4). The voice
@@ -677,16 +789,41 @@ async function stageAppointmentChange(
     console.error("[vapi-tools] shop owner not found for", shopId, shopErr)
     return false
   }
-  const { error } = await supabase.from("pending_actions").insert({
-    shop_id: shopId,
-    action_type: actionType,
-    payload,
-    requested_by: shop.owner_id,
-  })
-  if (error) {
+  const { data: pending, error } = await supabase
+    .from("pending_actions")
+    .insert({
+      shop_id: shopId,
+      action_type: actionType,
+      payload,
+      requested_by: shop.owner_id,
+    })
+    .select("id")
+    .single()
+  if (error || !pending) {
     console.error(`[vapi-tools] ${actionType} stage failed:`, error)
     return false
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  const newWhen =
+    typeof payload.new_when === "string" && payload.new_when.trim()
+      ? ` to "${payload.new_when.trim()}"`
+      : ""
+  const because =
+    actionType === "reschedule_appointment"
+      ? `Staged because the caller asked to move their appointment${newWhen} — calendar changes always wait for your approval.`
+      : "Staged because the caller asked to cancel their appointment — calendar changes always wait for your approval."
+  await recordActionDecision(supabase, {
+    shopId,
+    pendingActionId: pending.id,
+    source: "voice",
+    because,
+    inputs: {
+      rule: `voice_${actionType}`,
+      vapi_call_id: payload.vapi_call_id ?? null,
+      appointment_id: payload.appointment_id ?? null,
+    },
+  })
   return true
 }
 

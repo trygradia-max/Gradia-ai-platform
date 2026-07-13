@@ -13,6 +13,7 @@
 import { checkFeatureAccess, loadShopCreditFields } from "@/lib/credits"
 import { FEATURES } from "@/lib/features"
 import { getPricing } from "@/lib/pricing"
+import { runCsvVehicleCleanup } from "@/lib/recovery/csv-cleanup"
 import { runExtraction } from "@/lib/recovery/run-extraction"
 import { getOptionalShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -51,6 +52,33 @@ export async function POST(
 
   const pricing = await getPricing(supabase)
   const service = createServiceClient()
+
+  // C7 structured CSV: drain the metered Haiku vehicle cleanups first; once
+  // none remain, fall through to runExtraction, which finds no un-extracted
+  // rows and runs the shared finale (dedupe -> ready). Same chunking contract.
+  const { data: jobRow } = await service
+    .from("import_jobs")
+    .select("source_type")
+    .eq("id", jobId)
+    .eq("shop_id", shop.id)
+    .maybeSingle()
+  if ((jobRow as { source_type: string } | null)?.source_type === "structured_csv") {
+    const cleanup = await runCsvVehicleCleanup(service, creditFields, jobId, pricing)
+    if (!cleanup.ok) {
+      const status = /credit/i.test(cleanup.error) ? 402 : 400
+      return json(cleanup, status)
+    }
+    if (cleanup.remaining > 0) {
+      return json({
+        ok: true,
+        jobId,
+        extracted: cleanup.cleaned,
+        remaining: cleanup.remaining,
+        done: false,
+        candidates: [],
+      })
+    }
+  }
 
   const result = await runExtraction(service, creditFields, jobId, pricing)
   if (!result.ok) {

@@ -23,6 +23,10 @@ export type ExtractionDirection = "inquiry" | "quote" | "booked" | "completed"
  * Canonical extraction shape (nulls for absent single-value fields). The
  * LLM-facing schema below uses empty strings instead of null — the established
  * convention in this codebase — and the worker maps empties back to null.
+ *
+ * The optional fields are C7 structured-CSV extras written by the
+ * DETERMINISTIC mapper (lib/recovery/structured-csv.ts) — the LLM worker
+ * never produces them, and mbox/contacts extractions simply omit them.
  */
 export type RecoveryExtraction = {
   name: string | null
@@ -33,6 +37,22 @@ export type RecoveryExtraction = {
   last_interaction_at: string | null
   direction: ExtractionDirection
   confidence: number
+  /** C7: structured vehicle from mapped columns or the LLM vehicle cleanup. */
+  vehicle_parsed?: {
+    make: string | null
+    model: string | null
+    year: number | null
+    color: string | null
+  } | null
+  /** C7: the combined vehicle string defeated the regex — queue for the
+   *  metered Haiku vehicle cleanup (the ONLY LLM use on a structured CSV). */
+  vehicle_needs_llm?: boolean
+  /** C7: mapped pipeline stage ("Estimate Given" → quote_sent). */
+  stage?: "new" | "needs_quote" | "quote_sent" | "follow_up" | "booked" | "lost" | null
+  /** C7: mapped lead source, verbatim after trim. */
+  source?: string | null
+  /** C7: unmapped columns land here — never dropped silently. */
+  notes?: string | null
 }
 
 const schema = z

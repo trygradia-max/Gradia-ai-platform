@@ -1,4 +1,5 @@
 import { getA2pState } from "@/app/actions/a2p"
+import { GrainOverlay } from "@/components/gradia/grain-overlay"
 import { MeshBackground } from "@/components/gradia/mesh-background"
 import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
 import { deriveWizardStep } from "@/lib/onboarding"
@@ -63,6 +64,7 @@ export default async function OnboardingPage({
 
   return (
     <div className="relative isolate flex min-h-svh flex-col items-center justify-center gap-8 overflow-hidden bg-background px-4 py-12 sm:px-6">
+      <GrainOverlay />
       <MeshBackground />
 
       <header className="relative max-w-xl space-y-2.5 text-center">
@@ -76,11 +78,11 @@ export default async function OnboardingPage({
         <h1 className="font-display text-[clamp(1.875rem,5vw,2.75rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
           {startFresh ? (
             <>
-              A <span className="italic">second</span> shop, same setup.
+              A <span className="italic">second</span>{" "}shop, same setup.
             </>
           ) : (
             <>
-              Let&apos;s <span className="italic">wire</span> the shop up.
+              Let&apos;s <span className="italic">wire</span>{" "}the shop up.
             </>
           )}
         </h1>

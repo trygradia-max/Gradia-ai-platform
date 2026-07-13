@@ -189,7 +189,7 @@ export function StripeSettingsCard({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
             >
               <StripeEmbeddedOnboarding
                 mode={embeddedMode}
@@ -203,7 +203,7 @@ export function StripeSettingsCard({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="space-y-4"
             >
               {localConnected ? (

@@ -35,9 +35,9 @@ function DialogOverlay({
         "supports-backdrop-filter:backdrop-blur-md supports-backdrop-filter:bg-background/55",
         // Slower, more cinematic backdrop — easeOutExpo on enter,
         // easeInExpo on exit, so the dim doesn't snap on close.
-        "duration-300 [animation-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+        "duration-150 ease-out",
         "data-open:animate-in data-open:fade-in-0",
-        "data-closed:animate-out data-closed:fade-out-0 data-closed:duration-200",
+        "data-closed:animate-out data-closed:fade-out-0 data-closed:duration-150",
         className
       )}
       {...props}
@@ -59,14 +59,14 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl bg-popover p-5 text-sm text-popover-foreground outline-none sm:max-w-md",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg bg-popover p-5 text-sm text-popover-foreground outline-none sm:max-w-md",
           // Border + tone — moves it from "popover" to "first-class
           // surface" so dialogs match the card vocabulary on the page.
           "border border-border/60 shadow-2xl shadow-black/40 ring-1 ring-foreground/5",
           // Entry: opacity + scale 0.96 + 6px upward drift on
           // easeOutExpo. Exit: snappier reverse on easeInExpo so closing
           // doesn't feel sluggish.
-          "duration-260 [animation-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+          "duration-150 ease-out",
           "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:slide-in-from-bottom-2",
           "data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-closed:slide-out-to-bottom-1 data-closed:duration-180",
           className

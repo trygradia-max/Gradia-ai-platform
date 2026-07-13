@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import {
   Calendar,
+  FileText,
   Loader2,
   Mail,
   MessageSquare,
@@ -19,12 +20,13 @@ import { toast } from "sonner"
 import {
   approveFromDashboard,
   rejectFromDashboard,
+  undoRejectFromDashboard,
 } from "@/app/actions/approvals"
+import { STRINGS } from "@/lib/strings"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
-  EASE_OUT_EXPO,
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
@@ -116,6 +118,7 @@ const ACTION_META: Record<PendingActionType, ActionMeta> = {
   cancel_appointment: { icon: Calendar, label: "Cancellation", tone: "booking" },
   send_sms: { icon: MessageSquare, label: "SMS", tone: "outbound" },
   send_email: { icon: Mail, label: "Email", tone: "outbound" },
+  create_quote: { icon: FileText, label: "Draft quote", tone: "money" },
 }
 
 const TONE_STYLE: Record<
@@ -177,29 +180,71 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     // Optimistic: hide the card now; "Sent ✓" is implied by the toast.
     setRemoved((prev) => new Set(prev).add(id))
 
-    const result =
-      decision === "approve"
-        ? await approveFromDashboard(id)
-        : await rejectFromDashboard(id)
-
-    if (!result.ok) {
-      // Reconcile failure — un-hide the card so the owner can retry.
+    const rollback = () => {
       setRemoved((prev) => {
         const next = new Set(prev)
         next.delete(id)
         return next
       })
       inFlight.current.delete(id)
+    }
+
+    let result: Awaited<ReturnType<typeof approveFromDashboard>>
+    try {
+      result =
+        decision === "approve"
+          ? await approveFromDashboard(id)
+          : await rejectFromDashboard(id)
+    } catch {
+      // Network-level failure (the action never reached the server, or the
+      // response never came back): un-hide the card, say so out loud.
+      // Silent failure is forbidden.
+      rollback()
+      toast.error(STRINGS.toasts.decisionFailed)
+      return
+    }
+
+    if (!result.ok) {
+      // Reconcile failure — un-hide the card so the owner can retry.
+      rollback()
       toast.error(result.error)
       return
     }
 
     if (result.alreadyDecided) {
-      toast.message("Already decided.")
+      toast.message(STRINGS.toasts.alreadyDecided)
     } else if (decision === "approve") {
-      toast.success("Approved — it's on its way.")
+      // Approve executed a real send — irreversible, so no undo offered.
+      toast.success(STRINGS.toasts.approvalSent)
     } else {
-      toast.success("Dropped. Nothing went out.")
+      // Drop is reversible: undo restores the card to the queue.
+      toast.success(STRINGS.toasts.approvalDropped, {
+        action: {
+          label: STRINGS.actions.undo,
+          onClick: () => {
+            void (async () => {
+              let undo: Awaited<ReturnType<typeof undoRejectFromDashboard>>
+              try {
+                undo = await undoRejectFromDashboard(id)
+              } catch {
+                toast.error(STRINGS.toasts.couldntSave)
+                return
+              }
+              if (!undo.ok) {
+                toast.error(undo.error)
+                return
+              }
+              setRemoved((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+              })
+              toast.success(STRINGS.toasts.approvalRestored)
+              router.refresh()
+            })()
+          },
+        },
+      })
     }
 
     // Background reconcile: refresh the badge + any server-derived state. The
@@ -222,7 +267,7 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
               exit={
                 reduce
                   ? { opacity: 0 }
-                  : { opacity: 0, x: 24, transition: { duration: 0.3 } }
+                  : { opacity: 0, x: 24, transition: { duration: 0.15 } }
               }
             >
               <StaggerItem>
@@ -309,17 +354,19 @@ function ApprovalCard({
         </p>
       </div>
 
+      {/* Equal visual weight on all three (founder decision + pack
+          guardrail: no false hierarchy on the decline). */}
       <div className="mt-5 flex flex-col gap-2 pl-0 sm:flex-row sm:items-center sm:pl-[52px]">
         <Button
           onClick={() => onDecision(item.id, "approve")}
           disabled={anyBusy}
-          size="lg"
+          variant="outline"
           className="h-11 gap-2 transition-transform duration-200 active:scale-[0.98] sm:h-10 sm:px-5"
         >
           {approveBusy ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : null}
-          {ACTION_CTA[item.action_type] ?? "Approve"}
+          {ACTION_CTA[item.action_type] ?? "Send it"}
         </Button>
         <div className="grid grid-cols-2 gap-2 sm:contents">
           <Link
@@ -336,8 +383,8 @@ function ApprovalCard({
           <Button
             onClick={() => onDecision(item.id, "reject")}
             disabled={anyBusy}
-            variant="ghost"
-            className="h-11 gap-2 text-muted-foreground transition-colors duration-200 hover:text-destructive sm:h-10"
+            variant="outline"
+            className="h-11 gap-2 transition-colors duration-200 hover:text-status-danger-fg sm:h-10"
           >
             {rejectBusy ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -367,15 +414,14 @@ function EmptyState() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: EASE_OUT_EXPO }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
         className="space-y-2"
       >
-        <p className="font-display text-2xl text-foreground sm:text-3xl">
-          <span className="italic">All</span> clear.
+        <p className="font-display text-2xl text-foreground">
+          {STRINGS.pages.approvals.titleAllClear}.
         </p>
         <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-          Nothing waiting on us right now — we&apos;ll holler the moment
-          something needs your eyes.
+          {STRINGS.empty.approvalsEmpty}
         </p>
       </motion.div>
     </MotionCard>

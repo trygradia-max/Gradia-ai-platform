@@ -12,6 +12,12 @@
  * Vercel cron auth: `Authorization: Bearer <CRON_SECRET>`. Fails closed.
  */
 
+import {
+  afterCatalogStage,
+  catalogGateFor,
+  renderTemplate,
+  type AutomationConfig,
+} from "@/lib/automations"
 import { FEATURES } from "@/lib/features"
 import {
   BACKFILL_CUTOFF_HOURS,
@@ -29,7 +35,10 @@ export const maxDuration = 60
 const HOUR_MS = 60 * 60 * 1000
 
 type JoinedAppointment = AppointmentRow & {
-  shop: Pick<ShopRow, "id" | "name" | "owner_id" | "twilio_phone_number"> | null
+  shop: Pick<
+    ShopRow,
+    "id" | "name" | "owner_id" | "twilio_phone_number" | "plan" | "voice_addon" | "credit_period_start"
+  > | null
   customer: Pick<CustomerRow, "id" | "name" | "phone"> | null
 }
 
@@ -77,7 +86,7 @@ export async function GET(request: Request) {
     .select(
       `
         *,
-        shop:shops!inner(id, name, owner_id, twilio_phone_number),
+        shop:shops!inner(id, name, owner_id, twilio_phone_number, plan, voice_addon, credit_period_start),
         customer:customers(id, name, phone)
       `
     )
@@ -96,13 +105,25 @@ export async function GET(request: Request) {
   let skipped = 0
   let failed = 0
 
+  // C5 catalog gate (#5 appt_confirmation) — defaults are enabled +
+  // approval, i.e. EXACTLY this cron's pre-catalog behavior.
+  const gates = new Map<string, AutomationConfig>()
   for (const appt of appointments) {
     if (!appt.shop?.twilio_phone_number || !appt.customer?.phone) {
       skipped += 1
       continue
     }
+    let gate = gates.get(appt.shop.id)
+    if (!gate) {
+      gate = await catalogGateFor(supabase, appt.shop.id, "appt_confirmation")
+      gates.set(appt.shop.id, gate)
+    }
+    if (!gate.enabled) {
+      skipped += 1
+      continue
+    }
     try {
-      const ok = await stageConfirm(supabase, appt)
+      const ok = await stageConfirm(supabase, appt, gate)
       if (ok) staged += 1
       else skipped += 1
     } catch (err) {
@@ -116,16 +137,26 @@ export async function GET(request: Request) {
 
 async function stageConfirm(
   supabase: ReturnType<typeof createServiceClient>,
-  appt: JoinedAppointment
+  appt: JoinedAppointment,
+  gate: AutomationConfig
 ): Promise<boolean> {
   if (!appt.shop || !appt.customer?.phone) return false
 
-  const body = buildConfirmSms({
-    shopName: appt.shop.name,
-    customerName: appt.customer.name,
-    service: appt.service_name,
-    whenText: `on ${formatWhen(appt.scheduled_at, appt.timezone)}`,
-  })
+  // Owner template override wins; the empty default keeps the built-in
+  // confirm copy with its Reply-YES contract (pre-catalog behavior).
+  const body = gate.template.trim()
+    ? renderTemplate(gate.template, {
+        customer_name: (appt.customer.name ?? "there").split(/\s+/)[0],
+        shop_name: appt.shop.name,
+        when: formatWhen(appt.scheduled_at, appt.timezone),
+        services: appt.service_name ?? "appointment",
+      })
+    : buildConfirmSms({
+        shopName: appt.shop.name,
+        customerName: appt.customer.name,
+        service: appt.service_name,
+        whenText: `on ${formatWhen(appt.scheduled_at, appt.timezone)}`,
+      })
   const reason = appt.service_name?.trim()
     ? `Confirm · ${appt.service_name.trim()}`
     : "Confirm · appointment"
@@ -174,6 +205,12 @@ async function stageConfirm(
   } catch (err) {
     console.error("[cron/no-show-ladder] Slack send failed:", err)
   }
+
+  // C5: run history + (owner-opted) autopilot. Approval mode = no-op here.
+  await afterCatalogStage(supabase, appt.shop, gate, pending.id, {
+    customerId: appt.customer.id,
+    triggerRef: `confirm:${appt.id}`,
+  })
 
   return true
 }

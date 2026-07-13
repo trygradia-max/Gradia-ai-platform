@@ -60,7 +60,7 @@ export function CrmCleanupCard({
         </p>
       ) : clean ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle2 className="size-4 text-[var(--status-live,#3fb950)]" aria-hidden />
+          <CheckCircle2 className="size-4 text-status-success-fg" aria-hidden />
           {health.total} customers, all reachable and de-duped. Gradia&rsquo;s
           working from clean data.
         </p>
@@ -86,12 +86,7 @@ export function CrmCleanupCard({
               {clusters.slice(0, 8).map((cluster) => {
                 const primary = cluster.members[0]
                 const desc = (m: DuplicateCluster["members"][number]) =>
-                  [m.vehicle_color, m.vehicle_make, m.vehicle_model]
-                    .filter(Boolean)
-                    .join(" ") ||
-                  m.phone ||
-                  m.email ||
-                  "no details"
+                  m.vehicle || m.phone || m.email || "no details"
                 return (
                   <li
                     key={cluster.key}

@@ -9,18 +9,15 @@ export type StatusPillTone =
   | "accent"
   | "muted"
 
+/* Semantic status tokens only (spec §2.3) — these colors carry meaning
+ * and appear nowhere else. `accent` = the one brand purple, for
+ * fresh/new/AI-in-progress; text uses the AA-safe accent-text variant. */
 const TONE_CLASS: Record<StatusPillTone, string> = {
-  good:
-    "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  warn:
-    "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  bad:
-    "bg-destructive/15 text-destructive",
-  /** Brand accent (racing orange) — fresh / new / call-to-attention. */
-  accent:
-    "bg-primary/12 text-primary",
-  muted:
-    "bg-muted text-muted-foreground",
+  good: "bg-status-success-bg text-status-success-fg",
+  warn: "bg-status-warning-bg text-status-warning-fg",
+  bad: "bg-status-danger-bg text-status-danger-fg",
+  accent: "bg-status-info-bg text-status-info-fg",
+  muted: "bg-muted text-muted-foreground",
 }
 
 export type StatusPillSize = "sm" | "default"

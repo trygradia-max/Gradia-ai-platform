@@ -9,8 +9,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { parseVehicle } from "@/lib/vehicle"
+import { parseVehicle, type ParsedVehicle } from "@/lib/vehicle"
 import { buildCandidates, type ExtractedRow } from "@/lib/recovery/candidates"
+import type { CrmStage } from "@/lib/types/database"
 import {
   resolveImportSet,
   type ExistingCustomer,
@@ -28,6 +29,12 @@ export type ReviewCandidate = {
   phones: string[]
   emails: string[]
   vehicle: string | null
+  /** C7: structured vehicle from mapped columns / LLM cleanup, when present. */
+  vehicleParsed: ParsedVehicle | null
+  /** C7: mapped pipeline stage + lead source + unmapped-column notes. */
+  stage: CrmStage | null
+  source: string | null
+  notes: string | null
   lastTransactionAt: string | null
   servicesMentioned: string[]
   memberIds: string[]
@@ -51,6 +58,12 @@ export function shapeReviewCandidate(
     .filter((e): e is RecoveryExtraction => Boolean(e))
 
   const vehicle = exts.map((e) => e.vehicle).find(Boolean) ?? null
+  const vehicleParsed =
+    exts.map((e) => e.vehicle_parsed).find((v): v is ParsedVehicle => Boolean(v?.make || v?.model)) ??
+    null
+  const stage = exts.map((e) => e.stage).find(Boolean) ?? null
+  const source = exts.map((e) => e.source).find(Boolean) ?? null
+  const notes = exts.map((e) => e.notes).filter(Boolean).join("\n") || null
   const lastTransactionAt = exts.reduce<string | null>(
     (acc, e) => laterIso(acc, e.last_interaction_at),
     null
@@ -64,6 +77,10 @@ export function shapeReviewCandidate(
     phones: group.phones,
     emails: group.emails,
     vehicle,
+    vehicleParsed,
+    stage,
+    source,
+    notes,
     lastTransactionAt,
     servicesMentioned: services,
     memberIds: group.members,
@@ -71,7 +88,9 @@ export function shapeReviewCandidate(
   }
 }
 
-/** The columns written when a candidate is approved into the CRM. */
+/** The customer columns written when a candidate is approved into the CRM.
+ *  The flat vehicle_* fields are write-through-deprecated (lib/vehicles.ts);
+ *  the vehicles-table row rides separately via candidateVehicle. */
 export type RecoveredCustomerInput = {
   name: string | null
   phone: string | null
@@ -102,10 +121,24 @@ export function candidateToCustomerInput(
   }
 }
 
+/** Pure: the candidate's parsed vehicle, for the `vehicles` upsert (C1).
+ *  Prefers the C7 structured parse (owner columns / LLM cleanup — no MAKES
+ *  whitelist limit); the regex is the mbox/contacts fallback. */
+export function candidateVehicle(
+  c: Pick<ReviewCandidate, "vehicle"> & Partial<Pick<ReviewCandidate, "vehicleParsed">>
+): ParsedVehicle {
+  if (c.vehicleParsed && (c.vehicleParsed.make || c.vehicleParsed.model)) {
+    return c.vehicleParsed
+  }
+  return parseVehicle(c.vehicle)
+}
+
 /**
  * Pure: build the patch for a merge_into approval — fill only EMPTY fields on
  * the existing customer (never overwrite the owner's data), advance
  * last_transaction_at to the later date, and stamp source if it was blank.
+ * Flat vehicle_* fills are write-through (deprecated); the vehicles-table
+ * row is upserted separately by the approval action.
  */
 export function mergePatch(
   existing: {
@@ -140,6 +173,36 @@ export function mergePatch(
     patch.last_transaction_at = later
   }
   return patch
+}
+
+/**
+ * Pure: the pre-image needed to undo a merge patch — the customer's prior
+ * value for every key the patch will overwrite (all were empty/null by
+ * mergePatch's fill-only rule, but capture faithfully anyway). Stored in the
+ * approval's timeline-interaction metadata; undoRecoveryImport applies it
+ * back verbatim (C7 undo — restores exact pre-import state).
+ */
+export function buildMergeUndo(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const prev: Record<string, unknown> = {}
+  for (const key of Object.keys(patch)) {
+    prev[key] = existing[key] ?? null
+  }
+  return prev
+}
+
+/** Pure: CSV error report of dropped rows (downloadable from the wizard). */
+export function buildErrorReportCsv(
+  rows: { subject: string | null; drop_reason: string | null }[]
+): string {
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+  const lines = ["row,reason"]
+  for (const r of rows) {
+    lines.push(`${esc(r.subject ?? "(unnamed row)")},${esc(r.drop_reason ?? "unknown")}`)
+  }
+  return lines.join("\n")
 }
 
 export type JobCandidates = {

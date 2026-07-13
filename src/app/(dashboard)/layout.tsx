@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation"
+import { CircleHelp } from "lucide-react"
+
 import { needsOnboarding } from "@/lib/onboarding"
 
 import {
@@ -10,7 +12,9 @@ import { AppSidebar } from "@/components/gradia/app-sidebar"
 import { AskGradiaButton } from "@/components/gradia/ask-gradia-button"
 import { CommandBar } from "@/components/gradia/command-bar"
 import { MobileComposer } from "@/components/gradia/mobile-composer"
+import { PageTitle } from "@/components/gradia/page-title"
 import { SetupProgressPill } from "@/components/gradia/setup-progress-pill"
+import { UsagePill } from "@/components/gradia/usage-pill"
 import { countOpenApprovalsForCurrentShop } from "@/lib/data/pending-actions"
 import { getOptionalShop, listShopsForCurrentUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -57,14 +61,22 @@ export default async function DashboardLayout({
         approvalsCount={approvalsCount}
       />
       <SidebarInset className="min-h-svh overflow-x-hidden">
+        {/* Topbar (spec §3): page title · search/composer (⌘K) · usage
+            pill in human units · help. No secondary nav rows. */}
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border/80 bg-background/85 px-4 backdrop-blur-md transition-colors duration-200 supports-[backdrop-filter]:bg-background/65">
           <SidebarTrigger className="-ml-0.5" />
-          <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-            Gradia
-          </span>
+          <PageTitle />
           <div className="ml-auto flex items-center gap-2">
             <AskGradiaButton />
+            <UsagePill />
             <SetupProgressPill />
+            <a
+              href="/how-it-works"
+              aria-label="Help — how Gradia works"
+              className="flex size-8 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+            >
+              <CircleHelp className="size-4" aria-hidden />
+            </a>
           </div>
         </header>
         {/* Extra bottom padding on mobile so the fixed composer never covers

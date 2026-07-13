@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * The Connections screen tile (BUILD_REFERENCE §4). Server Component so it can
- * take an icon; status is icon + text. States: not connected (coral Connect —
+ * take an icon; status is icon + text. States: not connected (accent Connect —
  * popup for OAuth, link otherwise), connected (✓ + identity + Manage), and
  * "setup needed" when the integration isn't wired on the server.
  */

@@ -16,6 +16,7 @@ import {
   type RoiReceipt,
 } from "@/lib/data/roi-receipt"
 import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 
 /**
@@ -49,7 +50,7 @@ function StatCell({
   return (
     <div className="flex flex-col gap-1.5">
       <Icon className="size-4 text-primary" aria-hidden />
-      <p className="font-display text-2xl leading-none text-foreground sm:text-3xl">
+      <p className="font-data text-2xl font-semibold leading-none text-foreground">
         {value}
       </p>
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -76,13 +77,9 @@ export function RoiReceiptView({
   return (
     <section className="space-y-5">
       <SectionHeader
-        eyebrow="This week"
-        title={
-          <>
-            What we did, <span className="italic">together</span>.
-          </>
-        }
-        subtitle="A running receipt of the work we caught and handled for you — counted conservatively, traced to your own records."
+        eyebrow={STRINGS.pages.home.receiptEyebrow}
+        title={STRINGS.pages.home.receiptTitle}
+        subtitle={STRINGS.pages.home.receiptSubtitle}
       />
 
       <div
@@ -94,7 +91,7 @@ export function RoiReceiptView({
         {receipt.isEmpty ? (
           // Written zero-state — never a blank box.
           <div className="space-y-1.5 py-2">
-            <p className="font-display text-xl text-foreground">
+            <p className="font-data text-xl font-semibold text-foreground">
               Nothing on the books <span className="italic">yet</span>.
             </p>
             <p className="max-w-prose text-sm text-muted-foreground">
@@ -113,7 +110,7 @@ export function RoiReceiptView({
           <div className="space-y-6">
             {/* Money in play — the headline figure, framed honestly. */}
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="font-display text-4xl text-foreground sm:text-5xl">
+              <span className="font-data text-2xl font-semibold text-foreground">
                 {formatReceiptDollars(moneyInPlayCents)}
               </span>
               <span className="text-sm text-muted-foreground">
@@ -126,7 +123,7 @@ export function RoiReceiptView({
                 <span className="font-medium text-foreground">
                   {formatReceiptDollars(foundMoneyCents)}
                 </span>{" "}
-                found to date, together.
+                found to date.
               </p>
             )}
 

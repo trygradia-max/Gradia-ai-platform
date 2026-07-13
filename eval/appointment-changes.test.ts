@@ -58,9 +58,18 @@ describe("handlers stage approvals — never execute", () => {
     return {
       from: (table: string) => ({
         ...chainFor(table),
+        // Staging reads back the new row id (for the Glass Box decision
+        // log), so insert() must chain .select().single(). The decision
+        // log's own bare `await insert(...)` also lands here — awaiting
+        // the chain object resolves to itself, whose `error` is undefined.
         insert: (row: Record<string, unknown>) => {
           opts.inserts.push({ table, row })
-          return Promise.resolve({ error: null })
+          return {
+            select: () => ({
+              single: () =>
+                Promise.resolve({ data: { id: `${table}-new` }, error: null }),
+            }),
+          }
         },
         update: () => {
           throw new Error(`handler must not UPDATE ${table} — executors do that on approve`)
@@ -92,12 +101,18 @@ describe("handlers stage approvals — never execute", () => {
       { customer_name: "Sam Rivera", new_when: "Saturday at 3pm" },
       ctx
     )
-    expect(inserts).toHaveLength(1)
-    expect(inserts[0].table).toBe("pending_actions")
-    expect(inserts[0].row.action_type).toBe("reschedule_appointment")
-    const payload = inserts[0].row.payload as Record<string, unknown>
+    const staged = inserts.filter((i) => i.table === "pending_actions")
+    expect(staged).toHaveLength(1)
+    expect(staged[0].row.action_type).toBe("reschedule_appointment")
+    const payload = staged[0].row.payload as Record<string, unknown>
     expect(payload.appointment_id).toBe("appt-1")
     expect(payload.new_when).toBe("Saturday at 3pm")
+    // Glass Box (spec §8-A6b): staging also logs WHY — additive metadata,
+    // never a second execution path.
+    const decisions = inserts.filter((i) => i.table === "action_decisions")
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0].row.because).toContain("asked to move")
+    expect(decisions[0].row.source).toBe("voice")
     // Spoken reply promises a confirmation text, never a done deal.
     expect(spoken).toContain("text")
     expect(spoken.toLowerCase()).not.toContain("confirmed")
@@ -119,11 +134,15 @@ describe("handlers stage approvals — never execute", () => {
       { reason: "car got totaled" },
       ctx
     )
-    expect(inserts).toHaveLength(1)
-    expect(inserts[0].row.action_type).toBe("cancel_appointment")
-    const payload = inserts[0].row.payload as Record<string, unknown>
+    const staged = inserts.filter((i) => i.table === "pending_actions")
+    expect(staged).toHaveLength(1)
+    expect(staged[0].row.action_type).toBe("cancel_appointment")
+    const payload = staged[0].row.payload as Record<string, unknown>
     expect(payload.appointment_id).toBe("appt-2")
     expect(payload.reason).toBe("car got totaled")
+    const decisions = inserts.filter((i) => i.table === "action_decisions")
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0].row.because).toContain("asked to cancel")
     expect(spoken).toContain("text")
   })
 
@@ -136,8 +155,9 @@ describe("handlers stage approvals — never execute", () => {
       { new_when: "next Tuesday" },
       ctx
     )
-    expect(inserts).toHaveLength(1)
-    expect((inserts[0].row.payload as Record<string, unknown>).appointment_id).toBeNull()
+    const staged = inserts.filter((i) => i.table === "pending_actions")
+    expect(staged).toHaveLength(1)
+    expect((staged[0].row.payload as Record<string, unknown>).appointment_id).toBeNull()
   })
 
   it("missing required info asks instead of staging garbage", async () => {

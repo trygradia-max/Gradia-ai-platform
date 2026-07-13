@@ -83,7 +83,7 @@ export function BiChatHistorySheet({
       return
     }
     setOpen(false)
-    router.push(`/chat?c=${encodeURIComponent(id)}`)
+    router.push(`/conversations?c=${encodeURIComponent(id)}`)
   }
 
   async function handleDelete(item: Item) {
@@ -106,7 +106,7 @@ export function BiChatHistorySheet({
     toast.success("Deleted.")
     if (item.id === currentConversationId) {
       setOpen(false)
-      router.replace("/chat")
+      router.replace("/conversations")
     }
   }
 

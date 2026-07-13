@@ -27,10 +27,27 @@ export const ALWAYS_HITL: ReadonlySet<PendingActionType> = new Set([
   "book_appointment",
   "reschedule_appointment",
   "cancel_appointment",
+  // C3: a quote is a money object — the agent only ever proposes one, and
+  // approval creates it as a DRAFT (sending is a separate owner action).
+  "create_quote",
 ])
 
 export function isAutonomyAllowed(actionType: PendingActionType): boolean {
   return !ALWAYS_HITL.has(actionType)
+}
+
+/**
+ * C5 hard floor: catalog automations that touch money or the calendar can
+ * never run autopilot, regardless of the owner's toggle. Lives HERE (next to
+ * ALWAYS_HITL) so the floor is one auditable surface; the catalog's
+ * touchesMoneyOrCalendar flags must match this set — locked by tests. None
+ * of the launch 8 are barred; the floor exists so a future entry can't
+ * quietly cross it.
+ */
+export const AUTOPILOT_BARRED_AUTOMATIONS: ReadonlySet<string> = new Set([])
+
+export function isAutomationAutopilotAllowed(catalogKey: string): boolean {
+  return !AUTOPILOT_BARRED_AUTOMATIONS.has(catalogKey)
 }
 
 export type AutonomyConfig = {
