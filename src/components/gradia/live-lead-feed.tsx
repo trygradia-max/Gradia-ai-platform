@@ -37,10 +37,6 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 })
 
-const EASE_OUT_EXPO: [number, number, number, number] = [
-  0.22, 1, 0.36, 1,
-]
-
 const rowContainer: Variants = {
   hidden: { opacity: 0 },
   show: {
@@ -54,7 +50,7 @@ const row: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.45, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
@@ -75,7 +71,7 @@ export function LiveLeadFeed({
         eyebrow="Live feed"
         title={
           <>
-            <span className="italic">Everyone</span> who&apos;s reached out.
+            <span className="italic">Everyone</span>{" "}who&apos;s reached out.
           </>
         }
         subtitle="Newest first — voice, email, SMS, DMs, the front desk. We catch them, you decide."
@@ -179,13 +175,19 @@ export function LiveLeadFeed({
 function EmptyState() {
   return (
     <div className="px-6 py-16 text-center">
-      <p className="font-display text-2xl text-foreground sm:text-3xl">
-        <span className="italic">Quiet</span> so far.
+      <p className="font-display text-2xl text-foreground">
+        <span className="italic">Quiet</span>{" "}so far.
       </p>
       <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
         When a lead comes in — voice, email, SMS, DM — we&apos;ll catch
         it here together.
       </p>
+      <Link
+        href="/settings"
+        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+      >
+        Connect a channel so leads can arrive →
+      </Link>
     </div>
   )
 }

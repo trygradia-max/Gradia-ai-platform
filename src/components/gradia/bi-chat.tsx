@@ -14,7 +14,6 @@ import { toast } from "sonner"
 
 import { BiChatHistorySheet } from "@/components/gradia/bi-chat-history-sheet"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -90,7 +89,7 @@ const messageEnter: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.4, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
@@ -107,14 +106,14 @@ const chipItem: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.35, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
 export function BiChat({
   initial,
   endpoint = "/api/bi/chat",
-  resetHref = "/chat",
+  resetHref = "/conversations",
 }: {
   initial: InitialChatState
   /** Which chat backend to stream from. Defaults to Ask Gradia (read-only);
@@ -195,8 +194,29 @@ export function BiChat({
       })
 
       if (!res.ok || !res.body) {
-        const errBody = await res.text()
-        toast.error(errBody || `Server error (${res.status})`)
+        // The API replies { ok:false, error } — surface the friendly message,
+        // not the raw JSON. A 402 means the plan is inactive or out of credits
+        // (GRADIA_PRICING.md: free can explore but not run), so make it an
+        // actionable upgrade instead of a dead-end error.
+        let message = `Server error (${res.status})`
+        try {
+          const data = await res.json()
+          if (data?.error) message = data.error
+        } catch {
+          /* non-JSON body — keep the generic message */
+        }
+        if (res.status === 402) {
+          toast.error(message, {
+            action: {
+              label: "Upgrade",
+              onClick: () => {
+                window.location.href = "/billing"
+              },
+            },
+          })
+        } else {
+          toast.error(message)
+        }
         setMessages(baselineMessages)
         return
       }

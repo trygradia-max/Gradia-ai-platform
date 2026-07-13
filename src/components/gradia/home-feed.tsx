@@ -8,6 +8,7 @@ import {
   listOpenApprovalsForCurrentShop,
   listRecentAgentActivity,
 } from "@/lib/data/pending-actions"
+import { STRINGS } from "@/lib/strings"
 
 /**
  * The Home live feed (FOCUS spec §4.3, item 3): what's waiting on a yes +
@@ -35,12 +36,8 @@ export async function HomeFeed() {
       {pending.length > 0 ? (
         <section className="space-y-5">
           <SectionHeader
-            eyebrow="Waiting on us"
-            title={
-              <>
-                What needs a <span className="italic">yes</span>.
-              </>
-            }
+            eyebrow={STRINGS.chrome.waitingOnYou}
+            title="What needs a yes"
             subtitle="A quick yes or no before anything leaves the shop — approve right here."
           />
           <ApprovalsList items={shown} />
@@ -58,7 +55,9 @@ export async function HomeFeed() {
 
       {activity.length > 0 ? (
         <section className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground/70">Done by us</p>
+          <p className="label-eyebrow text-muted-foreground/70">
+            {STRINGS.chrome.handledByReceptionist}
+          </p>
           <div className="space-y-2">
             {activity.map((a) => (
               <ActivityEvent key={a.id} item={a} />

@@ -17,6 +17,7 @@ import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
 import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
+import { recordActionDecision } from "@/lib/decision-log"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { hasPackage2, isPaid } from "@/lib/entitlements"
 import { getReviewLink } from "@/lib/review-link"
@@ -260,6 +261,22 @@ async function executeLeadFollowupSms(
       continue
     }
 
+    // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+    await recordActionDecision(supabase, {
+      shopId: shop.id,
+      pendingActionId: pending.id,
+      source: "custom_agent",
+      because: `Staged a follow-up because this lead has been "${status}" for ${min_lead_age_days}+ days with no reply in the last ${no_inbound_within_days} days.`,
+      inputs: {
+        rule: "lead_followup_sms",
+        custom_agent_id: agent.id,
+        lead_id: lead.id,
+        lead_status: status,
+        min_lead_age_days,
+        no_inbound_within_days,
+      },
+    })
+
     try {
       await sendSmsApprovalRequest({
         pendingActionId: pending.id,
@@ -467,6 +484,20 @@ async function executeAppointmentReminderEmail(
       continue
     }
 
+    // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+    await recordActionDecision(supabase, {
+      shopId: shop.id,
+      pendingActionId: pending.id,
+      source: "custom_agent",
+      because: `Staged a reminder because the ${appt.service_name?.trim() || "appointment"} is coming up and no reminder email had been sent yet.`,
+      inputs: {
+        rule: "appointment_reminder_email",
+        custom_agent_id: agent.id,
+        appointment_id: appt.id,
+        scheduled_at: appt.scheduled_at,
+      },
+    })
+
     try {
       await sendEmailApprovalRequest({
         pendingActionId: pending.id,
@@ -642,6 +673,20 @@ async function executeAppointmentReminderSms(
       continue
     }
 
+    // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+    await recordActionDecision(supabase, {
+      shopId: shop.id,
+      pendingActionId: pending.id,
+      source: "custom_agent",
+      because: `Staged a reminder because the ${appt.service_name?.trim() || "appointment"} is coming up and no reminder text had been sent yet.`,
+      inputs: {
+        rule: "appointment_reminder_sms",
+        custom_agent_id: agent.id,
+        appointment_id: appt.id,
+        scheduled_at: appt.scheduled_at,
+      },
+    })
+
     try {
       await sendSmsApprovalRequest({
         pendingActionId: pending.id,
@@ -804,6 +849,21 @@ async function executeStaleCustomerSms(
       continue
     }
 
+    // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+    await recordActionDecision(supabase, {
+      shopId: shop.id,
+      pendingActionId: pending.id,
+      source: "custom_agent",
+      because: `Staged a check-in because there's been no contact with ${customer.name || "this customer"} in ${inactive_days}+ days and no outreach in the last ${cooldown_days} days.`,
+      inputs: {
+        rule: "stale_customer_sms",
+        custom_agent_id: agent.id,
+        customer_id: customer.id,
+        inactive_days,
+        cooldown_days,
+      },
+    })
+
     try {
       await sendSmsApprovalRequest({
         pendingActionId: pending.id,
@@ -947,6 +1007,23 @@ async function executeFreeformOutreach(
         console.error("[agent-runtime] freeform sms insert failed:", pendingErr)
         continue
       }
+      // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+      await recordActionDecision(supabase, {
+        shopId: shop.id,
+        pendingActionId: pending.id,
+        source: "custom_agent",
+        because: `Staged because they matched this agent's ${plan.entity} audience for: ${plan.message_intent}`,
+        inputs: {
+          rule: "freeform_outreach",
+          custom_agent_id: agent.id,
+          channel: plan.channel,
+          entity: plan.entity,
+          filters: plan.filters,
+          message_intent: plan.message_intent,
+          lead_id: t.leadId ?? null,
+          customer_id: t.customerId ?? null,
+        },
+      })
       try {
         await sendSmsApprovalRequest({
           pendingActionId: pending.id,
@@ -1007,6 +1084,22 @@ async function executeFreeformOutreach(
         )
         continue
       }
+      // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+      await recordActionDecision(supabase, {
+        shopId: shop.id,
+        pendingActionId: pending.id,
+        source: "custom_agent",
+        because: `Staged because they matched this agent's ${plan.entity} audience for: ${plan.message_intent}`,
+        inputs: {
+          rule: "freeform_outreach",
+          custom_agent_id: agent.id,
+          channel: plan.channel,
+          entity: plan.entity,
+          filters: plan.filters,
+          message_intent: plan.message_intent,
+          customer_id: t.customerId ?? null,
+        },
+      })
       try {
         await sendEmailApprovalRequest({
           pendingActionId: pending.id,
@@ -1149,6 +1242,24 @@ export async function stageOutreachPlan(
         console.error("[agent-runtime] outreach sms insert failed:", pendingErr)
         continue
       }
+      // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+      await recordActionDecision(supabase, {
+        shopId: shop.id,
+        pendingActionId: pending.id,
+        source,
+        because: `Staged because they matched the requested ${plan.entity} audience for: ${plan.message_intent}`,
+        inputs: {
+          rule: "outreach_plan",
+          custom_agent_id: customAgentId,
+          request_label: reason,
+          channel: plan.channel,
+          entity: plan.entity,
+          filters: plan.filters,
+          message_intent: plan.message_intent,
+          lead_id: t.leadId ?? null,
+          customer_id: t.customerId ?? null,
+        },
+      })
       try {
         await sendSmsApprovalRequest({
           pendingActionId: pending.id,
@@ -1205,6 +1316,23 @@ export async function stageOutreachPlan(
         console.error("[agent-runtime] outreach email insert failed:", pendingErr)
         continue
       }
+      // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+      await recordActionDecision(supabase, {
+        shopId: shop.id,
+        pendingActionId: pending.id,
+        source,
+        because: `Staged because they matched the requested ${plan.entity} audience for: ${plan.message_intent}`,
+        inputs: {
+          rule: "outreach_plan",
+          custom_agent_id: customAgentId,
+          request_label: reason,
+          channel: plan.channel,
+          entity: plan.entity,
+          filters: plan.filters,
+          message_intent: plan.message_intent,
+          customer_id: t.customerId ?? null,
+        },
+      })
       try {
         await sendEmailApprovalRequest({
           pendingActionId: pending.id,
@@ -1318,6 +1446,21 @@ async function executePaymentReceivedThankYouSms(
       reason: `pending insert failed: ${pendingErr?.message ?? "unknown"}`,
     }
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId: shop.id,
+    pendingActionId: pending.id,
+    source: "custom_agent_event",
+    because: `Staged a thank-you because their payment of $${(event.amountCents / 100).toFixed(2)} was received.`,
+    inputs: {
+      rule: "payment_received_thank_you_sms",
+      custom_agent_id: agent.id,
+      event_kind: event.kind,
+      stripe_invoice_id: event.stripeInvoiceId ?? null,
+      amount_cents: event.amountCents,
+    },
+  })
 
   try {
     await sendSmsApprovalRequest({
@@ -1443,6 +1586,21 @@ async function executeBookingApprovedPrepEmail(
     }
   }
 
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId: shop.id,
+    pendingActionId: pending.id,
+    source: "custom_agent_event",
+    because: `Staged a prep note because their ${event.serviceName?.trim() || "appointment"} was booked for ${whenText}.`,
+    inputs: {
+      rule: "booking_approved_prep_email",
+      custom_agent_id: agent.id,
+      event_kind: event.kind,
+      appointment_id: event.appointmentId ?? null,
+      iso_start_time: event.isoStartTime,
+    },
+  })
+
   try {
     await _sendEmailApprovalRequest({
       pendingActionId: pending.id,
@@ -1529,6 +1687,20 @@ async function executeReviewRequestSms(
     return no(`pending insert failed: ${pendingErr?.message ?? "unknown"}`)
   }
 
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId: shop.id,
+    pendingActionId: pending.id,
+    source: "review_request",
+    because:
+      "Staged a review request because their payment was received — every paying customer gets the same ask, no cherry-picking.",
+    inputs: {
+      rule: "review_request_sms",
+      custom_agent_id: agent.id,
+      event_kind: event.kind,
+    },
+  })
+
   try {
     await sendSmsApprovalRequest({
       pendingActionId: pending.id,
@@ -1609,6 +1781,20 @@ async function executeReviewRequestEmail(
   if (pendingErr || !pending) {
     return no(`pending insert failed: ${pendingErr?.message ?? "unknown"}`)
   }
+
+  // Glass Box decision log (spec §8-A6b) — best-effort, never throws.
+  await recordActionDecision(supabase, {
+    shopId: shop.id,
+    pendingActionId: pending.id,
+    source: "review_request",
+    because:
+      "Staged a review request because their payment was received — every paying customer gets the same ask, no cherry-picking.",
+    inputs: {
+      rule: "review_request_email",
+      custom_agent_id: agent.id,
+      event_kind: event.kind,
+    },
+  })
 
   try {
     await sendEmailApprovalRequest({

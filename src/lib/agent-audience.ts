@@ -24,6 +24,12 @@ import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { winbackChannel } from "@/lib/recovery/winback-eligibility"
 import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
+import {
+  customerIdsWithVehicle,
+  describeVehicle,
+  hasVehicleFilter,
+  vehiclesByCustomerIds,
+} from "@/lib/vehicles"
 import type {
   CustomerRow,
   FreeformChannel,
@@ -121,6 +127,51 @@ export async function resolveFreeformAudience(
   // Win-back gate fields per customer (filled in the customers branch).
   const winbackById = new Map<string, WinbackFields>()
 
+  // Structured vehicle filters resolve against the vehicles table (C1):
+  // matching customer ids constrain the leads/customers query below.
+  // PRE-MIGRATION FALLBACK: when the C1 migration isn't applied yet the
+  // vehicles table doesn't exist — fall back to the deprecated flat columns
+  // (kept current by write-through; see lib/vehicles.ts). Remove the
+  // fallback with the column-drop migration.
+  const vehicleFilter = {
+    make: f.vehicle_make,
+    model: f.vehicle_model,
+    year_min: f.vehicle_year_min,
+    year_max: f.vehicle_year_max,
+  }
+  let vehicleCustomerIds: Set<string> | null = null
+  let vehicleFlatFallback = false
+  if (hasVehicleFilter(vehicleFilter)) {
+    try {
+      vehicleCustomerIds = await customerIdsWithVehicle(
+        supabase,
+        shop.id,
+        vehicleFilter
+      )
+    } catch (err) {
+      console.warn(
+        "[agent-audience] vehicles table unavailable (pre-C1?) — falling back to flat columns:",
+        err
+      )
+      vehicleFlatFallback = true
+    }
+  }
+  const applyFlatVehicleFilters = <
+    Q extends {
+      ilike: (c: string, v: string) => Q
+      gte: (c: string, v: number) => Q
+      lte: (c: string, v: number) => Q
+    },
+  >(
+    q: Q
+  ): Q => {
+    if (f.vehicle_make) q = q.ilike("vehicle_make", f.vehicle_make)
+    if (f.vehicle_model) q = q.ilike("vehicle_model", `%${f.vehicle_model}%`)
+    if (f.vehicle_year_min != null) q = q.gte("vehicle_year", f.vehicle_year_min)
+    if (f.vehicle_year_max != null) q = q.lte("vehicle_year", f.vehicle_year_max)
+    return q
+  }
+
   // Leads carry a phone, not an email — email outreach must target customers.
   if (plan.channel === "email" && plan.entity === "leads") {
     return {
@@ -144,10 +195,8 @@ export async function resolveFreeformAudience(
           `car_info.ilike.%${kw}%,pin_notes.ilike.%${kw}%,customer_name.ilike.%${kw}%`
         )
     }
-    if (f.vehicle_make) q = q.ilike("vehicle_make", f.vehicle_make)
-    if (f.vehicle_model) q = q.ilike("vehicle_model", `%${f.vehicle_model}%`)
-    if (f.vehicle_year_min != null) q = q.gte("vehicle_year", f.vehicle_year_min)
-    if (f.vehicle_year_max != null) q = q.lte("vehicle_year", f.vehicle_year_max)
+    if (vehicleCustomerIds) q = q.in("customer_id", [...vehicleCustomerIds])
+    if (vehicleFlatFallback) q = applyFlatVehicleFilters(q)
     q = q.order("created_at", { ascending: false }).limit(fetchLimit)
     const { data, error } = await q
     if (error) throw new Error(`audience (leads) query failed: ${error.message}`)
@@ -164,6 +213,8 @@ export async function resolveFreeformAudience(
     let q = supabase
       .from("customers")
       .select(
+        // vehicle_* read here only as the pre-migration display backup —
+        // write-through keeps them current (lib/vehicles.ts).
         "id, name, phone, email, vehicle_make, vehicle_model, vehicle_year, last_visit_at, last_transaction_at, sms_opted_out_at, do_not_contact, source"
       )
       .eq("shop_id", shop.id)
@@ -173,10 +224,8 @@ export async function resolveFreeformAudience(
       const kw = safeKeyword(f.keyword)
       if (kw) q = q.ilike("name", `%${kw}%`)
     }
-    if (f.vehicle_make) q = q.ilike("vehicle_make", f.vehicle_make)
-    if (f.vehicle_model) q = q.ilike("vehicle_model", `%${f.vehicle_model}%`)
-    if (f.vehicle_year_min != null) q = q.gte("vehicle_year", f.vehicle_year_min)
-    if (f.vehicle_year_max != null) q = q.lte("vehicle_year", f.vehicle_year_max)
+    if (vehicleCustomerIds) q = q.in("id", [...vehicleCustomerIds])
+    if (vehicleFlatFallback) q = applyFlatVehicleFilters(q)
     if (f.not_visited_in_days != null) {
       // No booked visit in the window — or never visited (null).
       q = q.or(`last_visit_at.is.null,last_visit_at.lte.${iso(f.not_visited_in_days)}`)
@@ -208,6 +257,12 @@ export async function resolveFreeformAudience(
         do_not_contact: c.do_not_contact,
       })
     }
+    // Primary vehicle per candidate for the drafters' "your Tesla" grounding.
+    const vehicles = await vehiclesByCustomerIds(
+      supabase,
+      shop.id,
+      rows.map((c) => c.id)
+    )
     targets = rows.map((c) => ({
       customerId: c.id,
       leadId: null,
@@ -215,9 +270,11 @@ export async function resolveFreeformAudience(
       phone: c.phone,
       email: c.email,
       vehicle:
-        [c.vehicle_year, c.vehicle_make, c.vehicle_model]
+        describeVehicle(vehicles.get(c.id)?.[0]) ??
+        ([c.vehicle_year, c.vehicle_make, c.vehicle_model]
           .filter(Boolean)
-          .join(" ") || null,
+          .join(" ") ||
+          null),
       service: null,
     }))
   }

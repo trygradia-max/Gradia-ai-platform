@@ -9,6 +9,10 @@ import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
+import { AutomationsCard } from "@/components/gradia/automations-card"
+import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
+import { getAutomationSettings } from "@/app/actions/automations"
+import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
@@ -26,12 +30,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { listServicesForCurrentShop } from "@/lib/data/services"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getUsageState } from "@/app/actions/billing"
 import { readAutonomy } from "@/lib/autonomy"
 import { integrationEnabled } from "@/lib/features"
 import { getReviewLink } from "@/lib/review-link"
+import { readWorkingHours } from "@/lib/working-hours"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -198,8 +204,13 @@ export default async function SettingsPage({
   const usageState = await getUsageState()
   const a2pState = await getA2pState()
   const voiceOptions = listVoiceOptions()
+  const services = await listServicesForCurrentShop()
+  const automationEntries = await getAutomationSettings()
 
   const sections = [
+    { id: "services", label: "Service menu" },
+    { id: "hours", label: "Working hours" },
+    { id: "automations", label: "Automations" },
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
     { id: "sms", label: "SMS" },
@@ -220,7 +231,7 @@ export default async function SettingsPage({
         eyebrow="Connections"
         title={
           <>
-            The <em className="italic">wiring</em> behind the scenes.
+            The <em className="italic">wiring</em>{" "}behind the scenes.
           </>
         }
         subhead="The channels and tools we run on. Connect once — we handle the rest."
@@ -230,7 +241,7 @@ export default async function SettingsPage({
         {/* "What Gradia does" lives here now that the primary nav is three
             pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
         <Link
-          href="/agents"
+          href="/receptionist"
           className="group flex items-center gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
         >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">
@@ -349,6 +360,22 @@ export default async function SettingsPage({
         <SettingsSectionNav sections={sections} />
 
       <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
+        {/* The shop's brain (CRM C3a): one menu feeds quotes, phone answers,
+            and drafts through lib/service-pricing — never edited elsewhere. */}
+        <section id="services">
+          <ServiceMenuCard initialServices={services} />
+        </section>
+
+        {/* Working hours — calendar capacity + the agent's hours line. */}
+        <section id="hours">
+          <WorkingHoursCard initial={readWorkingHours(shop?.settings)} />
+        </section>
+
+        {/* C5 catalog — toggles, not a builder. */}
+        <section id="automations">
+          <AutomationsCard initial={automationEntries} />
+        </section>
+
         <section id="voice">
           {shop ? (
             <VoiceBuilderCard
@@ -460,13 +487,12 @@ export default async function SettingsPage({
                   More on the way
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Service menu, team, and billing controls land here next.
+                  Team and billing controls land here next.
                 </p>
               </div>
             </CardHeader>
             <CardContent>
               <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
-                <li>Edit our service menu — prices, durations, descriptions.</li>
                 <li>Invite teammates and manage permissions.</li>
               </ul>
             </CardContent>

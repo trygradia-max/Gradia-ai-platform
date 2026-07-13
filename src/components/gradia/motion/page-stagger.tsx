@@ -5,25 +5,29 @@ import { motion, useReducedMotion, type Variants } from "framer-motion"
 
 import { cn } from "@/lib/utils"
 
-/** Standard easing — matches globals.css --ease-out-expo. */
+/** Cinematic easing — PUBLIC PAGES ONLY (§8-A1). Dashboard feedback
+ *  uses the functional defaults below (spec §2.5: 100–150ms). */
 export const EASE_OUT_EXPO: [number, number, number, number] = [
   0.22, 1, 0.36, 1,
 ]
+
+/** Functional feedback duration (spec §2.5) — the dashboard default. */
+export const DURATION_FAST = 0.15
 
 const container: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.1 },
+    transition: { staggerChildren: 0.03 },
   },
 }
 
 const item: Variants = {
-  hidden: { opacity: 0, y: 24 },
+  hidden: { opacity: 0, y: 6 },
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.6, ease: EASE_OUT_EXPO },
+    transition: { duration: DURATION_FAST, ease: "easeOut" },
   },
 }
 
@@ -79,7 +83,7 @@ export function StaggerItem({
       variants={variants}
       transition={
         delay
-          ? { delay, duration: 0.6, ease: EASE_OUT_EXPO }
+          ? { delay, duration: DURATION_FAST, ease: "easeOut" }
           : undefined
       }
       className={cn(className)}

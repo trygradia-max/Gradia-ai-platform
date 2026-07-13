@@ -2,12 +2,14 @@ import Link from "next/link"
 import { Suspense } from "react"
 import { ArrowRight, Sparkles } from "lucide-react"
 
+import { GrainOverlay } from "@/components/gradia/grain-overlay"
 import { LoginForm } from "@/components/gradia/login-form"
 import { MeshBackground } from "@/components/gradia/mesh-background"
 
 export default function LoginPage() {
   return (
     <div className="relative isolate flex min-h-svh flex-col items-center justify-center gap-8 overflow-hidden bg-background px-6 py-12">
+      <GrainOverlay />
       <MeshBackground />
 
       <header className="relative flex flex-col items-center gap-5 text-center">

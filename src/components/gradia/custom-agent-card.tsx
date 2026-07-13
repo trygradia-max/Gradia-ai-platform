@@ -155,7 +155,7 @@ export function CustomAgentCard({
   return (
     <MotionCard
       interactive
-      glow={isLive}
+
       className={cn(
         "relative flex h-full flex-col overflow-hidden p-5 sm:p-6",
         // Status-coded accent rail on the left edge.

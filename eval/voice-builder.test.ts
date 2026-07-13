@@ -186,7 +186,7 @@ describe("minute allowance — 60 included + packs; warn 80%, fail closed 100%",
 })
 
 describe("declared tool surface", () => {
-  it("ships exactly the seven receptionist tools the webhook dispatches", () => {
+  it("ships exactly the eight receptionist tools the webhook dispatches", () => {
     const names = VOICE_TOOL_DEFINITIONS.map((t) => t.function.name).sort()
     expect(names).toEqual([
       "cancel_appointment",
@@ -194,9 +194,18 @@ describe("declared tool surface", () => {
       "lookup_customer_history",
       "lookup_shop_policy",
       "propose_booking",
+      "propose_quote", // C3: stages a create_quote approval — draft only
       "quote_service",
       "reschedule_appointment",
     ])
+  })
+
+  it("quote tool tells the model it's staged, not sent (HITL, C3)", () => {
+    const quote = VOICE_TOOL_DEFINITIONS.find(
+      (t) => t.function.name === "propose_quote"
+    )
+    expect(quote?.function.description).toMatch(/review|team/i)
+    expect(quote?.function.description).toMatch(/never promise/i)
   })
 
   it("booking tool tells the model it's staged, not executed (HITL)", () => {

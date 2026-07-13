@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { listShopKnowledge } from "@/lib/knowledge"
 import { getReviewLink } from "@/lib/review-link"
+import { describePrice, resolveDurationMinutes } from "@/lib/service-pricing"
 import type { ServiceRow } from "@/lib/types/database"
 
 const MAX_CHARS = 2_500
@@ -23,16 +24,29 @@ export async function buildDrafterGrounding(
 ): Promise<string | null> {
   const [serviceBlock, knowledge, reviewBlock] = await Promise.all([
     (async () => {
+      // Prices resolve through lib/service-pricing so Whisper drafts quote
+      // the same numbers as the voice agent and CRM quotes.
       const { data } = await supabase
         .from("services")
-        .select("name, price_cents, duration_minutes")
+        .select(
+          "name, price_cents, duration_minutes, base_price_by_size, duration_by_size"
+        )
         .eq("shop_id", shopId)
       const rows =
-        (data as Pick<ServiceRow, "name" | "price_cents" | "duration_minutes">[] | null) ?? []
+        (data as
+          | Pick<
+              ServiceRow,
+              | "name"
+              | "price_cents"
+              | "duration_minutes"
+              | "base_price_by_size"
+              | "duration_by_size"
+            >[]
+          | null) ?? []
       if (!rows.length) return ""
       const lines = rows.map(
         (s) =>
-          `- ${s.name}: $${Math.round(s.price_cents / 100)} (${s.duration_minutes} min)`
+          `- ${s.name}: ${describePrice(s)} (${resolveDurationMinutes(s)} min)`
       )
       return `Service menu:\n${lines.join("\n")}`
     })(),

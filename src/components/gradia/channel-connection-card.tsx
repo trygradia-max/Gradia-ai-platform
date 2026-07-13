@@ -71,7 +71,7 @@ export function ChannelConnectionCard({
         title={
           allLive ? (
             <>
-              <span className="italic">Everywhere</span> they reach out, we&apos;re there.
+              <span className="italic">Everywhere</span>{" "}they reach out, we&apos;re there.
             </>
           ) : (
             <>
@@ -113,7 +113,7 @@ function ChannelRow({ channel }: { channel: ChannelSummary }) {
   return (
     <MotionCard
       interactive
-      glow={isLive}
+
       className={cn(
         "group relative h-full overflow-hidden p-0",
         // Subtle accent rail on rows that need attention — operator's eye

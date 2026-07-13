@@ -16,9 +16,7 @@ const cust = (id: string, name: string | null, extra: Partial<CustomerLite> = {}
   name,
   phone: null,
   email: null,
-  vehicle_make: null,
-  vehicle_model: null,
-  vehicle_color: null,
+  vehicle: null,
   last_visit_at: null,
   ...extra,
 })
@@ -34,8 +32,8 @@ describe("normalizeName", () => {
 describe("findDuplicateClusters", () => {
   it("groups same-name records into clusters of 2+, largest first", () => {
     const customers = [
-      cust("1", "Sarah", { vehicle_make: "Tesla" }),
-      cust("2", "sarah", { vehicle_make: "Honda" }),
+      cust("1", "Sarah", { vehicle: "Tesla Model 3" }),
+      cust("2", "sarah", { vehicle: "Honda Civic" }),
       cust("3", "Sarah ", { phone: "+15551112222" }),
       cust("4", "Mike", { phone: "+15553334444" }),
       cust("5", "Mike", { email: "mike@x.com" }),

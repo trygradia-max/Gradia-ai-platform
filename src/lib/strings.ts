@@ -1,0 +1,193 @@
+/**
+ * Gradia UI chrome copy — one voice, one module (GRADIA-LANGUAGE-PACK).
+ *
+ * SCOPE (spec §8-A3, narrator vs character): these strings are the
+ * NARRATOR — the UI chrome describing the agent in third person
+ * ("your receptionist", "Gradia"). Anything the agent itself authors
+ * (chat bubbles, outbound message previews, transcripts) is the
+ * CHARACTER and speaks its eval-locked we/us voice from persona.ts —
+ * never sourced from here.
+ *
+ * Voice rules (Language Pack §1):
+ *  1. Numbers over adjectives — "Handled 12 calls", never "Great day!"
+ *  2. Plain English, zero jargon — "caller", not "inbound contact".
+ *  3. Report, don't perform — no exclamation marks (one exception:
+ *     first-ever success moments), no emoji.
+ *  4. Own errors in active voice — "We couldn't send that message."
+ *  5. Every state says what to do next. No dead ends.
+ *  6. The agent is "your receptionist" or "Gradia" — never "the AI"
+ *     (exception: the disclosure setting, where AI-ness is the point).
+ *
+ * Screens migrate their chrome copy here as they're touched (Layer 1+).
+ * No new hardcoded UI copy in components — same rule as no raw hex.
+ */
+
+export const STRINGS = {
+  /** Buttons: verb + object, 1–3 words. Declines get equal weight —
+   *  never confirmshame. */
+  actions: {
+    saveChanges: "Save changes",
+    addNumber: "Add number",
+    addLead: "Add lead",
+    approve: "Approve",
+    editAndApprove: "Edit & approve",
+    dismiss: "Dismiss",
+    tryIt: "Try it",
+    notNow: "Not now",
+    dontSuggestAgain: "Don't suggest this again",
+    undo: "Undo",
+    retry: "Retry",
+    sendNow: "Send now",
+    cancel: "Cancel",
+    clearFilters: "Clear filters",
+    setUpForwarding: "Set up forwarding",
+    fixHours: "Fix hours",
+    topUp: "Top up",
+  },
+
+  /** Empty states teach, never blank (Language Pack §2). Distinguish
+   *  first-use vs no-results vs all-done. */
+  empty: {
+    conversationsFirstUse:
+      "No calls yet. Forward your number and your receptionist starts answering.",
+    conversationsNoResults: "Nothing matches those filters.",
+    reviewQueueEmpty:
+      "Nothing needs you right now. Gradia will flag anything it's unsure about.",
+    customersFirstUse:
+      "Customers appear here automatically after their first call or text.",
+    activityFirstUse:
+      "Everything your receptionist does shows up here — calls answered, texts staged, bookings proposed.",
+    approvalsEmpty:
+      "Nothing waiting on you. Anything your receptionist wants to send lands here first.",
+  },
+
+  /** Toasts: past-tense fact + undo where reversible. */
+  toasts: {
+    greetingUpdated: "Greeting updated",
+    numberAdded: "Number added",
+    saved: "Saved",
+    couldntSave:
+      "Couldn't save — check your connection. Your edits are still here.",
+    approvalSent: "Sent — it's on its way.",
+    approvalDropped: "Dropped. Nothing went out.",
+    approvalRestored: "Restored to the queue.",
+    alreadyDecided: "Already decided.",
+    decisionFailed:
+      "That didn't go through — check your connection. The card is back in the queue.",
+  },
+
+  /** Confidence & review — three levels ONLY, never percentages
+   *  (Language Pack §3 / spec §5.4). Silent = handled, logs normally. */
+  review: {
+    reviewThis: "Review this",
+    needsYou: "Needs you",
+  },
+
+  /** Shared chrome labels (narrator voice — replaces we/us chrome). */
+  chrome: {
+    waitingOnReceptionist: "Waiting on your receptionist",
+    waitingOnYou: "Waiting on you",
+    handledByReceptionist: "Handled by your receptionist",
+    handledByYou: "Handled by you",
+    yourReceptionist: "Your receptionist",
+    receptionistReplied: "Receptionist replied",
+    callerSpokeLast: "Caller spoke last",
+    unknownCaller: "Unknown caller",
+    noCallsYetTitle: "No calls yet.",
+    nothingLoggedTitle: "Nothing logged yet.",
+  },
+
+  /** Page-level chrome for the A4 shell. */
+  pages: {
+    home: {
+      receiptEyebrow: "This week",
+      receiptTitle: "What your receptionist got done",
+      receiptSubtitle:
+        "A running receipt of the work caught and handled for you — counted conservatively, traced to your own records.",
+      kpisEyebrow: "Today",
+      kpiCalls: "Calls handled",
+      kpiLeads: "Leads captured",
+      kpiBooked: "Appointments booked",
+      kpiNeedsReview: "Needs your review",
+      bookedEyebrow: "On the books",
+      bookedTitle: "Today's appointments",
+      bookedEmpty: "Nothing on the books today.",
+      bookedViewAll: "Full schedule",
+      activityEyebrow: "Recent activity",
+      activityTitle: "What just happened",
+      activityViewAll: "See all activity",
+    },
+    approvals: {
+      eyebrow: "Approvals",
+      titleAllClear: "All clear",
+      titleWaiting: "Waiting on you",
+      subtitleEmpty:
+        "Nothing needs your eyes right now — anything that does lands here the moment it's staged.",
+      subtitleWaiting: (pending: number, edits: number) =>
+        `A quick yes or no before anything leaves the shop — ${pending} pending${
+          edits > 0 ? ` · ${edits} need a tweak` : ""
+        }.`,
+    },
+    welcome: {
+      title: "Welcome to Gradia",
+      body: "Your receptionist answers calls, texts, and emails — every inquiry becomes a drafted reply waiting in Approvals. Connect the channels below and it starts catching leads.",
+      setUpLater: "I'll set up later",
+      startConnecting: "Start connecting",
+      progress: (live: number, total: number) =>
+        `${live} of ${total} live — this card gets out of your way once you're going.`,
+    },
+    activity: {
+      eyebrow: "Activity",
+      title: "Everything your receptionist did",
+      subtitle:
+        "Calls answered, texts staged, bookings proposed — routine wins log quietly, anything unsure gets flagged.",
+      filters: { needsReview: "Needs review", handled: "Handled", escalated: "Escalated", all: "All" },
+      escalatedUnavailable:
+        "Escalation tracking arrives with call transfers — nothing to filter yet.",
+      whyLabel: "Why",
+      outcome: { handled: "Handled", needsYou: "Needs you", dropped: "Dropped" },
+      viewCall: "View call",
+    },
+    call: {
+      eyebrow: "Call record",
+      titleFallback: "Call",
+      summaryHeading: "Summary",
+      transcriptHeading: "Transcript",
+      actionsHeading: "From this call",
+      recordingHeading: "Recording",
+      noSummary:
+        "No summary was captured for this call — the full transcript below is the record.",
+      backToActivity: "Back to Activity",
+      caller: "Caller",
+      receptionist: "Receptionist",
+    },
+    conversations: {
+      eyebrow: "Conversations",
+      title: "Calls, texts, and questions",
+      subtitle:
+        "Customer threads on one side, straight answers about the shop on the other.",
+      threadsHeading: "Threads",
+      /** Honest interim copy while the thread list ships (L4): shown
+       *  when the shop already HAS call/text history. */
+      threadsInterim:
+        "Call and text threads land here next. Until then, every conversation lives on the customer's file.",
+      threadsInterimCta: "View customers",
+      askHeading: "Ask Gradia",
+    },
+    receptionist: {
+      eyebrow: "Receptionist",
+      title: "What your receptionist runs",
+      subtitle:
+        "Answering, follow-ups, reminders — each one shows its status and stages everything for your approval.",
+    },
+  },
+
+  /** Error pattern: what happened + what we did + what you can do.
+   *  Compose per-surface; this is the canonical example shape. */
+  errors: {
+    sendFailedPattern: (to: string) =>
+      `The follow-up text to ${to} didn't send. We'll retry twice over the next 10 minutes.`,
+  },
+} as const
+
+export type Strings = typeof STRINGS

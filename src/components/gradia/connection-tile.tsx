@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * The Connections screen tile (BUILD_REFERENCE §4). Server Component so it can
- * take an icon; status is icon + text. States: not connected (coral Connect —
+ * take an icon; status is icon + text. States: not connected (accent Connect —
  * popup for OAuth, link otherwise), connected (✓ + identity + Manage), and
  * "setup needed" when the integration isn't wired on the server.
  */
@@ -47,6 +47,10 @@ export function ConnectionTile({
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <Check className="size-3.5" aria-hidden /> Connected
           </span>
+        ) : !available ? (
+          <span className="inline-flex items-center rounded-full bg-muted/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            Coming soon
+          </span>
         ) : null}
       </div>
 
@@ -59,8 +63,10 @@ export function ConnectionTile({
 
       <div className="mt-auto pt-1">
         {!available ? (
+          // Built but not yet wired for this workspace — a clean "Coming soon"
+          // badge sits top-right; no dead-end label or fake button here.
           <span className="text-xs text-muted-foreground/70">
-            Setup needed on the server
+            We&rsquo;ll let you know the moment it&rsquo;s ready.
           </span>
         ) : connected ? (
           manageHref ? (

@@ -27,8 +27,8 @@ export async function SetupProgressPill() {
 
   return (
     <Link
-      href="/dashboard#channels"
-      className="hidden items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] font-medium tracking-wide text-foreground hover:bg-muted/70 sm:flex"
+      href={progress.nextHref ?? "/settings"}
+      className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] font-medium tracking-wide text-foreground hover:bg-muted/70"
     >
       <CircleDashed
         className="size-3 text-muted-foreground"

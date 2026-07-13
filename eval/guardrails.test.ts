@@ -24,6 +24,18 @@ describe("HITL floor — money & calendar actions are always human-approved", ()
     expect(ALWAYS_HITL.has("cancel_appointment")).toBe(true)
   })
 
+  it("agent quotes are never auto-executable and only ever land as drafts (C3)", () => {
+    // The quote is a money object: the agent proposes, a human approves, and
+    // even the approval creates a DRAFT — sending is a separate owner action.
+    expect(isAutonomyAllowed("create_quote")).toBe(false)
+    expect(ALWAYS_HITL.has("create_quote")).toBe(true)
+    // The executor source must pin status draft — never sent.
+    const url = new URL("../src/lib/approvals.ts", import.meta.url)
+    const src = readFileSync(url, "utf8")
+    expect(src).toContain('status: "draft"')
+    expect(src).not.toContain('created_by: "agent",\n      status: "sent"')
+  })
+
   it("lower-stakes actions remain automatable (so the floor is a floor, not a wall)", () => {
     const automatable: PendingActionType[] = [
       "create_lead",

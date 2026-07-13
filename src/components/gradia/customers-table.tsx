@@ -7,7 +7,6 @@ import { motion, useReducedMotion, type Variants } from "framer-motion"
 import { Search } from "lucide-react"
 
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -53,7 +52,7 @@ const row: Variants = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.45, ease: EASE_OUT_EXPO },
+    transition: { duration: 0.15, ease: "easeOut" },
   },
 }
 
@@ -203,14 +202,14 @@ export function CustomersTable({
 function EmptyState({ searching }: { searching: boolean }) {
   return (
     <div className="px-6 py-16 text-center">
-      <p className="font-display text-2xl text-foreground sm:text-3xl">
+      <p className="font-display text-2xl text-foreground">
         {searching ? (
           <>
-            <span className="italic">Nobody</span> by that name yet.
+            <span className="italic">Nobody</span>{" "}by that name yet.
           </>
         ) : (
           <>
-            <span className="italic">Quiet</span> so far.
+            <span className="italic">Quiet</span>{" "}so far.
           </>
         )}
       </p>
@@ -219,6 +218,14 @@ function EmptyState({ searching }: { searching: boolean }) {
           ? "Try a different name or number — we'll keep looking."
           : "Customers land here automatically the moment voice, SMS, email, or DMs come in."}
       </p>
+      {!searching ? (
+        <Link
+          href="/customers/recovery"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          Import your customers →
+        </Link>
+      ) : null}
     </div>
   )
 }

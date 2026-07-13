@@ -1,0 +1,12 @@
+# Redesign backend gap list
+
+Named gaps the redesign consciously ships around. Each is post-alpha unless promoted. Companion to `GRADIA-REDESIGN-SPEC.md` §8 (amendments A6/A8/A9).
+
+| # | Gap | What's missing | Blocked UI | Notes |
+|---|---|---|---|---|
+| 1 | **Nudge engine** (spec §8-A8, Language Pack §4) | Trigger evaluation, frequency caps (1 visible / 2 per week / ≥24h apart), server-side dismissal persistence ("Not now" = 30-day snooze, "Don't suggest this again" = permanent), shown/dismissed/converted event logging. Needs schema + server logic. | Contextual nudges everywhere; `approve-streak` earned-autonomy nudge | `NudgeCard` component ships this phase; engine post-alpha. `pending_actions.resolution` already accumulates the approve-streak signal. |
+| 2 | **Decision log coverage — owner-agent + Twilio paths** | L0.5 writes `action_decisions` from `agent-runtime.ts` + `vapi-tools.ts` only. Actions staged by `owner-agent.ts` (`stageSingle` — owner-requested via chat/Whisper) and by the inbound SMS webhook (`api/twilio/sms` — no-touch this session) have no because-line. | Those Activity entries render without a decision line (by design — never fabricated) | Owner-requested actions are owner-initiated, so the because-line is low-value; the Twilio path needs a session where its webhook is in scope. |
+| 3 | **Raw webhook event archive** | Vapi/Twilio/Stripe/Aurinko payloads are processed inline and discarded. | Any "raw event inspector" / deep provenance view | Only distilled artifacts survive (`interactions`, `pending_actions`, `usage_events`, and now `call_records`). |
+| 4 | **Notifications / digest infrastructure** (spec §5.6) | No `notifications` table, no per-call summary push, no end-of-day digest job. | "Push, don't only pull" — per-call notification + daily digest | The MVP plan lists a `notifications` table as optional Phase-1; never built. |
+| 5 | **AI-disclosure setting** (spec §5.7) | No owner-facing toggle for the agent identifying itself as AI to callers; not confirmed in `voice_config`. | Disclosure setting in Receptionist builder | Legal review of target markets also outstanding. |
+| 6 | **Historical call records** | `call_records` capture starts at L0.5 deploy. Calls before that exist only as `interactions` turns (no summary/duration/cost). | Call-record page shows a degraded view for pre-capture calls | Not backfillable — Vapi payloads were discarded (gap 3). |

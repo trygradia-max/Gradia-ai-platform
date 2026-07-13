@@ -5,9 +5,14 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
+  CalendarDays,
+  Activity,
   Contact,
+  CreditCard,
+  Headset,
   Inbox,
   LayoutDashboard,
+  MessagesSquare,
   Settings,
   Sparkles,
 } from "lucide-react"
@@ -22,10 +27,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarFooter,
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { ShopSwitcher } from "@/components/gradia/shop-switcher"
-import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import type { ShopContext } from "@/lib/shop"
 import { cn } from "@/lib/utils"
 
@@ -35,14 +40,22 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// Three sturdy destinations + Settings (FOCUS spec §4.4). Ask Gradia is the
-// ⌘K command bar, not a place; Leads folds into Customers, Schedule into
-// Home/Customers, and "What Gradia does" (/agents) drops off the primary nav.
-// All those routes still exist — they're just no longer top-level.
+// The final IA (redesign spec §8-A4) — exactly these six, in this order,
+// plus the two pinned at the bottom. Old routes (/agents, /agent, /chat,
+// /leads, /recovery) live on as redirects, never as nav items. The ⌘K /
+// Whisper command bar stays the primary composer — a verb, not a place.
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/approvals", label: "Approvals", icon: Inbox },
+  { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/conversations", label: "Conversations", icon: MessagesSquare },
   { href: "/customers", label: "Customers", icon: Contact },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/receptionist", label: "Receptionist", icon: Headset },
+]
+
+const pinnedNav: NavItem[] = [
+  { href: "/billing", label: "Numbers & Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
@@ -73,7 +86,7 @@ export function AppSidebar({
         <motion.div
           initial={reduce ? false : { opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
           className="flex items-center gap-2.5"
         >
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25 transition-colors duration-200">
@@ -121,6 +134,21 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      {/* Pinned bottom (spec §8-A4): Numbers & Billing · Settings. */}
+      <SidebarFooter className="border-t border-sidebar-border/60 px-2 py-3">
+        <SidebarMenu>
+          {pinnedNav.map((item, index) => (
+            <NavRow
+              key={item.href}
+              item={item}
+              isActive={pathname.startsWith(item.href)}
+              index={nav.length + index}
+              reduce={reduce ?? false}
+            />
+          ))}
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )
@@ -146,9 +174,9 @@ function NavRow({
         initial={reduce ? false : { opacity: 0, x: -8 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{
-          duration: 0.4,
-          ease: EASE_OUT_EXPO,
-          delay: reduce ? 0 : 0.06 + index * 0.035,
+          duration: 0.15,
+          ease: "easeOut",
+          delay: reduce ? 0 : index * 0.02,
         }}
         className="relative"
       >

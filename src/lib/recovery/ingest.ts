@@ -27,10 +27,22 @@ import {
 } from "@/lib/recovery/parse-contacts"
 import { prefilterThreads } from "@/lib/recovery/prefilter"
 import { bodyPath, storeBody } from "@/lib/recovery/storage"
+import {
+  applyMapping,
+  autoMapColumns,
+  detectHeaderRow,
+  extractionNeedsVehicleLlm,
+  parseCsv,
+  recordToExtraction,
+  type CsvMapping,
+} from "@/lib/recovery/structured-csv"
+import type { RecoveryExtraction } from "@/lib/recovery/extract"
 import type { Pricing } from "@/lib/pricing"
 import type { ImportSourceType } from "@/lib/types/database"
 
-/** A normalized unit ready to stage — a kept thread/contact gets a body stored. */
+/** A normalized unit ready to stage — a kept thread/contact gets a body stored.
+ *  C7 structured-CSV units arrive with a DETERMINISTIC extraction already set
+ *  (no body, no LLM); only vehicle_needs_llm rows cost credits later. */
 export type StagedUnit = {
   messageId: string | null
   fromEmail: string | null
@@ -40,6 +52,7 @@ export type StagedUnit = {
   body: string
   keep: boolean
   dropReason: string | null
+  extraction?: RecoveryExtraction | null
 }
 
 export type IngestInput = {
@@ -48,6 +61,8 @@ export type IngestInput = {
   /** Shop's own addresses — used to detect owner participation in mbox threads. */
   ownerEmails: string[]
   pricing: Pricing
+  /** C7: owner-confirmed column mapping; auto-mapped when omitted. */
+  csvMapping?: CsvMapping | null
 }
 
 export type IngestResult = {
@@ -94,6 +109,29 @@ export function buildUnits(input: IngestInput): StagedUnit[] {
     ]
   }
 
+  // C7 structured CSV: the mapping IS the extraction — deterministic, no
+  // body stored (the spreadsheet cells are already structured; nothing for
+  // an LLM to read except an unparseable vehicle string, patched later).
+  if (input.sourceType === "structured_csv") {
+    const rows = parseCsv(input.fileContent)
+    const mapping =
+      input.csvMapping ?? autoMapColumns(rows, detectHeaderRow(rows))
+    return applyMapping(rows, mapping).map((rec) => {
+      const reachable = rec.phones.length > 0 || rec.emails.length > 0
+      return {
+        messageId: null,
+        fromEmail: rec.emails[0] ?? null,
+        subject: rec.name ?? `Row ${rec.rowIndex + 1}`,
+        hasListUnsubscribe: false,
+        ownerParticipated: true,
+        body: "",
+        keep: reachable,
+        dropReason: reachable ? null : "no contact info",
+        extraction: reachable ? recordToExtraction(rec) : null,
+      }
+    })
+  }
+
   // Contacts: CSV or vCard.
   const contacts =
     input.sourceType === "contacts_csv"
@@ -109,6 +147,16 @@ export function buildUnits(input: IngestInput): StagedUnit[] {
     keep: true,
     dropReason: null,
   }))
+}
+
+/** Kept units that will actually hit the LLM — mbox/contacts always do;
+ *  structured-CSV rows only when their vehicle string defeated the regex. */
+export function countLlmUnits(units: StagedUnit[]): number {
+  return units.filter(
+    (u) =>
+      u.keep &&
+      (u.extraction == null || extractionNeedsVehicleLlm(u.extraction))
+  ).length
 }
 
 export async function ingestImport(
@@ -142,11 +190,13 @@ export async function ingestImport(
           message_id: u.messageId,
           from_email: u.fromEmail,
           subject: u.subject,
-          body_ref: u.keep ? bodyPath(shopId, jobId, id) : null,
+          // Pre-extracted units (structured CSV) never store a body.
+          body_ref: u.keep && u.body ? bodyPath(shopId, jobId, id) : null,
           has_list_unsubscribe: u.hasListUnsubscribe,
           owner_participated: u.ownerParticipated,
           kept: u.keep,
           drop_reason: u.dropReason,
+          extraction: u.extraction ?? null,
         },
       }
     })
@@ -171,7 +221,9 @@ export async function ingestImport(
       kept: keptCount,
       dropped: units.length - keptCount,
     }
-    const estimate = estimateExtractionCredits(keptCount, input.pricing)
+    // Estimate prices only the units that will hit the LLM — a structured
+    // CSV is mostly deterministic, so this is usually a handful of rows.
+    const estimate = estimateExtractionCredits(countLlmUnits(units), input.pricing)
 
     await supabase
       .from("import_jobs")

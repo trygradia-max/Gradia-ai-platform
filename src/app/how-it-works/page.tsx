@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { GrainOverlay } from "@/components/gradia/grain-overlay"
 import { MeshBackground } from "@/components/gradia/mesh-background"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import {
@@ -143,6 +144,7 @@ const FEATURES: string[] = [
 export default function HowItWorksPage() {
   return (
     <div className="min-h-svh bg-background text-foreground">
+      <GrainOverlay />
       <TopNav />
 
       <main className="relative">
@@ -254,7 +256,7 @@ export default function HowItWorksPage() {
               title={
                 <>
                   Inquiry to invoice, with you in the{" "}
-                  <span className="italic">loop</span> the whole way.
+                  <span className="italic">loop</span>{" "}the whole way.
                 </>
               }
               subtitle="Every step is something Gradia drafts and queues. The decision is always yours."

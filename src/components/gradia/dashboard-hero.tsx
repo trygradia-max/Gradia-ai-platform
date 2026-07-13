@@ -2,7 +2,6 @@
 
 import * as React from "react"
 
-import { MeshBackground } from "@/components/gradia/mesh-background"
 import {
   PageStagger,
   StaggerItem,
@@ -30,9 +29,8 @@ export function DashboardHero({
     : `${liveChannelCount} of ${totalChannels} channels live`
 
   return (
-    <section className="relative isolate overflow-hidden rounded-3xl border border-border/40 bg-card/40 px-6 py-10 sm:px-10 sm:py-14">
-      <MeshBackground />
-      <PageStagger className="relative flex flex-col gap-6 sm:gap-8">
+    <section className="relative rounded-md border border-border/60 bg-card px-6 py-6 sm:px-8 sm:py-7">
+      <PageStagger className="relative flex flex-col gap-4">
         <StaggerItem>
           <p className="label-eyebrow text-muted-foreground/80">
             {eyebrow}
@@ -40,10 +38,8 @@ export function DashboardHero({
         </StaggerItem>
 
         <StaggerItem>
-          <h1 className="font-display text-[clamp(2.5rem,7vw,4.5rem)] leading-[1] tracking-[-0.03em] text-foreground">
-            <span className="italic">Today,</span>{" "}
-            <span className="text-muted-foreground/90">together at</span>{" "}
-            <span className="block sm:inline">{shopName}.</span>
+          <h1 className="font-display text-2xl text-foreground">
+            Today at <span className="text-muted-foreground">{shopName}</span>
           </h1>
         </StaggerItem>
 

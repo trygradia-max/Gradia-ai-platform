@@ -1,3 +1,4 @@
+import { FEATURES } from "@/lib/features"
 import { getOptionalShop, requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
@@ -27,6 +28,8 @@ export type ChannelProgress = {
   total: number
   /** First "off" channel, useful for "Next: connect X" CTAs. */
   nextLabel: string | null
+  /** Deep-link to where the owner connects that next channel. */
+  nextHref: string | null
 }
 
 /**
@@ -46,6 +49,7 @@ export async function getChannelProgressForCurrentShop(): Promise<ChannelProgres
     connected,
     total: channels.length,
     nextLabel: firstOff?.label ?? null,
+    nextHref: firstOff?.href ?? null,
   }
 }
 
@@ -66,13 +70,16 @@ export async function getChannelStatusForCurrentShop(): Promise<
     .single()
   const shop = (data as ShopRow | null) ?? null
 
-  return [
+  const summaries = [
     voiceSummary(shop),
     emailSummary(shop),
     smsSummary(shop),
     calendarSummary(shop),
-    paymentsSummary(shop),
   ]
+  // Payments (Stripe Connect customer billing) is hidden for the MVP; don't
+  // count it toward setup progress or the setup pill would never reach "all live".
+  if (FEATURES.integrations.payments) summaries.push(paymentsSummary(shop))
+  return summaries
 }
 
 function voiceSummary(shop: ShopRow | null): ChannelSummary {
@@ -96,7 +103,7 @@ function emailSummary(shop: ShopRow | null): ChannelSummary {
   return {
     id: "email",
     label: "Email receptionist",
-    description: "Gmail inbox piped through Aurinko — every inquiry becomes a Slack approval card.",
+    description: "Gmail inbox piped through Aurinko — every inquiry becomes a drafted reply waiting in your Approvals.",
     status: connected ? "connected" : "off",
     hint: connected ? null : "Connect Gmail via OAuth in Settings.",
     href: "/settings#email",

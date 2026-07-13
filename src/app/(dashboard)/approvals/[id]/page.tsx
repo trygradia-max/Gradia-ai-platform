@@ -91,8 +91,8 @@ export default async function PendingProposalPage({
           <p className="label-eyebrow mb-2 text-muted-foreground/70">
             {pending.status === "approved" ? "Approved" : "Dropped"}
           </p>
-          <p className="font-display text-2xl text-foreground sm:text-3xl">
-            <span className="italic">Already</span> decided.
+          <p className="font-display text-2xl text-foreground">
+            <span className="italic">Already</span>{" "}decided.
           </p>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
             {pending.status === "approved"
@@ -128,7 +128,7 @@ export default async function PendingProposalPage({
           <p className="label-eyebrow text-muted-foreground/70">
             Review proposal
           </p>
-          <h1 className="font-display text-[clamp(1.875rem,4.5vw,2.5rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
+          <h1 className="font-display text-2xl text-foreground">
             One pass, then it&apos;s <span className="italic">live</span>.
           </h1>
           <p className="max-w-prose text-sm text-muted-foreground">
