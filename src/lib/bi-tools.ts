@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
+import { buildLookupOutcome, findPeopleInCrm } from "@/lib/find-person"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { searchCustomerMemory } from "@/lib/memory"
 import {
@@ -103,6 +104,14 @@ const upcomingAppointmentsSchema = z.object({
     .max(60)
     .default(7)
     .describe("How many days into the future to look."),
+})
+
+const findPersonSchema = z.object({
+  query: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe("Name (or part of one) or phone digits to look up"),
 })
 
 const searchMemorySchema = z.object({
@@ -353,6 +362,34 @@ async function revenueInWindow(
   }
 }
 
+async function findPerson(
+  supabase: SupabaseClient,
+  shopId: string,
+  params: z.infer<typeof findPersonSchema>
+) {
+  // Deterministic SQL across BOTH leads and customers — a lead with zero
+  // conversation history is still found (fix-pass 2026-07-13 P0). The
+  // outcome copy is decided by code: honest miss / unique hit / fact-based
+  // disambiguation. Never ask for a phone when a unique name match exists.
+  const matches = await findPeopleInCrm(supabase, shopId, params.query)
+  const outcome = buildLookupOutcome(params.query, matches)
+  return {
+    outcome: outcome.outcome,
+    guidance: outcome.say,
+    matches: matches.slice(0, 6).map((m) => ({
+      source: m.source,
+      lead_id: m.source === "lead" ? m.id : null,
+      customer_id: m.source === "customer" ? m.id : m.customerId,
+      name: m.name,
+      phone: m.phone,
+      email: m.email,
+      vehicle: m.vehicle,
+      pipeline: m.stage,
+      note: m.note,
+    })),
+  }
+}
+
 async function searchMemory(
   supabase: SupabaseClient,
   shopId: string,
@@ -367,13 +404,24 @@ async function searchMemory(
       params.query,
       { limit: params.limit }
     )
+    if (results.length === 0) {
+      return {
+        query: params.query,
+        matches: [],
+        // Honest-miss contract (fix-pass 2026-07-13): an empty result is a
+        // MISS, never a malfunction. The model must not invent connection
+        // or system excuses, and must not conclude a person doesn't exist.
+        note: "No recorded conversations matched. This is a normal empty result — NOT a system or connection problem. It also does not mean the person is missing from the CRM: use find_person to check that.",
+      }
+    }
     return { query: params.query, matches: results }
   } catch (err) {
+    console.error("[bi-tools] search_memory failed:", err)
     return {
       query: params.query,
       matches: [],
-      error:
-        err instanceof Error ? err.message : "search failed (no embeddings?)",
+      // A REAL failure — say exactly this much and no more.
+      error: "The conversation search failed on our side just now — tell the owner that plainly. Do not speculate about causes.",
     }
   }
 }
@@ -753,9 +801,17 @@ export const BI_TOOLS: BiToolDefinition[] = [
       ),
   },
   {
+    name: "find_person",
+    description:
+      "ALWAYS the first stop to find a specific person by name or phone ('find mike', 'do we have a Sara?'). Deterministic CRM lookup across BOTH leads and customers — works even when there's no conversation history. Returns the match(es) with facts on file plus exact guidance copy: repeat `guidance` to the owner on a miss or a multi-match instead of writing your own.",
+    schema: findPersonSchema,
+    handler: (supabase, shopId, params) =>
+      findPerson(supabase, shopId, findPersonSchema.parse(params)),
+  },
+  {
     name: "search_memory",
     description:
-      "Semantic search over every customer touchpoint we've recorded. Use for 'who asked about ceramic this week', 'what did Sam say on his last call', 'anything about a Tesla recently'.",
+      "Semantic search over recorded conversation content — for WHAT someone said ('what did Sam ask about?', 'who mentioned ceramic this week?'). NOT for finding whether a person exists: use find_person for that — this search misses anyone with no recorded conversations, and an empty result here never means the person is missing from the CRM.",
     schema: searchMemorySchema,
     handler: (supabase, shopId, params) =>
       searchMemory(supabase, shopId, searchMemorySchema.parse(params)),

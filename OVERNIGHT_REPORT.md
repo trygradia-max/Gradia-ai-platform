@@ -450,3 +450,101 @@ _Queue: `RUN_2026-07-10_CRM_C6_C8.md`. Branch `redesign/glass-box`. Baseline in:
 - Still pending from prior runs: apply the three migrations (C1
   foundation, structured_csv enum, job-photos bucket), review the 5-minute
   automations cron, run seed:smoke, test C7 with a real export.
+
+---
+
+# Run report — 2026-07-13 fix pass (first prod-usage findings)
+
+_Queue: `RUN_2026-07-13_FIX_PASS.md`. Branch `fix/post-deploy-1` off main (`df23c9b`). Baseline in: 395 passing on main._
+
+## 1 — P0: deterministic person lookup ✅ (fixtures first)
+
+Root cause of the "mike" failure confirmed in code: the agent's ONLY person
+path was vector `search_memory` over interactions — a lead with no recorded
+conversations was invisible, and the model then invented an excuse.
+
+- New `lib/find-person.ts`: SQL-first lookup across BOTH leads and
+  customers (ILIKE name + digit-fragment phone, shop-scoped, vehicles
+  joined), then the same pure matcher the golden fixtures lock — DB and
+  fixtures can't drift. Lead+customer records for one person merge.
+- Outcomes decided by CODE: 0 hits → honest miss + "want me to create the
+  lead?"; 1 hit → proceed; >1 → disambiguate with facts on file (vehicles,
+  pipeline stage, phone ending). Never asks for a phone that's on file.
+- Wired as the `find_person` BI tool (read-only — the BI source scan still
+  passes), listed FIRST; `search_memory`'s description now demotes itself
+  for existence checks. The ACTION path got the same fix: owner-agent's
+  `resolveCustomer` falls back to leads and materializes the customer via
+  the idempotent find-or-create, so "book mike" works on a lead-only mike.
+- 7 golden fixtures reproduce the production case verbatim (lead-only mike
+  with zero interactions), plus customer-only, two-mikes collision,
+  zero-match, dedupe, and phone-fragment cases.
+
+## 2 — P0: honest failure copy ✅
+
+- Contract fixed at the tool boundary: an empty `search_memory` result now
+  carries an explicit note ("normal empty result — NOT a system or
+  connection problem… use find_person"); a REAL error says the lookup
+  failed on our side and forbids speculation. The internals-leaking
+  "no embeddings?" string is gone.
+- Both agent system prompts (owner-agent + bi-agent) gained the
+  honest-results block: empty = miss, never blame connections, failures
+  are "on our side" only when a tool actually errored.
+- `eval/honest-errors.test.ts` source-scans six agent modules for the
+  banned-excuse phrases ("might be a connection", "network issue", …) and
+  pins the empty-result note, the error copy, and both prompt blocks.
+  (It caught two real slips during the run — my own docstring quoting the
+  banned phrase, and the honesty block initially patched into the wrong
+  file. Working as intended.)
+
+## 3 — P1: pipeline board polish ✅
+
+- Stage-age is now VISIBLE: the whole card border goes amber past
+  `next_action_at` and red past 2× — no more 32-day-old NEW cards that
+  look fine.
+- Headers: count as a quiet pill (hidden at zero), $ total in `.font-data`
+  (hidden at zero); every empty column carries owner-actionable microcopy
+  ("Drag a card here when they want a price.") — first-use teaches, no
+  bare `0` glyphs, no dead ends.
+- Cards: grab/grabbing cursor when draggable, hover states per age tone,
+  full-text tooltips on truncated vehicle/interest lines, and the spec's
+  vehicle format via new `shortVehicleLine` ("'19 F-150 — white").
+- New-lead modal: real `type="tel"` (mobile phone keypad + autocomplete);
+  autofocus and Enter-to-save were already in place and verified.
+
+## 4 — P1: Today coherence ✅ (both halves of the either/or)
+
+- Revival picker extension: a stage-NEW card older than 14 days with a
+  phone and no activity is now a revival candidate with a grounded why
+  ("came in as a lead 60 days ago, no follow-up on file since") — the
+  founder's exact 30-day-old-cards case, golden-locked. Engaged-then-
+  silent (21d) unchanged; fresh NEW leads (<14d) never picked.
+- The suggestion queue's empty state is written, not silent: one quiet
+  line explaining what arms it and the check cadence.
+
+## 5 — P2: demo-data hygiene ✅
+
+- seed:smoke rows now also carry `source='demo'` (customers + leads) on
+  top of the SMOKE:/[smoke-seed]/metadata markers; the marker contract is
+  documented in the seed header.
+- Settings → Developer → **Clear demo data**: confirmation dialog, deletes
+  exactly the marker-matched rows across 8 tables (customers cascade their
+  vehicles/quotes/interactions), reports per-table counts, never touches
+  real records. Note: hand-made test rows from May (the "James Bond" card)
+  carry no markers — delete that one from its customer file; the sweep
+  deliberately refuses to guess.
+
+## Final state
+
+- **415 passing / 4 skipped** (395 → +7 person-lookup goldens, +11 honest-
+  error locks, +2 revival goldens), lint, tsc, `next build` clean after
+  every item. Branch `fix/post-deploy-1` pushed; PR open into main.
+- Your uncommitted `FOUNDER_OPS_RUNBOOK.md` edit was stashed and restored
+  during the branch switch — still in your working tree, untouched.
+
+## Founder actions
+1. Review + **merge the PR** (I don't merge — per the rail).
+2. Redeploy.
+3. Re-run the mike test verbatim: "find mike" in Ask Gradia → expect the
+   F-150 lead found deterministically; then "book mike" → staged booking.
+4. Settings → Developer → Clear demo data to sweep the smoke rows; delete
+   the May "James Bond" card manually (it carries no demo marker).

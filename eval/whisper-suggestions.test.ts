@@ -93,7 +93,9 @@ const LEADS: LeadForSuggestion[] = [
     last_activity_at: iso(30),
   },
   {
-    // Never engaged → NOT revival-eligible (cold spam guard).
+    // THE founder's production case (fix-pass): a NEW card, 60 days old,
+    // phone on file, zero conversation history — must surface as revival
+    // ("no follow-up on file"), not sit invisible.
     id: "lead-cold",
     customer_id: "cust-cold",
     customer_name: "Cold Import",
@@ -128,7 +130,10 @@ describe("golden candidate set over the seeded CRM state", () => {
 
     expect(stale.map((c) => c.ref)).toEqual(["stale_quote:q-stale"])
     expect(due.map((c) => c.ref)).toEqual([`follow_up:lead-ada:${iso(3)}`])
-    expect(revival.map((c) => c.ref)).toEqual(["revival:lead-rick"])
+    expect(revival.map((c) => c.ref)).toEqual([
+      "revival:lead-rick",
+      "revival:lead-cold", // stale NEW lead — the fix-pass extension
+    ])
   })
 
   it("dedupe keeps one suggestion per person, stale quote winning", () => {
@@ -138,6 +143,7 @@ describe("golden candidate set over the seeded CRM state", () => {
       ...pickRevivalLeads(LEADS, NOW),
     ])
     expect(all.map((c) => c.ref).sort()).toEqual([
+      "revival:lead-cold",
       "revival:lead-rick",
       "stale_quote:q-stale",
     ])
@@ -166,6 +172,21 @@ describe("the why cites only DB facts (grounding spot-check)", () => {
     expect(c.why).toBe(
       "They reached out to us before, but it's been 30 days with no activity either way."
     )
+  })
+
+  it("stale-NEW why states the real card age and the missing follow-up", () => {
+    const cold = pickRevivalLeads(LEADS, NOW).find((c) => c.ref === "revival:lead-cold")!
+    expect(cold.why).toBe(
+      "They came in as a lead 60 days ago and there's been no follow-up on file since."
+    )
+  })
+
+  it("fresh NEW leads (under 14 days) are NOT picked", () => {
+    const fresh = pickRevivalLeads(
+      [{ ...LEADS[2], id: "lead-fresh", created_at: iso(5) }],
+      NOW
+    )
+    expect(fresh).toEqual([])
   })
 })
 

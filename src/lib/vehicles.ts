@@ -73,6 +73,19 @@ export async function vehiclesByCustomerIds(
   return map
 }
 
+/** Pipeline-card vehicle line (spec §C2): "'19 F-150 — white". Year as a
+ *  two-digit tick, model preferred over make, color lowercased. */
+export function shortVehicleLine(
+  v: Pick<VehicleLite, "year" | "make" | "model" | "color"> | null | undefined
+): string | null {
+  if (!v) return null
+  const yy = v.year != null ? `'${String(v.year).slice(-2)} ` : ""
+  const body = v.model ?? v.make
+  if (!body) return null
+  const color = v.color ? ` — ${v.color.toLowerCase()}` : ""
+  return `${yy}${body}${color}`
+}
+
 /** The customer's primary (oldest) vehicle, or null. */
 export async function getPrimaryVehicle(
   supabase: SupabaseClient,
