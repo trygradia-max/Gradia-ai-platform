@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react"
 
 import { ActivityEvent } from "@/components/gradia/activity-event"
 import { ApprovalsList } from "@/components/gradia/approvals-list"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import {
   listOpenApprovalsForCurrentShop,
   listRecentAgentActivity,
@@ -38,7 +38,7 @@ export async function HomeFeed() {
           <SectionHeader
             eyebrow={STRINGS.chrome.waitingOnYou}
             title="What needs a yes"
-            subtitle="A quick yes or no before anything leaves the shop — approve right here."
+            subhead="A quick yes or no before anything leaves the shop — approve right here."
           />
           <ApprovalsList items={shown} />
           {overflow > 0 ? (

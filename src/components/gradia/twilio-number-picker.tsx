@@ -169,7 +169,7 @@ export function TwilioNumberPicker({
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
-                  className="h-14 animate-pulse rounded-xl border border-border/40 bg-muted/15"
+                  className="h-14 animate-pulse rounded-md border border-border/40 bg-muted/15"
                 />
               ))}
             </motion.div>
@@ -193,13 +193,13 @@ export function TwilioNumberPicker({
                       onClick={() => handleProvision(n.phoneNumber)}
                       disabled={disabled || isBuying}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3 text-left transition-colors",
+                        "group flex w-full items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3 text-left transition-colors",
                         "hover:border-border hover:bg-muted/25",
                         "disabled:cursor-not-allowed disabled:opacity-50",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                       )}
                     >
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25 dark:text-emerald-400">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
                         <Phone className="size-4" aria-hidden />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -236,7 +236,7 @@ export function TwilioNumberPicker({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15, ease: "easeOut" }}
-              className="rounded-xl border border-dashed border-border/40 px-4 py-6 text-center text-sm text-muted-foreground"
+              className="rounded-md border border-dashed border-border/40 px-4 py-6 text-center text-sm text-muted-foreground"
             >
               No numbers in that area code right now — try a nearby one or
               leave it blank for nationwide.

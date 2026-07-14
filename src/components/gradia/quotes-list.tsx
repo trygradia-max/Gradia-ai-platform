@@ -61,7 +61,7 @@ export function QuotesList({ quotes }: { quotes: QuoteListEntry[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center">
+      <div className="rounded-md border border-border/60 bg-card px-6 py-16 text-center">
         <FileText className="mx-auto size-6 text-muted-foreground" aria-hidden />
         <p className="mt-3 font-display text-xl text-foreground">
           No quotes <span className="italic">yet</span>.
@@ -93,7 +93,7 @@ export function QuotesList({ quotes }: { quotes: QuoteListEntry[] }) {
               </p>
               <p className="text-sm text-muted-foreground">{g.blurb}</p>
             </div>
-            <ul className="divide-y divide-border/60 rounded-xl border border-border/60">
+            <ul className="divide-y divide-border/60 rounded-md border border-border/60">
               {items.map((q) => (
                 <li
                   key={q.id}

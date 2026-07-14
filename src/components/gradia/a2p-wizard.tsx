@@ -140,8 +140,8 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
 
   if (state.status === "approved") {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25 dark:text-emerald-400">
+      <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
           <BadgeCheck className="size-4" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
@@ -156,8 +156,8 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
 
   if (!editing && (state.status === "brand_pending" || state.status === "campaign_pending")) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3.5 py-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-600 ring-1 ring-amber-500/25 dark:text-amber-400">
+      <div className="flex items-center gap-3 rounded-md border border-status-warning/25 bg-status-warning-bg px-3.5 py-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-warning-bg text-status-warning-fg ring-1 ring-status-warning/25">
           <Clock className="size-4" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
@@ -205,7 +205,7 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
   return (
     <div className="space-y-4">
       {state.status === "rejected" && !editing ? (
-        <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/8 px-3.5 py-3">
+        <div className="flex items-start gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-3.5 py-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-destructive/12 text-destructive ring-1 ring-destructive/25">
             <ShieldAlert className="size-4" aria-hidden />
           </div>

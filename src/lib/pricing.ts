@@ -38,6 +38,11 @@ export const DEFAULT_PRICING: Pricing = {
   bi_answer: { wholesale_cents: 1.5, retail_cents: 7 },
   whisper_note: { wholesale_cents: 0.9, retail_cents: 3 },
   agentic_plan: { wholesale_cents: 3, retail_cents: 10 },
+  // 2026-07-13 audit: Haiku classify + auto-draft + KB search per inbound
+  // message. Retail 0 BY DESIGN — shops aren't charged for receiving
+  // messages; this SKU exists so the wholesale cost lands in the ledger
+  // and the margin report. Repricing is a founder decision.
+  inbound_classify: { wholesale_cents: 0.2, retail_cents: 0 },
 }
 
 /**

@@ -311,7 +311,7 @@ export function StripeSettingsCard({
                     )}
                   </div>
                   {!stripeConfigured ? (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <p className="text-xs text-status-warning-fg">
                       Server is missing <code>STRIPE_SECRET_KEY</code> /{" "}
                       <code>STRIPE_CONNECT_CLIENT_ID</code> /{" "}
                       <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code>.

@@ -22,10 +22,14 @@ const EMPTY_SUMMARY: RevenueSummary = {
 
 /**
  * Sums paid-invoice revenue net of refunds for the current shop,
- * bucketed into this week (7d) / this month (30d) / all time. One
- * SELECT against the local payments table; bucketing happens in JS
- * so we don't pay for three round-trips. The (shop_id, paid_at DESC)
- * index keeps it fast even with thousands of rows.
+ * bucketed into this week (7d) / this month (30d) / all time.
+ *
+ * Primary path: the `revenue_summary` SQL aggregate (added in the
+ * 2026-07-13 master-audit migration) — one round trip, sums happen in
+ * Postgres, row count never leaves the database. Fallback path (pre-
+ * migration DBs, per the codebase's tolerate-absent-migration
+ * convention): the original fetch-all-and-reduce, which the audit
+ * flagged as an unbounded scan — correct, but O(rows) transferred.
  *
  * Refunds are netted off the bucket the original payment lived in
  * (i.e. matched to paid_at, not refund timestamp). A fully-refunded
@@ -36,6 +40,32 @@ const EMPTY_SUMMARY: RevenueSummary = {
 export async function getRevenueSummaryForCurrentShop(): Promise<RevenueSummary> {
   const shop = await requireShop()
   const supabase = await createClient()
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc(
+    "revenue_summary",
+    { p_shop_id: shop.id }
+  )
+  if (!rpcError && Array.isArray(rpcData)) {
+    const summary: RevenueSummary = {
+      week: { cents: 0, count: 0 },
+      month: { cents: 0, count: 0 },
+      all_time: { cents: 0, count: 0 },
+    }
+    for (const row of rpcData as {
+      bucket: string
+      cents: number
+      invoice_count: number
+    }[]) {
+      if (row.bucket in summary) {
+        summary[row.bucket as keyof RevenueSummary] = {
+          cents: Number(row.cents) || 0,
+          count: Number(row.invoice_count) || 0,
+        }
+      }
+    }
+    return summary
+  }
+  // Missing function (pre-migration DB) → legacy fetch-all path below.
 
   const { data, error } = await supabase
     .from("payments")

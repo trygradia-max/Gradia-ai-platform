@@ -17,7 +17,7 @@ import { HeatBadge } from "@/components/gradia/heat-badge"
 import { InteractionTimeline } from "@/components/gradia/interaction-timeline"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import {
   buildHeatContext,
   computeHeatScore,
@@ -206,12 +206,8 @@ function IdentityCard({
     <section className="space-y-4">
       <SectionHeader
         eyebrow="Identity"
-        title={
-          <>
-            How we <span className="italic">reach</span>{" "}them.
-          </>
-        }
-        subtitle="One record. Every channel we've linked to this person."
+        title={<>How we reach them.</>}
+        subhead="One record. Every channel we've linked to this person."
       />
 
       <MotionCard interactive={false} className="overflow-hidden p-5 sm:p-6">
@@ -263,12 +259,8 @@ function PipelineCard({
     <section className="space-y-4">
       <SectionHeader
         eyebrow="Pipeline"
-        title={
-          <>
-            What we&apos;ve <span className="italic">worked</span>.
-          </>
-        }
-        subtitle={
+        title={<>What we&apos;ve worked.</>}
+        subhead={
           totalCount === 0
             ? "Nothing in motion yet."
             : `${leads.length} lead${leads.length === 1 ? "" : "s"}, ${appointments.length} on the books.`
@@ -332,7 +324,7 @@ function PipelineCard({
                     key={a.id}
                     className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3 py-2.5"
                   >
-                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25 dark:text-emerald-400">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
                       <CalendarDays className="size-3.5" aria-hidden />
                     </div>
                     <div className="min-w-0 flex-1">

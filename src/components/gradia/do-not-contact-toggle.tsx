@@ -57,7 +57,7 @@ export function DoNotContactToggle({
       className={cn(
         "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
         on
-          ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          ? "border-status-warning/40 bg-status-warning-bg text-status-warning-fg"
           : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
       )}
     >
@@ -70,7 +70,7 @@ export function DoNotContactToggle({
       <span
         className={cn(
           "ml-0.5 inline-flex h-4 w-7 items-center rounded-full p-0.5 transition-colors",
-          on ? "bg-amber-500/70" : "bg-muted-foreground/30"
+          on ? "bg-status-warning-fg/70" : "bg-muted-foreground/30"
         )}
         aria-hidden
       >

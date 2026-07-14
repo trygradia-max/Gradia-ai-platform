@@ -17,7 +17,7 @@ import {
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 
 /**
  * Claude runs only when the user clicks "Pull out the details"
@@ -104,7 +104,7 @@ export function AiLeadSection() {
             A messy note, a <span className="italic">clean</span>{" "}lead.
           </>
         }
-        subtitle="Paste anything — a text thread, a walk-in scribble, a voicemail transcript. We'll pull the name, phone, vehicle, and what they want."
+        subhead="Paste anything — a text thread, a walk-in scribble, a voicemail transcript. We'll pull the name, phone, vehicle, and what they want."
       />
 
       <MotionCard interactive={false} className="overflow-hidden">

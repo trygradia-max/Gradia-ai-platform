@@ -80,7 +80,7 @@ export function AgentModeControl({
             title={blocked ? (disabledReason ?? "Finish setup first") : undefined}
             onClick={() => choose(m)}
             className={cn(
-              "inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+              "inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               active
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground",

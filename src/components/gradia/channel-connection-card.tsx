@@ -20,7 +20,7 @@ import {
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
 import { PulseDot } from "@/components/gradia/motion/pulse-dot"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import type { ChannelId, ChannelSummary } from "@/lib/data/channels"
 import { cn } from "@/lib/utils"
@@ -79,7 +79,7 @@ export function ChannelConnectionCard({
             </>
           )
         }
-        subtitle={
+        subhead={
           allLive
             ? `All ${total} lines covered — voice, email, SMS, social, payments.`
             : firstActionable
@@ -119,21 +119,21 @@ function ChannelRow({ channel }: { channel: ChannelSummary }) {
         // Subtle accent rail on rows that need attention — operator's eye
         // lands on what to fix before what's already humming.
         needsAttention &&
-          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-gradient-to-b before:from-amber-400/60 before:via-amber-400/20 before:to-transparent before:content-['']"
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-gradient-to-b before:from-status-warning-fg/60 before:via-status-warning-fg/20 before:to-transparent before:content-['']"
       )}
     >
       <Link
         href={channel.href}
         aria-label={`${channel.label} — ${statusLabel}`}
-        className="flex h-full items-start gap-3 px-4 py-3.5 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="flex h-full items-start gap-3 px-4 py-3.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         <div
           className={cn(
             "flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors",
             isLive
-              ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400"
+              ? "bg-status-success-bg text-status-success-fg ring-status-success/25"
               : needsAttention
-                ? "bg-amber-500/10 text-amber-600 ring-amber-500/25 dark:text-amber-400"
+                ? "bg-status-warning-bg text-status-warning-fg ring-status-warning/25"
                 : "bg-background/60 text-muted-foreground ring-border/60"
           )}
         >

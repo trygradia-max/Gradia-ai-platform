@@ -30,10 +30,12 @@ import {
   verifyAurinkoSignature,
   type AurinkoMessage,
 } from "@/lib/aurinko"
+import { recordUsage } from "@/lib/credits"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
 import { draftEmailReply } from "@/lib/email-drafter"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import {
   formatKnowledgeForPrompt,
   searchShopKnowledge,
@@ -183,9 +185,10 @@ async function handleMessage(
 
   if (!senderEmail) return false
 
-  // Inbound classification is UNMETERED (a Haiku call per email) — its only
-  // cost ceiling. Over the daily per-shop limit (inbox flood), the message is
-  // captured above; skip the LLM classify + the lead proposal it would drive.
+  // Inbound classification: rate-limited (inbox-flood ceiling) AND metered
+  // as `inbound_classify` — wholesale cost in the ledger, retail 0 /
+  // credits 0 (shops aren't charged for receiving mail; 2026-07-13 audit
+  // fixed this being invisible to the margin report).
   const classifyGate = await checkRateLimit(shop.id, "inbound_classify")
   if (!classifyGate.allowed) {
     console.warn(
@@ -207,6 +210,19 @@ async function handleMessage(
       "[aurinko webhook] classification failed, treating as inquiry:",
       err
     )
+  }
+
+  // Meter the LLM work regardless of outcome — the cost was incurred.
+  {
+    const pricing = await getPricing(supabase)
+    const priced = priceUsage(pricing, "inbound_classify", 1)
+    await recordUsage(supabase, shop.id, "inbound_classify", {
+      quantity: 1,
+      credits: 0, // cost-visibility SKU — never spends shop credits
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+      vendorRef: message.id ?? null,
+    })
   }
 
   if (classification && !classification.is_lead) return false

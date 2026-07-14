@@ -192,7 +192,7 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
       </div>
 
       {cards.length === 0 ? (
-        <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center">
+        <div className="rounded-md border border-border/60 bg-card px-6 py-16 text-center">
           <p className="font-display text-xl text-foreground">
             The board fills <span className="italic">itself</span>.
           </p>
@@ -227,7 +227,7 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
                   setDragId(null)
                 }}
                 className={cn(
-                  "flex min-h-64 flex-col rounded-xl border bg-card/40 transition-colors",
+                  "flex min-h-64 flex-col rounded-md border bg-card/40 transition-colors",
                   dropStage === s.key ? "border-primary/50 bg-primary/5" : "border-border/50"
                 )}
               >
@@ -420,7 +420,7 @@ function PipelineTable({
   onOpen: (id: string) => void
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/60">
+    <div className="overflow-x-auto rounded-md border border-border/60">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
@@ -626,7 +626,7 @@ function LeadSlideOver({
               ) : null}
 
               {detail.quote ? (
-                <div className="flex items-center justify-between rounded-xl border border-border/60 px-4 py-3">
+                <div className="flex items-center justify-between rounded-md border border-border/60 px-4 py-3">
                   <div>
                     <p className="text-xs text-muted-foreground">Quote · {detail.quote.status}</p>
                     <p className="font-data text-lg text-foreground">

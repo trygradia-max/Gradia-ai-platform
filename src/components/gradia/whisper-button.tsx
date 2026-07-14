@@ -1,14 +1,14 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import { motion, useReducedMotion } from "framer-motion"
 import { Loader2, Mic, Square } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
 import { PulseDot } from "@/components/gradia/motion/pulse-dot"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { useWhisperRecorder } from "@/lib/use-whisper-recorder"
 import { cn } from "@/lib/utils"
 
@@ -40,12 +40,8 @@ export function WhisperButton() {
     <section className="space-y-5">
       <SectionHeader
         eyebrow="Voice"
-        title={
-          <>
-            <span className="italic">Say</span>{" "}the work.
-          </>
-        }
-        subtitle="Tap once, talk like you would to a partner. We'll write it up and drop it in Approvals before anything goes out."
+        title={<>Say the work.</>}
+        subhead="Tap once, talk like you would to a partner. We'll write it up and drop it in Approvals before anything goes out."
       />
 
       <MotionCard
@@ -56,42 +52,10 @@ export function WhisperButton() {
           isActive && "border-primary/40"
         )}
       >
-        <AnimatePresence>
-          {state === "recording" && !reduce ? (
-            <motion.div
-              key="halo"
-              aria-hidden
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pointer-events-none absolute inset-0"
-            >
-              <motion.div
-                className="absolute -left-24 -top-24 size-64 rounded-full bg-primary/15 blur-3xl"
-                animate={{ scale: [1, 1.15, 1], opacity: [0.45, 0.7, 0.45] }}
-                transition={{
-                  duration: 3.6,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-              />
-              <motion.div
-                className="absolute -bottom-24 -right-16 size-72 rounded-full bg-primary/10 blur-3xl"
-                animate={{
-                  scale: [1.05, 0.95, 1.05],
-                  opacity: [0.35, 0.55, 0.35],
-                }}
-                transition={{
-                  duration: 4.4,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: 0.4,
-                }}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
+        {/* Cinematic halo layer removed 2026-07-13 — BUILD_REFERENCE §1:
+            the cinematic layer is public-pages-only; dashboard surfaces
+            stay calm. Recording state reads through the border accent,
+            the eyebrow copy, the pulse dot, and the mic-tile pulse. */}
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
             <motion.div
@@ -137,10 +101,7 @@ export function WhisperButton() {
                 ) : state === "processing" ? (
                   <>Pulling out the details…</>
                 ) : (
-                  <>
-                    Tell us what just{" "}
-                    <span className="italic">happened</span>.
-                  </>
+                  <>Tell us what just happened.</>
                 )}
               </p>
               <p className="max-w-prose text-sm text-muted-foreground">
@@ -157,7 +118,7 @@ export function WhisperButton() {
                 type="button"
                 onClick={startRecording}
                 size="lg"
-                className="h-12 gap-2 px-5 transition-transform duration-200 active:scale-[0.98]"
+                className="h-12 gap-2 px-5 transition-transform duration-(--duration-fast) active:scale-[0.98]"
               >
                 <Mic className="size-4" aria-hidden />
                 Tap to talk
@@ -178,7 +139,7 @@ export function WhisperButton() {
                 onClick={stopRecording}
                 variant="destructive"
                 size="lg"
-                className="h-12 gap-2 px-5 transition-transform duration-200 active:scale-[0.98]"
+                className="h-12 gap-2 px-5 transition-transform duration-(--duration-fast) active:scale-[0.98]"
               >
                 <Square className="size-4 fill-current" aria-hidden />
                 Stop &amp; send

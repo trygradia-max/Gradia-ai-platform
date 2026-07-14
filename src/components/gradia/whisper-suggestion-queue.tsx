@@ -60,7 +60,7 @@ export function WhisperSuggestionQueue({ initial }: { initial: WhisperSuggestion
         {items.slice(0, 3).map((s) => (
           <div
             key={s.pendingId}
-            className="flex flex-col rounded-2xl border border-border/60 bg-card p-4"
+            className="flex flex-col rounded-md border border-border/60 bg-card p-4"
           >
             <p className="text-sm font-medium text-foreground">
               {s.customerName ?? "A customer"}

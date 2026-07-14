@@ -22,7 +22,7 @@ import {
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import type { CoOwnerSuggestion } from "@/lib/data/co-owner"
 import { cn } from "@/lib/utils"
 
@@ -61,7 +61,7 @@ export function CoOwnerCard({
             What <span className="italic">I&apos;d</span>{" "}tackle next.
           </>
         }
-        subtitle={
+        subhead={
           suggestions.length === 0
             ? "Quiet right now — we're caught up on follow-ups."
             : "Real nudges from what I'm seeing. One tap and a draft is waiting for you."
@@ -135,8 +135,8 @@ const TONE_BY_KIND: Record<
   unconfirmed_appointment: {
     icon: CalendarClock,
     ringClass:
-      "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
-    iconClass: "text-amber-500 dark:text-amber-400",
+      "before:bg-gradient-to-b before:from-status-warning-fg/40 before:via-status-warning-fg/15 before:to-transparent",
+    iconClass: "text-status-warning-fg",
   },
 }
 

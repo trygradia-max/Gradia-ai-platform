@@ -94,7 +94,7 @@ export function SmsQuickReply({
             className={cn(
               "text-xs tabular-nums",
               lowOnRoom
-                ? "text-amber-600 dark:text-amber-400"
+                ? "text-status-warning-fg"
                 : "text-muted-foreground"
             )}
           >

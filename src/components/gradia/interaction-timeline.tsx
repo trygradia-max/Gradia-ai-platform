@@ -15,7 +15,7 @@ import {
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import type {
   InteractionChannel,
@@ -30,17 +30,17 @@ const CHANNEL_META: Record<
   voice: {
     icon: Phone,
     label: "Call",
-    tile: "bg-emerald-500/12 text-emerald-500 ring-emerald-500/25 dark:text-emerald-400",
+    tile: "bg-status-success-bg text-status-success-fg ring-status-success/25",
   },
   sms: {
     icon: MessageSquare,
     label: "SMS",
-    tile: "bg-amber-500/12 text-amber-500 ring-amber-500/25 dark:text-amber-400",
+    tile: "bg-status-warning-bg text-status-warning-fg ring-status-warning/25",
   },
   email: {
     icon: Mail,
     label: "Email",
-    tile: "bg-sky-500/12 text-sky-500 ring-sky-500/25 dark:text-sky-400",
+    tile: "bg-status-info-bg text-status-info-fg ring-status-info/25",
   },
   web: {
     icon: Sparkles,
@@ -140,7 +140,7 @@ export function InteractionTimeline({
             Every <span className="italic">touchpoint</span>.
           </>
         }
-        subtitle="The last 50 across every channel — newest first."
+        subhead="The last 50 across every channel — newest first."
       />
 
       {interactions.length === 0 ? (

@@ -101,8 +101,18 @@ export function CustomerMergeDialog({
       return
     }
 
-    const moved = `${result.moved.interactions} touchpoint${result.moved.interactions === 1 ? "" : "s"}, ${result.moved.leads} lead${result.moved.leads === 1 ? "" : "s"}, ${result.moved.appointments} booking${result.moved.appointments === 1 ? "" : "s"}`
-    toast.success(`Merged. Moved ${moved}.`)
+    const parts = [
+      `${result.moved.interactions} touchpoint${result.moved.interactions === 1 ? "" : "s"}`,
+      `${result.moved.leads} lead${result.moved.leads === 1 ? "" : "s"}`,
+      `${result.moved.appointments} booking${result.moved.appointments === 1 ? "" : "s"}`,
+    ]
+    if (result.moved.vehicles > 0) {
+      parts.push(`${result.moved.vehicles} vehicle${result.moved.vehicles === 1 ? "" : "s"}`)
+    }
+    if (result.moved.quotes > 0) {
+      parts.push(`${result.moved.quotes} quote${result.moved.quotes === 1 ? "" : "s"}`)
+    }
+    toast.success(`Merged. Moved ${parts.join(", ")}.`)
     if (result.identifierConflicts.length > 0) {
       toast.message(
         `Kept our existing ${result.identifierConflicts.join(", ")} — another customer already had the duplicate's value.`

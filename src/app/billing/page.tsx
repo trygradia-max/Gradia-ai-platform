@@ -17,6 +17,21 @@ export default async function BillingPage() {
 
   return (
     <div className="mx-auto flex min-h-svh max-w-xl flex-col justify-center gap-6 p-6">
+      {/* Always-visible way back — this page sits outside the dashboard
+          shell, and pre-subscription visitors previously had no in-app
+          exit (2026-07-13 master audit P1). If onboarding isn't finished,
+          the dashboard gate resumes the wizard automatically. */}
+      <div className="flex items-center justify-between">
+        <span className="font-display text-sm tracking-tight text-muted-foreground">
+          Gradia
+        </span>
+        <Link
+          href="/dashboard"
+          className={buttonVariants({ variant: "ghost", size: "sm" })}
+        >
+          Back to dashboard
+        </Link>
+      </div>
       <Card className="border-border/70">
         <CardHeader className="space-y-1">
           <CardTitle className="font-display text-2xl tracking-tight">
@@ -43,12 +58,6 @@ export default async function BillingPage() {
               <UsageMeters usage={usage} />
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 pt-4">
                 <VoiceAddonToggle active={usage.voiceAddon} />
-                <Link
-                  href="/dashboard"
-                  className={buttonVariants({ variant: "ghost" })}
-                >
-                  Back to dashboard
-                </Link>
               </div>
             </>
           ) : (

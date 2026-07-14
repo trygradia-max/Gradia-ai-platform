@@ -29,7 +29,7 @@ export function CustomerSummaryCard({ customerId }: { customerId: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card p-4">
+    <div className="rounded-md border border-border/60 bg-card p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="label-eyebrow text-muted-foreground/70">The short version</p>
         <Button

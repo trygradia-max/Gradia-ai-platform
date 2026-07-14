@@ -6,7 +6,7 @@ import { motion, useReducedMotion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
 const TONE_CLASS = {
-  good: "bg-emerald-400",
+  good: "bg-status-success-fg",
   accent: "bg-primary",
   muted: "bg-muted-foreground",
 } as const

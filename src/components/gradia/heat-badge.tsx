@@ -9,8 +9,8 @@ const LABEL_TEXT: Record<HeatLabel, string> = {
 }
 
 const LABEL_CLASS: Record<HeatLabel, string> = {
-  hot: "bg-red-500/10 text-red-700 dark:text-red-400",
-  warm: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  hot: "bg-status-danger-bg text-status-danger-fg",
+  warm: "bg-status-warning-bg text-status-warning-fg",
   cold: "bg-muted text-muted-foreground",
 }
 

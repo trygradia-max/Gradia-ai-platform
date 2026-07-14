@@ -160,7 +160,7 @@ export function CustomAgentCard({
         "relative flex h-full flex-col overflow-hidden p-5 sm:p-6",
         // Status-coded accent rail on the left edge.
         isLive &&
-          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+          "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-status-success-fg/40 before:via-status-success-fg/15 before:to-transparent",
         !isLive &&
           enabled &&
           runnable === false &&
@@ -174,7 +174,7 @@ export function CustomAgentCard({
           className={cn(
             "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1",
             isLive
-              ? "bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400"
+              ? "bg-status-success-bg text-status-success-fg ring-status-success/25"
               : "bg-primary/12 text-primary ring-primary/25"
           )}
         >
@@ -339,11 +339,11 @@ function ConfigRow({
 
 function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
   return (
-    <div className="rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
+    <div className="rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
       <div className="flex items-start gap-2.5">
         {run.fired ? (
           <CheckCircle2
-            className="mt-0.5 size-4 shrink-0 text-emerald-500 dark:text-emerald-400"
+            className="mt-0.5 size-4 shrink-0 text-status-success-fg"
             aria-hidden
           />
         ) : (

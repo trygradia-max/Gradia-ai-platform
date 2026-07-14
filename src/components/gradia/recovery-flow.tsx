@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import type { ReviewCandidate } from "@/lib/recovery/review"
 import {
   autoMapColumns,
@@ -358,7 +358,7 @@ function MappingStep({
             Tell us what&apos;s <span className="italic">what</span>.
           </>
         }
-        subtitle="We matched each column by its header and its contents. Fix anything we got wrong — columns marked “Keep as note” land on the customer's file so nothing is lost."
+        subhead="We matched each column by its header and its contents. Fix anything we got wrong — columns marked “Keep as note” land on the customer's file so nothing is lost."
       />
       <MotionCard interactive={false} className="divide-y divide-border/60 p-0">
         {mapping.columns.map((col) => (
@@ -439,7 +439,7 @@ function UploadStep({
             Bring your customers <span className="italic">in</span>.
           </>
         }
-        subtitle="Upload a CSV from your CRM (or a contacts / email export) — we'll pull out names, phones, and vehicles into your Gradia CRM. You approve before anything's added, and we can draft win-backs for anyone who's gone quiet."
+        subhead="Upload a CSV from your CRM (or a contacts / email export) — we'll pull out names, phones, and vehicles into your Gradia CRM. You approve before anything's added, and we can draft win-backs for anyone who's gone quiet."
       />
 
       <div className="flex flex-wrap gap-2">
@@ -452,7 +452,7 @@ function UploadStep({
               onFile(null)
             }}
             className={cn(
-              "rounded-full border px-3.5 py-1.5 text-sm transition-colors",
+              "rounded-full border px-3.5 py-1.5 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               source === s.id
                 ? "border-primary/40 bg-primary/10 text-foreground"
                 : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
@@ -479,7 +479,7 @@ function UploadStep({
             if (f) onFile(f)
           }}
           className={cn(
-            "flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-6 py-12 text-center transition-colors",
+            "flex w-full flex-col items-center gap-2 rounded-md border-2 border-dashed px-6 py-12 text-center transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             dragging ? "border-primary/50 bg-primary/5" : "border-border/60"
           )}
         >
@@ -721,7 +721,7 @@ function CandidateRow({
       type="button"
       onClick={onToggle}
       className={cn(
-        "flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+        "flex items-center gap-3 rounded-md border px-4 py-3 text-left transition-colors",
         checked ? "border-primary/40 bg-primary/5" : "border-border/60 hover:border-border"
       )}
     >

@@ -233,7 +233,7 @@ function StepDot({
       layout={!reduce}
       transition={reduce ? { duration: 0 } : DOT_SPRING}
       className={cn(
-        "relative flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors duration-200",
+        "relative flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors duration-(--duration-fast)",
         isComplete
           ? "bg-primary text-primary-foreground"
           : isActive
@@ -396,7 +396,7 @@ function ShopStep({
       <Button
         type="submit"
         disabled={pending}
-        className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+        className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
       >
         {pending ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -461,7 +461,7 @@ function ServicesStep({
           type="button"
           variant="outline"
           onClick={() => setShowForm(true)}
-          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+          className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
         >
           <Plus className="size-4" aria-hidden />
           Add another service
@@ -489,7 +489,7 @@ function ServicesStep({
         <Button
           type="button"
           onClick={onContinue}
-          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.99]"
+          className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
         >
           Continue
           <ArrowRight className="size-4" aria-hidden />
@@ -670,7 +670,7 @@ function AddServiceForm({
         <Button
           type="submit"
           disabled={pending}
-          className="h-10 gap-2 transition-transform duration-200 active:scale-[0.99]"
+          className="h-10 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
         >
           {pending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />

@@ -219,8 +219,8 @@ export function SmsSettingsCard({
               transition={{ duration: 0.15, ease: "easeOut" }}
               className="space-y-4"
             >
-              <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25 dark:text-emerald-400">
+              <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
                   <Phone className="size-4" aria-hidden />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -306,7 +306,7 @@ export function SmsSettingsCard({
                 )}
               </div>
               {!twilioConfigured ? (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
+                <p className="text-xs text-status-warning-fg">
                   We&apos;re finishing texting setup on our side — check back soon.
                 </p>
               ) : null}
@@ -316,7 +316,7 @@ export function SmsSettingsCard({
 
         {/* Advanced: BYO Twilio account + manual number paste */}
         <details
-          className="rounded-xl border border-border/40 bg-card/30 px-3.5"
+          className="rounded-md border border-border/40 bg-card/30 px-3.5"
           open={showAdvanced}
           onToggle={(e) =>
             setShowAdvanced((e.target as HTMLDetailsElement).open)

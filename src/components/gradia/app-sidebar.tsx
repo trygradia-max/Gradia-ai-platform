@@ -40,10 +40,11 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// The final IA (redesign spec §8-A4) — exactly these six, in this order,
+// The final IA (redesign spec §8-A4) — exactly these seven, in this order,
 // plus the two pinned at the bottom. Old routes (/agents, /agent, /chat,
-// /leads, /recovery) live on as redirects, never as nav items. The ⌘K /
-// Whisper command bar stays the primary composer — a verb, not a place.
+// /leads, /recovery, /schedule) live on as redirects, never as nav items.
+// The ⌘K / Whisper command bar stays the primary composer — a verb, not a
+// place.
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/approvals", label: "Approvals", icon: Inbox },
@@ -63,7 +64,9 @@ const pinnedNav: NavItem[] = [
 const ACTIVE_BG_LAYOUT_ID = "sidebar-nav-active-bg"
 const ACTIVE_RAIL_LAYOUT_ID = "sidebar-nav-active-rail"
 
-const ACTIVE_SPRING = { type: "spring" as const, stiffness: 380, damping: 32 }
+// Functional feedback stays within the 100–150ms cap (BUILD_REFERENCE §1);
+// the previous spring morph read as cinematic on dashboard chrome.
+const ACTIVE_TWEEN = { duration: 0.15, ease: "easeOut" as const }
 
 export function AppSidebar({
   shops = [],
@@ -83,13 +86,10 @@ export function AppSidebar({
       className="border-r border-sidebar-border/80 transition-[width] duration-200 ease-out"
     >
       <SidebarHeader className="space-y-3 border-b border-sidebar-border/60 p-4">
-        <motion.div
-          initial={reduce ? false : { opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.15, ease: "easeOut" }}
-          className="flex items-center gap-2.5"
-        >
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25 transition-colors duration-200">
+        {/* Entrance animation removed 2026-07-13 — dashboard chrome renders
+            in place (BUILD_REFERENCE §1: dashboards stay calm). */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25 transition-colors duration-(--duration-fast)">
             <Sparkles className="size-4" aria-hidden />
           </div>
           <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
@@ -100,7 +100,7 @@ export function AppSidebar({
               Your AI office
             </span>
           </div>
-        </motion.div>
+        </div>
         {shops.length > 1 && activeShopId ? (
           <ShopSwitcher shops={shops} activeShopId={activeShopId} />
         ) : null}
@@ -108,12 +108,12 @@ export function AppSidebar({
 
       <SidebarContent className="px-2 py-4">
         <SidebarGroup>
-          <SidebarGroupLabel className="label-eyebrow !text-muted-foreground/70 group-data-[collapsible=icon]:opacity-0 transition-opacity duration-200">
+          <SidebarGroupLabel className="label-eyebrow !text-muted-foreground/70 group-data-[collapsible=icon]:opacity-0 transition-opacity duration-(--duration-fast)">
             Workspace
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {nav.map((item, index) => {
+              {nav.map((item) => {
                 const isActive =
                   item.href === "/dashboard"
                     ? pathname === "/dashboard"
@@ -124,7 +124,6 @@ export function AppSidebar({
                     key={item.href}
                     item={item}
                     isActive={isActive}
-                    index={index}
                     reduce={reduce ?? false}
                     badge={item.href === "/approvals" ? approvalsCount : 0}
                   />
@@ -138,12 +137,11 @@ export function AppSidebar({
       {/* Pinned bottom (spec §8-A4): Numbers & Billing · Settings. */}
       <SidebarFooter className="border-t border-sidebar-border/60 px-2 py-3">
         <SidebarMenu>
-          {pinnedNav.map((item, index) => (
+          {pinnedNav.map((item) => (
             <NavRow
               key={item.href}
               item={item}
               isActive={pathname.startsWith(item.href)}
-              index={nav.length + index}
               reduce={reduce ?? false}
             />
           ))}
@@ -157,29 +155,21 @@ export function AppSidebar({
 function NavRow({
   item,
   isActive,
-  index,
   reduce,
   badge = 0,
 }: {
   item: NavItem
   isActive: boolean
-  index: number
   reduce: boolean
   badge?: number
 }) {
   const Icon = item.icon
   return (
     <SidebarMenuItem>
-      <motion.div
-        initial={reduce ? false : { opacity: 0, x: -8 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{
-          duration: 0.15,
-          ease: "easeOut",
-          delay: reduce ? 0 : index * 0.02,
-        }}
-        className="relative"
-      >
+      {/* Per-item entrance stagger removed 2026-07-13 — nav chrome renders
+          in place (BUILD_REFERENCE §1). The layoutId rail morph below stays:
+          it's functional current-page feedback, now on a ≤150ms tween. */}
+      <div className="relative">
         {/* Active rail — slides between items via layoutId. The thin
          *  accent edge is what reads as the "current page" indicator.
          *  We render this only on the active row; Framer Motion uses
@@ -187,7 +177,7 @@ function NavRow({
         {isActive ? (
           <motion.span
             layoutId={ACTIVE_RAIL_LAYOUT_ID}
-            transition={reduce ? { duration: 0 } : ACTIVE_SPRING}
+            transition={reduce ? { duration: 0 } : ACTIVE_TWEEN}
             className="pointer-events-none absolute left-0 top-1/2 z-20 h-5 w-[2px] -translate-y-1/2 rounded-full bg-primary shadow-[0_0_8px_0_var(--color-primary)]"
             aria-hidden
           />
@@ -199,7 +189,7 @@ function NavRow({
         {isActive ? (
           <motion.span
             layoutId={ACTIVE_BG_LAYOUT_ID}
-            transition={reduce ? { duration: 0 } : ACTIVE_SPRING}
+            transition={reduce ? { duration: 0 } : ACTIVE_TWEEN}
             className="pointer-events-none absolute inset-0 rounded-md bg-sidebar-accent/90"
             aria-hidden
           />
@@ -212,7 +202,7 @@ function NavRow({
             // Suppress the built-in flat active background — our
             // motion.span above already provides it (and animates).
             "relative bg-transparent! data-active:bg-transparent!",
-            "transition-colors duration-200",
+            "transition-colors duration-(--duration-fast)",
             isActive
               ? "text-sidebar-accent-foreground"
               : "text-sidebar-foreground/80 hover:text-sidebar-accent-foreground"
@@ -221,7 +211,7 @@ function NavRow({
         >
           <Icon
             className={cn(
-              "transition-colors duration-200",
+              "transition-colors duration-(--duration-fast)",
               isActive
                 ? "text-primary"
                 : "text-sidebar-foreground/70 group-hover/menu-item:text-sidebar-accent-foreground"
@@ -238,7 +228,7 @@ function NavRow({
             </span>
           ) : null}
         </SidebarMenuButton>
-      </motion.div>
+      </div>
     </SidebarMenuItem>
   )
 }

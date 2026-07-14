@@ -94,7 +94,9 @@ export async function loadTodayMoney(): Promise<TodayMoneyData> {
         .from("quotes")
         .select("total_cents, status")
         .eq("shop_id", shop.id)
-        .in("status", ["sent", "viewed"]),
+        .in("status", ["sent", "viewed"])
+        .order("created_at", { ascending: false })
+        .limit(500),
       supabase
         .from("leads")
         .select("lost_reason")

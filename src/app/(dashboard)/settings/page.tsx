@@ -229,11 +229,8 @@ export default async function SettingsPage({
       <SectionHeader
         className="pt-2 pb-6"
         eyebrow="Connections"
-        title={
-          <>
-            The <em className="italic">wiring</em>{" "}behind the scenes.
-          </>
-        }
+        level={1}
+        title={<>The wiring behind the scenes.</>}
         subhead="The channels and tools we run on. Connect once — we handle the rest."
       />
 

@@ -15,7 +15,7 @@ function Bar({ used, total, warn }: { used: number; total: number; warn: boolean
       <div
         className={cn(
           "h-full rounded-full transition-all",
-          warn ? "bg-amber-500" : "bg-primary"
+          warn ? "bg-status-warning-fg" : "bg-primary"
         )}
         style={{ width: `${pct}%` }}
       />
@@ -65,7 +65,7 @@ export function UsageMeters({ usage }: { usage: UsageState }) {
           warn={usage.credits.warn}
         />
         {usage.credits.warn ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-status-warning/25 bg-status-warning-bg px-3 py-2">
             <p className="text-xs text-foreground">
               {usage.credits.over
                 ? "Out of credits — sending is paused until you top up or the month resets."
@@ -109,7 +109,7 @@ export function UsageMeters({ usage }: { usage: UsageState }) {
             warn={usage.minutes.warn}
           />
           {usage.minutes.warn ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-status-warning/25 bg-status-warning-bg px-3 py-2">
               <p className="text-xs text-foreground">
                 {usage.minutes.over
                   ? "Out of minutes — the receptionist takes messages until you top up or the month resets."

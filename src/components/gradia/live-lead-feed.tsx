@@ -6,7 +6,7 @@ import { motion, useReducedMotion, type Variants } from "framer-motion"
 
 import { HeatBadge } from "@/components/gradia/heat-badge"
 import { MotionCard } from "@/components/gradia/motion/motion-card"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import {
   Table,
@@ -74,7 +74,7 @@ export function LiveLeadFeed({
             <span className="italic">Everyone</span>{" "}who&apos;s reached out.
           </>
         }
-        subtitle="Newest first — voice, email, SMS, DMs, the front desk. We catch them, you decide."
+        subhead="Newest first — voice, email, SMS, DMs, the front desk. We catch them, you decide."
       />
 
       <MotionCard interactive={false} className="overflow-hidden p-0">
