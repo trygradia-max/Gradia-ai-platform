@@ -70,6 +70,16 @@ const STAGE_DOT: Record<CrmStage, string> = {
   lost: "bg-status-danger-fg",
 }
 
+/** Written empty states per column — first-use teaches, never blank. */
+const STAGE_EMPTY_COPY: Record<CrmStage, string> = {
+  new: "New calls and texts land here on their own.",
+  needs_quote: "Drag a card here when they want a price.",
+  quote_sent: "Cards arrive here when a quote goes out.",
+  follow_up: "Quiet quotes surface here after two days.",
+  booked: "Approved bookings land here.",
+  lost: "Drag here to close one out — we'll ask why.",
+}
+
 const LOST_REASON_LABELS: Record<LostReason, string> = {
   price: "Price",
   timing: "Timing",
@@ -232,18 +242,27 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
                 )}
               >
                 <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                    <span className={cn("size-1.5 rounded-full", STAGE_DOT[s.key])} aria-hidden />
-                    {s.label}
+                  <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
+                    <span className={cn("size-1.5 shrink-0 rounded-full", STAGE_DOT[s.key])} aria-hidden />
+                    <span className="truncate">{s.label}</span>
+                    {totals[s.key].count > 0 ? (
+                      <span className="font-data rounded-full bg-muted/60 px-1.5 py-px text-[10px] text-muted-foreground">
+                        {totals[s.key].count}
+                      </span>
+                    ) : null}
                   </span>
-                  <span className="font-data text-xs text-muted-foreground">
-                    {totals[s.key].count}
-                    {totals[s.key].valueCents > 0
-                      ? ` · ${formatPriceUsd(totals[s.key].valueCents)}`
-                      : ""}
-                  </span>
+                  {totals[s.key].valueCents > 0 ? (
+                    <span className="font-data shrink-0 text-xs font-medium text-foreground">
+                      {formatPriceUsd(totals[s.key].valueCents)}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
+                  {byStage(s.key).length === 0 ? (
+                    <p className="px-2 pt-3 text-center text-[11px] leading-relaxed text-muted-foreground/70">
+                      {STAGE_EMPTY_COPY[s.key]}
+                    </p>
+                  ) : null}
                   {byStage(s.key).map((c) => (
                     <CardFace
                       key={c.id}
@@ -366,8 +385,14 @@ function CardFace({
         }
       }}
       className={cn(
-        "cursor-pointer rounded-lg border border-border/60 bg-card px-3 py-2.5 text-left transition-colors hover:border-border",
-        draggable && "active:cursor-grabbing"
+        "rounded-lg border bg-card px-3 py-2.5 text-left transition-colors",
+        // Stage-age urgency on the whole card, not just a dot (C2 fix-pass):
+        tone === "red"
+          ? "border-status-danger-fg/60 hover:border-status-danger-fg"
+          : tone === "amber"
+            ? "border-status-warning-fg/60 hover:border-status-warning-fg"
+            : "border-border/60 hover:border-border",
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -390,13 +415,18 @@ function CardFace({
         </span>
       </div>
       {card.vehicle ? (
-        <p className="truncate text-xs text-muted-foreground">{card.vehicle}</p>
+        <p className="truncate text-xs text-muted-foreground" title={card.vehicle}>
+          {card.vehicle}
+        </p>
       ) : null}
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           {renderSourceIcon(card.source)}
           {card.interest ? (
-            <span className="truncate rounded-full border border-border/50 px-1.5 py-px text-[11px] text-muted-foreground">
+            <span
+              className="truncate rounded-full border border-border/50 px-1.5 py-px text-[11px] text-muted-foreground"
+              title={card.interest}
+            >
               {card.interest.length > 26 ? `${card.interest.slice(0, 26)}…` : card.interest}
             </span>
           ) : null}
@@ -547,7 +577,14 @@ function NewLeadDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="lead-phone">Phone</Label>
-            <Input id="lead-phone" name="lead-phone" inputMode="tel" required />
+            <Input
+              id="lead-phone"
+              name="lead-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              required
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="lead-interest">Interested in (optional)</Label>
