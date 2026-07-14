@@ -141,22 +141,56 @@ export function pickFollowUpsDue(
   return out
 }
 
-/** Engaged-then-silent leads (21d+), mirroring automation #4's definition. */
+/** Stale NEW leads with contact info surface after this many days even
+ *  without conversation history (fix-pass 2026-07-13: 30-day-old untouched
+ *  NEW cards produced zero suggestions and an empty Today). A lead is
+ *  someone who reached out — following up is not cold outreach. */
+export const STALE_NEW_LEAD_DAYS = 14
+
+/**
+ * Revival candidates, two grounded stories:
+ *  1. Engaged-then-silent (21d+) — mirrors automation #4's definition.
+ *  2. A stage-new card older than 14 days with a phone and no activity —
+ *     the untouched-lead leak the founder hit in production.
+ */
 export function pickRevivalLeads(
   leads: LeadForSuggestion[],
   now: Date
 ): SuggestionCandidate[] {
   const nowMs = now.getTime()
   const cutoff = nowMs - REVIVAL_SILENT_DAYS * DAY_MS
+  const staleNewCutoff = nowMs - STALE_NEW_LEAD_DAYS * DAY_MS
   const out: SuggestionCandidate[] = []
   for (const l of leads) {
     if (l.stage === "booked" || l.stage === "lost") continue
     if (!l.phone?.trim()) continue
-    if (!l.last_inbound_at) continue // never engaged → not a revival story
-    const lastActivity = l.last_activity_at ?? l.last_inbound_at
-    if (Date.parse(lastActivity) > cutoff) continue
-    if (Date.parse(l.created_at) > cutoff) continue
-    const silent = daysAgo(lastActivity, nowMs)
+
+    if (l.last_inbound_at) {
+      // Story 1: they talked to us once, then everything went quiet.
+      const lastActivity = l.last_activity_at ?? l.last_inbound_at
+      if (Date.parse(lastActivity) > cutoff) continue
+      if (Date.parse(l.created_at) > cutoff) continue
+      const silent = daysAgo(lastActivity, nowMs)
+      out.push({
+        kind: "lead_revival",
+        ref: `revival:${l.id}`,
+        customerId: l.customer_id,
+        leadId: l.id,
+        phone: l.phone,
+        customerName: l.customer_name,
+        why: `They reached out to us before, but it's been ${silent} days with no activity either way.`,
+        draftIntent:
+          "a warm re-introduction asking if they're still interested, with an easy opening to book",
+      })
+      continue
+    }
+
+    // Story 2: a NEW card nobody ever followed up on.
+    const isNew = (l.stage ?? "new") === "new"
+    if (!isNew) continue
+    if (Date.parse(l.created_at) > staleNewCutoff) continue
+    if (l.last_activity_at && Date.parse(l.last_activity_at) > staleNewCutoff) continue
+    const age = daysAgo(l.created_at, nowMs)
     out.push({
       kind: "lead_revival",
       ref: `revival:${l.id}`,
@@ -164,9 +198,9 @@ export function pickRevivalLeads(
       leadId: l.id,
       phone: l.phone,
       customerName: l.customer_name,
-      why: `They reached out to us before, but it's been ${silent} days with no activity either way.`,
+      why: `They came in as a lead ${age} days ago and there's been no follow-up on file since.`,
       draftIntent:
-        "a warm re-introduction asking if they're still interested, with an easy opening to book",
+        "a warm first follow-up apologizing lightly for the wait and asking if they're still interested",
     })
   }
   return out
