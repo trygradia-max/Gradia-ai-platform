@@ -244,7 +244,7 @@ export function QuoteBuilder({
       <section className="space-y-2">
         <p className="label-eyebrow text-muted-foreground/70">Services</p>
         {activeServices.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-md border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
             Your menu is empty — set up services in Settings first.
           </p>
         ) : (
@@ -256,7 +256,7 @@ export function QuoteBuilder({
                 <div
                   key={s.id}
                   className={cn(
-                    "rounded-xl border px-4 py-3 transition-colors",
+                    "rounded-md border px-4 py-3 transition-colors",
                     sel ? "border-primary/40 bg-primary/5" : "border-border/60"
                   )}
                 >
@@ -356,7 +356,7 @@ export function QuoteBuilder({
         </div>
       </section>
 
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border/60 bg-card px-5 py-4">
         <div>
           <p className="text-xs text-muted-foreground">Total</p>
           <p className="font-data text-2xl font-semibold text-foreground">

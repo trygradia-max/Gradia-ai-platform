@@ -81,6 +81,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
             onClick={() => setFilter(f)}
             className={cn(
               chipClass,
+              "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               filter === f
                 ? "border-border-strong bg-card text-foreground"
                 : "border-border/60 text-muted-foreground hover:text-foreground"

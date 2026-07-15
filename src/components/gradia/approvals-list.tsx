@@ -30,7 +30,7 @@ import {
   PageStagger,
   StaggerItem,
 } from "@/components/gradia/motion/page-stagger"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import type {
   LeadStatus,
   PendingActionRow,
@@ -131,18 +131,18 @@ const TONE_STYLE: Record<
     pill: "accent",
   },
   booking: {
-    tile: "bg-emerald-500/12 text-emerald-500 ring-emerald-500/25 dark:text-emerald-400",
-    rail: "before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+    tile: "bg-status-success-bg text-status-success-fg ring-status-success/25",
+    rail: "before:bg-gradient-to-b before:from-status-success-fg/40 before:via-status-success-fg/15 before:to-transparent",
     pill: "good",
   },
   outbound: {
-    tile: "bg-amber-500/12 text-amber-500 ring-amber-500/25 dark:text-amber-400",
-    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    tile: "bg-status-warning-bg text-status-warning-fg ring-status-warning/25",
+    rail: "before:bg-gradient-to-b before:from-status-warning-fg/40 before:via-status-warning-fg/15 before:to-transparent",
     pill: "warn",
   },
   money: {
-    tile: "bg-amber-500/12 text-amber-500 ring-amber-500/25 dark:text-amber-400",
-    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    tile: "bg-status-warning-bg text-status-warning-fg ring-status-warning/25",
+    rail: "before:bg-gradient-to-b before:from-status-warning-fg/40 before:via-status-warning-fg/15 before:to-transparent",
     pill: "warn",
   },
   note: {
@@ -361,7 +361,7 @@ function ApprovalCard({
           onClick={() => onDecision(item.id, "approve")}
           disabled={anyBusy}
           variant="outline"
-          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.98] sm:h-10 sm:px-5"
+          className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:h-10 sm:px-5"
         >
           {approveBusy ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -384,7 +384,7 @@ function ApprovalCard({
             onClick={() => onDecision(item.id, "reject")}
             disabled={anyBusy}
             variant="outline"
-            className="h-11 gap-2 transition-colors duration-200 hover:text-status-danger-fg sm:h-10"
+            className="h-11 gap-2 transition-colors duration-(--duration-fast) hover:text-status-danger-fg sm:h-10"
           >
             {rejectBusy ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -574,7 +574,7 @@ function VerifierFlag({ proposal }: { proposal: Record<string, unknown> }) {
     | undefined
   if (!verifier?.flagged) return null
   return (
-    <p className="mt-1.5 rounded-md border border-amber-500/25 bg-amber-500/8 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+    <p className="mt-1.5 rounded-md border border-status-warning/25 bg-status-warning-bg px-2 py-1.5 text-xs text-status-warning-fg">
       ⚠ Our reviewer flagged this draft:{" "}
       {(verifier.objections ?? []).join(" ") || "double-check before sending."}
     </p>

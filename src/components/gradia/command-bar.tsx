@@ -2,9 +2,25 @@
 
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
+import dynamic from "next/dynamic"
 
-import { BiChat } from "@/components/gradia/bi-chat"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+
+/** BiChat (and its framer-motion/streaming machinery) loads on first open
+ *  instead of shipping in every page's initial bundle — the command bar is
+ *  mounted app-wide but used on demand (2026-07-13 master audit). */
+const BiChat = dynamic(
+  () =>
+    import("@/components/gradia/bi-chat").then((m) => ({
+      default: m.BiChat,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-64 w-full animate-pulse rounded-lg bg-card" aria-hidden />
+    ),
+  }
+)
 
 /**
  * The Gradia Agent command bar (FOCUS spec §4.2 — "a verb, not a page").

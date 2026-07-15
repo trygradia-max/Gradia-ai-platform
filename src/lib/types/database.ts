@@ -140,6 +140,7 @@ export type UsageEventKind =
   | "bi_answer"
   | "whisper_note"
   | "agentic_plan"
+  | "inbound_classify" // per-inbound-message classify+draft (retail 0 — cost visibility)
 
 export type UsageEventRow = {
   id: string
@@ -166,6 +167,7 @@ export type PricingKey =
   | "bi_answer"
   | "whisper_note"
   | "agentic_plan"
+  | "inbound_classify"
 
 export type CreditGrantKind = "credit_pack" | "minute_pack" | "rollover"
 

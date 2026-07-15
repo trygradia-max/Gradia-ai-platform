@@ -46,13 +46,13 @@ export function CapabilityRow({
   const expandable = hasChildren
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/40">
+    <div className="rounded-md border border-border/60 bg-card/40">
       <div className="flex w-full items-center gap-3.5 px-4 py-4 sm:px-5">
         <div
           className={cn(
             "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1",
             on
-              ? "bg-emerald-500/12 text-emerald-500 ring-emerald-500/25 dark:text-emerald-400"
+              ? "bg-status-success-bg text-status-success-fg ring-status-success/25"
               : "bg-muted/60 text-muted-foreground ring-border/60"
           )}
         >

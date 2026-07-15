@@ -187,7 +187,7 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
                   void dropOn(day, e)
                 }}
                 className={cn(
-                  "relative rounded-xl border border-border/50 bg-card/40",
+                  "relative rounded-md border border-border/50 bg-card/40",
                   isToday && "border-primary/30"
                 )}
                 style={{ height: (GRID_END_HOUR - GRID_START_HOUR) * 60 * PX_PER_MIN }}
@@ -263,7 +263,7 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
           )
         })}
         {jobs.length === 0 ? (
-          <p className="rounded-2xl border border-border/60 bg-card px-6 py-12 text-center text-sm text-muted-foreground">
+          <p className="rounded-md border border-border/60 bg-card px-6 py-12 text-center text-sm text-muted-foreground">
             Nothing on the books this week — approved bookings land here on
             their own.
           </p>
@@ -326,7 +326,7 @@ function MobileJobRow({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card px-3.5 py-3",
+        "rounded-md border bg-card px-3.5 py-3",
         job.isBlock ? "border-dashed border-border/60 opacity-70" : tone.block
       )}
     >

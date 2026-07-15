@@ -73,7 +73,7 @@ export function TodayMoneyRows({ data }: { data: TodayMoneyData }) {
               <Link
                 key={t.label}
                 href={t.href}
-                className="rounded-2xl border border-border/60 bg-card px-4 py-3 transition-colors hover:border-border"
+                className="rounded-md border border-border/60 bg-card px-4 py-3 transition-colors hover:border-border"
               >
                 <p className="text-xs text-muted-foreground">{t.label}</p>
                 <p className="font-data mt-1 text-xl font-semibold text-foreground">
@@ -93,7 +93,7 @@ export function TodayMoneyRows({ data }: { data: TodayMoneyData }) {
               <Link
                 key={t.label}
                 href={t.href}
-                className="rounded-2xl border border-border/60 bg-card px-4 py-3 transition-colors hover:border-border"
+                className="rounded-md border border-border/60 bg-card px-4 py-3 transition-colors hover:border-border"
               >
                 <p className="text-xs text-muted-foreground">{t.label}</p>
                 <p className="font-data mt-1 text-sm font-medium text-foreground">

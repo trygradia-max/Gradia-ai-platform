@@ -148,7 +148,7 @@ export function EmailSettingsCard({
               )}
             </div>
             {!aurinkoConfigured ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
+              <p className="text-xs text-status-warning-fg">
                 We&apos;re finishing email setup on our side — check back soon.
               </p>
             ) : null}

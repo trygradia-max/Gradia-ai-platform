@@ -41,7 +41,7 @@ export function ActivityEvent({ item }: { item: AgentActivityItem }) {
     ? `/customers/${item.customerId}`
     : `/approvals/${item.id}`
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-card/30 px-4 py-3">
+    <div className="flex items-center gap-3 rounded-md border border-border/50 bg-card/30 px-4 py-3">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
         <Icon className="size-4" aria-hidden />
       </div>
@@ -49,7 +49,7 @@ export function ActivityEvent({ item }: { item: AgentActivityItem }) {
         <p className="truncate text-sm text-foreground">{item.summary}</p>
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <Check
-            className="size-3 text-emerald-600 dark:text-emerald-400"
+            className="size-3 text-status-success-fg"
             aria-hidden
           />
           Done · {ago(item.at)}

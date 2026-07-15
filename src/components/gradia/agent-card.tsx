@@ -41,17 +41,17 @@ const STATUS_TONE: Record<Agent["status"], StatusPillTone> = {
 
 const ICON_TILE: Record<Agent["status"], string> = {
   active:
-    "bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400",
+    "bg-status-success-bg text-status-success-fg ring-status-success/25",
   needs_setup:
-    "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
+    "bg-status-warning-bg text-status-warning-fg ring-status-warning/25",
   off: "bg-muted text-muted-foreground ring-border/60",
 }
 
 const RAIL: Record<Agent["status"], string> = {
   active:
-    "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+    "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-status-success-fg/40 before:via-status-success-fg/15 before:to-transparent",
   needs_setup:
-    "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    "before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[''] before:bg-gradient-to-b before:from-status-warning-fg/40 before:via-status-warning-fg/15 before:to-transparent",
   off: "",
 }
 
@@ -107,7 +107,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
                 <Check
                   className={cn(
                     "mt-0.5 size-3.5 shrink-0",
-                    isLive ? "text-emerald-500" : "text-primary"
+                    isLive ? "text-status-success-fg" : "text-primary"
                   )}
                   aria-hidden
                 />
@@ -117,7 +117,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
           </ul>
         </div>
 
-        <div className="mt-auto rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
+        <div className="mt-auto rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
           <p className="label-eyebrow mb-2 text-muted-foreground/70">
             Prerequisites
           </p>
@@ -129,7 +129,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
               >
                 {p.done ? (
                   <Check
-                    className="size-3.5 shrink-0 text-emerald-500 dark:text-emerald-400"
+                    className="size-3.5 shrink-0 text-status-success-fg"
                     aria-hidden
                   />
                 ) : (

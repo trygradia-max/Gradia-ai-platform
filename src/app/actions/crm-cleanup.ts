@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { getCrmHealth, type CrmHealth } from "@/lib/crm-health"
+import { repointCustomerChildren } from "@/lib/merge-customers"
 import { upsertCustomerVehicle } from "@/lib/vehicles"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -68,10 +69,11 @@ const FILLABLE = [
 ] as const
 
 /**
- * Merge a duplicate customer into the primary: re-point their leads /
- * interactions / appointments, delete the duplicate, then backfill any field
- * the primary was missing. Delete-before-fill avoids the unique (shop, phone/
- * email) index colliding.
+ * Merge a duplicate customer into the primary: re-point EVERY child row via
+ * the shared core (lib/merge-customers.ts — covers quotes/vehicles, which are
+ * ON DELETE CASCADE and were previously destroyed here), delete the
+ * duplicate, then backfill any field the primary was missing.
+ * Delete-before-fill avoids the unique (shop, phone/email) index colliding.
  */
 export async function mergeCustomers(
   primaryId: string,
@@ -92,17 +94,9 @@ export async function mergeCustomers(
   const dupe = rows.find((r) => r.id === dupeId)
   if (!primary || !dupe) return { ok: false, error: "Couldn't find both records." }
 
-  for (const table of [
-    "leads",
-    "interactions",
-    "appointments",
-    "vehicles",
-  ] as const) {
-    await supabase
-      .from(table)
-      .update({ customer_id: primaryId })
-      .eq("shop_id", shop.id)
-      .eq("customer_id", dupeId)
+  const repoint = await repointCustomerChildren(supabase, shop.id, primaryId, dupeId)
+  if (!repoint.ok) {
+    return { ok: false, error: `Couldn't move ${repoint.table}: ${repoint.error}` }
   }
 
   await supabase.from("customers").delete().eq("shop_id", shop.id).eq("id", dupeId)

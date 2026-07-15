@@ -9,6 +9,11 @@ import type { LeadRow } from "@/lib/types/database"
 
 export type ScoredLead = LeadRow & { heat: HeatScore }
 
+/** Newest-first cap for dashboard lead surfaces — matches the pipeline
+ *  board's 500 cap. Both readers here previously fetched the entire
+ *  table on every Home render (2026-07-13 master audit P1). */
+const LEAD_LIST_LIMIT = 500
+
 export async function listLeadsForCurrentShop(): Promise<LeadRow[]> {
   const shop = await requireShop()
   const supabase = await createClient()
@@ -18,6 +23,7 @@ export async function listLeadsForCurrentShop(): Promise<LeadRow[]> {
     .select("*")
     .eq("shop_id", shop.id)
     .order("created_at", { ascending: false })
+    .limit(LEAD_LIST_LIMIT)
 
   if (error) {
     throw new Error(error.message)
@@ -39,6 +45,7 @@ export async function listScoredLeadsForCurrentShop(): Promise<ScoredLead[]> {
     .select("*")
     .eq("shop_id", shop.id)
     .order("created_at", { ascending: false })
+    .limit(LEAD_LIST_LIMIT)
 
   if (error) throw new Error(error.message)
   const leads = (data as LeadRow[] | null) ?? []

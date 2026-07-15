@@ -31,6 +31,9 @@ const FIXTURE: Pricing = {
   bi_answer: { wholesale_cents: 1, retail_cents: 5 },
   whisper_note: { wholesale_cents: 1, retail_cents: 2 },
   agentic_plan: { wholesale_cents: 2, retail_cents: 8 },
+  // Cost-visibility SKU (2026-07-13): retail 0 by design — callers pass
+  // credits: 0 explicitly; priceUsage's never-free floor doesn't apply.
+  inbound_classify: { wholesale_cents: 0.3, retail_cents: 0 },
 }
 
 function mockPricingTable(result: {

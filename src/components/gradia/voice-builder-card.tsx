@@ -299,26 +299,26 @@ export function VoiceBuilderCard({
             <p className="label-eyebrow text-muted-foreground/70">
               Composed from your services, policies, and our shared voice — read-only
             </p>
-            <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border/50 bg-muted/15 p-3.5 text-xs leading-relaxed text-muted-foreground">
+            <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-md border border-border/50 bg-muted/15 p-3.5 text-xs leading-relaxed text-muted-foreground">
               {preview}
             </pre>
           </div>
         ) : null}
 
         {/* ---- Launch checklist ---- */}
-        <div className="space-y-3 rounded-xl border border-border/50 bg-muted/15 p-3.5">
+        <div className="space-y-3 rounded-md border border-border/50 bg-muted/15 p-3.5">
           <p className="label-eyebrow text-muted-foreground/70">Going live</p>
           <ol className="space-y-2 text-sm">
             <li className={cn("flex items-center gap-2", hasAssistant && "text-muted-foreground")}>
               <BadgeCheck
-                className={cn("size-4", hasAssistant ? "text-emerald-500" : "text-muted-foreground/40")}
+                className={cn("size-4", hasAssistant ? "text-status-success-fg" : "text-muted-foreground/40")}
                 aria-hidden
               />
               Receptionist saved
             </li>
             <li className={cn("flex items-center gap-2", hasNumber && "text-muted-foreground")}>
               <Phone
-                className={cn("size-4", hasNumber ? "text-emerald-500" : "text-muted-foreground/40")}
+                className={cn("size-4", hasNumber ? "text-status-success-fg" : "text-muted-foreground/40")}
                 aria-hidden
               />
               {hasNumber ? (
@@ -348,7 +348,7 @@ export function VoiceBuilderCard({
             </li>
             <li className={cn("flex items-center gap-2", hasTested && "text-muted-foreground")}>
               <PhoneCall
-                className={cn("size-4", hasTested ? "text-emerald-500" : "text-muted-foreground/40")}
+                className={cn("size-4", hasTested ? "text-status-success-fg" : "text-muted-foreground/40")}
                 aria-hidden
               />
               {hasTested ? (

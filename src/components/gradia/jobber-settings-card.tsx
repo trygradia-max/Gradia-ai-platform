@@ -168,7 +168,7 @@ export function JobberSettingsCard({
               )}
             </div>
             {!jobberConfigured ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
+              <p className="text-xs text-status-warning-fg">
                 Server is missing <code>JOBBER_CLIENT_ID</code> /{" "}
                 <code>JOBBER_CLIENT_SECRET</code>.
               </p>

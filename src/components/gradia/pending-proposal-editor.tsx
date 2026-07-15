@@ -175,16 +175,16 @@ const TONE_STYLE: Record<
     rail: "before:bg-gradient-to-b before:from-primary/40 before:via-primary/15 before:to-transparent",
   },
   booking: {
-    tile: "bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400",
-    rail: "before:bg-gradient-to-b before:from-emerald-400/40 before:via-emerald-400/15 before:to-transparent",
+    tile: "bg-status-success-bg text-status-success-fg ring-status-success/25",
+    rail: "before:bg-gradient-to-b before:from-status-success-fg/40 before:via-status-success-fg/15 before:to-transparent",
   },
   outbound: {
-    tile: "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
-    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    tile: "bg-status-warning-bg text-status-warning-fg ring-status-warning/25",
+    rail: "before:bg-gradient-to-b before:from-status-warning-fg/40 before:via-status-warning-fg/15 before:to-transparent",
   },
   money: {
-    tile: "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
-    rail: "before:bg-gradient-to-b before:from-amber-400/40 before:via-amber-400/15 before:to-transparent",
+    tile: "bg-status-warning-bg text-status-warning-fg ring-status-warning/25",
+    rail: "before:bg-gradient-to-b before:from-status-warning-fg/40 before:via-status-warning-fg/15 before:to-transparent",
   },
   note: {
     tile: "bg-muted text-muted-foreground ring-border/60",
@@ -700,7 +700,7 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
             onClick={handleApprove}
             disabled={anyPending}
             size="lg"
-            className="order-1 h-11 gap-2 transition-transform duration-200 active:scale-[0.98] sm:order-3 sm:h-10 sm:px-5"
+            className="order-1 h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:order-3 sm:h-10 sm:px-5"
           >
             {pending === "approve" ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -727,7 +727,7 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
               variant="ghost"
               onClick={handleDiscard}
               disabled={anyPending}
-              className="h-11 gap-2 text-muted-foreground transition-colors duration-200 hover:text-destructive sm:h-10"
+              className="h-11 gap-2 text-muted-foreground transition-colors duration-(--duration-fast) hover:text-destructive sm:h-10"
             >
               {pending === "discard" ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden />

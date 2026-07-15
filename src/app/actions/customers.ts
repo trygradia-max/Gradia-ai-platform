@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import {
+  repointCustomerChildren,
+  type MergeChildTable,
+} from "@/lib/merge-customers"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { CustomerRow } from "@/lib/types/database"
@@ -101,17 +105,19 @@ const mergeSchema = z.object({
 export type MergeCustomersResult =
   | {
       ok: true
-      moved: { leads: number; interactions: number; appointments: number }
+      moved: Record<MergeChildTable, number>
       identifierConflicts: string[]
     }
   | { ok: false; error: string }
 
 /**
  * Merges `loser` into `winner`:
- *   1. Reassigns leads / interactions / appointments from loser to
- *      winner. Done FIRST because interactions.customer_id is ON
- *      DELETE CASCADE — deleting the loser without reassigning would
- *      destroy the loser's whole timeline.
+ *   1. Reassigns EVERY child row from loser to winner via the shared
+ *      re-point core (lib/merge-customers.ts). Done FIRST because
+ *      interactions / vehicles / quotes are ON DELETE CASCADE —
+ *      deleting the loser without reassigning destroys them — and the
+ *      SET NULL tables (leads, appointments, payments, call_records,
+ *      automation_runs) would silently lose attribution.
  *   2. Frees up loser's identifier columns by NULLing them, so the
  *      per-shop unique indexes don't block the absorption step.
  *   3. Copies any identifiers winner is missing from loser. Each
@@ -154,47 +160,21 @@ export async function mergeCustomers(
   const winner = both.find((r) => r.id === parsed.data.winner_id)!
   const loser = both.find((r) => r.id === parsed.data.loser_id)!
 
-  // 1. Reassign FK rows from loser → winner.
-  const moved = { leads: 0, interactions: 0, appointments: 0 }
-
-  const leadsRes = await supabase
-    .from("leads")
-    .update({ customer_id: winner.id })
-    .eq("shop_id", shop.id)
-    .eq("customer_id", loser.id)
-    .select("id")
-  if (leadsRes.error) {
-    return { ok: false, error: `Couldn't move leads: ${leadsRes.error.message}` }
-  }
-  moved.leads = leadsRes.data?.length ?? 0
-
-  const interactionsRes = await supabase
-    .from("interactions")
-    .update({ customer_id: winner.id })
-    .eq("shop_id", shop.id)
-    .eq("customer_id", loser.id)
-    .select("id")
-  if (interactionsRes.error) {
+  // 1. Reassign ALL child rows from loser → winner (shared core —
+  //    covers the CASCADE tables that would otherwise be destroyed).
+  const repoint = await repointCustomerChildren(
+    supabase,
+    shop.id,
+    winner.id,
+    loser.id
+  )
+  if (!repoint.ok) {
     return {
       ok: false,
-      error: `Couldn't move history: ${interactionsRes.error.message}`,
+      error: `Couldn't move ${repoint.table}: ${repoint.error}`,
     }
   }
-  moved.interactions = interactionsRes.data?.length ?? 0
-
-  const appointmentsRes = await supabase
-    .from("appointments")
-    .update({ customer_id: winner.id })
-    .eq("shop_id", shop.id)
-    .eq("customer_id", loser.id)
-    .select("id")
-  if (appointmentsRes.error) {
-    return {
-      ok: false,
-      error: `Couldn't move appointments: ${appointmentsRes.error.message}`,
-    }
-  }
-  moved.appointments = appointmentsRes.data?.length ?? 0
+  const moved = repoint.moved
 
   // 2. Free up loser's identifier columns.
   await supabase

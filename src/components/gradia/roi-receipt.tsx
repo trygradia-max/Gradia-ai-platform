@@ -15,7 +15,7 @@ import {
   getRoiReceiptForCurrentShop,
   type RoiReceipt,
 } from "@/lib/data/roi-receipt"
-import { SectionHeader } from "@/components/gradia/motion/section-header"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 
@@ -79,12 +79,12 @@ export function RoiReceiptView({
       <SectionHeader
         eyebrow={STRINGS.pages.home.receiptEyebrow}
         title={STRINGS.pages.home.receiptTitle}
-        subtitle={STRINGS.pages.home.receiptSubtitle}
+        subhead={STRINGS.pages.home.receiptSubtitle}
       />
 
       <div
         className={cn(
-          "rounded-2xl border border-border/60 bg-card p-6 sm:p-8",
+          "rounded-md border border-border/60 bg-card p-6 sm:p-8",
           receipt.isEmpty && "bg-card/40"
         )}
       >

@@ -228,8 +228,8 @@ export function AgentBuilder() {
             </div>
 
             {plan.prerequisites_needed.length > 0 ? (
-              <div className="grid gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-amber-700 dark:text-amber-400">
+              <div className="grid gap-2 rounded-md border border-status-warning/30 bg-status-warning-bg px-3 py-2.5">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-status-warning-fg">
                   <TriangleAlert className="size-3.5" aria-hidden />
                   Needs
                 </div>

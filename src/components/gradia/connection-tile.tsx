@@ -38,13 +38,13 @@ export function ConnectionTile({
     [connectedLabel, connectedDetail].filter(Boolean).join(" · ") || description
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/40 p-5 transition-colors hover:border-border">
+    <div className="flex flex-col gap-4 rounded-md border border-border/60 bg-card/40 p-5 transition-colors hover:border-border">
       <div className="flex items-start justify-between gap-3">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60 text-foreground">
           <Icon className="size-5" aria-hidden />
         </div>
         {connected ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="inline-flex items-center gap-1 rounded-full bg-status-success-bg px-2 py-0.5 text-xs font-medium text-status-success-fg">
             <Check className="size-3.5" aria-hidden /> Connected
           </span>
         ) : !available ? (

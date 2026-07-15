@@ -17,7 +17,7 @@ export async function SetupProgressPill() {
     return (
       <Link
         href="/dashboard#channels"
-        className="hidden items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-700 hover:bg-emerald-500/15 sm:flex dark:text-emerald-400"
+        className="hidden items-center gap-1.5 rounded-full bg-status-success-bg px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-status-success-fg hover:bg-status-success/25 sm:flex"
       >
         <CheckCircle2 className="size-3" aria-hidden />
         All channels live

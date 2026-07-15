@@ -114,9 +114,9 @@ export function McpTokensCard({
       </CardHeader>
       <CardContent className="space-y-5">
         {justMinted ? (
-          <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <div className="space-y-2 rounded-lg border border-status-success/30 bg-status-success-bg p-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
+              <p className="text-xs font-medium uppercase tracking-widest text-status-success-fg">
                 New token — copy now, you can&apos;t see it again
               </p>
               <Button

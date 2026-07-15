@@ -31,9 +31,11 @@ import {
   searchShopKnowledge,
 } from "@/lib/knowledge"
 import { looksOptedIn, looksOptedOut } from "@/lib/agent-audience"
+import { recordUsage } from "@/lib/credits"
 import { FEATURES } from "@/lib/features"
 import { recordInteraction } from "@/lib/memory"
 import { looksLikeConfirm } from "@/lib/no-show-ladder"
+import { getPricing, priceUsage } from "@/lib/pricing"
 import { checkRateLimit } from "@/lib/rate-limit"
 import {
   sendLeadApprovalRequest,
@@ -214,9 +216,10 @@ async function handleMessage(
     }
   }
 
-  // Inbound classification is UNMETERED (a Haiku call per message) — its only
-  // cost ceiling. Over the daily per-shop limit (spam flood), capture the
-  // message above but skip the LLM classify + downstream draft.
+  // Inbound classification: rate-limited (spam ceiling) AND metered as
+  // `inbound_classify` — wholesale cost in the ledger, retail 0 / credits 0
+  // (shops aren't charged for receiving messages; 2026-07-13 audit fixed
+  // this being invisible to the margin report).
   const classifyGate = await checkRateLimit(shop.id, "inbound_classify")
   if (!classifyGate.allowed) {
     console.warn(
@@ -234,6 +237,19 @@ async function handleMessage(
       "[twilio sms] classification failed, skipping lead proposal:",
       err
     )
+  }
+
+  // Meter the LLM work regardless of outcome — the cost was incurred.
+  {
+    const pricing = await getPricing(supabase)
+    const priced = priceUsage(pricing, "inbound_classify", 1)
+    await recordUsage(supabase, shop.id, "inbound_classify", {
+      quantity: 1,
+      credits: 0, // cost-visibility SKU — never spends shop credits
+      wholesaleCost: priced.wholesale_cost,
+      retailCost: priced.retail_cost,
+      vendorRef: sms.messageSid ?? null,
+    })
   }
 
   if (!classification || !classification.is_lead) return

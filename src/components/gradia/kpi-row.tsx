@@ -1,7 +1,7 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import Link from "next/link"
-import { Area, AreaChart, ResponsiveContainer } from "recharts"
 
 import type { HomeKpis, KpiSeries } from "@/lib/data/kpis"
 import { STRINGS } from "@/lib/strings"
@@ -9,44 +9,22 @@ import { cn } from "@/lib/utils"
 
 /**
  * Home KPI row (spec §8-A5): four headline numbers in Geist Mono.
- * Sparklines follow the Tremor copy-paste SparkAreaChart pattern
- * (Recharts underneath), retokened to the design system — and they
- * render ONLY when the 7-day series has genuine variation. A flat or
- * near-empty week gets the plain number, never a fabricated trendline.
+ * Sparklines live in kpi-spark.tsx and load via next/dynamic so recharts
+ * stays out of the dashboard's initial bundle — and they render ONLY when
+ * the 7-day series has genuine variation. A flat or near-empty week gets
+ * the plain number, never a fabricated trendline.
  */
+
+/** Same-height placeholder keeps the card from shifting when the chart
+ *  chunk arrives. */
+const Spark = dynamic(() => import("@/components/gradia/kpi-spark"), {
+  ssr: false,
+  loading: () => <div className="h-8 w-full" aria-hidden />,
+})
 
 /** ≥2 nonzero days = a real shape worth drawing. */
 function hasSignal(series: KpiSeries): boolean {
   return series.filter((v) => v > 0).length >= 2
-}
-
-function Spark({ series }: { series: KpiSeries }) {
-  const data = series.map((value, i) => ({ i, value }))
-  return (
-    <div className="h-8 w-full" aria-hidden>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
-          data={data}
-          margin={{ top: 2, right: 0, bottom: 0, left: 0 }}
-        >
-          <defs>
-            <linearGradient id="kpi-spark-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <Area
-            type="monotone"
-            dataKey="value"
-            stroke="var(--accent-text)"
-            strokeWidth={1.5}
-            fill="url(#kpi-spark-fill)"
-            isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  )
 }
 
 function KpiCard({

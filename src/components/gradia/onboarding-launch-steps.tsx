@@ -93,8 +93,8 @@ export function InboxStep({
       }
     >
       {connectedEmail ? (
-        <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25 dark:text-emerald-400">
+        <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
             <BadgeCheck className="size-4" aria-hidden />
           </div>
           <div className="min-w-0">
@@ -103,7 +103,7 @@ export function InboxStep({
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/10 px-6 py-10">
+        <div className="flex items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 px-6 py-10">
           <a
             href="/api/aurinko/auth/start?next=/onboarding?step=4"
             className={cn(buttonVariants({ size: "lg" }), "gap-2")}
@@ -155,8 +155,8 @@ export function NumberStep({
       }
     >
       {hasNumber ? (
-        <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/15 px-3.5 py-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-500 ring-1 ring-emerald-500/25 dark:text-emerald-400">
+        <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
             <Phone className="size-4" aria-hidden />
           </div>
           <div className="min-w-0">
@@ -169,7 +169,7 @@ export function NumberStep({
       ) : picking ? (
         <TwilioNumberPicker onCancel={() => setPicking(false)} />
       ) : (
-        <div className="flex items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/10 px-6 py-10">
+        <div className="flex items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 px-6 py-10">
           <Button type="button" size="lg" className="gap-2" onClick={() => setPicking(true)}>
             <Phone className="size-4" aria-hidden />
             Pick a number
@@ -245,7 +245,7 @@ export function ReceptionistStep({
           vapiConfigured={vapiConfigured}
         />
       ) : (
-        <div className="space-y-3 rounded-xl border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center">
+        <div className="space-y-3 rounded-md border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center">
           <p className="font-display text-lg text-foreground">
             The receptionist is part of the <span className="italic">voice</span>{" "}add-on.
           </p>
