@@ -23,7 +23,16 @@ export function WhisperSuggestionQueue({ initial }: { initial: WhisperSuggestion
   const [items, setItems] = React.useState(initial)
   const [busyId, setBusyId] = React.useState<string | null>(null)
 
-  if (items.length === 0) return null
+  if (items.length === 0) {
+    return (
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Sparkles className="size-3.5 text-muted-foreground/60" aria-hidden />
+        Nothing to suggest right now — ideas appear here as quotes go quiet,
+        follow-ups come due, or leads sit untouched for two weeks. Checked
+        every few minutes.
+      </p>
+    )
+  }
 
   async function approve(id: string) {
     setBusyId(id)

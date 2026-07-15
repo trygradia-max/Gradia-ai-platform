@@ -8,7 +8,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { stageFromLegacyStatus, PIPELINE_STAGES } from "@/lib/pipeline"
 import { requireShop } from "@/lib/shop"
-import { describeVehicle, vehiclesByCustomerIds } from "@/lib/vehicles"
+import { shortVehicleLine, vehiclesByCustomerIds } from "@/lib/vehicles"
 import type { CrmStage, LeadRow, QuoteRow } from "@/lib/types/database"
 
 export type PipelineCard = {
@@ -112,7 +112,7 @@ export async function listPipelineForCurrentShop(): Promise<PipelineData> {
       createdAt: l.created_at,
       vehicle:
         (l.customer_id
-          ? describeVehicle(vehicles.get(l.customer_id)?.[0])
+          ? shortVehicleLine(vehicles.get(l.customer_id)?.[0])
           : null) ?? l.car_info,
       interest: l.pin_notes,
       quoteId: l.quote_id ?? null,

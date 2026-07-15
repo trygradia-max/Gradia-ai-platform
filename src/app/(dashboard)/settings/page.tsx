@@ -10,6 +10,7 @@ import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-ca
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { AutomationsCard } from "@/components/gradia/automations-card"
+import { ClearDemoDataCard } from "@/components/gradia/clear-demo-data-card"
 import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
 import { getAutomationSettings } from "@/app/actions/automations"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
@@ -467,8 +468,9 @@ export default async function SettingsPage({
             <summary className="cursor-pointer list-none py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
               Developer — API tokens and integration internals
             </summary>
-            <div className="pb-4 pt-2">
+            <div className="space-y-4 pb-4 pt-2">
               <McpTokensCard initialTokens={mcpTokens} />
+              <ClearDemoDataCard />
             </div>
           </details>
         </section>

@@ -84,6 +84,8 @@ Hard rules:
 - Messy data: if someone you need is missing a phone, email, or vehicle, say so plainly ("Mike has no email on file"). If the owner gives you the detail, fix it on the spot with update_customer — then continue what they asked. Never invent details.
 - Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, a keyword (name / vehicle / notes), structured VEHICLE (make, model, year range), and time since LAST VISIT (customers). So "Tesla owners" → vehicle_make "Tesla"; "haven't been in for 6 months" → not_visited_in_days 180; "2020-or-newer trucks" → vehicle_year_min 2020 + keyword. Vehicle make is reliable; model is sparse on older records — fall back to keyword if a model match looks empty. If the owner asks to segment by something genuinely outside this set (lifetime spend, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
 - Respect the guardrails: outreach is capped (default 50 recipients), cooled down, and opt-outs are honored — these are applied automatically; surface them when the count comes back smaller than expected.
+- Finding people: to check whether someone exists in the CRM, use find_person FIRST — it searches leads AND customers deterministically and works with zero conversation history. search_memory only covers recorded conversations; an empty memory result never means the person is missing.
+- Honest results, always: an empty lookup is a MISS — say what you searched and that nothing matched, then offer the useful next step (usually creating the lead). NEVER blame a connection, network, or system problem for an empty result. Only report a failure when a tool actually errored, and then say the lookup failed on our side — no invented causes.
 - Keep it short and concrete. The owner is between jobs.`
 
 const OWNER_SYSTEM_BLOCKS = [
@@ -305,12 +307,72 @@ async function resolveCustomer(
     shopId,
     rows.map((r) => r.id)
   )
-  return rows.map(({ vehicle_make, vehicle_model, vehicle_color, ...r }) => ({
+  const matches = rows.map(({ vehicle_make, vehicle_model, vehicle_color, ...r }) => ({
     ...r,
     vehicle:
       describeVehicle(vehicles.get(r.id)?.[0]) ??
       ([vehicle_color, vehicle_make, vehicle_model].filter(Boolean).join(" ") ||
         null),
+  }))
+  if (matches.length > 0) return matches
+
+  // Fix-pass 2026-07-13 (P0): a lead with no customer record was invisible
+  // to every action tool ("book mike" → not found, mike on the pipeline).
+  // Fall back to LEADS; a unique lead materializes its customer via the
+  // idempotent find-or-create so the action can proceed — never ask the
+  // owner for a phone that's already on file.
+  const leadOrs = [`customer_name.ilike.%${q}%`]
+  if (digits.length >= 4) leadOrs.push(`phone.ilike.%${digits}%`)
+  const { data: leadData } = await supabase
+    .from("leads")
+    .select("id, customer_id, customer_name, phone, car_info")
+    .eq("shop_id", shopId)
+    .or(leadOrs.join(","))
+    .limit(8)
+  const leadRows =
+    (leadData as {
+      id: string
+      customer_id: string | null
+      customer_name: string
+      phone: string
+      car_info: string | null
+    }[] | null) ?? []
+  // Distinct people by phone (several cards can share one caller).
+  const byPhone = new Map<string, (typeof leadRows)[number]>()
+  for (const l of leadRows) {
+    const key = l.phone.replace(/\D/g, "").slice(-10) || l.id
+    if (!byPhone.has(key)) byPhone.set(key, l)
+  }
+  const distinct = [...byPhone.values()]
+
+  if (distinct.length === 1 && distinct[0].phone) {
+    const lead = distinct[0]
+    const created = await findOrCreateCustomer(supabase, shopId, {
+      name: lead.customer_name,
+      phone: lead.phone,
+    })
+    if (created.ok) {
+      return [
+        {
+          id: created.customer.id,
+          name: created.customer.name ?? lead.customer_name,
+          phone: created.customer.phone ?? lead.phone,
+          email: created.customer.email,
+          vehicle: lead.car_info,
+          last_visit_at: created.customer.last_visit_at ?? null,
+        },
+      ]
+    }
+  }
+  // >1 lead-only people: descriptor-only matches — handlers act only on a
+  // unique match, so these safely drive the "which one?" round-trip.
+  return distinct.map((l) => ({
+    id: l.id,
+    name: l.customer_name,
+    phone: l.phone,
+    email: null,
+    vehicle: l.car_info,
+    last_visit_at: null,
   }))
 }
 

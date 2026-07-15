@@ -67,6 +67,9 @@ async function listShopsAndExit() {
   process.exit(1)
 }
 
+// Every row this seed writes carries a demo marker (SMOKE: name,
+// [smoke-seed] note, smoke metadata, or source='demo') — Settings →
+// Developer → "Clear demo data" deletes exactly these markers.
 async function clean(shopId) {
   // Order matters for FKs; deleting smoke customers cascades their
   // interactions/vehicles/quotes, but we clear dependents first anyway.
@@ -85,7 +88,7 @@ async function clean(shopId) {
 async function insertCustomer(shopId, name, phone, email) {
   const { data, error } = await db
     .from("customers")
-    .insert({ shop_id: shopId, name, phone, email })
+    .insert({ shop_id: shopId, name, phone, email, source: "demo" })
     .select("id")
     .single()
   if (error) throw new Error(`customer ${name}: ${error.message}`)
@@ -169,6 +172,7 @@ async function main() {
       pin_notes: "Quoted ceramic coating, hasn't booked. [smoke-seed]",
       status: "quoted",
       stage: "quote_sent",
+      source: "demo",
       created_at: daysAgo(20),
     },
     {
@@ -181,6 +185,7 @@ async function main() {
       pin_notes: "Quoted ceramic, then texted STOP. [smoke-seed]",
       status: "quoted",
       stage: "quote_sent",
+      source: "demo",
       created_at: daysAgo(18),
     },
   ]
