@@ -15,11 +15,11 @@ _Created 2026-07-25 by the Organizer. The live WIP board. **Every Builder sessio
 | Slot | Ticket | Risk class | Builder | Reviewer | State |
 |---|---|---|---|---|---|
 | Active 1 | P0-001 — Exposed database credential remediation | Security (standard) — reclassified 2026-07-27, no schema/migration impact | Claude Builder (session 2026-07-29) | _open — assign one Cursor Reviewer_ | **in-review** (2026-07-29 — repo remediation implemented; founder acceptance steps 2 & 6 + Reviewer + merge to `main` outstanding; slot stays occupied until done) |
-| Active 2 | P0-003 — Central appointment conflict service | **Calendar (high-risk)** — occupies the shared high-risk slot below | Claude Builder (session 2026-07-30, founder-slotted on `fix/p0-003-appointment-conflict-service`) | _open — assign one Cursor Reviewer_ | **in-review** (2026-07-30 — service + tests implemented, no call sites wired; completion record in the ticket file; Organizer to confirm this founder-directed slotting) |
+| Active 2 | — freed 2026-07-30 — | — | — | — | **P0-002 done** (merged PR #9, Cursor Reviewer APPROVE; completion record in the ticket file). Slot reserved next for **P0-003**, which enters in-progress only when the Organizer slots it and a Builder is recorded here — not started. |
 | Database-sensitive | — empty — | — | — | — | Slot free until P0-005 (the first genuinely DB-sensitive P0 ticket) |
-| High-risk (payments/tenancy/calendar) | P0-003 (calendar) | Calendar | Claude Builder (2026-07-30) | _open_ | Occupied while P0-003 is active; P0-004 waits for this slot |
+| High-risk (payments/tenancy/calendar) | — empty — | — | — | — | P0-003 takes this slot when it starts (its P0-002 gate cleared 2026-07-30) |
 
-Slot accounting: 2/2 active · **0/1 database-sensitive** · 1/1 high-risk. No active slot free; P0-004 queues behind P0-003's review.
+Slot accounting: 1/2 active · **0/1 database-sensitive** · 0/1 high-risk. One active slot free — reserved for P0-003 as the next active implementation ticket.
 
 ## How this board is updated
 

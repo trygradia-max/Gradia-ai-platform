@@ -19,15 +19,15 @@ Founder action inside P0-001: the actual password rotation happens in the Supaba
 
 ## Queued behind this sprint
 
-- **P0-003** (Central appointment conflict service) — slotted 2026-07-30 (founder-directed) and implemented the same day on `fix/p0-003-appointment-conflict-service`: **in-review**, occupying the second active slot and the calendar high-risk slot (`work-in-progress.md`). Completion record in the ticket file; awaiting Cursor Reviewer. P0-004 stays queued behind it (shared high-risk slot).
+- **P0-003** (Central appointment conflict service) — its gate is now cleared (P0-002 done 2026-07-30) and it is the **next active implementation ticket**: first in line for a freed active slot and the calendar high-risk slot. **Implementation has not started** — it enters in-progress only when the Organizer slots it and a Builder is recorded in `work-in-progress.md`.
 
 ## WIP limits (restated, binding)
 
 | Limit | Rule | Current state |
 |---|---|---|
-| Active implementation tickets | max **2** | 2 active (P0-001 in-review; P0-003 in-review since 2026-07-30) ✓ |
+| Active implementation tickets | max **2** | 1 active (P0-001 in-review); P0-002 done 2026-07-30 — its slot is free, reserved next for P0-003 ✓ |
 | Database-sensitive tickets active | max **1** | **0** — slot empty until P0-005 (P0-001 reclassified 2026-07-27: no schema/migration impact) ✓ |
-| Payment / tenancy / calendar high-risk tickets active | max **1** | 1 — P0-003 occupies the calendar slot (since 2026-07-30); P0-004 queues behind it ✓ |
+| Payment / tenancy / calendar high-risk tickets active | max **1** | 0 — P0-003/P0-004 will occupy the calendar slot in Sprint 2 ✓ |
 | Roles per ticket | exactly one Builder + one Reviewer | slots defined above ✓ |
 | Entry condition | no ticket enters implementation until dependencies and decisions are resolved | P0-001/P0-002 have no unresolved blockers (Q-01 blocks only the optional history-scrub sub-step) ✓ |
 

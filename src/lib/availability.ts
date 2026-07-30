@@ -562,9 +562,10 @@ async function fetchCalendarEventsBounded(
 
 /**
  * The central conflict check. Deterministic for identical inputs + data
- * state; read-only; never throws for "busy" — throws only on invalid input
- * or a failed appointments query (a real error: without Gradia's own rows
- * there is no answer, and guessing "available" would invite double-booking).
+ * state; read-only; never throws for "busy" — throws only on a real error
+ * (invalid input, a failed appointments query, or a row-capped fetch that
+ * cannot see every possibly-overlapping row): without complete Gradia data
+ * there is no answer, and guessing "available" would invite double-booking.
  */
 export async function checkAvailability(
   supabase: SupabaseClient,
@@ -633,8 +634,14 @@ export async function checkAvailability(
   }
   const rows = (apptData as AppointmentCandidate[] | null) ?? []
   if (rows.length === APPOINTMENT_FETCH_LIMIT) {
-    console.warn(
-      `[availability] appointment fetch hit the ${APPOINTMENT_FETCH_LIMIT}-row limit for shop ${shopId} — conflict coverage may be incomplete in this window`
+    // Fail closed. A capped fetch means rows that could overlap were left
+    // unread (the fetch is ordered by scheduled_at, so a truncation drops the
+    // rows nearest the proposed range), and answering "available" would be a
+    // guess — the exact guess this service exists to prevent. Same rationale
+    // as the appointments-query-failure throw above; at pilot scale this cap
+    // is never reached (a shop books nowhere near 1,000 rows in this window).
+    throw new Error(
+      `[availability] appointment fetch hit the ${APPOINTMENT_FETCH_LIMIT}-row cap for shop ${shopId} — refusing to answer rather than risk a false "available"; narrow the range or add pagination before this scale is real`
     )
   }
 

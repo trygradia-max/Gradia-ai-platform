@@ -601,6 +601,19 @@ describe("checkAvailability", () => {
     )
   })
 
+  it("row-cap hit fails closed — never a silent false 'available' on truncated data", async () => {
+    // 1,000 rows returned = the fetch cap. These sit far outside RANGE, so
+    // WITHOUT the fail-closed guard the service would see no overlap and
+    // answer available:true on data it knows is truncated. It must throw.
+    const capped = Array.from({ length: 1_000 }, (_, i) =>
+      candidate({ id: `cap-${i}`, scheduled_at: "2026-07-01T10:00:00Z" })
+    )
+    const supabase = mockSupabase({ appointments: capped })
+    await expect(checkAvailability(supabase, "shop-1", RANGE)).rejects.toThrow(
+      /row cap/
+    )
+  })
+
   it("calendar fetch throwing degrades to unchecked with a log — appointments still checked", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     mockedGetToken.mockResolvedValue("token-1")
