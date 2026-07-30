@@ -18,16 +18,15 @@ permissions:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    # QUARANTINED 2026-06-18 — this job has failed on every push since 2026-06-04
-    # (passed once, the day it was added, then never again). Root cause is the
-    # CI environment, not the app: it boots a local Supabase whose CLI was pinned
-    # to `latest`, an update changed local-stack table permissions, and the test
-    # now dies at seed with "permission denied for table shops" before any real
-    # assertion runs. Kept NON-BLOCKING so it stops failing the PR and emailing on
-    # every push while the real fix below is verified. The approval-engine logic
-    # is still guarded by the pure `ci` tier (`npm test`). Remove this line once a
-    # run goes green.
-    continue-on-error: true
+    # BLOCKING since 2026-07-30 (P0-002). Quarantine history: non-blocking
+    # 2026-06-18..2026-07-30 after an unpinned CLI auto-update broke the local
+    # stack — the export step silently produced an empty service-role key that
+    # masqueraded as "permission denied for table shops" at seed. Fixed by the
+    # CLI pin below plus the fail-loud export step; verified green on the exact
+    # pinned version (4/4 integration tests) before the quarantine was removed.
+    # Per 09-testing-strategy.md §5: `continue-on-error` on any test job is
+    # forbidden — re-quarantining requires a program/blocked.md entry with an
+    # owner and an exit date.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

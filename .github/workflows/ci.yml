@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +24,36 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+
+      # P0-001 regression lock (audit C-1): a credential-bearing connection
+      # string must never appear in a tracked file. Placeholder forms like
+      # `postgres://user:<password>@host` do not match. Duplicated as a vitest
+      # test (eval/repo-hygiene.test.ts) so it also runs locally.
+      # `-l` on purpose: list offending FILES only. Never print the matching
+      # line — a hit here IS a secret, and CI logs must not republish it.
+      - name: Secret hygiene
+        run: |
+          if git grep -I -l -E 'postgres(ql)?://[^[:space:]:@/<]+:[^[:space:]@<]+@' -- .; then
+            echo "::error::credential-shaped connection string found in the tracked file(s) listed above — remove it and rotate the credential (runbook: docs/gradia-v2/runbooks/exposed-credential.md)"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
       # Pure Tier-1 eval (HITL floor, autonomy, read-only BI, canonical voice).
-      # No API keys, deterministic — the live tiers run on-demand via `npm run eval`.
-      - run: npm test
+      # No API keys, deterministic — the live tiers run on-demand via `npm run eval`
+      # (out of CI pending decision Q-06 on eval cadence/budget).
+      - name: Deterministic tests
+        run: npm test
+
+      # Production build. Requires NO env vars: verified 2026-07-30 that
+      # `next build` succeeds with none set — the app defers missing-env
+      # failures to runtime. If a future change makes the build demand an env
+      # var, add an obviously-fake `ci-placeholder-*` value here with a comment
+      # explaining why; never a real secret (docs/env-setup.md §CI).
+      - name: Production build
+        run: npm run build

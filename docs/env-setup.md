@@ -174,3 +174,37 @@ ready to charge. Slack (Tier 2) is entirely optional.
 - [ ] A2P 10DLC done (if SMS), Google OAuth verified (if Gmail)
 - [ ] Secrets only in host env; any previously-exposed keys rotated
 - [ ] Privacy policy + terms published
+
+---
+
+## CI environment (P0-002)
+
+_What the gating workflows need. Values here are **names only** — CI holds no
+production secret of any kind._
+
+**`ci.yml` (job `checks`: secret hygiene → typecheck → lint → tests → build):**
+
+- Required env vars: **none.** Verified 2026-07-30: `npx tsc --noEmit`,
+  `npm run lint`, `npm test`, and `npm run build` all pass with zero env vars
+  set — the app defers missing-env failures to runtime by design. If a future
+  change makes `next build` demand a variable, add an obviously-fake
+  `ci-placeholder-*` value in the workflow's `env:` block with a comment; never
+  a real key, and never a value the app could mistake for a live connection.
+
+**`ci-integration.yml` (job `integration`: DB-backed approval-engine tests):**
+
+- `SUPABASE_TEST_URL` / `SUPABASE_TEST_SERVICE_ROLE_KEY` — generated **inside
+  the job** by `supabase start` (a disposable local stack booted from
+  `supabase/migrations`, torn down every run). They are NOT GitHub secrets, are
+  never stored, and cannot reach production data. The export step fails loud if
+  either is missing.
+- Supabase CLI is pinned (see the workflow) — bump deliberately, only after a
+  green run on the new version.
+
+**Required GitHub repository secrets/variables for the gating workflows: none.**
+
+**Kept OUT of required CI:** the live-model tiers (`npm run eval`, gated by
+`EVAL_LIVE=1`, needs `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) run on-demand
+locally; a scheduled/path-filtered live-eval workflow is pending founder
+decision Q-06 (`docs/gradia-v2/program/decision-queue.md`). Live-provider
+verification items stay in the vendor docs — they are never repository checks.
