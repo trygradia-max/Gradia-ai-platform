@@ -9,13 +9,21 @@ _Created 2026-07-25 by the Organizer. Grounded in audit docs 03 (§Testing) and 
 | **Tier 1 — deterministic** | ~52 suites / 430 passing: safety-floor locking tests (ALWAYS_HITL in autonomous mode, Package-2 gating, persona lock), source-scans (owner-agent has no send tool; BI tools read-only), webhook forgery/tamper/replay for all four providers, send-policy, credits, TCPA, A2P | ✅ CI-gated on every push — the strongest asset |
 | **Tier 2 — live-model evals** | 7 golden suites (`npm run eval`): extraction, classification, BI, owner-agent, routing, recovery-extraction, review-request | ⚠️ Exists, **not CI-gated** — discipline only |
 | **Tier 3 — LLM-as-judge** | Sonnet judge for tone, used sparingly | ⚠️ On-demand only |
-| **Integration (real Postgres)** | DB-backed approval-engine tests | ❌ **Quarantined** `continue-on-error` since 2026-06-18, red since 06-04 (CLI now pinned) |
+| **Integration (real Postgres)** | DB-backed approval-engine tests | ✅ **Un-quarantined and blocking since 2026-07-30 (P0-002, PR #9)** — green on disposable local Supabase, CLI pinned 2.98.2; was quarantined `continue-on-error` 2026-06-18 → 2026-07-30 |
 | **E2E** | — | ❌ None (Playwright suite is P10 scope) |
-| **CI itself** | `npm test` only | ❌ No typecheck, no lint, no build — a type-broken build can reach main = production |
+| **CI itself** | `npm test` only *(pre-P0-002)* | ✅ **Since 2026-07-30 (P0-002):** secret hygiene + typecheck + lint + deterministic tests + production build, all blocking (see §2) |
 
-## 2. Target CI gate (P0-002)
+## 2. CI gate (P0-002 — **landed 2026-07-30**)
 
-Every push/PR to `main` must pass, in order: `tsc --noEmit` → `npm run lint` → `npm test` (Tier 1) → `next build` (placeholder envs) → integration tier **un-quarantined and blocking**. A deliberate type error, lint error, broken build, or red integration run fails CI. This lands as **P0-002** and is a precondition for any other ticket entering review (a reviewer needs a CI that can say no).
+Every push/PR to `main` must pass, in order: secret-hygiene grep → `tsc --noEmit` → `npm run lint` → `npm test` (Tier 1) → `next build` (placeholder envs) → integration tier **un-quarantined and blocking**. A deliberate type error, lint error, broken build, or red integration run fails CI. Landed as **P0-002** (merged PR #9, 2026-07-30; Cursor Reviewer APPROVE, no BLOCKER/HIGH findings) — the precondition for any other ticket entering review is satisfied.
+
+Implementation facts of record (full completion record in `tickets/P0-002-ci-enforcement.md`):
+
+- GitHub branch protection on `main` requires **`ci / checks`** and **`ci-integration / integration`**.
+- The integration job runs against a **disposable local Supabase stack** started in-job; **Supabase CLI pinned to 2.98.2** — upgrading the pin requires deliberate re-verification of the tier, never a routine bump.
+- **No production secrets and no GitHub repository secrets** are required; integration credentials are generated inside the CI job. Teardown runs under `if: always()`.
+- The integration test code currently relies on the workflow's fail-loud environment guard for its env preconditions — keep that guard intact until the suite validates its own env.
+- Known gap (not a regression): Tier 2/3 live-model evals remain outside this gate — see §3 and decision **Q-06**.
 
 ## 3. Eval gating (locked principle #6)
 

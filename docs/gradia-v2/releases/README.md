@@ -8,4 +8,6 @@ Each record contains: included tickets · migrations applied · flags flipped (b
 
 ## Index
 
-_None yet. First expected record: the 2026-08-07 alpha (P0 exit)._
+_No formal release records yet. First expected record: the 2026-08-07 alpha (P0 exit)._
+
+Release-infrastructure note (Organizer, 2026-07-30): **P0-002 CI enforcement merged to `main` (= production) in PR #9** with a green CI run — evidence in `../tickets/P0-002-ci-enforcement.md` (completion record). This shipped under the standing rule that reviewed P0-ticket batches may reach prod ahead of a formal release; from this date, every release record can rely on the "CI green" gate in `../13-release-strategy.md` being mechanically enforced (`ci / checks` + `ci-integration / integration` required on `main`). Completion/release evidence for P0-002 should cite PR #9 and its CI run.

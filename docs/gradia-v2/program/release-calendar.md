@@ -33,6 +33,6 @@ Marketing claims move planned → beta → live only at these checkpoints, tied 
 
 ## Standing rules
 
-- No release on a red or bypassed CI (meaningful only after P0-002 — another reason it is Sprint 1).
+- No release on a red or bypassed CI — **in force since 2026-07-30**: P0-002 landed (PR #9) and GitHub branch protection on `main` requires `ci / checks` and `ci-integration / integration` (secret hygiene, typecheck, lint, deterministic tests, production build, and the DB-backed integration tier are all blocking). Live-provider/model evals remain outside CI pending Q-06 — they are not part of this gate.
 - Flag-gated features may merge ahead of their release; the **flag flip** is the release event and gets its own record in `../releases/`.
 - The Organizer updates this file whenever the founder sets or moves a date; date changes are recorded, never overwritten silently.

@@ -13,19 +13,19 @@ Rationale: audit doc 00 names the credential leak the single most serious issue;
 | Ticket | Title | Status | Risk class | Builder | Reviewer |
 |---|---|---|---|---|---|
 | P0-001 | Exposed database credential remediation | **in-review** (2026-07-29 — rotation done by founder; repo remediation implemented on `home-redesign`; founder acceptance steps 2 & 6 + Reviewer sign-off + merge to `main` outstanding) | **Security (standard)** — reclassified 2026-07-27: the ticket declares no schema/migration impact, so it does NOT occupy the DB-sensitive slot (WIP definition = tables/indexes/RLS/migrations) | Claude Builder (session 2026-07-29) | _unassigned — one Cursor Reviewer_ |
-| P0-002 | CI typecheck, lint, build and integration enforcement | ready (slotted — becomes in-progress when a Builder is recorded in `work-in-progress.md`) | Standard | _unassigned — one Builder session_ | _unassigned — one Cursor Reviewer_ |
+| P0-002 | CI typecheck, lint, build and integration enforcement | **done** (2026-07-30 — merged to `main` in PR #9, commit `7e3d530`; Cursor Reviewer verdict APPROVE, no BLOCKER/HIGH findings; completion record in the ticket file) | Standard | Claude Builder | Cursor Reviewer (APPROVE) |
 
 Founder action inside P0-001: the actual password rotation happens in the Supabase dashboard — only the founder can do it. The Builder prepares everything around it (scrub `.gitignore:46`, env updates, delete `.env.local` backups, verification steps). The git-history-scrub sub-step is **blocked** on decision Q-01 (see `blocked.md`) — rotation is NOT blocked by it.
 
 ## Queued behind this sprint
 
-- **P0-003** (Central appointment conflict service) — **may enter implementation ONLY after P0-002 is complete.** It will occupy the calendar high-risk slot when it starts.
+- **P0-003** (Central appointment conflict service) — its gate is now cleared (P0-002 done 2026-07-30) and it is the **next active implementation ticket**: first in line for a freed active slot and the calendar high-risk slot. **Implementation has not started** — it enters in-progress only when the Organizer slots it and a Builder is recorded in `work-in-progress.md`.
 
 ## WIP limits (restated, binding)
 
 | Limit | Rule | Current state |
 |---|---|---|
-| Active implementation tickets | max **2** | 2 slotted (P0-001, P0-002) ✓ |
+| Active implementation tickets | max **2** | 1 active (P0-001 in-review); P0-002 done 2026-07-30 — its slot is free, reserved next for P0-003 ✓ |
 | Database-sensitive tickets active | max **1** | **0** — slot empty until P0-005 (P0-001 reclassified 2026-07-27: no schema/migration impact) ✓ |
 | Payment / tenancy / calendar high-risk tickets active | max **1** | 0 — P0-003/P0-004 will occupy the calendar slot in Sprint 2 ✓ |
 | Roles per ticket | exactly one Builder + one Reviewer | slots defined above ✓ |
@@ -34,7 +34,7 @@ Founder action inside P0-001: the actual password rotation happens in the Supaba
 ## Definition of sprint success
 
 1. P0-001 done: old credential fails to connect; `.gitignore:46` line gone from HEAD; backup env files deleted; rotation documented (per the ticket's DoD).
-2. P0-002 done: a deliberate type error fails CI; lint + `next build` run on every push; `ci-integration.yml` runs green without `continue-on-error`.
+2. P0-002 done: a deliberate type error fails CI; lint + `next build` run on every push; `ci-integration.yml` runs green without `continue-on-error`. — **MET 2026-07-30** (PR #9; secret hygiene, typecheck, lint, deterministic tests, build, and DB integration all blocking; GitHub requires `ci / checks` + `ci-integration / integration` on `main`; evidence in the ticket's completion record).
 3. Both pass Cursor Reviewer sign-off against `12-definition-of-done.md`.
 4. `blocked.md` and `decision-queue.md` updated with anything discovered mid-sprint.
 

@@ -4,7 +4,7 @@ _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capabi
 
 | # | Capability | Phase | Status | Next step (one line) |
 |---|---|---|---|---|
-| 1 | Platform foundation | P0 / P10 | pilot | P0-001/002/010/011/012 stabilization batch |
+| 1 | Platform foundation | P0 / P10 | pilot | P0-002 done 2026-07-30 (CI gates blocking, PR #9); P0-001 in-review; P0-010/011/012 remain in the stabilization batch |
 | 2 | Organizations | P1 | pilot | Single-owner shops work; members model (E01) unlocks the rest |
 | 3 | Members, roles and permissions | P1 | planned | E01: members table + policy indirection + invitations |
 | 4 | Locations and resources | P4 | planned | Model with E04 (jobs/teams); nothing exists today |

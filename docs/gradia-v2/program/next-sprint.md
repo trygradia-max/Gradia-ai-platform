@@ -2,13 +2,15 @@
 
 _Created 2026-07-25 by the Organizer. Sprint 2 candidate scope — contingent on Sprint 1 completing (P0-001 + P0-002 done and reviewed). Not started; the Organizer promotes this to `current-sprint.md` when Sprint 1 closes._
 
+_Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evidence in the ticket's completion record). The P0-003 entry condition below is therefore satisfied: P0-003 is the **next active implementation ticket** and may be slotted as soon as WIP limits allow. Implementation has not started. P0-001 remains in-review, so Sprint 1 is not yet closed._
+
 ## Candidate scope (all E00 / P0)
 
 ### Track A — Scheduling correctness (calendar high-risk slot)
 
 | Ticket | Title | Notes |
 |---|---|---|
-| P0-003 | Central appointment conflict service | Enters implementation only after P0-002 is complete (CI must be able to fail its tests). Occupies the **one** calendar high-risk slot. |
+| P0-003 | Central appointment conflict service | Gate cleared — P0-002 complete 2026-07-30, so CI can fail its tests. **Next active implementation position**; occupies the **one** calendar high-risk slot when slotted. Not started. |
 | P0-004 | Conflict enforcement across booking and scheduling paths | Strictly sequential after P0-003 — same high-risk slot; never active simultaneously with P0-003. |
 
 ### Track B — Idempotency chain

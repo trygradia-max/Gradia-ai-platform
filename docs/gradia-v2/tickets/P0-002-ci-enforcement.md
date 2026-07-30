@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-002
 - **Epic:** E00 — Stabilization
-- **Status:** ready — selected for Sprint 1
+- **Status:** **done** (2026-07-30 — merged to `main` in PR #9, commit `7e3d530`; Cursor Reviewer verdict APPROVE, no BLOCKER or HIGH findings; completion record below)
 - **Priority:** Critical (`main` = production and CI currently cannot stop a broken build)
 
 ## Objective
@@ -115,3 +115,46 @@ Revert the workflow-file commits. No schema, no runtime surface. (Rolling back r
 ## Definition of done
 
 All of `../12-definition-of-done.md` plus: the three new steps demonstrably fail on seeded errors (evidence links in the completion report); integration tier blocking and green; placeholder envs documented; branch-protection step handed to the founder with exact settings; no test or lint rule weakened to get there.
+
+---
+
+## Completion record (Organizer, 2026-07-30)
+
+Merged to `main` (= production) in **PR #9**, commit `7e3d530` ("fix: enforce CI quality gates"), with a green CI run on the merged workflows. Independently reviewed and approved: **Cursor Reviewer verdict APPROVE — no BLOCKER or HIGH findings.**
+
+### What is now blocking in CI
+
+The gating workflow (`ci`, job `checks`) runs, in order, all blocking:
+
+1. **Secret hygiene** — the P0-001 repo-hygiene grep is a standing CI step (a hit fails the build; CI output does not republish the matched value).
+2. **TypeScript typecheck** — `tsc --noEmit`.
+3. **Lint** — `npm run lint`.
+4. **Deterministic tests** — `npm test` (Tier 1).
+5. **Production build** — `next build` with documented placeholder envs (`docs/env-setup.md` §CI); no real secrets.
+
+The integration workflow (`ci-integration`, job `integration`) is **un-quarantined and blocking**:
+
+- Runs the DB-backed integration tests against a **disposable local Supabase stack** started inside the job (`supabase start`), applying every migration.
+- **Supabase CLI pinned to 2.98.2.**
+- **No production secrets and no GitHub repository secrets required** — integration credentials are generated inside the CI job (`supabase status -o json`).
+- Teardown (`supabase stop --no-backup`) runs under **`if: always()`**.
+- `continue-on-error` is absent from the workflow file (appears only in a comment citing the §5 rule that forbids it).
+
+### Branch protection (founder-confirmed)
+
+GitHub branch protection on `main` requires both status checks:
+
+- `ci / checks`
+- `ci-integration / integration`
+
+### Downstream effect
+
+The global review gate is satisfied: tickets with status `ready-after-P0-002` may now enter review, and **P0-003 may enter implementation** (it was the one ticket whose *implementation* was gated on P0-002). P0-003 is queued as the next active implementation ticket — see `../program/current-sprint.md`; implementation has **not** started.
+
+### Remaining limitations (recorded, not blockers)
+
+- Live-provider and model evaluations (Tier 2/3) remain **outside** standard CI, pending decision **Q-06** (eval budget/cadence) — see `../09-testing-strategy.md` §3 and risk R-12.
+- Supabase CLI upgrades off the 2.98.2 pin require deliberate re-verification of the integration tier (an upgrade is a change to test infrastructure, not a routine bump).
+- GitHub Actions runtime/action-version upgrades may be handled in a later maintenance ticket.
+- The integration test code currently relies on the workflow's fail-loud environment guard (rather than its own env validation) — acceptable for now; note for any future refactor of the integration suite.
+- Completion/release evidence should reference the successful PR (#9) and its CI run.
