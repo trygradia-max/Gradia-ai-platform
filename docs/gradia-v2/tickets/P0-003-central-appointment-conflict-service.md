@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-003
 - **Epic:** E00 — Stabilization
-- **Status:** ready-after-P0-002 (may move to implementation only when P0-002 is done)
+- **Status:** in-review (implemented 2026-07-30 on `fix/p0-003-appointment-conflict-service` by Claude Builder; P0-002 gate was cleared 2026-07-30; awaiting Cursor Reviewer — completion record at the end of this file)
 - **Priority:** High (audit: "double-booking is the product's core promise inverted"; risk class: **calendar** — counts against the high-risk WIP limit)
 
 ## Objective
@@ -120,3 +120,27 @@ Delete/revert the new module; nothing depends on it until P0-004. Zero data impa
 ## Definition of done
 
 All of `../12-definition-of-done.md` plus: service + policy helper exist with the typed result contract documented; full unit/failure/tenant test set green in gating CI; one DB-tier integration case green; no call sites modified; index recommendation (if any) written up for P0-004.
+
+## Completion record (Builder, 2026-07-30)
+
+**Branch:** `fix/p0-003-appointment-conflict-service` (base `origin/main`). Implemented by Claude Builder, 2026-07-30. Cursor Reviewer: _unassigned_.
+
+**Delivered:**
+
+- `src/lib/availability.ts` — `checkAvailability(supabase, shopId, {start, end, excludeAppointmentId?, override?, calendarTimeoutMs?})` → typed `AvailabilityResult` (`available`, structured `conflicts[]` with source `appointment|calendar|outside_hours|over_capacity`, ids, ISO ranges, human-readable label, block-time flag, bay resource when recorded, blocking/advisory severity, metadata; explicit `calendar: "checked"|"unchecked"` + reason). Overlap math is half-open `[start, end)` — boundary touch is not a conflict. Appointment end = `ends_at` when valid, else `scheduled_at + duration_minutes` (default 90). Busy statuses: everything except `closed` (cancelled rows are deleted by `executeCancelAppointment`); unknown statuses conservatively busy + logged; unparseable rows skipped + logged, never a crash.
+- `resolveConflictPolicy('automatic'|'hitl')` → `hard_block` | `warn_allow_override` (D-015/D-016) and the `ConflictOverride` type (who/when/which conflicts) for uniform P0-004 recording. Passing an override NEVER suppresses detection — test-locked.
+- External calendar via existing `listCalendarEvents` seam: best-effort advisory, bounded by a timeout (default 3.5s); not-connected/error/timeout → `calendar: "unchecked"` with an `[availability]`-prefixed log line (named exception to quiet degradation). Events mirroring Gradia appointments (`aurinko_event_id`) are deduped; a reschedule never collides with its own mirror.
+- Working hours/capacity via `working-hours.ts`: distinct advisory conflict kinds computed per shop-local day (`shops.timezone`, Intl-based, UTC fallback logged); DST-boundary tested.
+- Tenant isolation: every query `.eq("shop_id", shopId)`; service-role fixture test proves shop B's identical window never sees shop A's rows.
+
+**Tests:** `eval/availability.test.ts` (40 unit/failure-path/policy/timezone cases) + `eval/integration/availability.int.test.ts` (4 real-Postgres cases: conflict payload for two seeded overlapping rows, boundary touch available, cross-tenant isolation, reschedule exclusion). No existing test touched.
+
+**Validation (2026-07-30, local):** `npm test` 53 files / 457 passed / 4 skipped · `npx tsc --noEmit` clean · `npm run lint` clean · `npm run build` success · `npm run test:int` 2 files / 8 passed against local Supabase stack (CLI 2.98.2, the pinned version).
+
+**Manual acceptance:** step 1 (two overlapping seeds → conflict listing both) and step 2 (boundary touch → available) executed as real-Postgres integration cases; step 3 (no calendar → `unchecked` + log) executed in integration (seeded shop has no calendar; reason `not_connected`) and unit (error/timeout paths + log assertions); step 4 (policy mapping) executed as a unit case; step 5 (no existing path behaves differently) verified by diff — zero existing modules modified — and by the pre-existing approvals integration suite staying green.
+
+**Index recommendation (for P0-004):** the range query filters `(shop_id, scheduled_at)`; today's `appointments_shop_id_idx` + `appointments_scheduled_at_idx` are adequate at pilot scale. When P0-004 puts the check on every booking path, add a composite `CREATE INDEX appointments_shop_scheduled_idx ON appointments (shop_id, scheduled_at)` as its own reviewed migration.
+
+**Known limitations (documented in the module):** 7-day lookback bounds how far back a still-overlapping long row can start; 1,000-row fetch cap logs when hit; capacity math clips busy ranges to local days in 15-minute quanta (advisory precision); Aurinko event times lacking a UTC offset parse in server-local time (advisory input only; mirror-dedupe removes Gradia-created events).
+
+**Rollback:** revert the branch / delete the module + tests; nothing depends on it until P0-004; zero data impact.
