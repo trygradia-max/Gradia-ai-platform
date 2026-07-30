@@ -43,4 +43,6 @@ next-env.d.ts
 supabase/.temp/
 .env*
 
-SUPABASE_DB_URL postgresql://postgres:Bolderilove4!@db.zfxkzciumhrrgfeacwds.supabase.co:5432/postgres
+# Local env backups (.env.local.*, .env.production.pull) are covered by .env* above.
+# Keep exactly ONE .env.local on disk. Never put secret VALUES in this file —
+# it is an ignore-pattern list (incident C-1 / ticket P0-001; runbook: docs/gradia-v2/runbooks/exposed-credential.md).
