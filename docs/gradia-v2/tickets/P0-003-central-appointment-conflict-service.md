@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-003
 - **Epic:** E00 — Stabilization
-- **Status:** in-review (implemented 2026-07-30 on `fix/p0-003-appointment-conflict-service` by Claude Builder; P0-002 gate was cleared 2026-07-30; awaiting Cursor Reviewer — completion record at the end of this file)
+- **Status:** **done** (2026-08-06 — merged to `main` in PR #10, commit `00091db`; Cursor Reviewer verdict **APPROVE**; CI + DB integration green after the review commit; completion record and merge/review record at the end of this file)
 - **Priority:** High (audit: "double-booking is the product's core promise inverted"; risk class: **calendar** — counts against the high-risk WIP limit)
 
 ## Objective
@@ -144,3 +144,19 @@ All of `../12-definition-of-done.md` plus: service + policy helper exist with th
 **Known limitations (documented in the module):** 7-day lookback bounds how far back a still-overlapping long row can start; 1,000-row fetch cap logs when hit; capacity math clips busy ranges to local days in 15-minute quanta (advisory precision); Aurinko event times lacking a UTC offset parse in server-local time (advisory input only; mirror-dedupe removes Gradia-created events).
 
 **Rollback:** revert the branch / delete the module + tests; nothing depends on it until P0-004; zero data impact.
+
+## Merge & review record (Organizer, 2026-08-06)
+
+**Merged:** PR #10 → `main` as `00091db`, 2026-08-06. **Cursor Reviewer verdict: APPROVE.** CI (`ci / checks`) and the DB integration tier (`ci-integration / integration`) passed after the Cursor-review commit.
+
+Verified at close:
+
+- Central conflict service lives in `src/lib/availability.ts`; **the service is inert until P0-004 wires it into appointment-writing paths** — no existing booking path changed, no migrations introduced.
+- Gradia appointments remain the primary source of scheduling truth (D-013); external calendars remain advisory.
+- Appointment queries are explicitly tenant-scoped by `shop_id`; cross-tenant case covered by a service-role fixture test.
+- Half-open `[start, end)` intervals — adjacent appointments do not conflict. Exact, partial, containment, multi-day, blocked-time, reschedule-exclusion, and cross-tenant cases all covered by tests.
+- **Review-commit change:** the 1,000-row fetch cap now **fails closed** (was log-only in the original completion record above).
+- Policy mapping locked: `automatic` → `hard_block` (D-015); `hitl` → `warn_allow_override` (D-016). Override metadata never disables conflict detection (test-locked).
+- No Organizer-owned program files were included in the implementation PR.
+
+**Post-close pointers:** the P0-004 entry gates distilled from this ticket's review are recorded in `P0-004-conflict-enforcement-booking-paths.md` §Entry gates. Index recommendation (composite `appointments(shop_id, scheduled_at)`) carried there as gate 7.

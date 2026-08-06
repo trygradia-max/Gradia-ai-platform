@@ -12,7 +12,7 @@ _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capabi
 | 6 | Vehicles and service history | P3 | pilot | VIN/trim fields + per-vehicle history view |
 | 7 | Leads and pipeline | P3 / P8 | pilot | Retire legacy `status` enum; funnel analytics later (P8) |
 | 8 | Quotes and deposits | P0 / P5 | pilot / planned | P0-009 repairs accept→book + expiry; deposits wait for E05 |
-| 9 | Calendar and availability | P0 / P2 | building / designed | P0-003/004 conflict enforcement; E02 native source of truth (D-013) |
+| 9 | Calendar and availability | P0 / P2 | building / designed | P0-003 conflict service **shipped 2026-08-06** (PR #10, `src/lib/availability.ts` — inert until P0-004 wires enforcement); E02 native source of truth (D-013) |
 | 10 | Jobs and work orders | P4 | pilot / planned | Status machine exists; assignments/checklists need E01 roles |
 | 11 | Invoices and payments | P5 | planned | Stripe Connect first (D-019); flagged-off foundation exists |
 | 12 | Recurring jobs | P6 | planned | Separate domain (D-017); maintenance_schedule armed, unconsumed |

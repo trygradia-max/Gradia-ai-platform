@@ -14,12 +14,12 @@ _Created 2026-07-25 by the Organizer. The live WIP board. **Every Builder sessio
 
 | Slot | Ticket | Risk class | Builder | Reviewer | State |
 |---|---|---|---|---|---|
-| Active 1 | P0-001 — Exposed database credential remediation | Security (standard) — reclassified 2026-07-27, no schema/migration impact | Claude Builder (session 2026-07-29) | _open — assign one Cursor Reviewer_ | **in-review** (2026-07-29 — repo remediation implemented; founder acceptance steps 2 & 6 + Reviewer + merge to `main` outstanding; slot stays occupied until done) |
-| Active 2 | — freed 2026-07-30 — | — | — | — | **P0-002 done** (merged PR #9, Cursor Reviewer APPROVE; completion record in the ticket file). Slot reserved next for **P0-003**, which enters in-progress only when the Organizer slots it and a Builder is recorded here — not started. |
-| Database-sensitive | — empty — | — | — | — | Slot free until P0-005 (the first genuinely DB-sensitive P0 ticket) |
-| High-risk (payments/tenancy/calendar) | — empty — | — | — | — | P0-003 takes this slot when it starts (its P0-002 gate cleared 2026-07-30) |
+| Active 1 | P0-001 — Exposed database credential remediation | Security (standard) — reclassified 2026-07-27, no schema/migration impact | Claude Builder (session 2026-07-29) | _open — assign one Cursor Reviewer_ | **in-review** (accuracy update 2026-08-06: merged to `main` 2026-07-30, PR #8 `6adc21c`; held out of done pending founder acceptance steps 2 & 6 + formal Reviewer sign-off; slot stays occupied until done) |
+| Active 2 | — freed 2026-08-06 — | — | — | — | **P0-003 done** (merged PR #10 `00091db` 2026-08-06, Cursor Reviewer APPROVE; service inert until P0-004; merge/review record in the ticket file). Slot reserved next for **P0-004**, which enters in-progress only when the Organizer slots it and a Builder is recorded here — not started. |
+| Database-sensitive | — empty — | — | — | — | Slot free until P0-005 (the first genuinely DB-sensitive P0 ticket). Note: P0-004 becomes database-sensitive only if it adopts the composite-index recommendation (its gate 7). |
+| High-risk (payments/tenancy/calendar) | — empty — | — | — | — | P0-003 released this slot at close (2026-08-06). **P0-004 takes it when it starts.** |
 
-Slot accounting: 1/2 active · **0/1 database-sensitive** · 0/1 high-risk. One active slot free — reserved for P0-003 as the next active implementation ticket.
+Slot accounting: 1/2 active · **0/1 database-sensitive** · 0/1 high-risk. One active slot free — reserved for P0-004 as the next active implementation ticket.
 
 ## How this board is updated
 
