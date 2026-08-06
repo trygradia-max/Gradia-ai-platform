@@ -1045,7 +1045,7 @@ async function executeBookAppointment(
 
   // ends_at stored at creation (P0-004 gate 8) so the conflict service
   // never has to assume this row's end time.
-  const { data: appointment } = await supabase
+  const { data: appointment, error: appointmentErr } = await supabase
     .from("appointments")
     .insert({
       shop_id: claimed.shop_id,
@@ -1064,13 +1064,26 @@ async function executeBookAppointment(
   const appointmentId =
     (appointment as { id: string } | null)?.id ?? null
 
-  // Audit trail: an executed override is recorded (D-016); a degraded
-  // check is recorded as "unverified" — never rewritten as clear.
-  if (gate.summary && (gate.override || gate.summary.error)) {
-    await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
-  }
-  if (gate.override && gate.summary) {
-    await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
+  // Audit trail: an executed override is recorded (D-016); a degraded check
+  // is recorded as "unverified" — never rewritten as clear. Gate BOTH writes
+  // on the appointments row actually landing: without a row there is nothing
+  // for the conflict service to ever see, so stamping a "booked despite a
+  // conflict" override (or an availability record) would be a false audit for
+  // a booking that did not persist. (The wider partial-state gap — the lead +
+  // calendar event above already landed, and this path still returns
+  // "executed" on a failed insert — is a pre-existing reliability issue
+  // tracked outside P0-004; see the review's atomicity finding.)
+  if (appointmentErr || !appointmentId) {
+    console.error(
+      `[approvals] appointment insert failed for action ${claimed.id} after lead ${lead.id} / calendar event ${calendarEventId ?? "none"} already landed — override/availability audit skipped; manual reconciliation required: ${appointmentErr?.message ?? "no row returned"}`
+    )
+  } else {
+    if (gate.summary && (gate.override || gate.summary.error)) {
+      await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
+    }
+    if (gate.override && gate.summary) {
+      await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
+    }
   }
 
   if (vehicleId && appointmentId) {
