@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 
 import { blockTime, rescheduleJob } from "@/app/actions/jobs"
+import { STRINGS } from "@/lib/strings"
 import { JobCardSheet } from "@/components/gradia/job-card-sheet"
 import { Button } from "@/components/ui/button"
 import {
@@ -71,6 +72,12 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
   const [openJobId, setOpenJobId] = React.useState<string | null>(null)
   const [blockOpen, setBlockOpen] = React.useState(false)
   const [dragId, setDragId] = React.useState<string | null>(null)
+  // P0-004: a drag onto a busy slot warns and asks for a recorded reason.
+  const [conflictMove, setConflictMove] = React.useState<{
+    id: string
+    iso: string
+    labels: string[]
+  } | null>(null)
 
   const weekStart = new Date(initial.weekStartIso)
   const days = Array.from({ length: 7 }, (_, i) => new Date(weekStart.getTime() + i * DAY_MS))
@@ -111,6 +118,16 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
     const result = await rescheduleJob(id, newStart.toISOString())
     if (!result.ok) {
       setJobs(prev)
+      if (result.conflict) {
+        // Warn-confirm (P0-004): the move is parked until the owner gives a
+        // reason; cancelling leaves everything unchanged.
+        setConflictMove({
+          id,
+          iso: newStart.toISOString(),
+          labels: result.conflict.labels,
+        })
+        return
+      }
       toast.error(result.error)
       return
     }
@@ -119,6 +136,26 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
         ? "Moved — a heads-up text is waiting in Approvals."
         : "Moved."
     )
+    router.refresh()
+  }
+
+  async function confirmConflictMove(reason: string) {
+    const move = conflictMove
+    if (!move) return
+    setConflictMove(null)
+    const prev = jobs
+    setJobs((cur) =>
+      cur.map((j) => (j.id === move.id ? { ...j, scheduledAt: move.iso } : j))
+    )
+    const result = await rescheduleJob(move.id, move.iso, {
+      overrideReason: reason,
+    })
+    if (!result.ok) {
+      setJobs(prev)
+      toast.error(result.error)
+      return
+    }
+    toast.success(STRINGS.conflicts.overrideRecorded)
     router.refresh()
   }
 
@@ -287,7 +324,98 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
         }}
         weekStartIso={initial.weekStartIso}
       />
+
+      <ConflictMoveDialog
+        move={conflictMove}
+        onCancel={() => setConflictMove(null)}
+        onConfirm={confirmConflictMove}
+      />
     </div>
+  )
+}
+
+/** P0-004 warn-confirm for drag-reschedule: names the conflicts, requires a
+ *  reason (recorded with the override), cancel changes nothing. */
+function ConflictMoveDialog({
+  move,
+  onCancel,
+  onConfirm,
+}: {
+  move: { id: string; iso: string; labels: string[] } | null
+  onCancel: () => void
+  onConfirm: (reason: string) => void
+}) {
+  // Keyed remount per move — the reason field always starts empty.
+  return (
+    <Dialog open={move !== null} onOpenChange={(o) => !o && onCancel()}>
+      {move ? (
+        <ConflictMoveDialogBody
+          key={`${move.id}-${move.iso}`}
+          move={move}
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+        />
+      ) : null}
+    </Dialog>
+  )
+}
+
+function ConflictMoveDialogBody({
+  move,
+  onCancel,
+  onConfirm,
+}: {
+  move: { id: string; iso: string; labels: string[] }
+  onCancel: () => void
+  onConfirm: (reason: string) => void
+}) {
+  const [reason, setReason] = React.useState("")
+  return (
+    <DialogContent className="max-w-sm">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 font-display">
+          <AlertTriangle className="size-4 text-status-warning-fg" aria-hidden />
+          {STRINGS.conflicts.warningTitle}
+        </DialogTitle>
+        <DialogDescription>
+          This time overlaps with what&apos;s already on the books.
+        </DialogDescription>
+      </DialogHeader>
+      <ul className="list-disc space-y-1 pl-5 text-sm text-foreground/90">
+        {move.labels.map((label) => (
+          <li key={label}>{label}</li>
+        ))}
+      </ul>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!reason.trim()) return
+          onConfirm(reason.trim())
+        }}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="conflict-move-reason">
+            {STRINGS.conflicts.overrideReasonLabel}
+          </Label>
+          <Input
+            id="conflict-move-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={STRINGS.conflicts.overrideReasonPlaceholder}
+            maxLength={300}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={reason.trim().length === 0}>
+            {STRINGS.conflicts.moveAnyway}
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            {STRINGS.conflicts.keepSlot}
+          </Button>
+        </div>
+      </form>
+    </DialogContent>
   )
 }
 
@@ -389,29 +517,56 @@ function BlockTimeDialog({
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`
   }, [weekStartIso])
   const [busy, setBusy] = React.useState(false)
+  // P0-004: blocking over an existing booking warns and asks for a reason.
+  const [conflictLabels, setConflictLabels] = React.useState<string[] | null>(null)
+  const [overrideReason, setOverrideReason] = React.useState("")
 
   async function submit(formData: FormData) {
     const start = String(formData.get("block-start") ?? "")
     const hours = Number(formData.get("block-hours") ?? 1)
     const label = String(formData.get("block-label") ?? "")
     if (!start) return
+    if (conflictLabels && !overrideReason.trim()) {
+      toast.error(STRINGS.conflicts.overrideReasonRequired)
+      return
+    }
     setBusy(true)
     const result = await blockTime(
       new Date(start).toISOString(),
       Math.round(hours * 60),
-      label || undefined
+      label || undefined,
+      conflictLabels && overrideReason.trim()
+        ? { overrideReason: overrideReason.trim() }
+        : undefined
     )
     setBusy(false)
     if (!result.ok) {
+      if (result.conflict) {
+        setConflictLabels(result.conflict.labels)
+        return
+      }
       toast.error(result.error)
       return
     }
-    toast.success("Time blocked.")
+    toast.success(
+      conflictLabels ? STRINGS.conflicts.overrideRecorded : "Time blocked."
+    )
+    setConflictLabels(null)
+    setOverrideReason("")
     onCreated()
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) {
+          setConflictLabels(null)
+          setOverrideReason("")
+          onClose()
+        }
+      }}
+    >
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="font-display">Block time</DialogTitle>
@@ -432,8 +587,37 @@ function BlockTimeDialog({
             <Label htmlFor="block-label">Label (optional)</Label>
             <Input id="block-label" name="block-label" placeholder="Lunch" />
           </div>
-          <Button type="submit" disabled={busy} className="w-full">
-            Block it
+          {conflictLabels ? (
+            <div className="space-y-2 rounded-md border border-status-warning/25 bg-status-warning-bg px-3 py-2.5">
+              <p className="flex items-center gap-2 text-xs font-medium text-status-warning-fg">
+                <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+                {STRINGS.conflicts.warningTitle}
+              </p>
+              <ul className="list-disc space-y-0.5 pl-5 text-xs text-status-warning-fg">
+                {conflictLabels.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+              <div className="space-y-1.5">
+                <Label htmlFor="block-override-reason" className="text-xs">
+                  {STRINGS.conflicts.overrideReasonLabel}
+                </Label>
+                <Input
+                  id="block-override-reason"
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder={STRINGS.conflicts.overrideReasonPlaceholder}
+                  maxLength={300}
+                />
+              </div>
+            </div>
+          ) : null}
+          <Button
+            type="submit"
+            disabled={busy || (conflictLabels !== null && overrideReason.trim().length === 0)}
+            className="w-full"
+          >
+            {conflictLabels ? STRINGS.conflicts.blockAnyway : "Block it"}
           </Button>
         </form>
       </DialogContent>

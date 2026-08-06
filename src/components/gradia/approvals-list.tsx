@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Pencil,
   StickyNote,
+  TriangleAlert,
   User,
   type LucideIcon,
 } from "lucide-react"
@@ -19,9 +20,11 @@ import { toast } from "sonner"
 
 import {
   approveFromDashboard,
+  approveWithConflictOverride,
   rejectFromDashboard,
   undoRejectFromDashboard,
 } from "@/app/actions/approvals"
+import type { AvailabilitySummary } from "@/lib/availability"
 import { STRINGS } from "@/lib/strings"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
@@ -205,9 +208,11 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     }
 
     if (!result.ok) {
-      // Reconcile failure — un-hide the card so the owner can retry.
+      // Reconcile failure — un-hide the card so the owner can retry. The
+      // refresh pulls any conflict info the executor wrote back (P0-004).
       rollback()
       toast.error(result.error)
+      router.refresh()
       return
     }
 
@@ -253,6 +258,45 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     router.refresh()
   }
 
+  // P0-004 / D-016: "Book it anyway" — approve through a known conflict with
+  // a recorded reason. Same optimistic pattern as a normal approve.
+  async function handleOverride(id: string, reason: string): Promise<void> {
+    if (inFlight.current.has(id)) return
+    if (!serverItems.some((i) => i.id === id)) return
+    inFlight.current.add(id)
+    setRemoved((prev) => new Set(prev).add(id))
+    const rollback = () => {
+      setRemoved((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      inFlight.current.delete(id)
+    }
+
+    let result: Awaited<ReturnType<typeof approveWithConflictOverride>>
+    try {
+      result = await approveWithConflictOverride(id, reason)
+    } catch {
+      rollback()
+      toast.error(STRINGS.toasts.decisionFailed)
+      return
+    }
+    if (!result.ok) {
+      rollback()
+      toast.error(result.error)
+      router.refresh()
+      return
+    }
+    if (result.alreadyDecided) {
+      toast.message(STRINGS.toasts.alreadyDecided)
+    } else {
+      toast.success(STRINGS.conflicts.overrideRecorded)
+    }
+    inFlight.current.delete(id)
+    router.refresh()
+  }
+
   return (
     <PageStagger className="grid gap-3">
       <AnimatePresence initial={false}>
@@ -279,6 +323,7 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
                   rejectBusy={false}
                   anyBusy={false}
                   onDecision={handleDecision}
+                  onOverride={handleOverride}
                 />
               </StaggerItem>
             </motion.div>
@@ -297,6 +342,7 @@ function ApprovalCard({
   rejectBusy,
   anyBusy,
   onDecision,
+  onOverride,
 }: {
   item: PendingActionRow
   meta: ActionMeta
@@ -305,9 +351,22 @@ function ApprovalCard({
   rejectBusy: boolean
   anyBusy: boolean
   onDecision: (id: string, decision: "approve" | "reject") => void
+  onOverride: (id: string, reason: string) => void
 }) {
   const Icon = meta.icon
   const tone = TONE_STYLE[meta.tone]
+
+  // P0-004: conflict info staged with (or written back onto) the card.
+  const isCalendarAction =
+    item.action_type === "book_appointment" ||
+    item.action_type === "reschedule_appointment"
+  const availability = isCalendarAction
+    ? (item.payload as { availability?: AvailabilitySummary }).availability
+    : undefined
+  const blockingConflicts =
+    availability?.conflicts.filter((c) => c.severity === "blocking") ?? []
+  const [overrideOpen, setOverrideOpen] = React.useState(false)
+  const [overrideReason, setOverrideReason] = React.useState("")
 
   return (
     <MotionCard
@@ -349,25 +408,42 @@ function ApprovalCard({
 
       <div className="space-y-3 pl-[52px] sm:pl-[52px]">
         <ActionBody item={item} />
+        {availability ? <ConflictWarning availability={availability} /> : null}
         <p className="text-xs text-muted-foreground/80">
           Caught {formatRelative(item.created_at)}
         </p>
       </div>
 
       {/* Equal visual weight on all three (founder decision + pack
-          guardrail: no false hierarchy on the decline). */}
+          guardrail: no false hierarchy on the decline). A card with a known
+          blocking conflict swaps the plain approve for the documented
+          override path — approving without one would only be refused. */}
       <div className="mt-5 flex flex-col gap-2 pl-0 sm:flex-row sm:items-center sm:pl-[52px]">
-        <Button
-          onClick={() => onDecision(item.id, "approve")}
-          disabled={anyBusy}
-          variant="outline"
-          className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:h-10 sm:px-5"
-        >
-          {approveBusy ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : null}
-          {ACTION_CTA[item.action_type] ?? "Send it"}
-        </Button>
+        {blockingConflicts.length > 0 ? (
+          <Button
+            onClick={() => setOverrideOpen((v) => !v)}
+            disabled={anyBusy}
+            variant="outline"
+            className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:h-10 sm:px-5"
+          >
+            <TriangleAlert className="size-4 text-status-warning-fg" aria-hidden />
+            {item.action_type === "reschedule_appointment"
+              ? STRINGS.conflicts.moveAnyway
+              : STRINGS.conflicts.bookAnyway}
+          </Button>
+        ) : (
+          <Button
+            onClick={() => onDecision(item.id, "approve")}
+            disabled={anyBusy}
+            variant="outline"
+            className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:h-10 sm:px-5"
+          >
+            {approveBusy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : null}
+            {ACTION_CTA[item.action_type] ?? "Send it"}
+          </Button>
+        )}
         <div className="grid grid-cols-2 gap-2 sm:contents">
           <Link
             href={`/approvals/${item.id}`}
@@ -393,7 +469,112 @@ function ApprovalCard({
           </Button>
         </div>
       </div>
+
+      {overrideOpen && blockingConflicts.length > 0 ? (
+        <form
+          className="mt-3 space-y-2 pl-0 sm:pl-[52px]"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const reason = overrideReason.trim()
+            if (!reason) {
+              toast.error(STRINGS.conflicts.overrideReasonRequired)
+              return
+            }
+            onOverride(item.id, reason)
+          }}
+        >
+          <label
+            htmlFor={`override-reason-${item.id}`}
+            className="block text-xs font-medium text-muted-foreground"
+          >
+            {STRINGS.conflicts.overrideReasonLabel}
+          </label>
+          <input
+            id={`override-reason-${item.id}`}
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            placeholder={STRINGS.conflicts.overrideReasonPlaceholder}
+            maxLength={300}
+            className="w-full rounded-sm border border-border/60 bg-muted/20 px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              disabled={anyBusy || overrideReason.trim().length === 0}
+              variant="outline"
+              className="h-9 gap-2"
+            >
+              {item.action_type === "reschedule_appointment"
+                ? STRINGS.conflicts.moveAnyway
+                : STRINGS.conflicts.bookAnyway}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-9"
+              onClick={() => {
+                setOverrideOpen(false)
+                setOverrideReason("")
+              }}
+            >
+              {STRINGS.conflicts.keepSlot}
+            </Button>
+          </div>
+        </form>
+      ) : null}
     </MotionCard>
+  )
+}
+
+/** P0-004 conflict rendering — icon + text (never color alone). Blocking
+ *  conflicts warn; advisory findings note; a failed check says "unverified"
+ *  and NEVER pretends the slot is clear. No data → nothing rendered. */
+function ConflictWarning({
+  availability,
+}: {
+  availability: AvailabilitySummary
+}) {
+  if (availability.error) {
+    return (
+      <p className="flex items-start gap-2 rounded-md border border-status-warning/25 bg-status-warning-bg px-2.5 py-2 text-xs text-status-warning-fg">
+        <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <span>{STRINGS.conflicts.unverified}</span>
+      </p>
+    )
+  }
+  const blocking = availability.conflicts.filter(
+    (c) => c.severity === "blocking"
+  )
+  const advisory = availability.conflicts.filter(
+    (c) => c.severity === "advisory"
+  )
+  if (blocking.length === 0 && advisory.length === 0) return null
+  return (
+    <div className="space-y-1.5">
+      {blocking.length > 0 ? (
+        <div className="rounded-md border border-status-warning/25 bg-status-warning-bg px-2.5 py-2 text-xs text-status-warning-fg">
+          <p className="flex items-center gap-2 font-medium">
+            <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+            {STRINGS.conflicts.warningTitle}
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {blocking.map((c) => (
+              <li key={c.key}>{c.label}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {advisory.length > 0 ? (
+        <div className="rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground">
+          <p className="font-medium">{STRINGS.conflicts.advisoryTitle}</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {advisory.map((c) => (
+              <li key={c.key}>{c.label}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

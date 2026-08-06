@@ -34,12 +34,14 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { z } from "zod"
 
 import {
   getAccessTokenForShop,
   listCalendarEvents,
   type AurinkoCalendarEvent,
 } from "@/lib/aurinko"
+import { FEATURES } from "@/lib/features"
 import {
   capacityMinutesFor,
   parseTimeMinutes,
@@ -164,6 +166,210 @@ export function conflictKey(conflict: AvailabilityConflict): string {
   return `${conflict.source}:${conflict.id ?? `${conflict.start ?? "?"}/${conflict.end ?? "?"}`}`
 }
 
+/** Enforcement acts on blocking conflicts only; advisory kinds (hours,
+ *  capacity) warn on the card but never refuse (ticket §4 caller policy). */
+export function blockingConflicts(
+  result: Pick<AvailabilityResult, "conflicts">
+): AvailabilityConflict[] {
+  return result.conflicts.filter((c) => c.severity === "blocking")
+}
+
+// ---------------------------------------------------------------------------
+// P0-004 — shared shapes for call sites (one algorithm, one recording shape)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compact availability snapshot staged onto `pending_actions.payload
+ * .availability` so the approval card can render the warning, and refreshed
+ * by the executor on every refusal. `error: true` means the check itself
+ * failed — the card says "unverified", it NEVER fabricates "no conflicts".
+ */
+export type AvailabilitySummary = {
+  checked_at: string
+  available: boolean
+  calendar: "checked" | "unchecked"
+  calendar_unchecked_reason?: CalendarUncheckedReason
+  conflicts: Array<{
+    key: string
+    source: ConflictSource
+    severity: ConflictSeverity
+    label: string
+    start: string | null
+    end: string | null
+    block_time: boolean
+    assumed_duration_minutes?: number
+  }>
+  error?: boolean
+}
+
+export function summarizeAvailability(
+  result: AvailabilityResult,
+  checkedAt: string
+): AvailabilitySummary {
+  return {
+    checked_at: checkedAt,
+    available: result.available,
+    calendar: result.calendar,
+    ...(result.calendarUncheckedReason
+      ? { calendar_unchecked_reason: result.calendarUncheckedReason }
+      : {}),
+    conflicts: result.conflicts.map((c) => ({
+      key: conflictKey(c),
+      source: c.source,
+      severity: c.severity,
+      label: c.label,
+      start: c.start,
+      end: c.end,
+      block_time: c.blockTime,
+      ...(typeof c.metadata?.assumed_duration_minutes === "number"
+        ? { assumed_duration_minutes: c.metadata.assumed_duration_minutes }
+        : {}),
+    })),
+  }
+}
+
+/** The summary recorded when the check itself failed (degraded, honest). */
+export function unverifiedAvailabilitySummary(
+  checkedAt: string
+): AvailabilitySummary {
+  return {
+    checked_at: checkedAt,
+    available: false,
+    calendar: "unchecked",
+    calendar_unchecked_reason: "error",
+    conflicts: [],
+    error: true,
+  }
+}
+
+const conflictOverrideSchema = z.object({
+  by: z.string().trim().min(1),
+  at: z
+    .string()
+    .refine((v) => !Number.isNaN(Date.parse(v)), "override.at must be an ISO timestamp"),
+  conflicts: z.array(z.string().min(1)),
+  reason: z.string().trim().min(1, "an override needs a reason"),
+})
+
+export type ConflictOverrideCheck =
+  | { ok: true; override: ConflictOverride }
+  | { ok: false; reason: string }
+
+/**
+ * D-016 gatekeeper, shared by every HITL executor. An override is honored
+ * ONLY when it is well-formed (actor, reason, timestamp, conflict keys),
+ * was recorded by the human who is approving right now, and covers every
+ * blocking conflict the execution-time re-check found — a stale override
+ * never absorbs a conflict its author did not see. Detection is never
+ * suppressed either way; this only decides whether execution may proceed.
+ */
+export function validateConflictOverride(
+  raw: unknown,
+  input: { approverUserId: string | null; blocking: AvailabilityConflict[] }
+): ConflictOverrideCheck {
+  if (raw == null) return { ok: false, reason: "no override recorded" }
+  const parsed = conflictOverrideSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      reason:
+        parsed.error.issues[0]?.message ?? "override metadata is incomplete",
+    }
+  }
+  if (!input.approverUserId || parsed.data.by !== input.approverUserId) {
+    return {
+      ok: false,
+      reason: "override was not recorded by the approving owner",
+    }
+  }
+  const covered = new Set(parsed.data.conflicts)
+  const uncovered = input.blocking.filter((c) => !covered.has(conflictKey(c)))
+  if (uncovered.length > 0) {
+    return {
+      ok: false,
+      reason: `the schedule changed since the override — ${uncovered.length} new conflict${uncovered.length === 1 ? "" : "s"} found`,
+    }
+  }
+  return { ok: true, override: parsed.data }
+}
+
+/**
+ * Staging-time advisory check (ticket §1) — one call every staging site
+ * shares. Never throws and never blocks staging on its own failure: a
+ * failed check returns the honest "unverified" summary. Blocking conflicts
+ * are returned so AUTOMATIC staging paths (voice) can refuse to stage a
+ * knowingly-conflicting booking; HITL surfaces attach the summary and let
+ * the owner decide. Flag off → `{ summary: null, blocking: [] }` (dormant).
+ */
+export async function stagingAvailability(
+  supabase: SupabaseClient,
+  shopId: string,
+  options: {
+    start: string | Date
+    end: string | Date
+    excludeAppointmentId?: string | null
+    /** Telemetry label, e.g. "stage:voice_propose_booking". */
+    path: string
+    /** Test hook; defaults to the P0-004 feature flag. */
+    enabled?: boolean
+  }
+): Promise<{
+  summary: AvailabilitySummary | null
+  blocking: AvailabilityConflict[]
+}> {
+  const enabled = options.enabled ?? FEATURES.conflictEnforcement
+  if (!enabled) return { summary: null, blocking: [] }
+  const checkedAt = new Date().toISOString()
+  try {
+    const result = await checkAvailability(supabase, shopId, {
+      start: options.start,
+      end: options.end,
+      excludeAppointmentId: options.excludeAppointmentId ?? null,
+    })
+    const summary = summarizeAvailability(result, checkedAt)
+    const blocking = blockingConflicts(result)
+    if (blocking.length > 0) {
+      emitConflictEvent("booking_conflict_detected", {
+        shopId,
+        path: options.path,
+        conflictKeys: blocking.map(conflictKey),
+      })
+    }
+    return { summary, blocking }
+  } catch (err) {
+    console.warn(
+      `[availability] staging check failed for shop ${shopId} (${options.path}) — staging continues with availability unverified:`,
+      err instanceof Error ? err.message : err
+    )
+    return { summary: unverifiedAvailabilitySummary(checkedAt), blocking: [] }
+  }
+}
+
+export type ConflictTelemetryEvent =
+  | "booking_conflict_detected"
+  | "booking_conflict_overridden"
+  | "booking_conflict_blocked_automatic"
+
+/**
+ * Internal telemetry (14-product-analytics naming). The event pipeline is an
+ * open founder decision (storage vs vendor, decision queue), so these emit
+ * as structured `[availability]` log lines — the exact names are stable so
+ * P0-012 alert routing and the future events table can consume them as-is.
+ */
+export function emitConflictEvent(
+  event: ConflictTelemetryEvent,
+  details: {
+    shopId: string
+    path: string
+    actionId?: string | null
+    conflictKeys: string[]
+  }
+): void {
+  console.info(
+    `[availability] event=${event} shop=${details.shopId} path=${details.path}${details.actionId ? ` action=${details.actionId}` : ""} conflicts=${details.conflictKeys.join(",") || "-"}`
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Pure overlap math (exported for direct unit testing)
 // ---------------------------------------------------------------------------
@@ -206,25 +412,38 @@ const KNOWN_STATUSES = new Set<string>([
 
 type BusyRange = { startMs: number; endMs: number }
 
+type BusyRangeWithProvenance = BusyRange & {
+  /** True when neither ends_at nor duration existed and the 90-minute
+   *  default decided the end — surfaced in conflict metadata (never a
+   *  silent assumption). */
+  assumedDefaultDuration: boolean
+}
+
 /**
  * An appointment row's occupied range: `ends_at` when valid, else
  * `scheduled_at + duration_minutes` (90 when unset — every reader's
- * default). Returns null (never throws) for rows with unparseable times.
+ * default, flagged via `assumedDefaultDuration` wherever it decides a
+ * result). Returns null (never throws) for rows with unparseable times.
  */
 export function appointmentBusyRange(
   row: Pick<AppointmentRow, "scheduled_at" | "duration_minutes" | "ends_at">
-): BusyRange | null {
+): BusyRangeWithProvenance | null {
   const startMs = Date.parse(row.scheduled_at ?? "")
   if (Number.isNaN(startMs)) return null
   const endsAtMs = row.ends_at ? Date.parse(row.ends_at) : Number.NaN
   if (!Number.isNaN(endsAtMs) && endsAtMs > startMs) {
-    return { startMs, endMs: endsAtMs }
+    return { startMs, endMs: endsAtMs, assumedDefaultDuration: false }
   }
-  const minutes =
+  const hasDuration =
     typeof row.duration_minutes === "number" && row.duration_minutes > 0
-      ? row.duration_minutes
-      : DEFAULT_DURATION_MINUTES
-  return { startMs, endMs: startMs + minutes * 60_000 }
+  const minutes = hasDuration
+    ? (row.duration_minutes as number)
+    : DEFAULT_DURATION_MINUTES
+  return {
+    startMs,
+    endMs: startMs + minutes * 60_000,
+    assumedDefaultDuration: !hasDuration,
+  }
 }
 
 /** Whether a row still occupies its slot. Unknown statuses are busy. */
@@ -296,6 +515,11 @@ export function appointmentConflicts(
       metadata: {
         status: row.status ?? null,
         customer_id: row.customer_id ?? null,
+        // Gate 6 (P0-004): when the 90-minute default decided this row's
+        // end time, say so — callers and cards can show the assumption.
+        ...(busy.assumedDefaultDuration
+          ? { assumed_duration_minutes: DEFAULT_DURATION_MINUTES }
+          : {}),
       },
     })
   }
@@ -539,20 +763,32 @@ function toInstantMs(value: string | Date, field: "start" | "end"): number {
   return ms
 }
 
-/** Bounded external-calendar fetch: null = timed out. */
+/** Bounded external-calendar fetch: null = timed out. The timeout ABORTS
+ *  the underlying request (P0-004 gate 4) — no abandoned socket keeps the
+ *  vendor call running after the answer stopped mattering. */
 async function fetchCalendarEventsBounded(
   accessToken: string,
   calendarId: string,
   range: { timeMin: string; timeMax: string },
   timeoutMs: number
 ): Promise<AurinkoCalendarEvent[] | null> {
+  const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs)
+    timer = setTimeout(() => {
+      controller.abort()
+      resolve(null)
+    }, timeoutMs)
   })
   try {
     return await Promise.race([
-      listCalendarEvents(accessToken, calendarId, range),
+      listCalendarEvents(accessToken, calendarId, range, {
+        signal: controller.signal,
+      }).catch((err: unknown) => {
+        // An abort we caused is the timeout answer, not an error.
+        if (controller.signal.aborted) return null
+        throw err
+      }),
       timeout,
     ])
   } finally {

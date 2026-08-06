@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   appointmentBusyRange,
   appointmentConflicts,
+  blockingConflicts,
   calendarConflicts,
   checkAvailability,
   conflictKey,
@@ -12,8 +13,13 @@ import {
   isBusyStatus,
   rangesOverlap,
   resolveConflictPolicy,
+  stagingAvailability,
+  summarizeAvailability,
   toLocalWallTime,
+  unverifiedAvailabilitySummary,
+  validateConflictOverride,
   type AvailabilityConflict,
+  type AvailabilityResult,
   type ConflictOverride,
 } from "@/lib/availability"
 import { DEFAULT_WORKING_HOURS, type WorkingHours } from "@/lib/working-hours"
@@ -112,10 +118,11 @@ describe("appointmentBusyRange — stored-time conventions", () => {
     expect(busy).toEqual({
       startMs: T("2026-08-10T10:00:00Z"),
       endMs: T("2026-08-12T10:00:00Z"),
+      assumedDefaultDuration: false,
     })
   })
 
-  it("falls back to duration_minutes, defaulting 90", () => {
+  it("falls back to duration_minutes, defaulting 90 (default flagged — P0-004 gate 6)", () => {
     expect(
       appointmentBusyRange({
         scheduled_at: "2026-08-10T10:00:00Z",
@@ -125,14 +132,16 @@ describe("appointmentBusyRange — stored-time conventions", () => {
     ).toEqual({
       startMs: T("2026-08-10T10:00:00Z"),
       endMs: T("2026-08-10T12:00:00Z"),
+      assumedDefaultDuration: false,
     })
-    expect(
-      appointmentBusyRange({
-        scheduled_at: "2026-08-10T10:00:00Z",
-        duration_minutes: null,
-        ends_at: null,
-      })?.endMs
-    ).toBe(T("2026-08-10T11:30:00Z"))
+    const defaulted = appointmentBusyRange({
+      scheduled_at: "2026-08-10T10:00:00Z",
+      duration_minutes: null,
+      ends_at: null,
+    })
+    expect(defaulted?.endMs).toBe(T("2026-08-10T11:30:00Z"))
+    // The 90-minute assumption is never silent (gate 6).
+    expect(defaulted?.assumedDefaultDuration).toBe(true)
   })
 
   it("ends_at before start falls back to duration; unparseable start → null (never throws)", () => {
@@ -689,5 +698,226 @@ describe("checkAvailability", () => {
       .filter((c) => c.source === "appointment")
       .map((c) => c.id)
     expect(apptIds).toEqual(["a", "b"])
+  })
+
+  it("missing shop throws a defined, safe error — never a false 'available' (P0-004 gate 5)", async () => {
+    const supabase = mockSupabase({ appointments: [], shop: null })
+    await expect(checkAvailability(supabase, "ghost-shop", RANGE)).rejects.toThrow(
+      /shop not found: ghost-shop/
+    )
+  })
+
+  it("timeout ABORTS the calendar request (P0-004 gate 4) — no abandoned vendor call", async () => {
+    mockedGetToken.mockResolvedValue("token-1")
+    let seenSignal: AbortSignal | undefined
+    mockedListEvents.mockImplementation(
+      (_token, _cal, _range, options) =>
+        new Promise((_resolve, reject) => {
+          seenSignal = options?.signal ?? undefined
+          options?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError"))
+          )
+        })
+    )
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    const supabase = mockSupabase({ appointments: [] })
+    const result = await checkAvailability(supabase, "shop-1", {
+      ...RANGE,
+      calendarTimeoutMs: 10,
+    })
+    expect(result.calendar).toBe("unchecked")
+    expect(result.calendarUncheckedReason).toBe("timeout")
+    expect(seenSignal).toBeDefined()
+    await vi.waitFor(() => expect(seenSignal?.aborted).toBe(true))
+  })
+
+  it("fallback-duration conflicts carry assumed_duration_minutes metadata (P0-004 gate 6)", async () => {
+    const supabase = mockSupabase({
+      appointments: [
+        candidate({ id: "no-duration", duration_minutes: null, ends_at: null }),
+      ],
+    })
+    const result = await checkAvailability(supabase, "shop-1", RANGE)
+    const conflict = result.conflicts.find((c) => c.id === "no-duration")
+    expect(conflict?.metadata?.assumed_duration_minutes).toBe(90)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// P0-004 shared helpers — summary, override validation, staging check
+// ---------------------------------------------------------------------------
+
+function resultWith(
+  conflicts: AvailabilityConflict[],
+  calendar: "checked" | "unchecked" = "unchecked"
+): AvailabilityResult {
+  return {
+    available: conflicts.length === 0,
+    conflicts,
+    calendar,
+    ...(calendar === "unchecked"
+      ? { calendarUncheckedReason: "not_connected" as const }
+      : {}),
+    range: { start: RANGE.start, end: RANGE.end },
+    excludedAppointmentId: null,
+    override: null,
+  }
+}
+
+const blockingConflict = (id: string): AvailabilityConflict => ({
+  source: "appointment",
+  id,
+  start: RANGE.start,
+  end: RANGE.end,
+  label: `Existing appointment ${id}`,
+  blockTime: false,
+  resource: null,
+  severity: "blocking",
+  metadata: {},
+})
+
+const advisoryConflict = (): AvailabilityConflict => ({
+  source: "outside_hours",
+  id: null,
+  start: null,
+  end: null,
+  label: "Outside working hours",
+  blockTime: false,
+  resource: null,
+  severity: "advisory",
+  metadata: {},
+})
+
+describe("summarizeAvailability / blockingConflicts (P0-004)", () => {
+  it("summary carries keys, severities, calendar status; blocking filter excludes advisory", () => {
+    const result = resultWith([blockingConflict("appt-1"), advisoryConflict()])
+    const summary = summarizeAvailability(result, "2026-08-10T00:00:00Z")
+    expect(summary.available).toBe(false)
+    expect(summary.calendar).toBe("unchecked")
+    expect(summary.conflicts.map((c) => c.key)).toContain("appointment:appt-1")
+    expect(summary.error).toBeUndefined()
+    expect(blockingConflicts(result).map((c) => c.id)).toEqual(["appt-1"])
+  })
+
+  it("unverified summary says error — never fabricates a clear slot", () => {
+    const summary = unverifiedAvailabilitySummary("2026-08-10T00:00:00Z")
+    expect(summary.error).toBe(true)
+    expect(summary.available).toBe(false)
+    expect(summary.conflicts).toEqual([])
+  })
+})
+
+describe("validateConflictOverride (D-016 gatekeeper)", () => {
+  const blocking = [blockingConflict("appt-1")]
+  const good = {
+    by: "owner-1",
+    at: "2026-08-10T00:00:00Z",
+    conflicts: ["appointment:appt-1"],
+    reason: "Customer begged; we'll double-staff",
+  }
+
+  it("accepts a well-formed override by the approving owner covering all conflicts", () => {
+    const check = validateConflictOverride(good, {
+      approverUserId: "owner-1",
+      blocking,
+    })
+    expect(check.ok).toBe(true)
+  })
+
+  it("rejects a missing override", () => {
+    const check = validateConflictOverride(null, {
+      approverUserId: "owner-1",
+      blocking,
+    })
+    expect(check).toMatchObject({ ok: false, reason: expect.stringContaining("no override") })
+  })
+
+  it("rejects a missing reason (required, recorded)", () => {
+    const check = validateConflictOverride(
+      { ...good, reason: "  " },
+      { approverUserId: "owner-1", blocking }
+    )
+    expect(check.ok).toBe(false)
+  })
+
+  it("rejects an override recorded by someone other than the approver (unauthorized)", () => {
+    const check = validateConflictOverride(good, {
+      approverUserId: "someone-else",
+      blocking,
+    })
+    expect(check).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("approving owner"),
+    })
+    // No approver identity at all (e.g. a Slack-only decider) → also rejected.
+    expect(
+      validateConflictOverride(good, { approverUserId: null, blocking }).ok
+    ).toBe(false)
+  })
+
+  it("rejects a stale override that doesn't cover a NEW conflict (race)", () => {
+    const check = validateConflictOverride(good, {
+      approverUserId: "owner-1",
+      blocking: [blockingConflict("appt-1"), blockingConflict("appt-NEW")],
+    })
+    expect(check).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("schedule changed"),
+    })
+  })
+
+  it("rejects malformed metadata (missing actor/timestamp)", () => {
+    expect(
+      validateConflictOverride(
+        { conflicts: ["appointment:appt-1"], reason: "x" },
+        { approverUserId: "owner-1", blocking }
+      ).ok
+    ).toBe(false)
+    expect(
+      validateConflictOverride(
+        { ...good, at: "not-a-date" },
+        { approverUserId: "owner-1", blocking }
+      ).ok
+    ).toBe(false)
+  })
+})
+
+describe("stagingAvailability (P0-004 advisory staging check)", () => {
+  it("returns summary + blocking on conflict; never throws on a failed check", async () => {
+    const supabase = mockSupabase({ appointments: [candidate({ id: "appt-1" })] })
+    const staged = await stagingAvailability(supabase, "shop-1", {
+      ...RANGE,
+      path: "stage:test",
+    })
+    expect(staged.blocking.map((c) => c.id)).toEqual(["appt-1"])
+    expect(staged.summary?.conflicts.some((c) => c.key === "appointment:appt-1")).toBe(true)
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const broken = mockSupabase({
+      appointments: [],
+      appointmentsError: { message: "boom" },
+    })
+    const degraded = await stagingAvailability(broken, "shop-1", {
+      ...RANGE,
+      path: "stage:test",
+    })
+    expect(degraded.blocking).toEqual([])
+    expect(degraded.summary?.error).toBe(true)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("staging check failed"),
+      expect.anything()
+    )
+  })
+
+  it("flag off → dormant: no summary, no blocking, no queries", async () => {
+    const filters: Filter[] = []
+    const supabase = mockSupabase({ appointments: [candidate({ id: "x" })], filters })
+    const staged = await stagingAvailability(supabase, "shop-1", {
+      ...RANGE,
+      path: "stage:test",
+      enabled: false,
+    })
+    expect(staged).toEqual({ summary: null, blocking: [] })
+    expect(filters).toEqual([])
   })
 })

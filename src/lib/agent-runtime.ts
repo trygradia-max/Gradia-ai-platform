@@ -1982,9 +1982,15 @@ async function maybeAutoExecute(
       agentAuto || resolveAgentMode(shop, row.action_type) === "autonomous"
     if (!actionAuto) continue
     try {
-      const result = await executeApproval(supabase, row.id, {
-        userId: agent.owner_id,
-      })
+      // context "automatic": if a calendar action ever slipped past the
+      // ALWAYS_HITL filter above, the executor's conflict gate hard-blocks
+      // it (D-015) — defense in depth, not the primary guard.
+      const result = await executeApproval(
+        supabase,
+        row.id,
+        { userId: agent.owner_id },
+        { context: "automatic" }
+      )
       if (result.ok && result.status === "executed") {
         executed += 1
         void recordApprovalResolution(supabase, row.id, "auto")

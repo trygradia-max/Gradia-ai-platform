@@ -1,5 +1,6 @@
 "use server"
 
+import { stagingAvailability } from "@/lib/availability"
 import { recordInteraction } from "@/lib/memory"
 import { moveLeadToStage } from "@/lib/pipeline"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -132,6 +133,14 @@ export async function respondToQuote(
       .map((li) => li.name)
       .filter(Boolean)
       .join(" + ")
+    // P0-004 advisory snapshot: the customer picked this time, the owner
+    // decides — the card shows any conflict, and the executor re-checks
+    // authoritatively at approve time.
+    const availability = await stagingAvailability(supabase, quote.shop_id, {
+      start,
+      end: new Date(start.getTime() + 120 * 60_000),
+      path: "stage:quote_accept",
+    })
     const { data: pending, error } = await supabase
       .from("pending_actions")
       .insert({
@@ -149,6 +158,7 @@ export async function respondToQuote(
           pin_notes: `Booked from quote — total ${quote.total_cents / 100}`,
           source: "quote_page",
           quote_id: quote.id,
+          ...(availability.summary ? { availability: availability.summary } : {}),
         },
         requested_by: quote.shops.owner_id,
       })

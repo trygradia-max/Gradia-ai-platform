@@ -44,6 +44,9 @@ export const FEATURES = {
   // review queue + acceptance shipped — verify a CSV import end-to-end before prod deploy
   noShowLadder: true, // NEXT-2 — confirm-by-text + backfill nudge around
   // appointments. Sends are HITL-staged like the reminder; flag for easy disable.
+  conflictEnforcement: true, // P0-004 — availability checks on every booking/
+  // reschedule/block-time path (D-015 hard-block automatic, D-016 documented
+  // HITL override). Off = P0-003 service dormant, all paths behave as before.
 } as const
 
 export type AgentId = keyof typeof FEATURES.agents

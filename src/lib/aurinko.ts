@@ -434,12 +434,79 @@ type RawCalendarEvent = {
   location?: string | null
 }
 
+/** ISO datetime carries its own UTC anchor: `Z` or a ±hh[:]mm offset. */
+const HAS_UTC_ANCHOR = /(Z|[+-]\d{2}:?\d{2})$/
+
+/**
+ * Converts a wall-clock datetime in an IANA timezone to a UTC instant.
+ * Two-pass Intl inverse: guess UTC, measure the zone's rendering of the
+ * guess, correct by the difference (second pass settles DST edges).
+ * Returns null for unparseable input or an unknown timezone.
+ */
+export function wallTimeToInstant(
+  wallIso: string,
+  timezone: string
+): string | null {
+  const naive = Date.parse(`${wallIso}Z`)
+  if (Number.isNaN(naive)) return null
+  const wallAt = (ms: number): number | null => {
+    let parts: Intl.DateTimeFormatPart[]
+    try {
+      parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(new Date(ms))
+    } catch {
+      return null
+    }
+    const get = (type: Intl.DateTimeFormatPart["type"]): string =>
+      parts.find((p) => p.type === type)?.value ?? "00"
+    return Date.parse(
+      `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`
+    )
+  }
+  let instant = naive
+  for (let pass = 0; pass < 2; pass += 1) {
+    const rendered = wallAt(instant)
+    if (rendered === null) return null
+    const diff = naive - rendered
+    if (diff === 0) break
+    instant += diff
+  }
+  return new Date(instant).toISOString()
+}
+
+/**
+ * Normalizes a provider event datetime to an absolute UTC instant.
+ * Aurinko's event model is `{ dateTime, timezone }`, and `dateTime` is not
+ * guaranteed to carry a UTC offset — an offsetless value is wall time in the
+ * declared `timezone`. Offsetless values are NEVER handed onward bare
+ * (`Date.parse` would read them in server-local time): with a declared
+ * timezone they are converted; without one they are dropped with a warning
+ * (calendar input is advisory — an honest gap beats a guessed instant).
+ */
 function normalizeEventDateTime(
   value: RawCalendarEvent["start"]
 ): string | null {
   if (!value) return null
-  if (typeof value === "string") return value
-  return value.dateTime ?? null
+  const dateTime = typeof value === "string" ? value : (value.dateTime ?? null)
+  if (!dateTime) return null
+  if (HAS_UTC_ANCHOR.test(dateTime.trim())) return dateTime
+  const timezone = typeof value === "string" ? null : (value.timezone ?? null)
+  if (timezone) {
+    const instant = wallTimeToInstant(dateTime.trim(), timezone)
+    if (instant) return instant
+  }
+  console.warn(
+    `[aurinko] event datetime "${dateTime}" has no UTC offset${timezone ? ` and timezone "${timezone}" could not be resolved` : " and no timezone"} — dropped rather than guessed`
+  )
+  return null
 }
 
 function normalizeEvent(raw: RawCalendarEvent): AurinkoCalendarEvent {
@@ -460,7 +527,8 @@ function normalizeEvent(raw: RawCalendarEvent): AurinkoCalendarEvent {
 export async function listCalendarEvents(
   accessToken: string,
   calendarId: string,
-  range: { timeMin: string; timeMax: string }
+  range: { timeMin: string; timeMax: string },
+  options?: { signal?: AbortSignal }
 ): Promise<AurinkoCalendarEvent[]> {
   const url = `${AURINKO_API_BASE}/calendars/${encodeURIComponent(
     calendarId
@@ -476,6 +544,7 @@ export async function listCalendarEvents(
       timeMin: range.timeMin,
       timeMax: range.timeMax,
     }),
+    signal: options?.signal ?? null,
   })
   const body = await res.text()
   if (!res.ok) {

@@ -16,6 +16,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { revalidatePath } from "next/cache"
 
+import {
+  conflictKey,
+  emitConflictEvent,
+  stagingAvailability,
+  type AvailabilitySummary,
+} from "@/lib/availability"
 import { findCustomerByChannel } from "@/lib/customers"
 import { getCrossChannelHint } from "@/lib/customer-context"
 import { recordActionDecision } from "@/lib/decision-log"
@@ -272,6 +278,8 @@ async function submitBookingProposal(
     durationMinutes: number
     timezone: string | null
     pinNotes: string | null
+    /** P0-004 staging-time availability snapshot for the approval card. */
+    availability?: AvailabilitySummary | null
   },
   ctx: VapiCallContext
 ): Promise<{ ok: true; pendingId: string } | { ok: false; reason: string }> {
@@ -298,6 +306,7 @@ async function submitBookingProposal(
     pin_notes: proposal.pinNotes,
     source: "voice",
     vapi_call_id: ctx.id ?? null,
+    ...(proposal.availability ? { availability: proposal.availability } : {}),
   }
 
   const { data: pending, error: pendingErr } = await supabase
@@ -410,6 +419,24 @@ export async function proposeBooking(
         ? durationParam
         : (await lookupServiceDuration(supabase, shopId, service)) ?? 90
 
+    // P0-004 / D-015: voice is an AUTOMATIC path — a slot already taken is
+    // refused out loud, never staged as a knowingly-conflicting booking.
+    // Advisory findings (outside hours, capacity) still stage, with the
+    // snapshot attached so the approval card shows the warning.
+    const availability = await stagingAvailability(supabase, shopId, {
+      start: isoStart,
+      end: new Date(Date.parse(isoStart) + fallbackDuration * 60_000),
+      path: "stage:voice_propose_booking",
+    })
+    if (availability.blocking.length > 0) {
+      emitConflictEvent("booking_conflict_blocked_automatic", {
+        shopId,
+        path: "stage:voice_propose_booking",
+        conflictKeys: availability.blocking.map(conflictKey),
+      })
+      return `Ah — it looks like ${when} is already taken on our calendar. Is there another day or time that works? We'll get ${firstName(customerName)} penciled in.`
+    }
+
     const pinNotes =
       [
         `Booking ask: ${service} on ${when}`,
@@ -430,6 +457,7 @@ export async function proposeBooking(
         durationMinutes: fallbackDuration,
         timezone,
         pinNotes,
+        availability: availability.summary,
       },
       ctx
     )
@@ -846,6 +874,22 @@ export async function rescheduleAppointment(
   }
 
   const appointment = await findUpcomingAppointmentByPhone(supabase, shopId, phone)
+
+  // P0-004: when the caller named a concrete time, snapshot availability so
+  // the approval card can warn — advisory here (a human approves the move,
+  // and the executor re-checks authoritatively with the row's real
+  // duration; this preview assumes the default 90 minutes).
+  let availability: AvailabilitySummary | null = null
+  if (isoNewStart && !Number.isNaN(Date.parse(isoNewStart))) {
+    const staged = await stagingAvailability(supabase, shopId, {
+      start: isoNewStart,
+      end: new Date(Date.parse(isoNewStart) + 90 * 60_000),
+      excludeAppointmentId: appointment?.id ?? null,
+      path: "stage:voice_reschedule",
+    })
+    availability = staged.summary
+  }
+
   const staged = await stageAppointmentChange(supabase, shopId, "reschedule_appointment", {
     appointment_id: appointment?.id ?? null,
     current_scheduled_at: appointment?.scheduled_at ?? null,
@@ -856,6 +900,7 @@ export async function rescheduleAppointment(
     iso_new_start_time: isoNewStart || null,
     source: "voice",
     vapi_call_id: ctx.id ?? null,
+    ...(availability ? { availability } : {}),
   })
   if (!staged) {
     return "Something went wrong saving that — let me have someone confirm the new time with you."

@@ -26,6 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
+import { stagingAvailability } from "@/lib/availability"
 import { resolveAgentMode } from "@/lib/autonomy"
 import {
   streamOneTurn,
@@ -869,6 +870,14 @@ async function runOwnerTool(
         .maybeSingle()
       duration = (data as { duration_minutes: number } | null)?.duration_minutes ?? 90
     }
+    // P0-004 advisory snapshot: staging still proceeds (the owner approves,
+    // and the executor re-checks authoritatively), but the agent must tell
+    // the owner about a conflict rather than stage silently past it.
+    const availability = await stagingAvailability(ctx.supabase, ctx.shop.id, {
+      start,
+      end: new Date(start.getTime() + duration * 60_000),
+      path: "stage:owner_agent_propose_booking",
+    })
     const ok = await stageSingle(ctx, "book_appointment", {
       customer_name: c.name ?? customer_query,
       phone: c.phone,
@@ -879,18 +888,26 @@ async function runOwnerTool(
       duration_minutes: duration,
       timezone: null,
       pin_notes: null,
+      ...(availability.summary ? { availability: availability.summary } : {}),
     })
     if (!ok) return { content: json({ error: "Couldn't stage that booking." }), isError: true }
     const calendarHint = ctx.shop.aurinko_access_token_enc
       ? ""
       : " Note: Google Calendar isn't connected yet — connect it in Settings before approving."
+    const conflictHint =
+      availability.blocking.length > 0
+        ? ` CONFLICT: that time overlaps ${availability.blocking[0].label} — tell the owner plainly; approving will require an explicit override in Approvals.`
+        : ""
     return {
       content: json({
         staged: 1,
         who: c.name,
         service,
         when: start.toISOString(),
-        where: `Staged in Approvals — a booking ALWAYS needs the owner's approval; review the time and confirm there.${calendarHint}`,
+        ...(availability.blocking.length > 0
+          ? { conflicts: availability.blocking.map((b) => b.label) }
+          : {}),
+        where: `Staged in Approvals — a booking ALWAYS needs the owner's approval; review the time and confirm there.${calendarHint}${conflictHint}`,
       }),
       isError: false,
     }

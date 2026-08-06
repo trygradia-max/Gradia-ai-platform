@@ -23,6 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 
+import { stagingAvailability } from "@/lib/availability"
 import {
   findCustomerByChannel,
   findOrCreateCustomer,
@@ -413,6 +414,18 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
+      // P0-004 advisory snapshot for the approval card; the executor
+      // re-checks authoritatively at approve time.
+      const startMs = Date.parse(args.iso_start_time)
+      const availability = Number.isNaN(startMs)
+        ? null
+        : (
+            await stagingAvailability(ctx.supabase, ctx.shopId, {
+              start: args.iso_start_time,
+              end: new Date(startMs + args.duration_minutes * 60_000),
+              path: "stage:mcp_propose_booking",
+            })
+          ).summary
       const { data, error } = await ctx.supabase
         .from("pending_actions")
         .insert({
@@ -429,6 +442,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
             pin_notes: args.pin_notes,
             email: args.email,
             source: args.source,
+            ...(availability ? { availability } : {}),
           },
           requested_by: ctx.ownerId,
         })
