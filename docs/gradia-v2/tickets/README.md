@@ -8,8 +8,8 @@ _Bounded implementation ticket specifications. A Builder implements exactly one 
 |---|---|---|---|---|---|---|---|
 | P0-001 | Exposed database credential remediation | E00 | **ready — Sprint 1** | Critical | none | security | `P0-001-exposed-database-credential-remediation.md` |
 | P0-002 | CI typecheck, lint, build and integration enforcement | E00 | **done** (2026-07-30, PR #9) | Critical | none | none | `P0-002-ci-enforcement.md` |
-| P0-003 | Central appointment conflict service | E00 | **ready — next up** (P0-002 gate cleared 2026-07-30; enters implementation when the Organizer slots it — not started) | High | P0-002 (done) | calendar | `P0-003-central-appointment-conflict-service.md` |
-| P0-004 | Conflict enforcement across booking and scheduling paths | E00 | draft | High | P0-003 | calendar | `P0-004-conflict-enforcement-booking-paths.md` |
+| P0-003 | Central appointment conflict service | E00 | **done** (2026-08-06, PR #10, Cursor APPROVE; service inert until P0-004) | High | P0-002 (done) | calendar | `P0-003-central-appointment-conflict-service.md` |
+| P0-004 | Conflict enforcement across booking and scheduling paths | E00 | **ready — next up** (P0-003 done 2026-08-06; 12 entry gates recorded in the ticket; enters implementation when the Organizer slots it — not started) | High | P0-003 (done) | calendar | `P0-004-conflict-enforcement-booking-paths.md` |
 | P0-005 | Webhook event idempotency foundation | E00 | ready-after-P0-002 | High | P0-002 | database-sensitive | `P0-005-webhook-idempotency-foundation.md` |
 | P0-006 | Twilio inbound replay protection | E00 | draft | High | P0-005 | none | `P0-006-twilio-inbound-replay-protection.md` |
 | P0-007 | Vapi transcript and usage replay protection | E00 | draft | High | P0-005 | payment (metering) | `P0-007-vapi-transcript-usage-replay-protection.md` |

@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-004
 - **Epic:** E00 — Stabilization
-- **Status:** draft (becomes ready when P0-003 is done)
+- **Status:** **ready — next active implementation position** (P0-003 done 2026-08-06, PR #10; takes the calendar high-risk WIP slot when the Organizer slots it and a Builder is recorded in `../program/work-in-progress.md` — implementation NOT started)
 - **Priority:** High (risk class: **calendar** — counts against the high-risk WIP limit; may not run concurrently with P0-003)
 
 ## Objective
@@ -47,7 +47,24 @@ All from audit doc 04-D and doc 12 item 3:
 
 ## Dependencies
 
-P0-003 (the service). Decisions D-015/D-016: approved.
+P0-003 (the service — **done 2026-08-06**, PR #10). Decisions D-015/D-016: approved.
+
+## Entry gates (recorded by the Organizer at P0-003 close, 2026-08-06)
+
+Distilled from the P0-003 completion record and Cursor review. The Builder addresses each inside this ticket's scope; none is optional:
+
+1. **Verify** whether Aurinko event `dateTime` values always include a UTC offset or `Z` suffix (P0-003 known limitation: offsetless values currently parse in server-local time).
+2. **Normalize** offsetless provider datetimes using their declared timezone **before** they affect any booking decision.
+3. Never interpret offsetless provider datetimes using server-local time.
+4. Consider cancellation/`AbortController` support for timed-out calendar requests (today the request is abandoned, not cancelled).
+5. Add a missing-shop availability test (shop id that doesn't exist → defined, safe result).
+6. Make the 90-minute missing-duration fallback **visible** — via logging or conflict metadata — wherever it influences a result.
+7. Evaluate the composite index `appointments(shop_id, scheduled_at)` (P0-003 recommendation; if adopted, this ticket becomes database-sensitive for WIP purposes per scope item 6).
+8. Ensure every newly created appointment stores a reliable `ends_at` (today only reschedule/blockTime set it; `executeBookAppointment` does not).
+9. Wire the central service into **every** path: booking, rescheduling, quote-acceptance, voice, owner-drag, and block-time.
+10. Preserve automatic hard-block behavior (D-015) and explicit, authorized HITL overrides (D-016).
+11. Record conflict and override audit evidence where required (`ConflictOverride` who/when/which, on the decision log / action payload).
+12. Keep Gradia's internal calendar authoritative and external calendar sync optional/advisory (D-013/D-014).
 
 ## Expected modules affected
 

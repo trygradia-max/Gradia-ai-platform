@@ -10,8 +10,8 @@ _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evid
 
 | Ticket | Title | Notes |
 |---|---|---|
-| P0-003 | Central appointment conflict service | Gate cleared — P0-002 complete 2026-07-30, so CI can fail its tests. **Next active implementation position**; occupies the **one** calendar high-risk slot when slotted. Not started. |
-| P0-004 | Conflict enforcement across booking and scheduling paths | Strictly sequential after P0-003 — same high-risk slot; never active simultaneously with P0-003. |
+| P0-003 | Central appointment conflict service | **Done 2026-08-06** — merged PR #10 (`00091db`), Cursor APPROVE; service inert until P0-004. Merge/review record in the ticket file. |
+| P0-004 | Conflict enforcement across booking and scheduling paths | **Next active implementation position** (promoted 2026-08-06 at P0-003 close). Occupies the **one** calendar high-risk slot when slotted; 12 entry gates recorded in the ticket. Not started. |
 
 ### Track B — Idempotency chain
 
