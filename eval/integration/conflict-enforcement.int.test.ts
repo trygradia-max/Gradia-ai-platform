@@ -26,6 +26,11 @@ import {
  * hard Aurinko requirement in the executor.
  */
 
+// The rollout flag (FIX 1) is env-driven and OFF by default; this suite
+// tests enforcement, so it runs with the flag explicitly enabled. The getter
+// reads process.env at call time, so a plain assignment is enough here.
+process.env.NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT = "true"
+
 vi.mock("@/lib/aurinko", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/aurinko")>()
   return {

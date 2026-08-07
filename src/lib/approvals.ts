@@ -17,6 +17,7 @@ import {
   blockingConflicts,
   checkAvailability,
   emitConflictEvent,
+  internalFailureCode,
   resolveConflictPolicy,
   summarizeAvailability,
   unverifiedAvailabilitySummary,
@@ -494,10 +495,15 @@ type ConflictGateResult =
  *   automatic → blocking conflicts hard-refuse; overrides are ignored.
  *   hitl      → blocking conflicts need a valid, authorized, covering
  *               override recorded on the payload (validateConflictOverride).
- * Degraded check (calendar unchecked / check error): hitl proceeds with the
- * degradation recorded; automatic proceeds only when the Gradia-data check
- * succeeded and found nothing (calendar stays advisory, D-013) — a FAILED
- * check refuses rather than guesses. Advisory conflicts never refuse.
+ * INTERNAL check failure (Gradia's own schedule data unreadable — shop
+ * lookup, appointments query, capped fetch, invalid range) fails CLOSED for
+ * BOTH contexts (founder policy): no execution, no override offered, the
+ * card stays pending/retryable with a structured verification-failure
+ * summary. This is distinct from EXTERNAL calendar degradation (timeout /
+ * provider error / not connected), which stays advisory: the check itself
+ * succeeds, the result carries `calendar: "unchecked"` with its reason, and
+ * execution proceeds on Gradia's own data (D-013). Advisory conflicts
+ * (hours/capacity) never refuse.
  */
 async function evaluateConflictGate(
   supabase: SupabaseClient,
@@ -522,24 +528,21 @@ async function evaluateConflictGate(
     summary = summarizeAvailability(result, checkedAt)
     blocking = blockingConflicts(result)
   } catch (err) {
+    // Internal failure → fail closed for BOTH contexts (founder policy).
+    // Without a completed Gradia-data check there is no honest "clear", and
+    // an override cannot apply — there is no conflict list to override.
+    const code = internalFailureCode(err)
     console.warn(
-      `[availability] execution-time check failed for shop ${claimed.shop_id} action ${claimed.id}:`,
+      `[availability] execution-time check failed for shop ${claimed.shop_id} action ${claimed.id} (code=${code}, context=${exec.context}) — refusing, card stays pending:`,
       err instanceof Error ? err.message : err
     )
-    if (exec.context === "automatic") {
-      // Without a completed Gradia-data check there is no honest "clear".
-      return {
-        allowed: false,
-        error:
-          "Couldn't verify the slot is free, so the automatic booking was refused — approve it from the Approvals queue instead.",
-        summary: unverifiedAvailabilitySummary(checkedAt),
-      }
-    }
-    // HITL: the human decided; record that the check was unverified.
     return {
-      allowed: true,
-      summary: unverifiedAvailabilitySummary(checkedAt),
-      override: null,
+      allowed: false,
+      error:
+        exec.context === "automatic"
+          ? "Couldn't verify the slot is free (Gradia's schedule data wasn't readable), so the automatic booking was refused — the card is waiting in Approvals; try again shortly."
+          : "Couldn't verify the schedule — Gradia's own availability data wasn't readable, so nothing was booked. This isn't a conflict and can't be overridden; the card stays in Approvals — try again shortly.",
+      summary: unverifiedAvailabilitySummary(checkedAt, code),
     }
   }
 

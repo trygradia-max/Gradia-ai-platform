@@ -1,18 +1,19 @@
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import * as availability from "@/lib/availability"
-import type {
-  AvailabilityConflict,
-  AvailabilityResult,
+import {
+  AvailabilityInternalError,
+  type AvailabilityConflict,
+  type AvailabilityResult,
 } from "@/lib/availability"
 import { executeApproval } from "@/lib/approvals"
 import { ALWAYS_HITL, isAutonomyAllowed } from "@/lib/autonomy"
-import { FEATURES } from "@/lib/features"
+import { FEATURES, readConflictEnforcementEnv } from "@/lib/features"
 import { proposeBooking } from "@/lib/vapi-tools"
 
 /**
@@ -173,10 +174,17 @@ function availabilityWrites(updates: Update[]): Update[] {
   )
 }
 
+beforeEach(() => {
+  // The rollout flag is env-driven and OFF by default (FIX 1) — these suites
+  // test the enforcement behavior, so they run with it explicitly enabled.
+  vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", "true")
+})
+
 afterEach(() => {
+  vi.unstubAllEnvs()
   vi.clearAllMocks()
   mockedCheck.mockResolvedValue(cleanResult())
-  mockedStaging.mockResolvedValue({ summary: null, blocking: [] })
+  mockedStaging.mockResolvedValue({ summary: null, blocking: [], failure: null })
 })
 
 // ---------------------------------------------------------------------------
@@ -255,10 +263,16 @@ describe("executor, automatic context — hard block (D-015)", () => {
     expect(res.availability).toBeUndefined()
   })
 
-  it("check FAILURE → refuses (no honest 'clear' without a completed Gradia check)", async () => {
+  it("INTERNAL check failure → refuses with a structured verification failure (fail closed)", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {})
-    mockedCheck.mockRejectedValue(new Error("appointments query failed"))
-    const db = mockDb({ claimed: claimedBooking() })
+    mockedCheck.mockRejectedValue(
+      new AvailabilityInternalError(
+        "appointments_query_failed",
+        "appointments query failed"
+      )
+    )
+    const updates: Update[] = []
+    const db = mockDb({ claimed: claimedBooking(), updates })
     const res = await executeApproval(
       db,
       "pa-1",
@@ -269,6 +283,17 @@ describe("executor, automatic context — hard block (D-015)", () => {
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("Couldn't verify")
     expect(res.availability?.error).toBe(true)
+    // Structured + distinct: an internal failure names itself and is NEVER
+    // dressed up as external-calendar degradation or a normal conflict.
+    expect(res.availability?.failure).toEqual({
+      kind: "internal",
+      code: "appointments_query_failed",
+    })
+    expect(res.availability?.calendar_unchecked_reason).toBeUndefined()
+    expect(res.availability?.conflicts).toEqual([])
+    // Retryable: the card rolls back to pending; nothing was inserted.
+    expect(rollbackUpdates(updates)).toHaveLength(1)
+    expect(updates.filter((u) => u.table.endsWith(".insert"))).toHaveLength(0)
   })
 })
 
@@ -347,14 +372,71 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
     expect(res.error).toContain("Google Calendar")
   })
 
-  it("check FAILURE → proceeds; a human decided, degradation is honest not blocking", async () => {
+  it("INTERNAL check failure → refuses even for a human (fail closed, founder policy)", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {})
-    mockedCheck.mockRejectedValue(new Error("boom"))
-    const db = mockDb({ claimed: claimedBooking(), shop: null })
+    mockedCheck.mockRejectedValue(
+      new AvailabilityInternalError("shop_load_failed", "boom")
+    )
+    const updates: Update[] = []
+    const db = mockDb({ claimed: claimedBooking(), updates })
     const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
-    expect(res.error).toContain("Google Calendar")
+    // Distinct wording: a verification failure, not a conflict ("can't be
+    // overridden" is named so nobody hunts for the override affordance).
+    expect(res.error).toContain("Couldn't verify")
+    expect(res.error).toContain("can't be overridden")
+    expect(res.availability?.failure).toEqual({
+      kind: "internal",
+      code: "shop_load_failed",
+    })
+    expect(res.availability?.calendar_unchecked_reason).toBeUndefined()
+    // The card stays pending — retryable, coherent.
+    expect(rollbackUpdates(updates)).toHaveLength(1)
+    expect(updates.filter((u) => u.table.endsWith(".insert"))).toHaveLength(0)
+  })
+
+  it("INTERNAL check failure CANNOT be overridden — a valid override does not bypass it", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    mockedCheck.mockRejectedValue(
+      new AvailabilityInternalError("appointments_truncated", "capped")
+    )
+    const db = mockDb({
+      claimed: claimedBooking({ conflict_override: validOverride }),
+    })
+    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error("unreachable")
+    expect(res.error).toContain("Couldn't verify")
+    expect(res.availability?.failure?.kind).toBe("internal")
+  })
+
+  it("EXTERNAL degradation stays advisory: unchecked calendar (timeout / error / not connected) proceeds", async () => {
+    for (const reason of ["timeout", "error", "not_connected"] as const) {
+      for (const context of ["hitl", "automatic"] as const) {
+        vi.clearAllMocks()
+        mockedCheck.mockResolvedValue({
+          ...cleanResult("unchecked"),
+          calendarUncheckedReason: reason,
+        })
+        // shop: null → the NEXT step (Aurinko requirement) fails, proving the
+        // gate allowed execution past the availability check.
+        const db = mockDb({ claimed: claimedBooking(), shop: null })
+        const res = await executeApproval(
+          db,
+          "pa-1",
+          { userId: "owner-1" },
+          { context }
+        )
+        expect(res.ok).toBe(false)
+        if (res.ok) throw new Error("unreachable")
+        expect(
+          res.error,
+          `${context} + calendar ${reason} must remain advisory`
+        ).toContain("Google Calendar")
+        expect(res.availability).toBeUndefined()
+      }
+    }
   })
 })
 
@@ -428,29 +510,60 @@ describe("reschedule executor", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Feature flag — off restores prior behavior
+// Rollout flag (FIX 1) — env-controlled, default OFF, only "true" enables
 // ---------------------------------------------------------------------------
 
-describe("FEATURES.conflictEnforcement off → dormant", () => {
-  it("no availability check runs; execution proceeds as before", async () => {
-    const flags = FEATURES as { conflictEnforcement: boolean }
-    const prior = flags.conflictEnforcement
-    flags.conflictEnforcement = false
-    try {
-      const db = mockDb({ claimed: claimedBooking(), shop: null })
-      const res = await executeApproval(
-        db,
-        "pa-1",
-        { userId: "owner-1" },
-        { context: "automatic" }
-      )
-      expect(mockedCheck).not.toHaveBeenCalled()
-      expect(res.ok).toBe(false)
-      if (res.ok) throw new Error("unreachable")
-      expect(res.error).toContain("Google Calendar") // pre-P0-004 failure mode
-    } finally {
-      flags.conflictEnforcement = prior
+describe("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT — env-driven rollout flag", () => {
+  it("unset → OFF (default)", () => {
+    vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", undefined)
+    expect(FEATURES.conflictEnforcement).toBe(false)
+    expect(readConflictEnforcementEnv(undefined)).toBe(false)
+  })
+
+  it('exactly "true" → ON', () => {
+    vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", "true")
+    expect(FEATURES.conflictEnforcement).toBe(true)
+    expect(readConflictEnforcementEnv("true")).toBe(true)
+    expect(readConflictEnforcementEnv("  true  ")).toBe(true) // whitespace only
+  })
+
+  it('"false" → OFF', () => {
+    vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", "false")
+    expect(FEATURES.conflictEnforcement).toBe(false)
+    expect(readConflictEnforcementEnv("false")).toBe(false)
+  })
+
+  it("malformed or unknown values → OFF (a typo can only disable)", () => {
+    for (const bad of ["TRUE", "True", "1", "yes", "on", "enabled", "truthy", ""]) {
+      vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", bad)
+      expect(FEATURES.conflictEnforcement, `"${bad}" must be OFF`).toBe(false)
+      expect(readConflictEnforcementEnv(bad), `"${bad}" must parse OFF`).toBe(false)
     }
+  })
+})
+
+describe("flag off → dormant (existing behavior preserved)", () => {
+  it("no availability check runs; execution proceeds as before", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", undefined)
+    const db = mockDb({ claimed: claimedBooking(), shop: null })
+    const res = await executeApproval(
+      db,
+      "pa-1",
+      { userId: "owner-1" },
+      { context: "automatic" }
+    )
+    expect(mockedCheck).not.toHaveBeenCalled()
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error("unreachable")
+    expect(res.error).toContain("Google Calendar") // pre-P0-004 failure mode
+  })
+
+  it('"false" in the deploy env is dormant too (Production config)', async () => {
+    vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", "false")
+    const db = mockDb({ claimed: claimedBooking(), shop: null })
+    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    expect(mockedCheck).not.toHaveBeenCalled()
+    expect(res.ok).toBe(false)
   })
 })
 
@@ -503,6 +616,7 @@ describe("voice proposeBooking — refuses to stage a knowingly-conflicting slot
     mockedStaging.mockResolvedValue({
       summary: null,
       blocking: [conflict("appt-1")],
+      failure: null,
     })
     const inserts: { table: string; row: Record<string, unknown> }[] = []
     const spoken = await proposeBooking(voiceDb(inserts), "shop-1", params, {
@@ -518,7 +632,7 @@ describe("voice proposeBooking — refuses to stage a knowingly-conflicting slot
       cleanResult(),
       "2030-01-01T00:00:00.000Z"
     )
-    mockedStaging.mockResolvedValue({ summary, blocking: [] })
+    mockedStaging.mockResolvedValue({ summary, blocking: [], failure: null })
     const inserts: { table: string; row: Record<string, unknown> }[] = []
     const spoken = await proposeBooking(voiceDb(inserts), "shop-1", params, {
       id: "call-1",

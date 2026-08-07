@@ -93,6 +93,39 @@ export type AvailabilityConflict = {
 export type CalendarUncheckedReason = "not_connected" | "error" | "timeout"
 
 /**
+ * Internal (Gradia-owned) availability failures — the check itself could not
+ * establish what Gradia's calendar holds. Founder policy: these FAIL CLOSED
+ * for BOTH automatic and HITL execution — no booking, no override offered —
+ * and are never conflated with external-calendar degradation (which stays
+ * advisory: `calendar: "unchecked"` on an otherwise-usable result).
+ */
+export type AvailabilityFailureCode =
+  | "invalid_input"
+  | "shop_load_failed"
+  | "shop_not_found"
+  | "appointments_query_failed"
+  | "appointments_truncated"
+  | "unknown"
+
+/** Thrown by checkAvailability for every internal failure, carrying the
+ *  structured code callers store on the verification-failure summary. */
+export class AvailabilityInternalError extends Error {
+  readonly code: AvailabilityFailureCode
+
+  constructor(code: AvailabilityFailureCode, message: string) {
+    super(message)
+    this.name = "AvailabilityInternalError"
+    this.code = code
+  }
+}
+
+/** Maps a caught checkAvailability error to its failure code. Anything the
+ *  service throws is internal by contract (external legs never throw). */
+export function internalFailureCode(err: unknown): AvailabilityFailureCode {
+  return err instanceof AvailabilityInternalError ? err.code : "unknown"
+}
+
+/**
  * Recorded by P0-004 call sites when a human deliberately books through a
  * conflict (D-016). Defined here so every consumer records the same shape.
  */
@@ -200,6 +233,14 @@ export type AvailabilitySummary = {
     assumed_duration_minutes?: number
   }>
   error?: boolean
+  /**
+   * Present ONLY when the check itself failed internally (Gradia-owned data
+   * unreadable). Distinct from BOTH a normal conflict (conflicts non-empty,
+   * no error) and external-calendar degradation (a successful check with
+   * `calendar: "unchecked"` + `calendar_unchecked_reason`). An internal
+   * failure is never represented as mere calendar degradation.
+   */
+  failure?: { kind: "internal"; code: AvailabilityFailureCode }
 }
 
 export function summarizeAvailability(
@@ -228,17 +269,24 @@ export function summarizeAvailability(
   }
 }
 
-/** The summary recorded when the check itself failed (degraded, honest). */
+/**
+ * The summary recorded when the check itself failed INTERNALLY (honest,
+ * fail-closed). Note what it does NOT carry: a `calendar_unchecked_reason`.
+ * That field describes external-calendar degradation on a completed check;
+ * an internal Gradia failure is a different, stricter condition and must
+ * never be downgraded to "calendar unchecked" (founder policy).
+ */
 export function unverifiedAvailabilitySummary(
-  checkedAt: string
+  checkedAt: string,
+  code: AvailabilityFailureCode = "unknown"
 ): AvailabilitySummary {
   return {
     checked_at: checkedAt,
     available: false,
     calendar: "unchecked",
-    calendar_unchecked_reason: "error",
     conflicts: [],
     error: true,
+    failure: { kind: "internal", code },
   }
 }
 
@@ -295,11 +343,15 @@ export function validateConflictOverride(
 
 /**
  * Staging-time advisory check (ticket §1) — one call every staging site
- * shares. Never throws and never blocks staging on its own failure: a
- * failed check returns the honest "unverified" summary. Blocking conflicts
- * are returned so AUTOMATIC staging paths (voice) can refuse to stage a
- * knowingly-conflicting booking; HITL surfaces attach the summary and let
- * the owner decide. Flag off → `{ summary: null, blocking: [] }` (dormant).
+ * shares. Never throws. On an INTERNAL check failure it returns the honest
+ * verification-failure summary plus a `failure` code: pure staging surfaces
+ * may still stage the card (it stays pending — a human decides, and the
+ * executor's own gate fails closed), but any caller that EXECUTES directly
+ * (owner drag-reschedule, block-time) must refuse when `failure` is set.
+ * Blocking conflicts are returned so AUTOMATIC staging paths (voice) can
+ * refuse to stage a knowingly-conflicting booking; HITL surfaces attach the
+ * summary and let the owner decide. Flag off → `{ summary: null,
+ * blocking: [], failure: null }` (dormant).
  */
 export async function stagingAvailability(
   supabase: SupabaseClient,
@@ -316,9 +368,11 @@ export async function stagingAvailability(
 ): Promise<{
   summary: AvailabilitySummary | null
   blocking: AvailabilityConflict[]
+  /** Set when the check failed INTERNALLY — direct-execution callers refuse. */
+  failure: AvailabilityFailureCode | null
 }> {
   const enabled = options.enabled ?? FEATURES.conflictEnforcement
-  if (!enabled) return { summary: null, blocking: [] }
+  if (!enabled) return { summary: null, blocking: [], failure: null }
   const checkedAt = new Date().toISOString()
   try {
     const result = await checkAvailability(supabase, shopId, {
@@ -335,13 +389,18 @@ export async function stagingAvailability(
         conflictKeys: blocking.map(conflictKey),
       })
     }
-    return { summary, blocking }
+    return { summary, blocking, failure: null }
   } catch (err) {
+    const code = internalFailureCode(err)
     console.warn(
-      `[availability] staging check failed for shop ${shopId} (${options.path}) — staging continues with availability unverified:`,
+      `[availability] staging check failed for shop ${shopId} (${options.path}, code=${code}) — availability is UNVERIFIED; execution paths fail closed:`,
       err instanceof Error ? err.message : err
     )
-    return { summary: unverifiedAvailabilitySummary(checkedAt), blocking: [] }
+    return {
+      summary: unverifiedAvailabilitySummary(checkedAt, code),
+      blocking: [],
+      failure: code,
+    }
   }
 }
 
@@ -758,7 +817,10 @@ function minutesOnLocalDay(
 function toInstantMs(value: string | Date, field: "start" | "end"): number {
   const ms = value instanceof Date ? value.getTime() : Date.parse(value)
   if (Number.isNaN(ms)) {
-    throw new Error(`[availability] invalid ${field} time: ${String(value)}`)
+    throw new AvailabilityInternalError(
+      "invalid_input",
+      `[availability] invalid ${field} time: ${String(value)}`
+    )
   }
   return ms
 }
@@ -808,11 +870,17 @@ export async function checkAvailability(
   shopId: string,
   options: CheckAvailabilityOptions
 ): Promise<AvailabilityResult> {
-  if (!shopId) throw new Error("[availability] shopId is required")
+  if (!shopId) {
+    throw new AvailabilityInternalError(
+      "invalid_input",
+      "[availability] shopId is required"
+    )
+  }
   const startMs = toInstantMs(options.start, "start")
   const endMs = toInstantMs(options.end, "end")
   if (endMs <= startMs) {
-    throw new Error(
+    throw new AvailabilityInternalError(
+      "invalid_input",
       `[availability] invalid range: end (${new Date(endMs).toISOString()}) must be after start (${new Date(startMs).toISOString()})`
     )
   }
@@ -829,7 +897,10 @@ export async function checkAvailability(
     .eq("id", shopId)
     .maybeSingle()
   if (shopErr) {
-    throw new Error(`[availability] shop load failed: ${shopErr.message}`)
+    throw new AvailabilityInternalError(
+      "shop_load_failed",
+      `[availability] shop load failed: ${shopErr.message}`
+    )
   }
   const shop = shopData as
     | (Pick<
@@ -842,7 +913,12 @@ export async function checkAvailability(
         | "aurinko_token_expires_at"
       >)
     | null
-  if (!shop) throw new Error(`[availability] shop not found: ${shopId}`)
+  if (!shop) {
+    throw new AvailabilityInternalError(
+      "shop_not_found",
+      `[availability] shop not found: ${shopId}`
+    )
+  }
   const timezone = shop.timezone || "UTC"
 
   // Fetch window: widened to whole local days (capacity math needs the full
@@ -866,7 +942,10 @@ export async function checkAvailability(
     .order("scheduled_at", { ascending: true })
     .limit(APPOINTMENT_FETCH_LIMIT)
   if (apptErr) {
-    throw new Error(`[availability] appointments query failed: ${apptErr.message}`)
+    throw new AvailabilityInternalError(
+      "appointments_query_failed",
+      `[availability] appointments query failed: ${apptErr.message}`
+    )
   }
   const rows = (apptData as AppointmentCandidate[] | null) ?? []
   if (rows.length === APPOINTMENT_FETCH_LIMIT) {
@@ -876,7 +955,8 @@ export async function checkAvailability(
     // guess — the exact guess this service exists to prevent. Same rationale
     // as the appointments-query-failure throw above; at pilot scale this cap
     // is never reached (a shop books nowhere near 1,000 rows in this window).
-    throw new Error(
+    throw new AvailabilityInternalError(
+      "appointments_truncated",
       `[availability] appointment fetch hit the ${APPOINTMENT_FETCH_LIMIT}-row cap for shop ${shopId} — refusing to answer rather than risk a false "available"; narrow the range or add pagination before this scale is real`
     )
   }

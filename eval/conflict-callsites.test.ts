@@ -133,13 +133,13 @@ const jobRow = {
 
 afterEach(() => {
   vi.clearAllMocks()
-  mockedStaging.mockResolvedValue({ summary: null, blocking: [] })
+  mockedStaging.mockResolvedValue({ summary: null, blocking: [], failure: null })
 })
 
 describe("rescheduleJob (owner drag) — warn, then documented override", () => {
   it("blocking conflict without a reason → structured refusal, nothing written", async () => {
     const blocking = [conflict("appt-9")]
-    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking })
+    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking, failure: null })
     const { client, writes } = jobsDb({ job: jobRow })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
@@ -166,7 +166,7 @@ describe("rescheduleJob (owner drag) — warn, then documented override", () => 
 
   it("with a reason → moves the job and records the override (actor, timestamp, conflicts)", async () => {
     const blocking = [conflict("appt-9")]
-    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking })
+    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking, failure: null })
     const { client, writes } = jobsDb({ job: jobRow })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
@@ -212,10 +212,73 @@ describe("rescheduleJob (owner drag) — warn, then documented override", () => 
   })
 })
 
+describe("owner-direct paths fail CLOSED on an internal check failure (founder policy)", () => {
+  function failedStaging() {
+    mockedStaging.mockResolvedValue({
+      summary: availability.unverifiedAvailabilitySummary(
+        "2030-01-01T00:00:00.000Z",
+        "appointments_query_failed"
+      ),
+      blocking: [],
+      failure: "appointments_query_failed",
+    })
+  }
+
+  it("rescheduleJob: internal failure → refused, nothing written, marked unverified", async () => {
+    failedStaging()
+    const { client, writes } = jobsDb({ job: jobRow })
+    const { createClient } = await import("@/lib/supabase/server")
+    vi.mocked(createClient).mockResolvedValue(client as never)
+
+    const result = await rescheduleJob("job-1", START)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error("unreachable")
+    expect(result.error).toContain("Couldn't verify")
+    expect(result.conflict).toEqual({ labels: [], keys: [], unverified: true })
+    expect(writes.filter((w) => w.table === "appointments")).toHaveLength(0)
+  })
+
+  it("rescheduleJob: an override reason does NOT bypass a verification failure", async () => {
+    failedStaging()
+    const { client, writes } = jobsDb({ job: jobRow })
+    const { createClient } = await import("@/lib/supabase/server")
+    vi.mocked(createClient).mockResolvedValue(client as never)
+
+    const result = await rescheduleJob("job-1", START, {
+      overrideReason: "I insist",
+    })
+    expect(result.ok).toBe(false)
+    expect(writes.filter((w) => w.table === "appointments")).toHaveLength(0)
+    // No override was recorded — there were no conflicts to override.
+    expect(
+      mockedRecordInteraction.mock.calls.some(
+        ([, input]) =>
+          (input.metadata as { kind?: string } | undefined)?.kind ===
+          "conflict_override"
+      )
+    ).toBe(false)
+  })
+
+  it("blockTime: internal failure → refused even with a reason; no insert", async () => {
+    failedStaging()
+    const { client, writes } = jobsDb({ job: null })
+    const { createClient } = await import("@/lib/supabase/server")
+    vi.mocked(createClient).mockResolvedValue(client as never)
+
+    const result = await blockTime(START, 60, "Lunch", {
+      overrideReason: "I insist",
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error("unreachable")
+    expect(result.conflict?.unverified).toBe(true)
+    expect(writes.filter((w) => w.op === "insert")).toHaveLength(0)
+  })
+})
+
 describe("blockTime — same gate, same recorded override", () => {
   it("blocking conflict without a reason → refusal with labels; no insert", async () => {
     const blocking = [conflict("appt-3")]
-    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking })
+    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking, failure: null })
     const { client, writes } = jobsDb({ job: null })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
@@ -229,7 +292,7 @@ describe("blockTime — same gate, same recorded override", () => {
 
   it("with a reason → block lands and the override is recorded", async () => {
     const blocking = [conflict("appt-3")]
-    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking })
+    mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking, failure: null })
     const { client, writes } = jobsDb({ job: null })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
@@ -256,7 +319,7 @@ describe("quote accept — advisory snapshot rides the staged card", () => {
   it("attaches availability to the book_appointment payload", async () => {
     const blocking = [conflict("appt-7")]
     const summary = summaryFor(...blocking)
-    mockedStaging.mockResolvedValue({ summary, blocking })
+    mockedStaging.mockResolvedValue({ summary, blocking, failure: null })
 
     const inserts: Record<string, unknown>[] = []
     const quoteRow = {

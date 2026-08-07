@@ -14,6 +14,17 @@
  * `freeformPlanner` was enabled in Phase 2 once its executor + guardrails
  * (HITL staging, audience cap, cooldown, opt-out, dry-run preview) landed.
  */
+/**
+ * P0-004 rollout control. Only the exact string "true" (whitespace-trimmed)
+ * enables conflict enforcement; false, missing, malformed, or unknown values
+ * disable it — a typo can only leave the feature OFF, never turn it on.
+ */
+export function readConflictEnforcementEnv(
+  value: string | undefined | null
+): boolean {
+  return typeof value === "string" && value.trim() === "true"
+}
+
 export const FEATURES = {
   agents: {
     voice: true,
@@ -44,9 +55,23 @@ export const FEATURES = {
   // review queue + acceptance shipped — verify a CSV import end-to-end before prod deploy
   noShowLadder: true, // NEXT-2 — confirm-by-text + backfill nudge around
   // appointments. Sends are HITL-staged like the reminder; flag for easy disable.
-  conflictEnforcement: true, // P0-004 — availability checks on every booking/
-  // reschedule/block-time path (D-015 hard-block automatic, D-016 documented
-  // HITL override). Off = P0-003 service dormant, all paths behave as before.
+  /**
+   * P0-004 — availability checks on every booking/reschedule/block-time path
+   * (D-015 hard-block automatic, D-016 documented HITL override). Off =
+   * P0-003 service dormant, all paths behave as before.
+   *
+   * Unlike the constants above, this is an OPERATIONAL rollout flag, driven
+   * by NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT so Preview and Production can
+   * differ in Vercel (Preview "true", Production "false" until rollout).
+   * Default OFF when unset; only the exact value "true" enables it. Next.js
+   * inlines NEXT_PUBLIC_* values at build time, so changing the Vercel
+   * variable takes effect only on the next deployment (redeploy to apply).
+   */
+  get conflictEnforcement(): boolean {
+    return readConflictEnforcementEnv(
+      process.env.NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT
+    )
+  },
 } as const
 
 export type AgentId = keyof typeof FEATURES.agents

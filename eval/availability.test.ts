@@ -805,6 +805,20 @@ describe("summarizeAvailability / blockingConflicts (P0-004)", () => {
     expect(summary.available).toBe(false)
     expect(summary.conflicts).toEqual([])
   })
+
+  it("internal-failure summary is structured and distinct from calendar degradation (FIX 2)", () => {
+    const summary = unverifiedAvailabilitySummary(
+      "2026-08-10T00:00:00Z",
+      "appointments_truncated"
+    )
+    expect(summary.failure).toEqual({
+      kind: "internal",
+      code: "appointments_truncated",
+    })
+    // An internal failure is never represented via the external-calendar
+    // degradation field — the two conditions must stay distinguishable.
+    expect(summary.calendar_unchecked_reason).toBeUndefined()
+  })
 })
 
 describe("validateConflictOverride (D-016 gatekeeper)", () => {
@@ -888,7 +902,9 @@ describe("stagingAvailability (P0-004 advisory staging check)", () => {
     const staged = await stagingAvailability(supabase, "shop-1", {
       ...RANGE,
       path: "stage:test",
+      enabled: true,
     })
+    expect(staged.failure).toBeNull()
     expect(staged.blocking.map((c) => c.id)).toEqual(["appt-1"])
     expect(staged.summary?.conflicts.some((c) => c.key === "appointment:appt-1")).toBe(true)
 
@@ -900,13 +916,39 @@ describe("stagingAvailability (P0-004 advisory staging check)", () => {
     const degraded = await stagingAvailability(broken, "shop-1", {
       ...RANGE,
       path: "stage:test",
+      enabled: true,
     })
     expect(degraded.blocking).toEqual([])
     expect(degraded.summary?.error).toBe(true)
+    // FIX 2: internal failure is structured and named — never dressed up as
+    // external-calendar degradation.
+    expect(degraded.failure).toBe("appointments_query_failed")
+    expect(degraded.summary?.failure).toEqual({
+      kind: "internal",
+      code: "appointments_query_failed",
+    })
+    expect(degraded.summary?.calendar_unchecked_reason).toBeUndefined()
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("staging check failed"),
       expect.anything()
     )
+  })
+
+  it("EXTERNAL degradation is NOT a failure: calendar error → unchecked, failure null", async () => {
+    mockedGetToken.mockResolvedValue("token-1")
+    mockedListEvents.mockRejectedValue(new Error("Aurinko 500"))
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    const supabase = mockSupabase({ appointments: [] })
+    const staged = await stagingAvailability(supabase, "shop-1", {
+      ...RANGE,
+      path: "stage:test",
+      enabled: true,
+    })
+    expect(staged.failure).toBeNull()
+    expect(staged.summary?.error).toBeUndefined()
+    expect(staged.summary?.failure).toBeUndefined()
+    expect(staged.summary?.calendar).toBe("unchecked")
+    expect(staged.summary?.calendar_unchecked_reason).toBe("error")
   })
 
   it("flag off → dormant: no summary, no blocking, no queries", async () => {
@@ -917,7 +959,7 @@ describe("stagingAvailability (P0-004 advisory staging check)", () => {
       path: "stage:test",
       enabled: false,
     })
-    expect(staged).toEqual({ summary: null, blocking: [] })
+    expect(staged).toEqual({ summary: null, blocking: [], failure: null })
     expect(filters).toEqual([])
   })
 })

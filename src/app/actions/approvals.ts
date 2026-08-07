@@ -118,6 +118,17 @@ export async function approveWithConflictOverride(
         : null,
     path: "override:approvals",
   })
+  // Internal check failure → no override is offered (founder policy): an
+  // override covers conflicts the owner SAW, and a failed check saw nothing.
+  // The executor would refuse anyway; refusing here keeps the card pending
+  // without recording a conflict_override that covers an empty list.
+  if (fresh.failure) {
+    return {
+      ok: false,
+      error:
+        "Couldn't verify the schedule just now, so overriding isn't available — nothing was booked. Try again in a moment.",
+    }
+  }
   const summary: AvailabilitySummary | null = fresh.summary
   const override: ConflictOverride = {
     by: user.id,

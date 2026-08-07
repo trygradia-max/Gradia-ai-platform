@@ -89,7 +89,7 @@ export const STRINGS = {
     warningTitle: "Schedule conflict",
     advisoryTitle: "Worth a look",
     unverified:
-      "Availability couldn't be verified — the calendar check didn't complete. Double-check the schedule before approving.",
+      "Availability couldn't be verified — Gradia's schedule check didn't complete. Approving re-checks first; nothing books until the schedule can be verified.",
     bookAnyway: "Book it anyway",
     moveAnyway: "Move it anyway",
     blockAnyway: "Block it anyway",

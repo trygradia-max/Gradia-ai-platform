@@ -66,7 +66,7 @@ async function ownerConflictGate(input: {
   | { proceed: true; overridden: boolean; summary: AvailabilitySummary | null }
   | { proceed: false; result: JobActionResult }
 > {
-  const { summary, blocking } = await stagingAvailability(
+  const { summary, blocking, failure } = await stagingAvailability(
     input.supabase,
     input.shopId,
     {
@@ -76,6 +76,22 @@ async function ownerConflictGate(input: {
       path: input.path,
     }
   )
+  // Internal check failure fails CLOSED (founder policy): this path EXECUTES
+  // the calendar write directly, so an unverified schedule refuses the write
+  // for both plain and override retries — an override reason cannot bypass a
+  // failure (there is no conflict list to override). Checked before the
+  // conflict branch so the guard wins over any overrideReason.
+  if (failure) {
+    return {
+      proceed: false,
+      result: {
+        ok: false,
+        error:
+          "Couldn't verify the schedule — Gradia's availability data wasn't readable, so nothing was changed. Try again in a moment.",
+        conflict: { labels: [], keys: [], unverified: true },
+      },
+    }
+  }
   if (blocking.length === 0) {
     return { proceed: true, overridden: false, summary }
   }
