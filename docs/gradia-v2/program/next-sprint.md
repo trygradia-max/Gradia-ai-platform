@@ -11,7 +11,7 @@ _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evid
 | Ticket | Title | Notes |
 |---|---|---|
 | P0-003 | Central appointment conflict service | **Done 2026-08-06** — merged PR #10 (`00091db`), Cursor APPROVE; service inert until P0-004. Merge/review record in the ticket file. |
-| P0-004 | Conflict enforcement across booking and scheduling paths | **Next active implementation position** (promoted 2026-08-06 at P0-003 close). Occupies the **one** calendar high-risk slot when slotted; 12 entry gates recorded in the ticket. Not started. |
+| P0-004 | Conflict enforcement across booking and scheduling paths | **Done 2026-08-11** — merged PR #12 (`3b6d044`), CI green; review rounds `d43ce16`/`c0b66b1` addressed. Enforcement dormant behind `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` (production flag flip gated on founder manual acceptance). Merge/review record in the ticket file. **P0-005 is now the next active implementation position.** |
 
 ### Track B — Idempotency chain
 

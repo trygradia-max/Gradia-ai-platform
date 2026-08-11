@@ -16,7 +16,7 @@ Post-alpha releases are **phase-gated, not date-gated**: a release ships when it
 
 | Milestone | Trigger (not a date) |
 |---|---|
-| Alpha hardening release(s) | Individual P0-ticket batches may ship to prod as they pass review — flags off where risky. Shipped so far: P0-001 (PR #8, 2026-07-30) · P0-002 (PR #9, 2026-07-30) · **P0-003 (PR #10, 2026-08-06 — conflict service, dormant until P0-004's flag flip; see `../releases/README.md`)**. |
+| Alpha hardening release(s) | Individual P0-ticket batches may ship to prod as they pass review — flags off where risky. Shipped so far: P0-001 (PR #8, 2026-07-30) · P0-002 (PR #9, 2026-07-30) · P0-003 (PR #10, 2026-08-06) · **P0-004 (PR #12, 2026-08-11 — conflict enforcement wired on every path, dormant behind `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT`; the production flag flip is the release event, gated on founder manual acceptance; see `../releases/README.md`)**. |
 | P1 tenancy release | E01 exit: second user invitable with a role; isolation is mechanism. |
 | P2 calendar release | E02 exit: booking works with no external calendar connected. |
 | Subsequent phases | Per roadmap exit criteria, sequentially. |

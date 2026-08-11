@@ -20,15 +20,16 @@ Founder action inside P0-001: the actual password rotation happens in the Supaba
 ## Queued behind this sprint
 
 - **P0-003** (Central appointment conflict service) — **done 2026-08-06**: merged to `main` in PR #10 (`00091db`), Cursor Reviewer APPROVE, CI + DB integration green. The service (`src/lib/availability.ts`) is **inert until P0-004 wires it** — no booking path changed, no migrations. Merge/review record in the ticket file.
-- **P0-004** (Conflict enforcement across booking and scheduling paths) — now the **next active implementation ticket**: ready, first in line for the freed calendar high-risk slot. Its 12 entry gates from the P0-003 close are recorded in the ticket. **Implementation has not started** — it enters in-progress only when the Organizer slots it and a Builder is recorded in `work-in-progress.md`.
+- **P0-004** (Conflict enforcement across booking and scheduling paths) — **done 2026-08-11**: merged to `main` in PR #12 (`3b6d044`), CI + DB integration green; review rounds `d43ce16` (Cursor) and `c0b66b1` (founder rollout/failure-policy) addressed on-branch. Enforcement is **dormant in production** (`NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` unset = OFF); the production flag flip is the release event, gated on the founder's manual acceptance run (steps 1–7) on a flag-on Preview. Merge/review record in the ticket file; P0-004A atomicity follow-up carried to `backlog.md`.
+- **P0-005** (Webhook event idempotency foundation) — now the **next active implementation ticket**: ready, occupies the DB-sensitive slot when the Organizer slots it and a Builder is recorded in `work-in-progress.md`. Not started.
 
 ## WIP limits (restated, binding)
 
 | Limit | Rule | Current state |
 |---|---|---|
-| Active implementation tickets | max **2** | 1 active (P0-001 in-review); P0-002 done 2026-07-30 — its slot is free, reserved next for P0-003 ✓ |
+| Active implementation tickets | max **2** | 1 active (P0-001 in-review); P0-002/P0-003/P0-004 done (latest: P0-004, 2026-08-11) — one slot free, reserved next for P0-005 ✓ |
 | Database-sensitive tickets active | max **1** | **0** — slot empty until P0-005 (P0-001 reclassified 2026-07-27: no schema/migration impact) ✓ |
-| Payment / tenancy / calendar high-risk tickets active | max **1** | 0 — P0-003 released the calendar slot at close (2026-08-06); **P0-004 takes it when slotted** ✓ |
+| Payment / tenancy / calendar high-risk tickets active | max **1** | 0 — P0-004 released the calendar slot at close (2026-08-11); slot free ✓ |
 | Roles per ticket | exactly one Builder + one Reviewer | slots defined above ✓ |
 | Entry condition | no ticket enters implementation until dependencies and decisions are resolved | P0-001/P0-002 have no unresolved blockers (Q-01 blocks only the optional history-scrub sub-step) ✓ |
 
