@@ -470,6 +470,9 @@ export type AppointmentRow = {
   service_name: string | null
   aurinko_calendar_id: string | null
   aurinko_event_id: string | null
+  /** Idempotency link to the approved action that produced this row
+   *  (P0-004A; partial UNIQUE — one appointment per approved action). */
+  pending_action_id?: string | null
   timezone: string | null
   reminder_pending_action_id: string | null
   /** Set when the customer confirmed (replied YES) — no-show ladder (NEXT-2). */

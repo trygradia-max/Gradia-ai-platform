@@ -84,15 +84,35 @@ function conflictResult(...conflicts: AvailabilityConflict[]): AvailabilityResul
 // ---------------------------------------------------------------------------
 
 type Update = { table: string; values: Record<string, unknown> }
+type RpcCall = { fn: string; args: Record<string, unknown> }
 
 function mockDb(opts: {
   claimed: Record<string, unknown> | null
   shop?: Record<string, unknown> | null
   appointment?: Record<string, unknown> | null
   updates?: Update[]
+  rpcCalls?: RpcCall[]
+  /** Serialized-write outcome (P0-004A). Defaults to success. */
+  rpcResult?: Record<string, unknown> | Error
 }): SupabaseClient {
   const updates = opts.updates ?? []
+  const rpcCalls = opts.rpcCalls ?? []
   return {
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args })
+      if (opts.rpcResult instanceof Error) {
+        return Promise.resolve({ data: null, error: { message: opts.rpcResult.message } })
+      }
+      return Promise.resolve({
+        data:
+          opts.rpcResult ??
+          {
+            status: args.p_appointment_id ? "updated" : "inserted",
+            id: (args.p_appointment_id as string) ?? "appt-new",
+          },
+        error: null,
+      })
+    },
     from: (table: string) => {
       const make = (terminal: unknown) => {
         const chain: Record<string, unknown> = {}
@@ -486,9 +506,9 @@ describe("reschedule executor", () => {
     )
   })
 
-  it("clean re-check → the move lands WITH a fresh ends_at (gate 8)", async () => {
+  it("clean re-check → the move lands via the serialized write WITH a fresh ends_at (gate 8)", async () => {
     mockedCheck.mockResolvedValue(cleanResult())
-    const updates: Update[] = []
+    const rpcCalls: RpcCall[] = []
     const db = mockDb({
       claimed: {
         id: "pa-2",
@@ -497,15 +517,19 @@ describe("reschedule executor", () => {
         payload: reschedulePayload,
       },
       appointment: appointmentRow,
-      updates,
+      rpcCalls,
     })
     const res = await executeApproval(db, "pa-2", { userId: "owner-1" })
     expect(res.ok).toBe(true)
-    const move = updates.find(
-      (u) => u.table === "appointments" && u.values.scheduled_at !== undefined
-    )
-    expect(move?.values.scheduled_at).toBe(RANGE.start)
-    expect(move?.values.ends_at).toBe(RANGE.end)
+    // P0-004A: the move goes through the ONE serialized write path — in-lock
+    // re-verify + scheduled_at AND ends_at moving together.
+    const move = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
+    expect(move?.args).toMatchObject({
+      p_shop_id: "shop-1",
+      p_appointment_id: "appt-self",
+      p_start: RANGE.start,
+      p_end: RANGE.end,
+    })
   })
 })
 
