@@ -146,3 +146,10 @@ Flip `FEATURES.conflictEnforcement` to false and redeploy (gate, don't delete). 
 ## Definition of done
 
 All of `../12-definition-of-done.md` plus: every listed path demonstrably checks (manual steps 1–6 evidenced); D-015/D-016 semantics locked by tests; flag-off restores prior behavior; no weakened tests; analytics events emitting; BUILD_REFERENCE conventions honored on the card (icon+text status, strings in `strings.ts`).
+
+## Review-fix addendum (Builder, 2026-08-07)
+
+Two founder-directed review findings addressed on `fix/p0-004-conflict-enforcement` (after `d43ce16`):
+
+1. **Operational rollout flag.** `FEATURES.conflictEnforcement` is no longer a static `true`: it is a getter over `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` (parser `readConflictEnforcementEnv` in `features.ts`, documented in `.env.example`). Default **OFF** when unset; only the exact value `"true"` enables; `false`/malformed/unknown disable. Preview and Production can differ in Vercel (expected: Preview `true`, Production `false` until rollout). NEXT_PUBLIC_* values are build-time-inlined — changing the Vercel variable takes effect on the next deployment. Rollback strategy above now reads: unset the variable (or set `false`) and redeploy.
+2. **Internal availability failures fail closed (founder policy).** Any Gradia-owned failure inside the check (shop lookup failure/not-found, appointments query failure, row-capped fetch, invalid range) now refuses execution for **both** automatic and HITL contexts — no booking, no override offered, card/action stays pending and retryable — recorded as a structured verification failure (`AvailabilitySummary.failure = { kind: "internal", code }`, codes from `AvailabilityFailureCode`). This is distinct from a normal conflict AND from external-calendar degradation, which stays advisory (`calendar: "unchecked"` + reason on a completed check). Owner-direct paths (drag-reschedule, block-time) refuse the same way; an override reason never bypasses a verification failure. The d43ce16 audit gating (override/availability audit only after appointment persistence) is preserved.

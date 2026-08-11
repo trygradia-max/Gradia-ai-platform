@@ -83,6 +83,26 @@ export const STRINGS = {
     needsYou: "Needs you",
   },
 
+  /** Schedule conflicts (P0-004). Warnings are icon + text, never color
+   *  alone; overrides always ask for a reason — it's recorded. */
+  conflicts: {
+    warningTitle: "Schedule conflict",
+    advisoryTitle: "Worth a look",
+    unverified:
+      "Availability couldn't be verified — Gradia's schedule check didn't complete. Approving re-checks first; nothing books until the schedule can be verified.",
+    bookAnyway: "Book it anyway",
+    moveAnyway: "Move it anyway",
+    blockAnyway: "Block it anyway",
+    overrideReasonLabel: "Reason (recorded with the override)",
+    overrideReasonPlaceholder: "Why book over this?",
+    overrideReasonRequired:
+      "Give a short reason — it's recorded with the override.",
+    overrideRecorded: "Booked — the override is recorded.",
+    keepSlot: "Keep the slot",
+    refusedAutomatic:
+      "Held back — that slot is already taken. The card is waiting in Approvals.",
+  },
+
   /** Shared chrome labels (narrator voice — replaces we/us chrome). */
   chrome: {
     waitingOnReceptionist: "Waiting on your receptionist",

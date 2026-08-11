@@ -14,6 +14,11 @@ import {
   type ApprovalResult,
   type DecisionResult,
 } from "@/lib/approvals"
+import {
+  stagingAvailability,
+  type AvailabilitySummary,
+  type ConflictOverride,
+} from "@/lib/availability"
 import { requireShop, requireUser } from "@/lib/shop"
 import { dashboardDecidedBlocks, updateSlackForPending } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
@@ -48,6 +53,109 @@ export async function approveFromDashboard(
   revalidatePath("/leads")
   revalidatePath("/approvals")
   return { ok: true, alreadyDecided: result.status === "already_decided" }
+}
+
+/**
+ * P0-004 / D-016 — "Book it anyway". Records a ConflictOverride on the
+ * payload (actor + timestamp stamped server-side, reason required, conflict
+ * keys from a FRESH availability check) and then runs the normal approval
+ * engine. The executor re-validates: if the schedule changed and new
+ * conflicts appeared that this override doesn't cover, execution refuses
+ * and the card returns to pending with refreshed conflict info.
+ */
+export async function approveWithConflictOverride(
+  pendingId: string,
+  reason: string
+): Promise<DashboardDecisionResult> {
+  const trimmed = reason.trim()
+  if (!trimmed) {
+    return { ok: false, error: "Give a short reason — it's recorded with the override." }
+  }
+  const user = await requireUser()
+  const shop = await requireShop()
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from("pending_actions")
+    .select("*")
+    .eq("id", pendingId)
+    .eq("shop_id", shop.id)
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  const pending = data as PendingActionRow | null
+  if (!pending) return { ok: false, error: "Couldn't find that pending action." }
+  if (
+    pending.action_type !== "book_appointment" &&
+    pending.action_type !== "reschedule_appointment"
+  ) {
+    return { ok: false, error: "Only calendar actions can be conflict-overridden." }
+  }
+  if (pending.status !== "pending" && pending.status !== "edit_requested") {
+    return { ok: true, alreadyDecided: true }
+  }
+
+  // Fresh conflict keys — the override records what the owner saw NOW, not
+  // whatever was on the card when it was staged.
+  const payload = pending.payload as Record<string, unknown>
+  const isoStart =
+    pending.action_type === "book_appointment"
+      ? (payload.iso_start_time as string | undefined)
+      : ((payload.iso_new_start_time as string | undefined) ?? undefined)
+  const startMs = isoStart ? Date.parse(isoStart) : Number.NaN
+  if (Number.isNaN(startMs)) {
+    return { ok: false, error: "This card has no exact time — edit one in before overriding." }
+  }
+  const durationMinutes =
+    typeof payload.duration_minutes === "number" && payload.duration_minutes > 0
+      ? payload.duration_minutes
+      : 90
+  const fresh = await stagingAvailability(supabase, shop.id, {
+    start: new Date(startMs),
+    end: new Date(startMs + durationMinutes * 60_000),
+    excludeAppointmentId:
+      pending.action_type === "reschedule_appointment"
+        ? ((payload.appointment_id as string | null) ?? null)
+        : null,
+    path: "override:approvals",
+  })
+  // Internal check failure → no override is offered (founder policy): an
+  // override covers conflicts the owner SAW, and a failed check saw nothing.
+  // The executor would refuse anyway; refusing here keeps the card pending
+  // without recording a conflict_override that covers an empty list.
+  if (fresh.failure) {
+    return {
+      ok: false,
+      error:
+        "Couldn't verify the schedule just now, so overriding isn't available — nothing was booked. Try again in a moment.",
+    }
+  }
+  const summary: AvailabilitySummary | null = fresh.summary
+  const override: ConflictOverride = {
+    by: user.id,
+    at: new Date().toISOString(),
+    reason: trimmed,
+    conflicts: summary
+      ? summary.conflicts
+          .filter((c) => c.severity === "blocking")
+          .map((c) => c.key)
+      : [],
+  }
+
+  const { error: writeErr } = await supabase
+    .from("pending_actions")
+    .update({
+      payload: {
+        ...payload,
+        ...(summary ? { availability: summary } : {}),
+        conflict_override: override,
+      },
+    })
+    .eq("id", pendingId)
+    .eq("shop_id", shop.id)
+    .in("status", ["pending", "edit_requested"])
+  if (writeErr) return { ok: false, error: writeErr.message }
+
+  return approveFromDashboard(pendingId, "approved_unedited")
 }
 
 export async function rejectFromDashboard(
@@ -389,6 +497,14 @@ export async function updatePendingProposal(
                 customer_name: parsed.data.customer_name,
                 phone: parsed.data.phone,
               }
+
+  // P0-004: an edited booking time invalidates the staged conflict snapshot
+  // and any override recorded against the OLD conflicts — drop both rather
+  // than show stale warnings. The executor re-checks at approve time.
+  if (parsed.data.type === "book_appointment") {
+    delete (mergedPayload as Record<string, unknown>).availability
+    delete (mergedPayload as Record<string, unknown>).conflict_override
+  }
 
   const { data: updated, error: updateErr } = await supabase
     .from("pending_actions")

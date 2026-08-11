@@ -8,6 +8,11 @@ import {
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
   updateCalendarEventTime,
 } from "@/lib/aurinko"
+import {
+  emitConflictEvent,
+  stagingAvailability,
+  type AvailabilitySummary,
+} from "@/lib/availability"
 import { advanceJobStatus } from "@/lib/jobs"
 import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
@@ -24,9 +29,121 @@ import type {
  * Job actions (CRM C4a/C4b). Status taps and drags are OWNER actions —
  * free, immediate — but anything that would TEXT the customer (a reschedule
  * heads-up) stages a pending approval like every outbound. No new send path.
+ *
+ * P0-004: moving or blocking time is owner-direct HITL (D-016) — a blocking
+ * conflict returns `conflict` so the UI can warn; the retry carries an
+ * override reason, and the override is recorded with actor + timestamp.
  */
 
-export type JobActionResult = { ok: true } | { ok: false; error: string }
+export type JobConflictInfo = {
+  labels: string[]
+  keys: string[]
+  /** True when the availability check itself failed — never claimed clear. */
+  unverified: boolean
+}
+
+export type JobActionResult =
+  | { ok: true }
+  | { ok: false; error: string; conflict?: JobConflictInfo }
+
+export type JobOverrideOptions = {
+  /** Non-empty reason = the owner saw the warning and chose to proceed. */
+  overrideReason?: string
+}
+
+/** Owner-direct conflict gate shared by rescheduleJob and blockTime. */
+async function ownerConflictGate(input: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  shopId: string
+  userId: string
+  start: Date
+  end: Date
+  excludeAppointmentId?: string | null
+  path: string
+  overrideReason?: string
+  verb: string
+}): Promise<
+  | { proceed: true; overridden: boolean; summary: AvailabilitySummary | null }
+  | { proceed: false; result: JobActionResult }
+> {
+  const { summary, blocking, failure } = await stagingAvailability(
+    input.supabase,
+    input.shopId,
+    {
+      start: input.start,
+      end: input.end,
+      excludeAppointmentId: input.excludeAppointmentId ?? null,
+      path: input.path,
+    }
+  )
+  // Internal check failure fails CLOSED (founder policy): this path EXECUTES
+  // the calendar write directly, so an unverified schedule refuses the write
+  // for both plain and override retries — an override reason cannot bypass a
+  // failure (there is no conflict list to override). Checked before the
+  // conflict branch so the guard wins over any overrideReason.
+  if (failure) {
+    return {
+      proceed: false,
+      result: {
+        ok: false,
+        error:
+          "Couldn't verify the schedule — Gradia's availability data wasn't readable, so nothing was changed. Try again in a moment.",
+        conflict: { labels: [], keys: [], unverified: true },
+      },
+    }
+  }
+  if (blocking.length === 0) {
+    return { proceed: true, overridden: false, summary }
+  }
+  const reason = input.overrideReason?.trim()
+  if (!reason) {
+    return {
+      proceed: false,
+      result: {
+        ok: false,
+        error: `That time conflicts with ${blocking[0].label}`,
+        conflict: {
+          labels: blocking.map((b) => b.label),
+          keys: summary
+            ? summary.conflicts
+                .filter((c) => c.severity === "blocking")
+                .map((c) => c.key)
+            : [],
+          unverified: Boolean(summary?.error),
+        },
+      },
+    }
+  }
+  const keys = summary
+    ? summary.conflicts
+        .filter((c) => c.severity === "blocking")
+        .map((c) => c.key)
+    : []
+  emitConflictEvent("booking_conflict_overridden", {
+    shopId: input.shopId,
+    path: input.path,
+    conflictKeys: keys,
+  })
+  // Audit evidence (D-016) — the override rides the interaction log since
+  // owner-direct moves have no pending_action to carry it.
+  await recordInteraction(input.supabase, {
+    shopId: input.shopId,
+    customerId: null,
+    channel: "note",
+    role: "system",
+    content: `${input.verb} despite a schedule conflict — owner override. Reason: ${reason}.`,
+    metadata: {
+      kind: "conflict_override",
+      overridden_by: input.userId,
+      overridden_at: new Date().toISOString(),
+      reason,
+      conflicts: keys,
+      conflict_labels: blocking.map((b) => b.label),
+      path: input.path,
+    },
+  })
+  return { proceed: true, overridden: true, summary }
+}
 
 export async function setJobStatus(
   jobId: string,
@@ -133,7 +250,8 @@ export async function updateJobLogistics(
  */
 export async function rescheduleJob(
   jobId: string,
-  newStartIso: string
+  newStartIso: string,
+  options?: JobOverrideOptions
 ): Promise<JobActionResult & { notificationStaged?: boolean }> {
   const newStart = new Date(newStartIso)
   if (Number.isNaN(newStart.getTime())) {
@@ -155,6 +273,22 @@ export async function rescheduleJob(
   if (!job) return { ok: false, error: "Job not found." }
 
   const durationMs = (job.duration_minutes ?? 90) * 60_000
+
+  // P0-004: warn-confirm on conflict (owner-direct HITL, D-016). The moving
+  // job excludes itself so dropping it back near its own slot never warns.
+  const gate = await ownerConflictGate({
+    supabase,
+    shopId: shop.id,
+    userId: user.id,
+    start: newStart,
+    end: new Date(newStart.getTime() + durationMs),
+    excludeAppointmentId: jobId,
+    path: "owner:drag_reschedule",
+    overrideReason: options?.overrideReason,
+    verb: `Moved ${job.service_name ?? "a job"} to ${newStart.toISOString()}`,
+  })
+  if (!gate.proceed) return gate.result
+
   const { error } = await supabase
     .from("appointments")
     .update({
@@ -237,13 +371,30 @@ export async function rescheduleJob(
 export async function blockTime(
   startIso: string,
   durationMinutes: number,
-  label?: string
+  label?: string,
+  options?: JobOverrideOptions
 ): Promise<JobActionResult> {
   const start = new Date(startIso)
   if (Number.isNaN(start.getTime())) return { ok: false, error: "Bad start time." }
   const minutes = Math.min(Math.max(Math.round(durationMinutes), 15), 24 * 60)
   const shop = await requireShop()
+  const user = await requireUser()
   const supabase = await createClient()
+
+  // P0-004: blocking time over an existing booking is a deliberate act —
+  // warn, require a reason, record the override (owner-direct HITL, D-016).
+  const gate = await ownerConflictGate({
+    supabase,
+    shopId: shop.id,
+    userId: user.id,
+    start,
+    end: new Date(start.getTime() + minutes * 60_000),
+    path: "owner:block_time",
+    overrideReason: options?.overrideReason,
+    verb: `Blocked time at ${start.toISOString()}`,
+  })
+  if (!gate.proceed) return gate.result
+
   const { data: created, error } = await supabase
     .from("appointments")
     .insert({

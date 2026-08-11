@@ -14,12 +14,27 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
 import {
+  blockingConflicts,
+  checkAvailability,
+  emitConflictEvent,
+  internalFailureCode,
+  resolveConflictPolicy,
+  summarizeAvailability,
+  unverifiedAvailabilitySummary,
+  validateConflictOverride,
+  type AvailabilitySummary,
+  type ConflictOverride,
+  type ConflictPolicyContext,
+} from "@/lib/availability"
+import {
   createCalendarEvent,
   deleteCalendarEvent,
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
   sendEmailMessage,
   updateCalendarEventTime,
 } from "@/lib/aurinko"
+import { recordActionDecision } from "@/lib/decision-log"
+import { FEATURES } from "@/lib/features"
 import { recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
@@ -160,7 +175,13 @@ export type ApprovalSuccess =
 
 export type ApprovalResult =
   | ({ ok: true } & ApprovalSuccess)
-  | { ok: false; error: string }
+  | {
+      ok: false
+      error: string
+      /** Structured conflict info when an availability refusal caused the
+       *  failure (P0-004) — the same summary written back onto the card. */
+      availability?: AvailabilitySummary
+    }
 
 export type DecisionSuccess =
   | { status: "claimed"; actionType: "create_lead"; proposal: LeadProposal }
@@ -392,11 +413,23 @@ async function executeAddNote(
  * call with the same id returns `already_decided`. On execution failure, the
  * row is rolled back to `pending` so the human can retry.
  */
+export type ExecuteApprovalOptions = {
+  /**
+   * Which D-015/D-016 policy governs calendar writes in this call:
+   * "hitl" (default — a human clicked approve) may override a conflict with
+   * documented metadata; "automatic" (autopilot / maybeAutoExecute) hard-
+   * blocks conflicts, and any override metadata on the payload is IGNORED.
+   */
+  context?: ConflictPolicyContext
+}
+
 export async function executeApproval(
   supabase: SupabaseClient,
   pendingId: string,
-  decider: Decider
+  decider: Decider,
+  options?: ExecuteApprovalOptions
 ): Promise<ApprovalResult> {
+  const context: ConflictPolicyContext = options?.context ?? "hitl"
   let claimed: ClaimedAction | null
   try {
     claimed = await claimPendingAction(supabase, pendingId, "approved", decider)
@@ -417,9 +450,12 @@ export async function executeApproval(
     case "add_note":
       return executeAddNote(supabase, claimed)
     case "book_appointment":
-      return executeBookAppointment(supabase, claimed)
+      return executeBookAppointment(supabase, claimed, { context, decider })
     case "reschedule_appointment":
-      return executeRescheduleAppointment(supabase, claimed)
+      return executeRescheduleAppointment(supabase, claimed, {
+        context,
+        decider,
+      })
     case "cancel_appointment":
       return executeCancelAppointment(supabase, claimed)
     case "send_sms":
@@ -435,6 +471,178 @@ export async function executeApproval(
         error: `Unsupported action_type: ${claimed.action_type}`,
       }
   }
+}
+
+// ---------------------------------------------------------------------------
+// P0-004 — execution-time conflict gate (the authoritative check)
+// ---------------------------------------------------------------------------
+
+type CalendarExecutionContext = {
+  context: ConflictPolicyContext
+  decider: Decider
+}
+
+type ConflictGateResult =
+  | {
+      allowed: true
+      summary: AvailabilitySummary | null
+      override: ConflictOverride | null
+    }
+  | { allowed: false; error: string; summary: AvailabilitySummary }
+
+/**
+ * Re-checks availability at claim time and applies D-015/D-016:
+ *   automatic → blocking conflicts hard-refuse; overrides are ignored.
+ *   hitl      → blocking conflicts need a valid, authorized, covering
+ *               override recorded on the payload (validateConflictOverride).
+ * INTERNAL check failure (Gradia's own schedule data unreadable — shop
+ * lookup, appointments query, capped fetch, invalid range) fails CLOSED for
+ * BOTH contexts (founder policy): no execution, no override offered, the
+ * card stays pending/retryable with a structured verification-failure
+ * summary. This is distinct from EXTERNAL calendar degradation (timeout /
+ * provider error / not connected), which stays advisory: the check itself
+ * succeeds, the result carries `calendar: "unchecked"` with its reason, and
+ * execution proceeds on Gradia's own data (D-013). Advisory conflicts
+ * (hours/capacity) never refuse.
+ */
+async function evaluateConflictGate(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  exec: CalendarExecutionContext,
+  range: { start: Date; end: Date; excludeAppointmentId?: string | null }
+): Promise<ConflictGateResult> {
+  if (!FEATURES.conflictEnforcement) {
+    return { allowed: true, summary: null, override: null }
+  }
+  const checkedAt = new Date().toISOString()
+  const policy = resolveConflictPolicy(exec.context)
+
+  let summary: AvailabilitySummary
+  let blocking: ReturnType<typeof blockingConflicts>
+  try {
+    const result = await checkAvailability(supabase, claimed.shop_id, {
+      start: range.start,
+      end: range.end,
+      excludeAppointmentId: range.excludeAppointmentId ?? null,
+    })
+    summary = summarizeAvailability(result, checkedAt)
+    blocking = blockingConflicts(result)
+  } catch (err) {
+    // Internal failure → fail closed for BOTH contexts (founder policy).
+    // Without a completed Gradia-data check there is no honest "clear", and
+    // an override cannot apply — there is no conflict list to override.
+    const code = internalFailureCode(err)
+    console.warn(
+      `[availability] execution-time check failed for shop ${claimed.shop_id} action ${claimed.id} (code=${code}, context=${exec.context}) — refusing, card stays pending:`,
+      err instanceof Error ? err.message : err
+    )
+    return {
+      allowed: false,
+      error:
+        exec.context === "automatic"
+          ? "Couldn't verify the slot is free (Gradia's schedule data wasn't readable), so the automatic booking was refused — the card is waiting in Approvals; try again shortly."
+          : "Couldn't verify the schedule — Gradia's own availability data wasn't readable, so nothing was booked. This isn't a conflict and can't be overridden; the card stays in Approvals — try again shortly.",
+      summary: unverifiedAvailabilitySummary(checkedAt, code),
+    }
+  }
+
+  if (blocking.length === 0) {
+    return { allowed: true, summary, override: null }
+  }
+
+  const conflictKeys = summary.conflicts
+    .filter((c) => c.severity === "blocking")
+    .map((c) => c.key)
+  emitConflictEvent("booking_conflict_detected", {
+    shopId: claimed.shop_id,
+    path: `execute:${claimed.action_type}`,
+    actionId: claimed.id,
+    conflictKeys,
+  })
+
+  if (policy === "hard_block") {
+    emitConflictEvent("booking_conflict_blocked_automatic", {
+      shopId: claimed.shop_id,
+      path: `execute:${claimed.action_type}`,
+      actionId: claimed.id,
+      conflictKeys,
+    })
+    return {
+      allowed: false,
+      error: `That slot is already taken (${blocking[0].label}) — automatic booking refused; it's waiting in Approvals.`,
+      summary,
+    }
+  }
+
+  const overrideCheck = validateConflictOverride(
+    (claimed.payload as { conflict_override?: unknown }).conflict_override,
+    { approverUserId: exec.decider.userId ?? null, blocking }
+  )
+  if (!overrideCheck.ok) {
+    return {
+      allowed: false,
+      error: `This time conflicts with ${blocking[0].label} — review the warning and use "Book it anyway" to override (${overrideCheck.reason}).`,
+      summary,
+    }
+  }
+
+  emitConflictEvent("booking_conflict_overridden", {
+    shopId: claimed.shop_id,
+    path: `execute:${claimed.action_type}`,
+    actionId: claimed.id,
+    conflictKeys,
+  })
+  return { allowed: true, summary, override: overrideCheck.override }
+}
+
+/** Writes the refreshed availability summary onto the card so the returned-
+ *  to-pending card shows current conflicts. Best-effort — a failed write
+ *  never masks the refusal itself. */
+async function recordAvailabilityOnCard(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  summary: AvailabilitySummary,
+  override: ConflictOverride | null
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    ...claimed.payload,
+    availability: summary,
+  }
+  if (override) payload.conflict_override = override
+  const { error } = await supabase
+    .from("pending_actions")
+    .update({ payload })
+    .eq("id", claimed.id)
+  if (error) {
+    console.warn(
+      `[availability] payload availability write failed for action ${claimed.id}: ${error.message}`
+    )
+  }
+}
+
+/** Audit evidence for an executed override (D-016): one decision-log row
+ *  recording who booked through which conflicts, and why. */
+async function recordOverrideDecision(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  override: ConflictOverride,
+  summary: AvailabilitySummary
+): Promise<void> {
+  await recordActionDecision(supabase, {
+    shopId: claimed.shop_id,
+    pendingActionId: claimed.id,
+    source: "conflict_override",
+    because: `Booked despite a schedule conflict because the owner explicitly overrode it — reason: ${override.reason ?? "(none)"}.`,
+    inputs: {
+      rule: "conflict_override",
+      overridden_by: override.by,
+      overridden_at: override.at,
+      conflicts: override.conflicts,
+      conflict_labels: summary.conflicts
+        .filter((c) => c.severity === "blocking")
+        .map((c) => c.label),
+    },
+  })
 }
 
 async function loadShopWithToken(
@@ -482,7 +690,8 @@ async function loadAppointmentForChange(
  */
 async function executeRescheduleAppointment(
   supabase: SupabaseClient,
-  claimed: ClaimedAction
+  claimed: ClaimedAction,
+  exec: CalendarExecutionContext
 ): Promise<ApprovalResult> {
   const proposal = claimed.payload as unknown as AppointmentChangeProposal
 
@@ -512,6 +721,19 @@ async function executeRescheduleAppointment(
 
   const durationMinutes = appointment.duration_minutes ?? 90
   const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000)
+
+  // P0-004: authoritative availability re-check at claim time. The moving
+  // appointment excludes itself (and its mirrored calendar event).
+  const gate = await evaluateConflictGate(supabase, claimed, exec, {
+    start: newStart,
+    end: newEnd,
+    excludeAppointmentId: appointment.id,
+  })
+  if (!gate.allowed) {
+    await recordAvailabilityOnCard(supabase, claimed, gate.summary, null)
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: gate.error, availability: gate.summary }
+  }
 
   if (appointment.aurinko_event_id && appointment.aurinko_calendar_id) {
     const shop = await loadShopWithToken(supabase, claimed.shop_id)
@@ -550,9 +772,14 @@ async function executeRescheduleAppointment(
     }
   }
 
+  // ends_at moves with scheduled_at (P0-004 gate 8) — a stale end time
+  // would corrupt every later conflict answer for this row.
   const { error } = await supabase
     .from("appointments")
-    .update({ scheduled_at: newStart.toISOString() })
+    .update({
+      scheduled_at: newStart.toISOString(),
+      ends_at: newEnd.toISOString(),
+    })
     .eq("id", appointment.id)
   if (error) {
     return { ok: false, error: `Appointment update failed: ${error.message}` }
@@ -562,6 +789,15 @@ async function executeRescheduleAppointment(
     .from("pending_actions")
     .update({ result_id: appointment.id })
     .eq("id", claimed.id)
+
+  // Audit trail: an executed override is recorded (D-016); a degraded
+  // check is recorded as "unverified" — never rewritten as clear.
+  if (gate.summary && (gate.override || gate.summary.error)) {
+    await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
+  }
+  if (gate.override && gate.summary) {
+    await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
+  }
 
   await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -662,7 +898,8 @@ async function executeCancelAppointment(
 
 async function executeBookAppointment(
   supabase: SupabaseClient,
-  claimed: ClaimedAction
+  claimed: ClaimedAction,
+  exec: CalendarExecutionContext
 ): Promise<ApprovalResult> {
   const proposal = claimed.payload as unknown as BookingProposal
 
@@ -673,6 +910,18 @@ async function executeBookAppointment(
   }
   const durationMinutes = Number(proposal.duration_minutes) || 90
   const end = new Date(start.getTime() + durationMinutes * 60_000)
+
+  // P0-004: authoritative availability re-check at claim time — data may
+  // have changed since this card was staged.
+  const gate = await evaluateConflictGate(supabase, claimed, exec, {
+    start,
+    end,
+  })
+  if (!gate.allowed) {
+    await recordAvailabilityOnCard(supabase, claimed, gate.summary, null)
+    await rollbackClaim(supabase, claimed.id)
+    return { ok: false, error: gate.error, availability: gate.summary }
+  }
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
   let accessToken: string | null = null
@@ -797,13 +1046,16 @@ async function executeBookAppointment(
     .eq("id", customerResult.customer.id)
     .or(`last_visit_at.is.null,last_visit_at.lt.${start.toISOString()}`)
 
-  const { data: appointment } = await supabase
+  // ends_at stored at creation (P0-004 gate 8) so the conflict service
+  // never has to assume this row's end time.
+  const { data: appointment, error: appointmentErr } = await supabase
     .from("appointments")
     .insert({
       shop_id: claimed.shop_id,
       lead_id: lead.id,
       customer_id: customerResult.customer.id,
       scheduled_at: start.toISOString(),
+      ends_at: end.toISOString(),
       duration_minutes: durationMinutes,
       service_name: proposal.service,
       aurinko_calendar_id: calendarId,
@@ -814,6 +1066,28 @@ async function executeBookAppointment(
     .single()
   const appointmentId =
     (appointment as { id: string } | null)?.id ?? null
+
+  // Audit trail: an executed override is recorded (D-016); a degraded check
+  // is recorded as "unverified" — never rewritten as clear. Gate BOTH writes
+  // on the appointments row actually landing: without a row there is nothing
+  // for the conflict service to ever see, so stamping a "booked despite a
+  // conflict" override (or an availability record) would be a false audit for
+  // a booking that did not persist. (The wider partial-state gap — the lead +
+  // calendar event above already landed, and this path still returns
+  // "executed" on a failed insert — is a pre-existing reliability issue
+  // tracked outside P0-004; see the review's atomicity finding.)
+  if (appointmentErr || !appointmentId) {
+    console.error(
+      `[approvals] appointment insert failed for action ${claimed.id} after lead ${lead.id} / calendar event ${calendarEventId ?? "none"} already landed — override/availability audit skipped; manual reconciliation required: ${appointmentErr?.message ?? "no row returned"}`
+    )
+  } else {
+    if (gate.summary && (gate.override || gate.summary.error)) {
+      await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
+    }
+    if (gate.override && gate.summary) {
+      await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
+    }
+  }
 
   if (vehicleId && appointmentId) {
     // Best-effort — appointments.vehicle_id exists only post-C1-migration.
