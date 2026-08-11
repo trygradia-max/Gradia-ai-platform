@@ -15,11 +15,11 @@ _Created 2026-07-25 by the Organizer. The live WIP board. **Every Builder sessio
 | Slot | Ticket | Risk class | Builder | Reviewer | State |
 |---|---|---|---|---|---|
 | Active 1 | P0-001 — Exposed database credential remediation | Security (standard) — reclassified 2026-07-27, no schema/migration impact | Claude Builder (session 2026-07-29) | _open — assign one Cursor Reviewer_ | **in-review** (accuracy update 2026-08-06: merged to `main` 2026-07-30, PR #8 `6adc21c`; held out of done pending founder acceptance steps 2 & 6 + formal Reviewer sign-off; slot stays occupied until done) |
-| Active 2 | — freed 2026-08-06 — | — | — | — | **P0-003 done** (merged PR #10 `00091db` 2026-08-06, Cursor Reviewer APPROVE; service inert until P0-004; merge/review record in the ticket file). Slot reserved next for **P0-004**, which enters in-progress only when the Organizer slots it and a Builder is recorded here — not started. |
-| Database-sensitive | — empty — | — | — | — | Slot free until P0-005 (the first genuinely DB-sensitive P0 ticket). Note: P0-004 becomes database-sensitive only if it adopts the composite-index recommendation (its gate 7). |
-| High-risk (payments/tenancy/calendar) | — empty — | — | — | — | P0-003 released this slot at close (2026-08-06). **P0-004 takes it when it starts.** |
+| Active 2 | — freed 2026-08-11 — | — | — | — | **P0-004 done** (merged PR #12 `3b6d044` 2026-08-11; independent Cursor final review **merge APPROVE · production enablement NOT READY**, verdict supplied to the Founder outside the PR trail; fix rounds `d43ce16`/`c0b66b1` on-branch; enforcement dormant behind the env flag; merge/review record in the ticket file. Board note: this ticket ran founder-slotted without a board entry recorded at start — recorded here retroactively for accuracy). Slot reserved next for **P0-004A** (booking atomicity/concurrency, issue #13 — resequenced ahead of P0-005), which enters in-progress only when the Organizer slots it and a Builder is recorded here — not started. |
+| Database-sensitive | — empty — | — | — | — | Slot free; P0-005 (the first genuinely DB-sensitive P0 ticket) is queued behind P0-004A per the 2026-08-11 resequencing. P0-004 shipped its additive composite index (`20260806120000`) within its own scope; P0-004A occupies this slot too if its transaction strategy adds an RPC/migration. |
+| High-risk (payments/tenancy/calendar) | — empty — | — | — | — | P0-004 (calendar) released this slot at close (2026-08-11). Free. |
 
-Slot accounting: 1/2 active · **0/1 database-sensitive** · 0/1 high-risk. One active slot free — reserved for P0-004 as the next active implementation ticket.
+Slot accounting: 1/2 active · **0/1 database-sensitive** · 0/1 high-risk. One active slot free — reserved for P0-004A (issue #13) as the next active implementation ticket; P0-005 queued behind it.
 
 ## How this board is updated
 
