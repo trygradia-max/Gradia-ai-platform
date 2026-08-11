@@ -20,14 +20,15 @@ Founder action inside P0-001: the actual password rotation happens in the Supaba
 ## Queued behind this sprint
 
 - **P0-003** (Central appointment conflict service) — **done 2026-08-06**: merged to `main` in PR #10 (`00091db`), Cursor Reviewer APPROVE, CI + DB integration green. The service (`src/lib/availability.ts`) is **inert until P0-004 wires it** — no booking path changed, no migrations. Merge/review record in the ticket file.
-- **P0-004** (Conflict enforcement across booking and scheduling paths) — **done 2026-08-11**: merged to `main` in PR #12 (`3b6d044`), CI + DB integration green; review rounds `d43ce16` (Cursor) and `c0b66b1` (founder rollout/failure-policy) addressed on-branch. Enforcement is **dormant in production** (`NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` unset = OFF); the production flag flip is the release event, gated on the founder's manual acceptance run (steps 1–7) on a flag-on Preview. Merge/review record in the ticket file; P0-004A atomicity follow-up carried to `backlog.md`.
-- **P0-005** (Webhook event idempotency foundation) — now the **next active implementation ticket**: ready, occupies the DB-sensitive slot when the Organizer slots it and a Builder is recorded in `work-in-progress.md`. Not started.
+- **P0-004** (Conflict enforcement across booking and scheduling paths) — **done 2026-08-11**: merged to `main` in PR #12 (`3b6d044`), CI + DB integration green; independent Cursor final review **merge APPROVE · production enablement NOT READY** (verdict supplied to the Founder outside the GitHub PR trail — the PR carries no review artifact); fix rounds `d43ce16` (Cursor) and `c0b66b1` (founder rollout/failure-policy) on-branch. Enforcement is **dormant in production** (`NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` unset = OFF); production enablement is a separate gate: founder manual QA (steps 1–7) on a flag-on Preview **plus** the P0-004A hardening below. Merge/review record in the ticket file.
+- **P0-004A** (Appointment booking atomicity and concurrency, GitHub issue **#13**) — now the **next active implementation ticket** (resequenced ahead of P0-005, 2026-08-11): P0-004 made the conflict system authoritative across scheduling paths, so the booking executor's known atomicity/concurrency gaps (false "executed" on failed persistence, partial state, retry/reconciliation, check→insert TOCTOU, concurrent-booking race, locking/transaction strategy) harden before P0-005 continues. Enters in-progress when the Organizer slots it and a Builder is recorded in `work-in-progress.md`. Not started.
+- **P0-005** (Webhook event idempotency foundation) — **queued behind P0-004A** (2026-08-11 resequencing).
 
 ## WIP limits (restated, binding)
 
 | Limit | Rule | Current state |
 |---|---|---|
-| Active implementation tickets | max **2** | 1 active (P0-001 in-review); P0-002/P0-003/P0-004 done (latest: P0-004, 2026-08-11) — one slot free, reserved next for P0-005 ✓ |
+| Active implementation tickets | max **2** | 1 active (P0-001 in-review); P0-002/P0-003/P0-004 done (latest: P0-004, 2026-08-11) — one slot free, reserved next for P0-004A (issue #13); P0-005 queued behind it ✓ |
 | Database-sensitive tickets active | max **1** | **0** — slot empty until P0-005 (P0-001 reclassified 2026-07-27: no schema/migration impact) ✓ |
 | Payment / tenancy / calendar high-risk tickets active | max **1** | 0 — P0-004 released the calendar slot at close (2026-08-11); slot free ✓ |
 | Roles per ticket | exactly one Builder + one Reviewer | slots defined above ✓ |

@@ -11,21 +11,22 @@ _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evid
 | Ticket | Title | Notes |
 |---|---|---|
 | P0-003 | Central appointment conflict service | **Done 2026-08-06** — merged PR #10 (`00091db`), Cursor APPROVE; service inert until P0-004. Merge/review record in the ticket file. |
-| P0-004 | Conflict enforcement across booking and scheduling paths | **Done 2026-08-11** — merged PR #12 (`3b6d044`), CI green; review rounds `d43ce16`/`c0b66b1` addressed. Enforcement dormant behind `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` (production flag flip gated on founder manual acceptance). Merge/review record in the ticket file. **P0-005 is now the next active implementation position.** |
+| P0-004 | Conflict enforcement across booking and scheduling paths | **Done 2026-08-11** — merged PR #12 (`3b6d044`), CI green; independent Cursor final review **merge APPROVE · production enablement NOT READY** (verdict supplied to the Founder outside the PR trail). Enforcement dormant behind `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT`; enablement gated on founder manual QA + P0-004A. Merge/review record in the ticket file. |
+| P0-004A | Appointment booking atomicity and concurrency (issue #13) | **Next active implementation position** (resequenced ahead of P0-005, 2026-08-11): harden the booking executor before P0-005 — false "executed" on failed persistence, partial state, retry/reconciliation, check→insert TOCTOU, concurrent-booking race, capacity-aware locking/serialization/transaction strategy. Not started. |
 
 ### Track B — Idempotency chain
 
 | Ticket | Title | Notes |
 |---|---|---|
-| P0-005 | Webhook event idempotency foundation | Database-sensitive (unique indexes / dedupe strategy migration) — occupies the **one** DB-sensitive slot. |
+| P0-005 | Webhook event idempotency foundation | **Queued behind P0-004A** (2026-08-11 resequencing). Database-sensitive (unique indexes / dedupe strategy migration) — occupies the **one** DB-sensitive slot when it starts. |
 | P0-006 | Twilio inbound replay protection | Depends on P0-005; starts only when P0-005 is done. |
 | P0-007 | Vapi transcript and usage replay protection | Depends on P0-005; sequenced after P0-006 or in its slot, respecting the max-2 active limit. |
 
 ## Selection rules
 
 1. **Max 2 active at any moment** — the expected cadence is one Track A ticket + one Track B ticket concurrently (e.g. P0-003 + P0-005), each with its own Builder and Reviewer.
-2. P0-003/P0-004 share the calendar high-risk slot and are strictly sequential (D-015/D-016 policy is implemented in 003, wired in 004).
-3. P0-005 must finish before P0-006 or P0-007 begins — they build on its foundation.
+2. P0-003/P0-004/P0-004A share the calendar high-risk slot and are strictly sequential (policy implemented in 003, wired in 004, executor hardened in 004A).
+3. **P0-004A precedes P0-005** (2026-08-11 resequencing — harden the now-authoritative booking executor before continuing); P0-005 must then finish before P0-006 or P0-007 begins — they build on its foundation.
 4. If Sprint 1 carries over a ticket, it keeps its slot and Sprint 2 admits only one new ticket until it closes.
 5. Any ticket whose decision dependency reopens (see `decision-queue.md`) moves to `blocked.md` immediately.
 

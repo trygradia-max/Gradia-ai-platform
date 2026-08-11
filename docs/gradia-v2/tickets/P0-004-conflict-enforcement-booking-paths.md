@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-004
 - **Epic:** E00 — Stabilization
-- **Status:** **done** (2026-08-11 — merged to `main` in PR #12, commit `3b6d044`; CI `ci / checks` + `ci-integration / integration` green on the merge; two review rounds addressed on-branch (`d43ce16` Cursor findings, `c0b66b1` founder rollout/failure-policy directives); enforcement is **dormant in production** — `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` defaults OFF; the production flag flip is the release event and is gated on the manual acceptance run — merge & review record at the end of this file)
+- **Status:** **done** (2026-08-11 — merged to `main` in PR #12, commit `3b6d044`; CI `ci / checks` + `ci-integration / integration` green on the merge; independent Cursor final review: **merge APPROVE · production enablement NOT READY** — verdict supplied to the Founder outside the GitHub PR trail; enforcement is **dormant in production** — `NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` defaults OFF; the production flag flip is the release event and is gated on the manual acceptance run — merge & review record at the end of this file)
 - **Priority:** High (risk class: **calendar** — counts against the high-risk WIP limit; may not run concurrently with P0-003)
 
 ## Objective
@@ -156,7 +156,7 @@ Two founder-directed review findings addressed on `fix/p0-004-conflict-enforceme
 
 ## Merge & review record (docs-close session, 2026-08-11)
 
-**Merged:** PR #12 → `main` as `3b6d044`, 2026-08-11 (branch `fix/p0-004-conflict-enforcement`: `5a3376e` implementation → `d43ce16` Cursor review fix → `c0b66b1` founder review fixes). **CI:** `ci / checks` (1m39s) and `ci-integration / integration` (2m31s) green on the PR. **Review evidence:** no formal PR review verdict was filed on GitHub; the review trail is the two addressed rounds — `d43ce16` (co-authored by Cursor: D-016 override/availability audit gated on appointment persistence) and `c0b66b1` (founder-directed: env-controlled rollout flag + internal-failure fail-closed policy, detailed in the review-fix addendum above). The founder merged the PR.
+**Merged:** PR #12 → `main` as `3b6d044`, 2026-08-11 (branch `fix/p0-004-conflict-enforcement`: `5a3376e` implementation → `d43ce16` Cursor review fix → `c0b66b1` founder review fixes). **CI:** `ci / checks` (1m39s) and `ci-integration / integration` (2m31s) green on the PR. **Review evidence:** the independent Cursor final review returned **MERGE VERDICT — APPROVE** and **PRODUCTION ENABLEMENT VERDICT — NOT READY**; this verdict was supplied to the Founder outside the GitHub PR comment trail, so the PR itself carries no Cursor review artifact — do not expect one there. The review's fix rounds are on-branch: `d43ce16` (co-authored by Cursor: D-016 override/availability audit gated on appointment persistence) and `c0b66b1` (founder-directed: env-controlled rollout flag + internal-failure fail-closed policy, detailed in the review-fix addendum above). The Founder merged only after green `ci / checks` + `ci-integration` and with the dark-rollout conditions satisfied (flag OFF in production). Per the NOT READY enablement verdict, production enablement remains a separate gate: manual QA (steps 1–7) on a flag-on Preview, plus the P0-004A hardening below.
 
 Verified at close:
 
@@ -166,4 +166,4 @@ Verified at close:
 - **Migration:** one, additive + idempotent — `20260806120000_appointments_shop_scheduled_idx.sql` (composite `appointments(shop_id, scheduled_at)`, the index carried from P0-003 gate 7).
 - **Manual acceptance (steps 1–7): NOT yet executed** — assigned to the **founder**, to run on a Preview deployment with the flag `true`; the production flag flip is gated on that run and gets the formal release record per `../releases/README.md` §Standing rules.
 
-**Follow-up carried to backlog:** P0-004A — atomicity/concurrency of `executeBookAppointment` (lead + calendar event can land before a failed appointment insert; path still reports "executed"; check-then-insert race between re-check and insert). Pre-existing gap, out of P0-004 scope by review agreement.
+**Follow-up — now the next implementation ticket (Organizer, 2026-08-11):** **P0-004A — Appointment booking atomicity and concurrency** (GitHub issue **#13**), sequenced **ahead of P0-005**. Scope: false "executed" result when appointment persistence fails; lead/calendar/appointment/audit partial state; retry/reconciliation; check→insert TOCTOU; concurrent overlapping-booking race; capacity-aware locking/serialization/transaction strategy. Rationale: P0-004 made the conflict system authoritative across scheduling paths — harden the executor's known atomicity/concurrency gaps before continuing into P0-005. Production conflict enforcement remains OFF; manual QA remains a separate pre-enable gate.
