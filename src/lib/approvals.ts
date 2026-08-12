@@ -27,6 +27,11 @@ import {
   type ConflictPolicyContext,
 } from "@/lib/availability"
 import {
+  coveredAppointmentIds,
+  writeAppointmentSerialized,
+  type SerializedWriteResult,
+} from "@/lib/appointment-write"
+import {
   createCalendarEvent,
   deleteCalendarEvent,
   getAccessTokenForShop as getAurinkoAccessTokenForShop,
@@ -620,6 +625,61 @@ async function recordAvailabilityOnCard(
   }
 }
 
+/**
+ * Honest post-race summary: when the serialized write refuses (a conflicting
+ * row landed between the gate's check and the write), re-run the central
+ * service so the returned-to-pending card shows CURRENT, labeled conflicts.
+ * A failed re-run degrades to the structured verification-failure summary —
+ * never a fabricated "no conflicts".
+ */
+async function refreshConflictSummary(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  range: { start: Date; end: Date; excludeAppointmentId?: string | null }
+): Promise<AvailabilitySummary> {
+  const checkedAt = new Date().toISOString()
+  try {
+    const result = await checkAvailability(supabase, claimed.shop_id, {
+      start: range.start,
+      end: range.end,
+      excludeAppointmentId: range.excludeAppointmentId ?? null,
+    })
+    return summarizeAvailability(result, checkedAt)
+  } catch (err) {
+    return unverifiedAvailabilitySummary(checkedAt, internalFailureCode(err))
+  }
+}
+
+/**
+ * Explicit reconciliation state (P0-004A): when a post-persistence step
+ * fails (lead bookkeeping, external calendar sync), the condition is
+ * recorded on the action payload so no contradicting state is silent.
+ * Best-effort — a failed write never masks the outcome it describes.
+ */
+async function recordPayloadReconciliation(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  patch: Record<string, unknown>
+): Promise<void> {
+  const { data } = await supabase
+    .from("pending_actions")
+    .select("payload")
+    .eq("id", claimed.id)
+    .maybeSingle()
+  const current =
+    ((data as { payload?: Record<string, unknown> } | null)?.payload ??
+      claimed.payload) as Record<string, unknown>
+  const { error } = await supabase
+    .from("pending_actions")
+    .update({ payload: { ...current, ...patch } })
+    .eq("id", claimed.id)
+  if (error) {
+    console.warn(
+      `[approvals] reconciliation payload write failed for action ${claimed.id}: ${error.message}`
+    )
+  }
+}
+
 /** Audit evidence for an executed override (D-016): one decision-log row
  *  recording who booked through which conflicts, and why. */
 async function recordOverrideDecision(
@@ -735,24 +795,78 @@ async function executeRescheduleAppointment(
     return { ok: false, error: gate.error, availability: gate.summary }
   }
 
+  // P0-004A: Gradia durable state FIRST — the serialized move (ends_at rides
+  // with scheduled_at, P0-004 gate 8; in-lock re-verify closes the TOCTOU
+  // window between the gate above and this write).
+  let write: SerializedWriteResult
+  try {
+    write = await writeAppointmentSerialized(supabase, claimed.shop_id, {
+      mode: "move",
+      appointmentId: appointment.id,
+      start: newStart,
+      end: newEnd,
+      coveredIds: gate.override
+        ? coveredAppointmentIds(gate.override.conflicts)
+        : [],
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
+    })
+  } catch (err) {
+    console.error(
+      `[approvals] appointment move failed for action ${claimed.id} — nothing was moved:`,
+      err instanceof Error ? err.message : err
+    )
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: `Appointment update failed: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (write.status === "conflict" || write.status === "not_found") {
+    const summary = await refreshConflictSummary(supabase, claimed, {
+      start: newStart,
+      end: newEnd,
+      excludeAppointmentId: appointment.id,
+    })
+    await recordAvailabilityOnCard(supabase, claimed, summary, null)
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        write.status === "not_found"
+          ? "Couldn't match this to a booking — find it in Schedule and move it there."
+          : "That slot was taken while this card waited — nothing was moved. Review the refreshed conflict and approve again or pick a new time.",
+      availability: summary,
+    }
+  }
+
+  await supabase
+    .from("pending_actions")
+    .update({ result_id: appointment.id })
+    .eq("id", claimed.id)
+
+  // Audit trail — after authoritative persistence: an executed override is
+  // recorded (D-016); a degraded check is recorded as "unverified" — never
+  // rewritten as clear.
+  if (gate.summary && (gate.override || gate.summary.error)) {
+    await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
+  }
+  if (gate.override && gate.summary) {
+    await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
+  }
+
+  // External calendar sync SECOND: the mirror follows the truth. A provider
+  // failure here never un-moves the Gradia booking; it is recorded as a
+  // synchronization/reconciliation condition.
   if (appointment.aurinko_event_id && appointment.aurinko_calendar_id) {
-    const shop = await loadShopWithToken(supabase, claimed.shop_id)
-    let accessToken: string | null = null
-    if (shop) {
-      try {
-        accessToken = await getAurinkoAccessTokenForShop(supabase, shop)
-      } catch (err) {
-        console.warn("[approvals] Aurinko token refresh failed:", err)
-      }
-    }
-    if (!accessToken) {
-      await rollbackClaim(supabase, claimed.id)
-      return {
-        ok: false,
-        error: "Calendar isn't connected — reconnect it in /settings, then approve.",
-      }
-    }
     try {
+      const shop = await loadShopWithToken(supabase, claimed.shop_id)
+      const accessToken = shop
+        ? await getAurinkoAccessTokenForShop(supabase, shop)
+        : null
+      if (!accessToken) {
+        throw new Error("calendar not connected / token unavailable")
+      }
       await updateCalendarEventTime(
         accessToken,
         appointment.aurinko_calendar_id,
@@ -764,39 +878,18 @@ async function executeRescheduleAppointment(
         }
       )
     } catch (err) {
-      await rollbackClaim(supabase, claimed.id)
-      return {
-        ok: false,
-        error: `Calendar move failed: ${err instanceof Error ? err.message : String(err)}`,
-      }
+      console.error(
+        `[approvals] calendar sync failed for moved appointment ${appointment.id} (action ${claimed.id}) — move stands; sync needs reconciliation:`,
+        err instanceof Error ? err.message : err
+      )
+      await recordPayloadReconciliation(supabase, claimed, {
+        calendar_sync: {
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+          at: new Date().toISOString(),
+        },
+      })
     }
-  }
-
-  // ends_at moves with scheduled_at (P0-004 gate 8) — a stale end time
-  // would corrupt every later conflict answer for this row.
-  const { error } = await supabase
-    .from("appointments")
-    .update({
-      scheduled_at: newStart.toISOString(),
-      ends_at: newEnd.toISOString(),
-    })
-    .eq("id", appointment.id)
-  if (error) {
-    return { ok: false, error: `Appointment update failed: ${error.message}` }
-  }
-
-  await supabase
-    .from("pending_actions")
-    .update({ result_id: appointment.id })
-    .eq("id", claimed.id)
-
-  // Audit trail: an executed override is recorded (D-016); a degraded
-  // check is recorded as "unverified" — never rewritten as clear.
-  if (gate.summary && (gate.override || gate.summary.error)) {
-    await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
-  }
-  if (gate.override && gate.summary) {
-    await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
   }
 
   await recordInteraction(supabase, {
@@ -911,6 +1004,34 @@ async function executeBookAppointment(
   const durationMinutes = Number(proposal.duration_minutes) || 90
   const end = new Date(start.getTime() + durationMinutes * 60_000)
 
+  // P0-004A replay fast-path: if THIS action already produced its durable
+  // appointment (re-driven claim after a crash/retry), the booking is done —
+  // return executed idempotently. Without this, the action's own persisted
+  // row would read as a conflict against its own replay. The serialized
+  // write's in-lock `exists` check remains the race-safe backstop.
+  {
+    const { data: prior } = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("shop_id", claimed.shop_id)
+      .eq("pending_action_id", claimed.id)
+      .maybeSingle()
+    const priorId = (prior as { id: string } | null)?.id
+    if (priorId) {
+      console.warn(
+        `[approvals] booking replay for action ${claimed.id} — appointment ${priorId} already exists; returning executed idempotently`
+      )
+      return {
+        ok: true,
+        status: "executed",
+        actionType: "book_appointment",
+        resultId: priorId,
+        proposal,
+        calendarEventId: null,
+      }
+    }
+  }
+
   // P0-004: authoritative availability re-check at claim time — data may
   // have changed since this card was staged.
   const gate = await evaluateConflictGate(supabase, claimed, exec, {
@@ -954,38 +1075,12 @@ async function executeBookAppointment(
     }
   }
 
-  const calendarId = "primary"
-  const subjectParts = [
-    proposal.service?.trim() || "Detailing",
-    proposal.customer_name?.trim() || "",
-  ].filter(Boolean)
-  const subject = subjectParts.join(" — ")
-
-  let calendarEventId: string | null = null
-  try {
-    const created = await createCalendarEvent(accessToken, calendarId, {
-      subject,
-      startIso: start.toISOString(),
-      endIso: end.toISOString(),
-      timezone: proposal.timezone ?? "UTC",
-      location: shop.location,
-      attendeeEmail: proposal.email,
-    })
-    calendarEventId = created.id || null
-  } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
-    return {
-      ok: false,
-      error: `Calendar event create failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    }
-  }
-
-  // Lead row tracks the customer relationship; appointment row tracks
-  // the calendar event itself. Both link back through customer_id. The
-  // parsed vehicle lands in `vehicles` (write-through to flat columns);
-  // vehicle_id links happen AFTER insert so pre-C1-migration DBs still book.
+  // -------------------------------------------------------------------------
+  // P0-004A (issue #13): Gradia durable booking state FIRST. The serialized,
+  // idempotent appointment write is the authoritative transaction; external
+  // calendar sync happens after it and can no longer abort, orphan, or
+  // misreport a booking.
+  // -------------------------------------------------------------------------
   const vehicle = parseVehicle(proposal.car_info)
   const vehicleId = await upsertCustomerVehicle(
     supabase,
@@ -993,6 +1088,86 @@ async function executeBookAppointment(
     customerResult.customer.id,
     vehicle
   )
+
+  let write: SerializedWriteResult
+  try {
+    write = await writeAppointmentSerialized(supabase, claimed.shop_id, {
+      mode: "insert",
+      start,
+      end,
+      coveredIds: gate.override
+        ? coveredAppointmentIds(gate.override.conflicts)
+        : [],
+      pendingActionId: claimed.id,
+      customerId: customerResult.customer.id,
+      durationMinutes,
+      serviceName: proposal.service,
+      timezone: proposal.timezone,
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
+    })
+  } catch (err) {
+    // Persistence failure: never "executed" without a durable row.
+    console.error(
+      `[approvals] appointment write failed for action ${claimed.id} — nothing was booked:`,
+      err instanceof Error ? err.message : err
+    )
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error: `Booking could not be saved — nothing was booked. ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+
+  if (write.status === "conflict" || write.status === "not_found") {
+    // TOCTOU loser: a conflicting row landed between the gate's check and
+    // the serialized write. Refuse with an honest refreshed summary; the
+    // card returns to pending for a retry or a new override.
+    const summary = await refreshConflictSummary(supabase, claimed, {
+      start,
+      end,
+    })
+    await recordAvailabilityOnCard(supabase, claimed, summary, null)
+    await rollbackClaim(supabase, claimed.id)
+    return {
+      ok: false,
+      error:
+        "That slot was taken while this card waited — nothing was booked. Review the refreshed conflict and approve again or pick a new time.",
+      availability: summary,
+    }
+  }
+
+  const appointmentId = write.id
+  if (write.status === "exists") {
+    // Idempotent replay (re-driven claim): the durable row wins; no second
+    // round of side effects, no duplicate appointment.
+    console.warn(
+      `[approvals] booking replay for action ${claimed.id} — appointment ${appointmentId} already exists; returning executed idempotently`
+    )
+    return {
+      ok: true,
+      status: "executed",
+      actionType: "book_appointment",
+      resultId: appointmentId,
+      proposal,
+      calendarEventId: null,
+    }
+  }
+
+  // Audit trail — written only now, AFTER authoritative persistence (the
+  // d43ce16 gating, preserved and strengthened: a failed or conflicting
+  // write returns above, so a "booked despite a conflict" override can never
+  // be recorded for a booking that did not persist).
+  if (gate.summary && (gate.override || gate.summary.error)) {
+    await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
+  }
+  if (gate.override && gate.summary) {
+    await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
+  }
+
+  // Lead + CRM bookkeeping. The appointment row is the booking truth — a
+  // lead failure below is explicit reconciliation state, never a reason to
+  // report the booking failed.
   const { data: lead, error: leadErr } = await supabase
     .from("leads")
     .insert({
@@ -1010,23 +1185,38 @@ async function executeBookAppointment(
     })
     .select("id")
     .single()
+  const leadId = (lead as { id: string } | null)?.id ?? null
 
-  if (leadErr || !lead) {
-    await rollbackClaim(supabase, claimed.id)
-    return { ok: false, error: leadErr?.message ?? "Lead insert failed" }
-  }
-
-  if (vehicleId) {
-    // Best-effort — only reachable when the C1 migration is applied.
+  if (leadErr || !leadId) {
+    console.error(
+      `[approvals] lead insert failed for action ${claimed.id} — appointment ${appointmentId} IS booked; lead bookkeeping needs reconciliation: ${leadErr?.message ?? "no row returned"}`
+    )
+    await recordPayloadReconciliation(supabase, claimed, {
+      reconciliation: {
+        kind: "lead_missing",
+        appointment_id: appointmentId,
+        error: leadErr?.message ?? "no row returned",
+        at: new Date().toISOString(),
+      },
+    })
+  } else {
     await supabase
-      .from("leads")
-      .update({ vehicle_id: vehicleId })
-      .eq("id", lead.id)
+      .from("appointments")
+      .update({ lead_id: leadId })
+      .eq("id", appointmentId)
+      .eq("shop_id", claimed.shop_id)
+    if (vehicleId) {
+      // Best-effort — only reachable when the C1 migration is applied.
+      await supabase
+        .from("leads")
+        .update({ vehicle_id: vehicleId })
+        .eq("id", leadId)
+    }
+    // Auto-move (C2, code): booking approved → booked card + lifecycle flip.
+    await moveLeadToStage(supabase, claimed.shop_id, leadId, "booked", {
+      by: "system",
+    })
   }
-  // Auto-move (C2, code): booking approved → booked card + lifecycle flip.
-  await moveLeadToStage(supabase, claimed.shop_id, lead.id, "booked", {
-    by: "system",
-  })
   {
     const { error: lifecycleErr } = await supabase
       .from("customers")
@@ -1046,50 +1236,7 @@ async function executeBookAppointment(
     .eq("id", customerResult.customer.id)
     .or(`last_visit_at.is.null,last_visit_at.lt.${start.toISOString()}`)
 
-  // ends_at stored at creation (P0-004 gate 8) so the conflict service
-  // never has to assume this row's end time.
-  const { data: appointment, error: appointmentErr } = await supabase
-    .from("appointments")
-    .insert({
-      shop_id: claimed.shop_id,
-      lead_id: lead.id,
-      customer_id: customerResult.customer.id,
-      scheduled_at: start.toISOString(),
-      ends_at: end.toISOString(),
-      duration_minutes: durationMinutes,
-      service_name: proposal.service,
-      aurinko_calendar_id: calendarId,
-      aurinko_event_id: calendarEventId,
-      timezone: proposal.timezone,
-    })
-    .select("id")
-    .single()
-  const appointmentId =
-    (appointment as { id: string } | null)?.id ?? null
-
-  // Audit trail: an executed override is recorded (D-016); a degraded check
-  // is recorded as "unverified" — never rewritten as clear. Gate BOTH writes
-  // on the appointments row actually landing: without a row there is nothing
-  // for the conflict service to ever see, so stamping a "booked despite a
-  // conflict" override (or an availability record) would be a false audit for
-  // a booking that did not persist. (The wider partial-state gap — the lead +
-  // calendar event above already landed, and this path still returns
-  // "executed" on a failed insert — is a pre-existing reliability issue
-  // tracked outside P0-004; see the review's atomicity finding.)
-  if (appointmentErr || !appointmentId) {
-    console.error(
-      `[approvals] appointment insert failed for action ${claimed.id} after lead ${lead.id} / calendar event ${calendarEventId ?? "none"} already landed — override/availability audit skipped; manual reconciliation required: ${appointmentErr?.message ?? "no row returned"}`
-    )
-  } else {
-    if (gate.summary && (gate.override || gate.summary.error)) {
-      await recordAvailabilityOnCard(supabase, claimed, gate.summary, gate.override)
-    }
-    if (gate.override && gate.summary) {
-      await recordOverrideDecision(supabase, claimed, gate.override, gate.summary)
-    }
-  }
-
-  if (vehicleId && appointmentId) {
+  if (vehicleId) {
     // Best-effort — appointments.vehicle_id exists only post-C1-migration.
     await supabase
       .from("appointments")
@@ -1099,8 +1246,59 @@ async function executeBookAppointment(
 
   await supabase
     .from("pending_actions")
-    .update({ result_id: lead.id })
+    .update({ result_id: leadId ?? appointmentId })
     .eq("id", claimed.id)
+
+  // External calendar sync SECOND (P0-004A ordering invariant): the event is
+  // created only after the durable Gradia row exists — no orphan events. A
+  // provider failure here never erases the booking; it is recorded as a
+  // synchronization/reconciliation condition, not a failed Gradia booking.
+  const calendarId = "primary"
+  const subjectParts = [
+    proposal.service?.trim() || "Detailing",
+    proposal.customer_name?.trim() || "",
+  ].filter(Boolean)
+  const subject = subjectParts.join(" — ")
+
+  let calendarEventId: string | null = null
+  try {
+    const created = await createCalendarEvent(accessToken, calendarId, {
+      subject,
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+      timezone: proposal.timezone ?? "UTC",
+      location: shop.location,
+      attendeeEmail: proposal.email,
+    })
+    calendarEventId = created.id || null
+    if (calendarEventId) {
+      const { error: linkErr } = await supabase
+        .from("appointments")
+        .update({
+          aurinko_calendar_id: calendarId,
+          aurinko_event_id: calendarEventId,
+        })
+        .eq("id", appointmentId)
+        .eq("shop_id", claimed.shop_id)
+      if (linkErr) {
+        console.error(
+          `[approvals] calendar event ${calendarEventId} created but not linked to appointment ${appointmentId} — reconcile: ${linkErr.message}`
+        )
+      }
+    }
+  } catch (err) {
+    console.error(
+      `[approvals] calendar sync failed for appointment ${appointmentId} (action ${claimed.id}) — booking stands; sync needs reconciliation:`,
+      err instanceof Error ? err.message : err
+    )
+    await recordPayloadReconciliation(supabase, claimed, {
+      calendar_sync: {
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+        at: new Date().toISOString(),
+      },
+    })
+  }
 
   // Best-effort confirmation draft. Always after a successful booking
   // landing — drafter/Slack failures must not roll back the booking.
@@ -1162,7 +1360,7 @@ async function executeBookAppointment(
     ok: true,
     status: "executed",
     actionType: "book_appointment",
-    resultId: lead.id,
+    resultId: leadId ?? appointmentId,
     proposal,
     calendarEventId,
   }

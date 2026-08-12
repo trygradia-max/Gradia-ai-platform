@@ -80,9 +80,36 @@ function summaryFor(...conflicts: AvailabilityConflict[]) {
 // Recording client for the jobs actions.
 type Write = { table: string; op: "insert" | "update"; values: Record<string, unknown> }
 
-function jobsDb(opts: { job?: Record<string, unknown> | null; writes?: Write[] }) {
+type RpcCall = { fn: string; args: Record<string, unknown> }
+
+function jobsDb(opts: {
+  job?: Record<string, unknown> | null
+  writes?: Write[]
+  rpcCalls?: RpcCall[]
+  /** Serialized-write outcome (P0-004A). Defaults to success. */
+  rpcResult?: Record<string, unknown> | Error
+}) {
   const writes = opts.writes ?? []
+  const rpcCalls = opts.rpcCalls ?? []
   const client = {
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args })
+      if (opts.rpcResult instanceof Error) {
+        return Promise.resolve({
+          data: null,
+          error: { message: opts.rpcResult.message },
+        })
+      }
+      return Promise.resolve({
+        data:
+          opts.rpcResult ??
+          {
+            status: args.p_appointment_id ? "updated" : "inserted",
+            id: (args.p_appointment_id as string) ?? "appt-new",
+          },
+        error: null,
+      })
+    },
     from: (table: string) => {
       const chain: Record<string, unknown> = {}
       for (const m of ["select", "eq", "gte", "lt", "order", "limit", "or"]) {
@@ -114,7 +141,7 @@ function jobsDb(opts: { job?: Record<string, unknown> | null; writes?: Write[] }
       }
     },
   } as unknown as SupabaseClient
-  return { client, writes }
+  return { client, writes, rpcCalls }
 }
 
 const jobRow = {
@@ -165,9 +192,9 @@ describe("rescheduleJob (owner drag) — warn, then documented override", () => 
   })
 
   it("with a reason → moves the job and records the override (actor, timestamp, conflicts)", async () => {
-    const blocking = [conflict("appt-9")]
+    const blocking = [conflict("aaaaaaaa-aaaa-4aaa-8aaa-000000000009")]
     mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking, failure: null })
-    const { client, writes } = jobsDb({ job: jobRow })
+    const { client, rpcCalls } = jobsDb({ job: jobRow })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
 
@@ -175,11 +202,16 @@ describe("rescheduleJob (owner drag) — warn, then documented override", () => 
       overrideReason: "Customer asked to double up",
     })
     expect(result.ok).toBe(true)
-    const move = writes.find(
-      (w) => w.table === "appointments" && w.op === "update"
-    )
-    expect(move?.values.scheduled_at).toBe(START)
-    expect(move?.values.ends_at).toBeTruthy()
+    // P0-004A: the move goes through the serialized write, carrying the
+    // override-covered appointment ids so an uncovered race still refuses.
+    const move = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
+    expect(move?.args).toMatchObject({
+      p_shop_id: "shop-1",
+      p_appointment_id: "job-1",
+      p_start: START,
+      p_covered_ids: ["aaaaaaaa-aaaa-4aaa-8aaa-000000000009"],
+    })
+    expect(move?.args.p_end).toBeTruthy()
 
     const overrideNote = mockedRecordInteraction.mock.calls.find(
       ([, input]) =>
@@ -191,17 +223,19 @@ describe("rescheduleJob (owner drag) — warn, then documented override", () => 
     expect(meta.overridden_by).toBe("owner-1")
     expect(typeof meta.overridden_at).toBe("string")
     expect(meta.reason).toBe("Customer asked to double up")
-    expect(meta.conflicts).toEqual(["appointment:appt-9"])
+    expect(meta.conflicts).toEqual(["appointment:aaaaaaaa-aaaa-4aaa-8aaa-000000000009"])
   })
 
   it("clear slot → moves without any override ceremony", async () => {
-    const { client, writes } = jobsDb({ job: jobRow })
+    const { client, rpcCalls } = jobsDb({ job: jobRow })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
 
     const result = await rescheduleJob("job-1", START)
     expect(result.ok).toBe(true)
-    expect(writes.some((w) => w.table === "appointments")).toBe(true)
+    expect(
+      rpcCalls.some((c) => c.fn === "write_appointment_serialized")
+    ).toBe(true)
     expect(
       mockedRecordInteraction.mock.calls.some(
         ([, input]) =>
@@ -293,7 +327,7 @@ describe("blockTime — same gate, same recorded override", () => {
   it("with a reason → block lands and the override is recorded", async () => {
     const blocking = [conflict("appt-3")]
     mockedStaging.mockResolvedValue({ summary: summaryFor(...blocking), blocking, failure: null })
-    const { client, writes } = jobsDb({ job: null })
+    const { client, rpcCalls } = jobsDb({ job: null })
     const { createClient } = await import("@/lib/supabase/server")
     vi.mocked(createClient).mockResolvedValue(client as never)
 
@@ -301,10 +335,13 @@ describe("blockTime — same gate, same recorded override", () => {
       overrideReason: "Truck broke down — holding the bay",
     })
     expect(result.ok).toBe(true)
-    const insert = writes.find(
-      (w) => w.table === "appointments" && w.op === "insert"
-    )
-    expect(insert?.values.internal_note).toBe("[block-time]")
+    // P0-004A: the block rides the serialized write path.
+    const insert = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
+    expect(insert?.args).toMatchObject({
+      p_shop_id: "shop-1",
+      p_internal_note: "[block-time]",
+      p_service_name: "Emergency hold",
+    })
     expect(
       mockedRecordInteraction.mock.calls.some(
         ([, input]) =>

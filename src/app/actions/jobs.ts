@@ -13,6 +13,12 @@ import {
   stagingAvailability,
   type AvailabilitySummary,
 } from "@/lib/availability"
+import {
+  coveredAppointmentIds,
+  writeAppointmentSerialized,
+  type SerializedWriteResult,
+} from "@/lib/appointment-write"
+import { FEATURES } from "@/lib/features"
 import { advanceJobStatus } from "@/lib/jobs"
 import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
@@ -63,7 +69,14 @@ async function ownerConflictGate(input: {
   overrideReason?: string
   verb: string
 }): Promise<
-  | { proceed: true; overridden: boolean; summary: AvailabilitySummary | null }
+  | {
+      proceed: true
+      overridden: boolean
+      summary: AvailabilitySummary | null
+      /** Appointment ids the recorded override covers — passed to the
+       *  serialized write so an UNCOVERED racing row still refuses. */
+      coveredIds: string[]
+    }
   | { proceed: false; result: JobActionResult }
 > {
   const { summary, blocking, failure } = await stagingAvailability(
@@ -93,7 +106,7 @@ async function ownerConflictGate(input: {
     }
   }
   if (blocking.length === 0) {
-    return { proceed: true, overridden: false, summary }
+    return { proceed: true, overridden: false, summary, coveredIds: [] }
   }
   const reason = input.overrideReason?.trim()
   if (!reason) {
@@ -142,7 +155,21 @@ async function ownerConflictGate(input: {
       path: input.path,
     },
   })
-  return { proceed: true, overridden: true, summary }
+  return {
+    proceed: true,
+    overridden: true,
+    summary,
+    coveredIds: coveredAppointmentIds(keys),
+  }
+}
+
+/** Structured refusal when the serialized write loses an in-lock race —
+ *  the schedule changed between the warn-confirm check and the write. */
+const RACE_REFUSAL: JobActionResult = {
+  ok: false,
+  error:
+    "That time was taken just now — nothing was changed. Refresh the calendar and try again.",
+  conflict: { labels: [], keys: [], unverified: false },
 }
 
 export async function setJobStatus(
@@ -289,16 +316,27 @@ export async function rescheduleJob(
   })
   if (!gate.proceed) return gate.result
 
-  const { error } = await supabase
-    .from("appointments")
-    .update({
-      scheduled_at: newStart.toISOString(),
-      ends_at: new Date(newStart.getTime() + durationMs).toISOString(),
-      updated_at: new Date().toISOString(),
+  // P0-004A: serialized move — the in-lock re-verify closes the window
+  // between the warn-confirm check above and this write.
+  let write: SerializedWriteResult
+  try {
+    write = await writeAppointmentSerialized(supabase, shop.id, {
+      mode: "move",
+      appointmentId: jobId,
+      start: newStart,
+      end: new Date(newStart.getTime() + durationMs),
+      coveredIds: gate.coveredIds,
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
     })
-    .eq("id", jobId)
-    .eq("shop_id", shop.id)
-  if (error) return { ok: false, error: error.message }
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Couldn't save the move: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (write.status === "conflict") return RACE_REFUSAL
+  if (write.status === "not_found") return { ok: false, error: "Job not found." }
 
   // Keep the linked calendar event in step (best-effort — owner's own move).
   if (job.aurinko_event_id) {
@@ -395,23 +433,31 @@ export async function blockTime(
   })
   if (!gate.proceed) return gate.result
 
-  const { data: created, error } = await supabase
-    .from("appointments")
-    .insert({
-      shop_id: shop.id,
-      scheduled_at: start.toISOString(),
-      duration_minutes: minutes,
-      service_name: label?.trim() || "Blocked time",
-      internal_note: "[block-time]",
+  // P0-004A: serialized insert (ends_at stored at creation; in-lock
+  // re-verify closes the race between the warn-confirm and this write).
+  let write: SerializedWriteResult
+  try {
+    write = await writeAppointmentSerialized(supabase, shop.id, {
+      mode: "insert",
+      start,
+      end: new Date(start.getTime() + minutes * 60_000),
+      coveredIds: gate.coveredIds,
+      durationMinutes: minutes,
+      serviceName: label?.trim() || "Blocked time",
+      internalNote: "[block-time]",
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
     })
-    .select("id")
-    .single()
-  if (error || !created) return { ok: false, error: error?.message ?? "Couldn't block that." }
-  // Best-effort C1 fields.
-  await supabase
-    .from("appointments")
-    .update({ ends_at: new Date(start.getTime() + minutes * 60_000).toISOString() })
-    .eq("id", (created as { id: string }).id)
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Couldn't block that: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (write.status === "conflict") return RACE_REFUSAL
+  if (write.status !== "inserted") {
+    return { ok: false, error: "Couldn't block that." }
+  }
   revalidatePath("/calendar")
   return { ok: true }
 }
