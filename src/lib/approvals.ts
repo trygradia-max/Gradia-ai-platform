@@ -808,6 +808,8 @@ async function executeRescheduleAppointment(
       coveredIds: gate.override
         ? coveredAppointmentIds(gate.override.conflicts)
         : [],
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
     })
   } catch (err) {
     console.error(
@@ -1101,6 +1103,8 @@ async function executeBookAppointment(
       durationMinutes,
       serviceName: proposal.service,
       timezone: proposal.timezone,
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
     })
   } catch (err) {
     // Persistence failure: never "executed" without a durable row.

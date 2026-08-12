@@ -35,7 +35,14 @@ export type SerializedWriteResult =
   | { status: "conflict"; conflictIds: string[] }
   | { status: "not_found" }
 
-export type SerializedInsertInput = {
+/** Whether the in-lock overlap check refuses busy slots (conflict
+ *  enforcement). Callers pass FEATURES.conflictEnforcement: when the P0-004
+ *  rollout flag is OFF this is false and the write behaves exactly as
+ *  pre-P0-004A (lock + idempotency still apply; overlaps are not refused).
+ *  Omitted → defaults to enforcing (safe default for any future caller). */
+type EnforceConflicts = { enforceConflicts?: boolean }
+
+export type SerializedInsertInput = EnforceConflicts & {
   mode: "insert"
   start: Date
   end: Date
@@ -51,7 +58,7 @@ export type SerializedInsertInput = {
   internalNote?: string | null
 }
 
-export type SerializedMoveInput = {
+export type SerializedMoveInput = EnforceConflicts & {
   mode: "move"
   appointmentId: string
   start: Date
@@ -84,6 +91,9 @@ export async function writeAppointmentSerialized(
     p_timezone: input.mode === "insert" ? (input.timezone ?? null) : null,
     p_internal_note:
       input.mode === "insert" ? (input.internalNote ?? null) : null,
+    // Overlap refusal (conflict enforcement) is gated; lock + idempotency are
+    // not. Default true so an unset caller stays safe.
+    p_enforce_conflicts: input.enforceConflicts ?? true,
   })
   if (error) {
     throw new Error(

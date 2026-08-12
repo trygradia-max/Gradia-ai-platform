@@ -400,6 +400,27 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
     ).toBe("failed")
   })
 
+  it("flag OFF → overlap NOT refused: pre-P0-004A double-booking preserved (enforcement gated, atomicity kept)", async () => {
+    const prior = process.env.NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT
+    process.env.NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT = "false"
+    try {
+      const slot = freshSlot()
+      const idFirst = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
+      expect((await executeApproval(sb, idFirst, { userId: seed.ownerId })).ok).toBe(true)
+
+      // Second booking over the SAME slot, no override. With enforcement OFF
+      // the serialized write must NOT refuse (behaves as before P0-004A) — the
+      // deploy-with-flag-off release condition. Two rows coexist.
+      const idSecond = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
+      const second = await executeApproval(sb, idSecond, { userId: seed.ownerId })
+      expect(second.ok).toBe(true)
+      expect(await appointmentsInSlot(sb, seed.shopId, slot)).toHaveLength(2)
+    } finally {
+      if (prior === undefined) delete process.env.NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT
+      else process.env.NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT = prior
+    }
+  })
+
   it("no orphan external event: a refused booking never calls the provider", async () => {
     const slot = freshSlot()
     const idFirst = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))

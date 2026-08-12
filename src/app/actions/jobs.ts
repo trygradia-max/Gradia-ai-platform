@@ -18,6 +18,7 @@ import {
   writeAppointmentSerialized,
   type SerializedWriteResult,
 } from "@/lib/appointment-write"
+import { FEATURES } from "@/lib/features"
 import { advanceJobStatus } from "@/lib/jobs"
 import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
@@ -325,6 +326,8 @@ export async function rescheduleJob(
       start: newStart,
       end: new Date(newStart.getTime() + durationMs),
       coveredIds: gate.coveredIds,
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
     })
   } catch (err) {
     return {
@@ -442,6 +445,8 @@ export async function blockTime(
       durationMinutes: minutes,
       serviceName: label?.trim() || "Blocked time",
       internalNote: "[block-time]",
+      // Overlap refusal follows the rollout flag; lock + idempotency always on.
+      enforceConflicts: FEATURES.conflictEnforcement,
     })
   } catch (err) {
     return {

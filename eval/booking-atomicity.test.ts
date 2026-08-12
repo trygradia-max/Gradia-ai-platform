@@ -334,4 +334,29 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
     )
     expect(link).toBeDefined()
   })
+
+  // Rollout-flag gating (review BLOCKER fix): the serialized write's OVERLAP
+  // refusal is conflict enforcement and must follow the flag, so production
+  // (flag OFF) books exactly as before P0-004A. The lock + idempotency are
+  // NOT gated — always on. Here we assert the flag is threaded into the RPC.
+  it("flag ON → serialized write enforces (p_enforce_conflicts=true)", async () => {
+    const rpcCalls: RpcCall[] = []
+    const db = mockDb({ rpcCalls })
+    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    expect(res.ok).toBe(true)
+    const write = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
+    expect(write?.args.p_enforce_conflicts).toBe(true)
+  })
+
+  it("flag OFF → serialized write does NOT enforce (p_enforce_conflicts=false); booking still proceeds", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", undefined)
+    const rpcCalls: RpcCall[] = []
+    const db = mockDb({ rpcCalls })
+    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    expect(res.ok).toBe(true)
+    const write = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
+    expect(write?.args.p_enforce_conflicts).toBe(false)
+    // Idempotency key is still supplied — atomicity is never gated.
+    expect(write?.args.p_pending_action_id).toBe("pa-1")
+  })
 })

@@ -26,6 +26,15 @@
 --    row that raced in still refuses, so an override never absorbs a
 --    conflict its author did not see.
 --
+--    p_enforce_conflicts: the overlap check is the CONFLICT-ENFORCEMENT step
+--    and is gated by this flag (callers pass FEATURES.conflictEnforcement).
+--    When FALSE — the P0-004 rollout flag is OFF, the production default —
+--    booking behaves exactly as it did before P0-004A: the per-shop lock and
+--    the idempotency replay above STILL run (pure atomicity, always on), but
+--    no overlap is refused, so legacy/deliberate double-booking stays possible
+--    and no override escape hatch is needed. Only when enforcement is ON does
+--    the in-lock overlap act as the last-line race guard behind the TS gate.
+--
 --    Locking: pg_advisory_xact_lock on a per-shop key — tenant-scoped
 --    (shop A never blocks shop B), transaction-bounded release (no stuck
 --    locks on failure), Postgres-backed (works across Vercel instances,
@@ -44,6 +53,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS appointments_pending_action_id_unique
   ON public.appointments (pending_action_id)
   WHERE pending_action_id IS NOT NULL;
 
+-- Re-apply safety: drop the pre-fix 12-arg signature if a branch database
+-- applied it before this fix added p_enforce_conflicts (the 13th argument).
+-- A fresh `supabase db reset` never has it; this keeps `migration up`
+-- idempotent for branch developers and avoids an ambiguous overload.
+DROP FUNCTION IF EXISTS public.write_appointment_serialized(
+  uuid, timestamptz, timestamptz, uuid[], uuid, uuid, uuid, uuid, integer, text, text, text
+);
+
 CREATE OR REPLACE FUNCTION public.write_appointment_serialized(
   p_shop_id uuid,
   p_start timestamptz,
@@ -56,7 +73,8 @@ CREATE OR REPLACE FUNCTION public.write_appointment_serialized(
   p_duration_minutes integer DEFAULT NULL,
   p_service_name text DEFAULT NULL,
   p_timezone text DEFAULT NULL,
-  p_internal_note text DEFAULT NULL
+  p_internal_note text DEFAULT NULL,
+  p_enforce_conflicts boolean DEFAULT true -- gate: FEATURES.conflictEnforcement
 ) RETURNS jsonb
 LANGUAGE plpgsql
 AS $$
@@ -89,28 +107,33 @@ BEGIN
   END IF;
 
   -- In-lock busy-overlap verification (transactional invariant; semantics
-  -- mirror the TS service's blocking check exactly — see header).
-  SELECT array_agg(a.id) INTO v_conflicts
-    FROM public.appointments a
-   WHERE a.shop_id = p_shop_id
-     AND (p_appointment_id IS NULL OR a.id <> p_appointment_id)
-     AND COALESCE(a.status::text, 'busy') <> 'closed'
-     AND a.scheduled_at < p_end
-     AND (CASE
-            WHEN a.ends_at IS NOT NULL AND a.ends_at > a.scheduled_at THEN a.ends_at
-            ELSE a.scheduled_at
-                 + make_interval(mins => CASE
-                     WHEN a.duration_minutes IS NULL OR a.duration_minutes <= 0 THEN 90
-                     ELSE a.duration_minutes
-                   END)
-          END) > p_start
-     AND NOT (a.id = ANY (COALESCE(p_covered_ids, '{}')));
+  -- mirror the TS service's blocking check exactly — see header). This is the
+  -- CONFLICT-ENFORCEMENT step, gated by p_enforce_conflicts so that with the
+  -- P0-004 rollout flag OFF the write proceeds exactly as pre-P0-004A (lock +
+  -- idempotency above still ran). The lock is held either way.
+  IF p_enforce_conflicts THEN
+    SELECT array_agg(a.id) INTO v_conflicts
+      FROM public.appointments a
+     WHERE a.shop_id = p_shop_id
+       AND (p_appointment_id IS NULL OR a.id <> p_appointment_id)
+       AND COALESCE(a.status::text, 'busy') <> 'closed'
+       AND a.scheduled_at < p_end
+       AND (CASE
+              WHEN a.ends_at IS NOT NULL AND a.ends_at > a.scheduled_at THEN a.ends_at
+              ELSE a.scheduled_at
+                   + make_interval(mins => CASE
+                       WHEN a.duration_minutes IS NULL OR a.duration_minutes <= 0 THEN 90
+                       ELSE a.duration_minutes
+                     END)
+            END) > p_start
+       AND NOT (a.id = ANY (COALESCE(p_covered_ids, '{}')));
 
-  IF v_conflicts IS NOT NULL AND array_length(v_conflicts, 1) > 0 THEN
-    RETURN jsonb_build_object(
-      'status', 'conflict',
-      'conflict_ids', to_jsonb(v_conflicts)
-    );
+    IF v_conflicts IS NOT NULL AND array_length(v_conflicts, 1) > 0 THEN
+      RETURN jsonb_build_object(
+        'status', 'conflict',
+        'conflict_ids', to_jsonb(v_conflicts)
+      );
+    END IF;
   END IF;
 
   IF p_appointment_id IS NOT NULL THEN
@@ -140,8 +163,8 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.write_appointment_serialized(
-  uuid, timestamptz, timestamptz, uuid[], uuid, uuid, uuid, uuid, integer, text, text, text
+  uuid, timestamptz, timestamptz, uuid[], uuid, uuid, uuid, uuid, integer, text, text, text, boolean
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.write_appointment_serialized(
-  uuid, timestamptz, timestamptz, uuid[], uuid, uuid, uuid, uuid, integer, text, text, text
+  uuid, timestamptz, timestamptz, uuid[], uuid, uuid, uuid, uuid, integer, text, text, text, boolean
 ) TO service_role;
