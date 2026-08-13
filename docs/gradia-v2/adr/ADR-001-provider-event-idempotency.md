@@ -1,6 +1,6 @@
 # ADR-001 — Provider-Event Idempotency Mechanism
 
-**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007)
+**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007. **Condition status 2026-08-13:** C1, C2 and C7 — the P0-005-close conditions — are satisfied; C3–C6 remain binding on P0-006/P0-007 and the follow-up tickets. See the Condition status update below)
 
 ## Context
 
@@ -236,6 +236,29 @@ and the current webhook/provider routes. Examination of the mandated points:
 
 Program boards intentionally NOT updated — P0-005 remains **in-review**
 pending C1 and C7.
+
+## Condition status update (docs-close session, 2026-08-13)
+
+P0-005 merged to `main` in PR #17 (`e1dedfb`). Condition disposition:
+
+- **C1 — SATISFIED.** Independent Cursor review completed: verdict
+  **APPROVE**, no BLOCKER or HIGH code defects.
+- **C2 — SATISFIED.** Retention/pruning follow-up filed as
+  `../tickets/P0-005A-provider-events-retention-pruning.md` (2026-08-13,
+  before P0-006 enters implementation).
+- **C7 — SATISFIED.** Founder ran the read-only duplicate-audit queries
+  against production: `usage_events (shop_id, kind, vendor_ref)` excluding
+  `outreach_draft`/null refs → zero rows; `automation_runs (automation_id,
+  trigger_ref)` excluding `failed`/null refs → zero rows. No financial rows
+  touched.
+- **C3, C4, C5, C6 — OPEN, unchanged.** They bind P0-006 (C3), the Aurinko
+  dedupe ticket (C4), P0-007 (C3, C5), and the `outreach_draft` follow-up
+  (C6). P0-006/007 have not started.
+
+P0-005 is **done** (close record in the ticket file); the staging manual
+acceptance run remains outstanding and gates full rollout acceptance of the
+production migrations — tracked in the ticket's close record, not as an ADR
+condition.
 
 ## Links
 
