@@ -1,6 +1,6 @@
 # ADR-001 — Provider-Event Idempotency Mechanism
 
-**Status:** proposed (Builder, 2026-08-12, during P0-005 — awaiting Organizer approval per the ticket's internal gate)
+**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007)
 
 ## Context
 
@@ -152,6 +152,90 @@ doc 05 weakness #4 (owner-writable ledgers) per D-024.
   once per-row refs are the only historical shape.
 - Owner sessions lose (never-legitimate) PostgREST write access to the three
   ledgers; owner-facing reads are unchanged.
+
+## Approval record (Organizer, 2026-08-13)
+
+**Verdict: APPROVED WITH CONDITIONS.**
+
+Reviewed against the P0-005 ticket, `02-target-architecture.md`,
+`08-security-and-reliability.md` §3–4, `09-testing-strategy.md`,
+`11-decision-log.md` (D-023/D-024), the P0-004/P0-004A architecture
+(advisory-lock + partial-unique idempotency pattern this ADR generalizes),
+and the current webhook/provider routes. Examination of the mandated points:
+
+- **`(provider, event_id)` as the global receipt key — correct.** Provider
+  ids are globally unique per namespace or namespaced by contract; adding
+  `shop_id` to the key would fragment claims whenever tenant resolution
+  fails, re-opening the duplicate window. The namespacing contract is
+  documentation-enforced, not schema-enforced — accepted, with C4 pushing it
+  into the Aurinko consumer's spec.
+- **Unresolved-tenant events — correct.** Nullable `shop_id` keeps dedupe
+  intact when resolution fails (the alternative — refusing the claim —
+  would loop the provider retry forever); tenant backfill on reclaim is
+  proven by test.
+- **Failed/stale reclaim — correct.** Failure is durable + observable;
+  provider retries reclaim it (explicit `retry_failed` policy); stale
+  takeover (default 300s) prevents crash-stranding. Attempts are unbounded
+  but provider retry schedules are finite; repeat-failure visibility lands
+  with P0-012. One edge: the Vapi route exports no `maxDuration` (platform
+  default up to 300s = the stale default) — C5.
+- **Authentication-before-claim — correct and enforced at two layers.**
+  DB layer: deny-all RLS + EXECUTE revoked from anon/authenticated, proven
+  by poisoning tests (forged/anon/owner-session callers cannot reserve a
+  real event id, and the legitimate event stays claimable). Route layer is
+  a caller contract — C3 makes the ordering tests binding in P0-006/007
+  (already in their specs).
+- **Retention/pruning — accepted as deferred** (explicit ticket non-goal);
+  C2 requires the follow-up ticket to exist before P0-006 starts writing
+  volume. Pilot-scale growth gives years of headroom.
+- **Ledger RLS SELECT-only — approved.** Closes audit doc 05 weakness #4
+  per D-024; owner reads intact (permission tests); the two discovered
+  session-client writers were moved to service-role rather than exempted —
+  the correct branch of the ticket's failure case (an INSERT exemption
+  would have preserved the negative-credit self-grant hole). The
+  `recordUsage` unit-test fallback to the passed client is acceptable:
+  in production the service env is a hard prerequisite of every webhook.
+- **P0-005 vs P0-006/007 separation — clean.** The diff wires no route,
+  touches no Twilio/Vapi/Aurinko handler, and adds no provider semantics;
+  the claim helper is dormant until its consumer tickets land.
+- **`outreach_draft` exclusion — acceptable as a temporary exception.**
+  D-024 forbids rewriting the historical jobId-ref rows, so exclusion is
+  the only compliant shape; per-row refs are already flowing. C6 time-boxes
+  it and bars silent widening of the exclusion list.
+- **`automation_runs` lifecycle updates** (staged → sent/failed on the one
+  claim row) are an explicit, documented exception to that table's
+  append-only convention note; financial ledgers remain strictly
+  append-only. Acceptable — status fidelity feeds ROI/owner surfaces.
+
+**Conditions (binding):**
+
+- **C1 — Independent review still required.** This Organizer review ran in
+  the same session that built P0-005 (founder-directed; recorded). It does
+  NOT satisfy the one-role-per-session rule's intent for diff review: the
+  Cursor Reviewer's independent verification against the ticket +
+  `12-definition-of-done.md` remains a hard gate before done.
+- **C2 — Retention follow-up ticket** for `provider_events` pruning must be
+  filed in the backlog before P0-006 enters implementation.
+- **C3 — Route-level claim-after-verify ordering** must be test-locked in
+  P0-006 and P0-007 (forged request never creates a claim), extending
+  `eval/webhooks.test.ts` rather than parallel-tracking it.
+- **C4 — Aurinko namespacing:** the Aurinko dedupe ticket must specify
+  `accountId:`-prefixed event ids explicitly in its scope.
+- **C5 — Vapi stale threshold:** P0-007 must set an explicit route
+  `maxDuration` and pass a `staleAfterSeconds` strictly above it (the
+  300s default equals the platform-default ceiling — reclaim-while-running
+  must be impossible by construction).
+- **C6 — `outreach_draft` exclusion is time-boxed:** a follow-up ticket
+  extends the unique to `outreach_draft` (e.g. created_at-cutoff partial
+  predicate) once historical refs age out; no new kind joins the exclusion
+  list without amending this ADR.
+- **C7 — Production duplicate audit before production migration:** the
+  founder runs the read-only duplicate-audit queries against production;
+  a nonzero result on a financial table pauses rollout per D-024 (rows are
+  never deleted silently).
+
+Program boards intentionally NOT updated — P0-005 remains **in-review**
+pending C1 and C7.
 
 ## Links
 

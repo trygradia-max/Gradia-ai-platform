@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-005
 - **Epic:** E00 — Stabilization
-- **Status:** in-review (Builder implementation complete 2026-08-12 on `fix/p0-005-webhook-idempotency`; ADR-001 written and **awaiting Organizer approval** — the ticket's internal gate; completion record below)
+- **Status:** in-review (Builder implementation complete 2026-08-12 on `fix/p0-005-webhook-idempotency`; **ADR-001 accepted with conditions 2026-08-13** — internal gate cleared; remaining gates: independent Cursor Reviewer sign-off (ADR condition C1) + founder production duplicate audit (C7); completion record below)
 - **Priority:** High (risk class: **database-sensitive** — counts against the DB WIP limit)
 
 ## Objective
@@ -128,11 +128,12 @@ All of `../12-definition-of-done.md` plus: ADR-001 approved and recorded; constr
 Implementation complete on `fix/p0-005-webhook-idempotency`; full completion
 report delivered in the Builder session handoff. Summary:
 
-- **ADR-001** (`../adr/ADR-001-provider-event-idempotency.md`) — proposed:
-  per-table uniques for single-row ledger events + central `provider_events`
-  claim table (claim/complete/fail RPCs) for multi-table inbound events.
-  **Organizer approval still required** (internal gate; implementation
-  follows the ticket's own scope text, no silent scope decision).
+- **ADR-001** (`../adr/ADR-001-provider-event-idempotency.md`) — per-table
+  uniques for single-row ledger events + central `provider_events` claim
+  table (claim/complete/fail RPCs) for multi-table inbound events.
+  **Accepted with conditions 2026-08-13** (Organizer, founder mandate);
+  conditions C1–C7 recorded in the ADR — C1 (independent Cursor review)
+  and C7 (production duplicate audit) gate this ticket's done.
 - **Migrations:** `20260812120000_webhook_idempotency.sql` (partial uniques
   on `usage_events (shop_id, kind, vendor_ref)` excl. `outreach_draft` and
   `automation_runs (automation_id, trigger_ref)` excl. `failed`;
