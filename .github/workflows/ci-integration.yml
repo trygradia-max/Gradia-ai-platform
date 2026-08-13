@@ -59,13 +59,17 @@ jobs:
           json=$(supabase status -o json)
           url=$(echo "$json" | jq -r '.API_URL // .api_url // ."api.url" // empty')
           key=$(echo "$json" | jq -r '.SERVICE_ROLE_KEY // .service_role_key // ."auth.service_role_key" // empty')
-          if [ -z "$url" ] || [ -z "$key" ]; then
-            echo "::error::Could not extract Supabase URL/service-role key. Keys present in status JSON:"
+          anon=$(echo "$json" | jq -r '.ANON_KEY // .anon_key // ."auth.anon_key" // empty')
+          if [ -z "$url" ] || [ -z "$key" ] || [ -z "$anon" ]; then
+            echo "::error::Could not extract Supabase URL/service-role/anon key. Keys present in status JSON:"
             echo "$json" | jq -r 'keys'
             exit 1
           fi
           echo "SUPABASE_TEST_URL=$url" >> "$GITHUB_ENV"
           echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$key" >> "$GITHUB_ENV"
+          # Anon key: P0-005's ledger RLS permission tests sign in as a real
+          # owner session to prove SELECT-only. Local demo-stack key, not a secret.
+          echo "SUPABASE_TEST_ANON_KEY=$anon" >> "$GITHUB_ENV"
           echo "Supabase env OK (service-role key length=${#key})."
 
       - name: Run integration tests

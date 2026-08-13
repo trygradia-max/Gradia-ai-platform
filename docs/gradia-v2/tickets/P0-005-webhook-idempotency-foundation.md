@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-005
 - **Epic:** E00 — Stabilization
-- **Status:** ready-after-P0-002
+- **Status:** in-review (Builder implementation complete 2026-08-12 on `fix/p0-005-webhook-idempotency`; ADR-001 written and **awaiting Organizer approval** — the ticket's internal gate; completion record below)
 - **Priority:** High (risk class: **database-sensitive** — counts against the DB WIP limit)
 
 ## Objective
@@ -122,3 +122,39 @@ Constraints/RLS changes are revertible by a down migration (write it, keep it un
 ## Definition of done
 
 All of `../12-definition-of-done.md` plus: ADR-001 approved and recorded; constraints live and proven by replay tests in the gating integration tier; ledger RLS SELECT-only with permission tests; duplicate audit documented; P0-006/007 unblocked with the mechanism they consume named in their specs.
+
+## Completion record (Builder, 2026-08-12)
+
+Implementation complete on `fix/p0-005-webhook-idempotency`; full completion
+report delivered in the Builder session handoff. Summary:
+
+- **ADR-001** (`../adr/ADR-001-provider-event-idempotency.md`) — proposed:
+  per-table uniques for single-row ledger events + central `provider_events`
+  claim table (claim/complete/fail RPCs) for multi-table inbound events.
+  **Organizer approval still required** (internal gate; implementation
+  follows the ticket's own scope text, no silent scope decision).
+- **Migrations:** `20260812120000_webhook_idempotency.sql` (partial uniques
+  on `usage_events (shop_id, kind, vendor_ref)` excl. `outreach_draft` and
+  `automation_runs (automation_id, trigger_ref)` excl. `failed`;
+  `provider_events` table + row-locked claim RPCs, deny-all RLS,
+  service-role-only EXECUTE) and `20260812130000_ledger_rls_select_only.sql`
+  (usage_events/payments/shop_metrics → SELECT-only for owner sessions).
+  Unapplied down migration: `supabase/rollbacks/20260812_p0_005_down.sql`.
+- **Code:** `src/lib/provider-events.ts` (claim helper for P0-006/007);
+  `recordUsage` writes service-role + treats 23505 as info-level duplicate;
+  `automations.ts` claim-first conversion (both paths); session-client
+  ledger writers moved to service-role (`recordUsage` internal,
+  `backfillStripePayments`); recovery extraction metering switched to
+  per-row vendor refs.
+- **Duplicate audit:** zero duplicate groups on the local stack (fresh);
+  **staging/production run assigned to the founder** (read-only queries in
+  the completion report — production DB credentials are not available to
+  Builder sessions post-P0-001).
+- **Tests:** 25 new DB-backed integration tests (replay, Promise.all
+  concurrency on separate connections, stale/failed reclaim, permission,
+  tenant isolation, no-poisoning); full tier 6 files / 52 tests green;
+  Tier-1 528 green; build + tsc + lint clean. Concurrency suites
+  stress-run 6×.
+- **Explicitly left out (P0-006/007 boundary):** no webhook route wiring,
+  no transcript dedupe, no `VAPI_DEFAULT_SHOP_ID` guard, no pruning cron
+  (follow-up), no Aurinko changes.

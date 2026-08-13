@@ -23,6 +23,7 @@ import { isAutomationAutopilotAllowed } from "@/lib/autonomy"
 import { hasPackage2 } from "@/lib/entitlements"
 import { precheckCredits, type ShopCreditFields } from "@/lib/credits"
 import { recordInteraction } from "@/lib/memory"
+import { isUniqueViolation } from "@/lib/provider-events"
 import type { AutomationMode, ShopRow } from "@/lib/types/database"
 
 export type AutomationCatalogKey =
@@ -281,6 +282,38 @@ export async function afterCatalogStage(
   const automationId =
     config.automationId ?? (await ensureAutomationRow(supabase, shop.id, config.key))
 
+  // Claim the run row BEFORE any execution (P0-005 / D-023: insert-first,
+  // constraint-backed). Under overlapping crons only one invocation wins the
+  // (automation_id, trigger_ref) unique — the loser exits before it can
+  // execute, killing the double-send race. A duplicate is a normal outcome.
+  let claimId: string | null = null
+  if (automationId) {
+    const { data: claimed, error: claimErr } = await supabase
+      .from("automation_runs")
+      .insert({
+        shop_id: shop.id,
+        automation_id: automationId,
+        customer_id: ref.customerId,
+        trigger_ref: ref.triggerRef,
+        status: "staged",
+        pending_action_id: pendingId,
+        result: {},
+      })
+      .select("id")
+      .single()
+    if (claimErr) {
+      if (isUniqueViolation(claimErr)) {
+        console.info(
+          `[idempotency] duplicate automation ${config.key}:${ref.triggerRef} ignored`
+        )
+        return "staged"
+      }
+      console.error("[automations] run claim failed:", claimErr)
+      return "staged"
+    }
+    claimId = (claimed as { id: string }).id
+  }
+
   let autopilot = config.mode === "autopilot" && isAutomationAutopilotAllowed(config.key)
   if (autopilot && !hasPackage2(shop)) autopilot = false
   if (autopilot) {
@@ -297,16 +330,13 @@ export async function afterCatalogStage(
     else if (!result.ok) held = result.error
   }
 
-  if (automationId) {
-    await supabase.from("automation_runs").insert({
-      shop_id: shop.id,
-      automation_id: automationId,
-      customer_id: ref.customerId,
-      trigger_ref: ref.triggerRef,
-      status,
-      pending_action_id: pendingId,
-      result: held ? { held } : {},
-    })
+  // Lifecycle transition on the claim row (staged → sent / held note). The
+  // row itself is never deleted; financial ledgers stay append-only.
+  if (claimId && (status !== "staged" || held)) {
+    await supabase
+      .from("automation_runs")
+      .update({ status, result: held ? { held } : {} })
+      .eq("id", claimId)
   }
   return status
 }
@@ -349,14 +379,66 @@ export async function runAutomationForTarget(
     }))
   if (!automationId) return { ok: false, error: "automations table unavailable (pre-C1?)" }
 
-  // Idempotency — never touch the same trigger twice.
+  // Idempotency — never touch the same trigger twice. Fast-path read kept
+  // for cheap skips (and graceful degradation without the constraint); the
+  // real guard is the claim insert below, backed by the DB unique
+  // (P0-005 / D-023: insert-first, never check-then-insert alone).
   const { data: priorRun } = await supabase
     .from("automation_runs")
-    .select("id")
+    .select("id, status")
     .eq("automation_id", automationId)
     .eq("trigger_ref", target.triggerRef)
+    .neq("status", "failed")
+    .limit(1)
     .maybeSingle()
   if (priorRun) return { ok: true, status: "skipped_duplicate" }
+
+  // Claim the run BEFORE staging anything. Two overlapping cron invocations
+  // both reach this insert; the (automation_id, trigger_ref) unique lets
+  // exactly one through — the loser exits with zero side effects. Duplicate
+  // is a normal outcome (info, not error).
+  const { data: claimed, error: claimErr } = await supabase
+    .from("automation_runs")
+    .insert({
+      shop_id: shop.id,
+      automation_id: automationId,
+      customer_id: target.customerId,
+      lead_id: target.leadId ?? null,
+      trigger_ref: target.triggerRef,
+      status: "staged",
+      pending_action_id: null,
+      result: {},
+    })
+    .select("id")
+    .single()
+  if (claimErr || !claimed) {
+    if (isUniqueViolation(claimErr)) {
+      console.info(
+        `[idempotency] duplicate automation ${config.key}:${target.triggerRef} ignored`
+      )
+      return { ok: true, status: "skipped_duplicate" }
+    }
+    return { ok: false, error: claimErr?.message ?? "run claim failed" }
+  }
+  const claimId = (claimed as { id: string }).id
+
+  // Lifecycle transitions on the ONE claim row (staged → sent/failed). The
+  // row is never deleted; 'failed' rows sit outside the unique so the next
+  // cron can retry — a failure is durable and observable, never silent.
+  const finalizeRun = async (
+    status: "staged" | "sent" | "failed",
+    result: Record<string, unknown> = {},
+    pendingActionId: string | null = null
+  ) => {
+    await supabase
+      .from("automation_runs")
+      .update({
+        status,
+        result,
+        ...(pendingActionId ? { pending_action_id: pendingActionId } : {}),
+      })
+      .eq("id", claimId)
+  }
 
   const { data: pending, error: pendingErr } = await supabase
     .from("pending_actions")
@@ -377,22 +459,10 @@ export async function runAutomationForTarget(
     .select("id")
     .single()
   if (pendingErr || !pending) {
+    await finalizeRun("failed", { error: pendingErr?.message ?? "stage failed" })
     return { ok: false, error: pendingErr?.message ?? "stage failed" }
   }
   const pendingId = (pending as { id: string }).id
-
-  const recordRun = async (status: "staged" | "sent" | "failed", result: Record<string, unknown> = {}) => {
-    await supabase.from("automation_runs").insert({
-      shop_id: shop.id,
-      automation_id: automationId,
-      customer_id: target.customerId,
-      lead_id: target.leadId ?? null,
-      trigger_ref: target.triggerRef,
-      status,
-      pending_action_id: pendingId,
-      result,
-    })
-  }
 
   // The floor + entitlement + credit gates decide whether autopilot may fire.
   let autopilot = config.mode === "autopilot" && isAutomationAutopilotAllowed(config.key)
@@ -405,7 +475,7 @@ export async function runAutomationForTarget(
   }
 
   if (!autopilot) {
-    await recordRun("staged")
+    await finalizeRun("staged", {}, pendingId)
     return { ok: true, status: "staged" }
   }
 
@@ -414,11 +484,11 @@ export async function runAutomationForTarget(
   if (!result.ok) {
     // Held by the send path (quiet hours / A2P / opt-out) — the pending
     // action was rolled back to pending and stays visible in /approvals.
-    await recordRun("staged", { held: result.error })
+    await finalizeRun("staged", { held: result.error }, pendingId)
     return { ok: true, status: "staged" }
   }
 
-  await recordRun("sent")
+  await finalizeRun("sent", {}, pendingId)
   await recordInteraction(supabase, {
     shopId: shop.id,
     customerId: target.customerId,

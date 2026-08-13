@@ -112,11 +112,14 @@ export async function runExtraction(
     } else {
       try {
         extraction = await extractCustomerFromThread(body)
+        // Per-row ref (P0-005 / ADR-001): one metering row per extracted
+        // unit, keyed so a replayed unit can never double-meter. jobId
+        // alone would collide across the rows of one job.
         await recordUsage(supabase, shop.id, EXTRACTION_SKU, {
           credits: priced.credits,
           wholesaleCost: priced.wholesale_cost,
           retailCost: priced.retail_cost,
-          vendorRef: jobId,
+          vendorRef: `${jobId}:${row.id}`,
         })
       } catch (err) {
         console.error("[recovery] extraction failed for", row.id, err)

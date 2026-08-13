@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { isPaid } from "@/lib/entitlements"
 import { FEATURES } from "@/lib/features"
 import { PLAN } from "@/lib/pricing"
+import { isUniqueViolation } from "@/lib/provider-events"
+import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow, UsageEventKind } from "@/lib/types/database"
 
 /**
@@ -36,8 +38,27 @@ export function creditsFor(kind: UsageEventKind, quantity = 1): number {
 export type ShopCreditFields = Pick<ShopRow, "id" | "plan" | "credit_period_start">
 
 /**
+ * The ledger write goes through the service role: usage_events RLS is
+ * SELECT-only for owner sessions (P0-005 / D-024 — owners must not be able
+ * to write their own billing rows), but metering is invoked from session
+ * contexts too (agent chat, Whisper, in-app approvals). The shopId
+ * parameter keeps tenant scoping explicit. Falls back to the caller's
+ * client only where the service env is absent (unit tests / mocks).
+ */
+function meteringWriter(fallback: SupabaseClient): SupabaseClient {
+  try {
+    return createServiceClient()
+  } catch {
+    return fallback
+  }
+}
+
+/**
  * Append a usage event. Best-effort — logs and swallows errors so metering
- * never breaks the action it's measuring.
+ * never breaks the action it's measuring. Replay-safe (P0-005 / D-023):
+ * (shop_id, kind, vendor_ref) carries a DB unique, so a provider retry
+ * re-metering the same vendorRef is a clean duplicate no-op, not a
+ * double-bill — logged at info, never an error.
  */
 export async function recordUsage(
   supabase: SupabaseClient,
@@ -51,13 +72,14 @@ export async function recordUsage(
     credits?: number
     wholesaleCost?: number
     retailCost?: number
-    /** Twilio/Vapi record id for the nightly reconciliation job. */
+    /** Provider event id (Twilio sid / Vapi call id) — the idempotency key
+     * enforced unique per (shop_id, kind); also feeds nightly reconciliation. */
     vendorRef?: string | null
   }
 ): Promise<void> {
   const quantity = opts?.quantity ?? 1
   try {
-    const { error } = await supabase.from("usage_events").insert({
+    const { error } = await meteringWriter(supabase).from("usage_events").insert({
       shop_id: shopId,
       kind,
       quantity,
@@ -67,7 +89,15 @@ export async function recordUsage(
       vendor_ref: opts?.vendorRef ?? null,
       ref_id: opts?.refId ?? null,
     })
-    if (error) console.error("[credits] recordUsage failed:", error)
+    if (error) {
+      if (isUniqueViolation(error)) {
+        console.info(
+          `[idempotency] duplicate usage ${kind}:${opts?.vendorRef ?? ""} ignored`
+        )
+        return
+      }
+      console.error("[credits] recordUsage failed:", error)
+    }
   } catch (err) {
     console.error("[credits] recordUsage threw:", err)
   }

@@ -17,4 +17,4 @@ ADRs record **how** decisions (mechanisms), while `../11-decision-log.md` record
 ## Index
 
 - **ADR-002 — Provider boundaries** (`ADR-002-provider-boundaries.md`) — accepted 2026-07-27: Gradia domains depend on Gradia-owned interfaces (CalendarProvider, ModelProvider, VoiceProvider, TelephonyProvider, PaymentsProvider, CRMConnector), never vendor-specific behavior. Pairs with D-029/D-030.
-- _ADR-001 is reserved for the webhook-idempotency mechanism chosen during P0-005 (per-table uniques vs claim table). By design it will land **after** ADR-002 — numbering reflects reservation order, not acceptance order._
+- **ADR-001 — Provider-event idempotency** (`ADR-001-provider-event-idempotency.md`) — **proposed** 2026-08-12 (P0-005 Builder; awaiting Organizer approval): per-table uniques for single-row ledger events (`usage_events`, `automation_runs`) + a central `provider_events` claim table for multi-table inbound webhook events, consumed by P0-006/P0-007. Landed after ADR-002 — numbering reflects reservation order, not acceptance order.
