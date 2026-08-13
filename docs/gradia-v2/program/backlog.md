@@ -14,7 +14,12 @@ _Created 2026-07-25 by the Organizer. Ordered backlog below the two live sprints
 
 ## Band 2 — Deferred P0-adjacent items (split out, not lost)
 
-- **P0-004A — Appointment booking atomicity and concurrency** — **promoted out of this band 2026-08-11: it is the next active implementation ticket** (GitHub issue #13; ahead of P0-005 — see `current-sprint.md`/`next-sprint.md`). Scope: `executeBookAppointment` lands the lead and external calendar event before the appointments insert and still reports "executed" if that insert fails (loud reconciliation log only — `d43ce16`); lead/calendar/appointment/audit partial state; retry/reconciliation; check→insert TOCTOU; concurrent overlapping-booking race; capacity-aware locking/serialization/transaction strategy (relates to `08` §4 transaction-boundary standard). Also a pre-condition for production conflict-enforcement enablement (Cursor enablement verdict: NOT READY).
+- **P0-004A — Appointment booking atomicity and concurrency** — **done 2026-08-11** (merged PR #15 `2103943`; Cursor APPROVE; completion record in `../tickets/P0-004A-appointment-booking-atomicity-concurrency.md`). Closed the false-executed, duplicate/replay, partial-ordering, and check→insert concurrency gaps; the enablement pre-condition it carried is satisfied (founder manual QA remains the last gate). Its recorded follow-ups now live in this band:
+  1. Move owner-direct override audit/telemetry after successful serialized persistence.
+  2. Stronger owner-direct retry/idempotency for drag-reschedule and block-time.
+  3. Pin the `write_appointment_serialized` RPC `search_path`.
+  4. Address external-first cancellation ordering.
+  5. Calendar-sync reconciliation/outbox mechanism (relates to E10 outbox/queue).
 - **Quote public-token hardening** (audit L-3: `randomBytes` + expiry + rate limit on `/q/[token]`) — rate-limit rides in P0-009; token regeneration deferred to an E03-era ticket.
 - **Ledger RLS tightening** (`usage_events` / `payments` / `shop_metrics` → SELECT-only, matching `credit_grants`; D-024) — if not absorbed into P0-005's migration, cut as its own DB-sensitive ticket immediately after.
 - **Live-contract verification runs** — first real A2P registration, Housecall Pro against a live account, end-to-end CSV recovery smoke. Founder-driven (see `blocked.md`); runbooks exist in `platform/docs/*-go-live.md`.
