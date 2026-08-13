@@ -158,6 +158,25 @@ export type UsageEventRow = {
   created_at: string
 }
 
+export type ProviderEventStatus = "processing" | "completed" | "failed"
+
+/** P0-005 webhook idempotency claim (ADR-001). Service-role only. */
+export type ProviderEventRow = {
+  id: string
+  provider: string
+  event_id: string
+  shop_id: string | null
+  status: ProviderEventStatus
+  attempts: number
+  first_seen_at: string
+  last_attempt_at: string
+  completed_at: string | null
+  failed_at: string | null
+  /** Sanitized + truncated — never payloads/headers/secrets. */
+  last_error: string | null
+  metadata: Record<string, unknown>
+}
+
 export type PricingKey =
   | "number_monthly"
   | "voice_minute"

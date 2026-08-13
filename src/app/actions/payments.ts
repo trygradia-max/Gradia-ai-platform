@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { requireShop, requireUser } from "@/lib/shop"
 import { iteratePaidInvoices } from "@/lib/stripe"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
 export type BackfillResult =
@@ -31,6 +32,11 @@ export async function backfillStripePayments(): Promise<BackfillResult> {
   await requireUser()
   const shopCtx = await requireShop()
   const supabase = await createClient()
+  // Ledger writes are service-role only (P0-005 / D-024: payments RLS is
+  // SELECT-only for owner sessions). Auth + shop scoping above stay on the
+  // session client; the mirror upsert below writes with the service role,
+  // explicitly scoped to the authenticated owner's shop id.
+  const serviceDb = createServiceClient()
 
   const { data: shopRow } = await supabase
     .from("shops")
@@ -66,7 +72,7 @@ export async function backfillStripePayments(): Promise<BackfillResult> {
           ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
           : new Date().toISOString()
 
-      const { error: upsertErr } = await supabase
+      const { error: upsertErr } = await serviceDb
         .from("payments")
         .upsert(
           {

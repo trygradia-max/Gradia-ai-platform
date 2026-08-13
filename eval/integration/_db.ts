@@ -14,9 +14,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
  */
 const URL = process.env.SUPABASE_TEST_URL
 const KEY = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY
+const ANON = process.env.SUPABASE_TEST_ANON_KEY
 
 export const INTEGRATION =
   process.env.INTEGRATION === "1" && Boolean(URL) && Boolean(KEY)
+
+/** Permission tests additionally need the anon key (owner-session client). */
+export const INTEGRATION_WITH_SESSION = INTEGRATION && Boolean(ANON)
 
 export function serviceClient(): SupabaseClient {
   if (!URL || !KEY) {
@@ -27,6 +31,31 @@ export function serviceClient(): SupabaseClient {
   })
 }
 
+/** Bare anon client — the unauthenticated PostgREST surface. */
+export function anonClient(): SupabaseClient {
+  if (!URL || !ANON) {
+    throw new Error("SUPABASE_TEST_URL / SUPABASE_TEST_ANON_KEY not set")
+  }
+  return createClient(URL, ANON, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}
+
+/**
+ * A real signed-in OWNER session client (anon key + password sign-in) — what
+ * the browser/PostgREST surface actually is. Used by RLS permission tests;
+ * the seeded user needs a password (see seedShop's password option).
+ */
+export async function ownerSessionClient(
+  email: string,
+  password: string
+): Promise<SupabaseClient> {
+  const client = anonClient()
+  const { error } = await client.auth.signInWithPassword({ email, password })
+  if (error) throw new Error(`ownerSessionClient: sign-in failed: ${error.message}`)
+  return client
+}
+
 export type Seeded = {
   ownerId: string
   shopId: string
@@ -34,14 +63,20 @@ export type Seeded = {
   email: string
 }
 
-/** Mint an auth user + shop + one service. Returns the ids the tests need. */
-export async function seedShop(sb: SupabaseClient): Promise<Seeded> {
+/** Mint an auth user + shop + one service. Returns the ids the tests need.
+ *  Pass a password when the test needs a real owner SESSION client
+ *  (RLS permission tests). */
+export async function seedShop(
+  sb: SupabaseClient,
+  opts?: { password?: string }
+): Promise<Seeded> {
   const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`
   const email = `int-${stamp}@example.test`
 
   const { data: created, error: userErr } = await sb.auth.admin.createUser({
     email,
     email_confirm: true,
+    ...(opts?.password ? { password: opts.password } : {}),
   })
   if (userErr || !created?.user) {
     throw new Error(`seed: createUser failed: ${userErr?.message}`)

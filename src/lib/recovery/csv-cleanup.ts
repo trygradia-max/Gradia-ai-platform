@@ -79,11 +79,13 @@ export async function runCsvVehicleCleanup(
     let patch: Partial<RecoveryExtraction>
     try {
       const parsed = await parseVehicleWithLlm(cell)
+      // Per-row ref (P0-005 / ADR-001): keyed per cleaned unit so a replay
+      // can never double-meter; jobId alone collides within one job.
       await recordUsage(supabase, shop.id, EXTRACTION_SKU, {
         credits: priced.credits,
         wholesaleCost: priced.wholesale_cost,
         retailCost: priced.retail_cost,
-        vendorRef: jobId,
+        vendorRef: `${jobId}:cleanup:${row.id}`,
       })
       patch = {
         vehicle: composeVehicleString(parsed) ?? row.extraction.vehicle,
