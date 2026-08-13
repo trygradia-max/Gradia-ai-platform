@@ -11,6 +11,7 @@ _Created 2026-07-25 by the Organizer. Register of work that cannot proceed. Form
 | Trial model build (E01/billing scope of D-005) | **Q-13** — trial length + variable-cost allowance numbers. Design can proceed; no implementation ticket is cut until numbers land. | 2026-07-25 | Founder |
 | P0-012 final alert-destination configuration | **Q-08** — where alerts go (Slack channel / SMS). The delivery **seam** is not blocked and builds in the ticket; only the destination config waits. | 2026-07-25 | Founder |
 | Marketing-site pricing page + trial-allowance sizing | **Q-22** — D-031 three-tier split/allowances/timing undecided (C-14); Q-13 numbers must be re-derived against the new tiers. Live billing stays untouched during P0 regardless. | 2026-07-27 | Founder |
+| P0-006 Twilio inbound replay protection (next implementation position) | (1) P0-005A retention/pruning follow-up filed (ADR-001 C2) and (2) P0-005 planning closeout complete. **Both are delivered in the `docs/close-p0-005` closeout commit** — this row leaves the file when that commit lands on `main` and the Organizer flips P0-006 to ready. Implementation must honor ADR-001 C3 (claim strictly after signature verification, test-locked). | 2026-08-13 | Organizer |
 
 ## Rules
 

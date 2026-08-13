@@ -28,7 +28,7 @@ _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capabi
 | 22 | Integrations | P1–P3 | pilot (mixed) | HCP unverified live; A2P SIDs unverified; LLM seam missing |
 | 23 | Trial and subscription billing | P0 / P1 | pilot / planned | Billing loop is beta-grade; trial model waits on Q-13 (D-005) + Q-22 (D-031 pricing) |
 | 24 | Security and privacy | P0 / P10 | building | P0-001 first; then P0-011; GDPR deletion/export at P10 |
-| 25 | Reliability and observability | P0 / P10 | building | P0-005/006/007/012 now; outbox/queue + logging at P10 |
+| 25 | Reliability and observability | P0 / P10 | building | **P0-005 idempotency foundation merged 2026-08-13** (PR #17 — `provider_events` claiming, ledger uniques, SELECT-only ledger RLS; Cursor APPROVE; production duplicate audit zero rows; staging acceptance pending). Next: P0-006/007 wire the claim into Twilio/Vapi routes (P0-006 blocked pending closeout merge) + P0-005A pruning; P0-012 alerting later; outbox/queue + logging at P10 |
 | 26 | Support operations | P10 | planned | No support tooling exists; scope with pilot feedback |
 | 27 | Responsive PWA | P8 | planned | Responsive today; installable/offline PWA in E08 (D-020) |
 | 28 | Marketing website | P0–P8 | building | Claims discipline (D-028); category/headline decided (D-033); pricing page waits on Q-22 |

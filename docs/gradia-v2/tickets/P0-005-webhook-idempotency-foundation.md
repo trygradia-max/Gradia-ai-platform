@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-005
 - **Epic:** E00 — Stabilization
-- **Status:** in-review (Builder implementation complete 2026-08-12 on `fix/p0-005-webhook-idempotency`; **ADR-001 accepted with conditions 2026-08-13** — internal gate cleared; remaining gates: independent Cursor Reviewer sign-off (ADR condition C1) + founder production duplicate audit (C7); completion record below)
+- **Status:** **done** (2026-08-13 — merged to `main` in PR #17, commit `e1dedfb`; independent Cursor verdict **APPROVE**, no BLOCKER or HIGH code defects — ADR-001 condition C1 satisfied; founder production duplicate audit returned **zero rows** on both ledgers — condition C7 satisfied; retention follow-up ticket P0-005A filed — condition C2 satisfied. Staging manual acceptance still gates full rollout acceptance of the production migrations — see the close record at the end of this file)
 - **Priority:** High (risk class: **database-sensitive** — counts against the DB WIP limit)
 
 ## Objective
@@ -159,3 +159,75 @@ report delivered in the Builder session handoff. Summary:
 - **Explicitly left out (P0-006/007 boundary):** no webhook route wiring,
   no transcript dedupe, no `VAPI_DEFAULT_SHOP_ID` guard, no pruning cron
   (follow-up), no Aurinko changes.
+
+## Close record (docs-close session, 2026-08-13)
+
+**Merged:** PR #17 → `main` as `e1dedfb` ("fix: add durable webhook
+idempotency"), 2026-08-13. Pre-squash branch commits: `dec4c38` (Builder
+implementation) → `ec28a5a` (ADR documentation/review commit).
+
+**Review evidence (ADR-001 C1 — satisfied):** independent Cursor verdict
+**APPROVE**, with **no BLOCKER or HIGH code defects** found.
+
+**Production duplicate-audit evidence (ADR-001 C7 — satisfied):** the founder
+ran the required read-only duplicate-audit queries against **production**:
+
+- `usage_events (shop_id, kind, vendor_ref)` — excluding `outreach_draft`
+  and null refs → **zero rows**.
+- `automation_runs (automation_id, trigger_ref)` — excluding `failed` and
+  null refs → **zero rows**.
+
+Both queries returned zero duplicate groups; the C7 production-data merge
+gate is satisfied. No financial rows were touched (D-024).
+
+**Retention follow-up (ADR-001 C2 — satisfied):** ticket **P0-005A —
+provider_events retention and pruning**
+(`P0-005A-provider-events-retention-pruning.md`) filed 2026-08-13, before
+P0-006 enters implementation.
+
+**Final architecture (as merged):** durable database-backed provider event
+claiming; `provider_events` lifecycle with `processing`/`completed`/`failed`;
+concurrency-safe duplicate claims; failed/stale reclaim behavior;
+service-role-only provider-event claim primitive; **authentication/signature
+verification must occur before claim in the provider-specific routes**
+(caller contract, test-locked in P0-006/007 per C3); ledger DB uniqueness for
+`usage_events` and `automation_runs`; owner/authenticated financial ledger
+writes removed with tenant reads preserved (SELECT-only RLS).
+
+**Not started here (by design):** P0-006 and P0-007 provider-specific replay
+wiring. Production P0-004 conflict enforcement remains **OFF**
+(`NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT` false/unset) — unrelated to and
+unchanged by this ticket.
+
+**Production migration acceptance status:** the two migrations (+ unapplied
+rollback script) are merged; per the manual acceptance procedure above, the
+**staging manual acceptance run is still outstanding** and gates the
+migrations being considered fully rollout-accepted: verify `provider_events`
+and both partial unique indexes exist; replay voice metering twice → one
+usage row / one decrement; overlapping reminder trigger → one
+`automation_run`; authenticated owner cannot INSERT `usage_events`;
+billing/ROI pages still render.
+
+### Remaining risks / follow-ups (recorded at close — Organizer sequences)
+
+1. **P0-005A** provider_events retention/pruning — filed (C2); must land
+   before P0-006/007 receipt volume makes the table operationally
+   significant.
+2. Reminder/confirmation **duplicate approval-card staging race** — resolve
+   later; duplicate **external send** is already protected by the
+   `automation_runs` unique.
+3. Extend `usage_events` uniqueness to **`outreach_draft`** once historical
+   vendor_ref compatibility permits (time-boxed by ADR-001 C6; no new kind
+   joins the exclusion list without amending the ADR).
+4. **P0-006/P0-007 must claim only AFTER provider signature/authentication
+   verification** (ADR-001 C3 — test-locked in their specs, extending
+   `eval/webhooks.test.ts`).
+5. Review **Vapi route `maxDuration` vs the provider_events stale-processing
+   threshold** before P0-007 (ADR-001 C5 — reclaim-while-running must be
+   impossible by construction).
+6. Track **transient local Supabase/PostgREST integration-test 502
+   flakiness** separately (test-infra hygiene, not a product defect).
+7. Consider **provider_events metadata size / attempts bounds** as later
+   hardening (optional fold-in noted in P0-005A scope item 4).
+8. **Staging manual acceptance** (steps above) before the production
+   migrations are considered fully rollout-accepted.
