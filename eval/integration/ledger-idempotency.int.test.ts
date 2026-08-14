@@ -56,14 +56,15 @@ describe.skipIf(!INTEGRATION)("ledger idempotency [integration]", () => {
     const spentAfterFirst = await creditsSpentThisPeriod(sb, shop)
 
     // The provider retries: identical metering write. Must not throw and
-    // must not double-bill.
+    // must not double-bill — and (P0-006 strengthening) the caller can now
+    // SEE that it was an idempotent duplicate, not a fresh write.
     await expect(
       recordUsage(sb, seed.shopId, "voice_minute", {
         quantity: 3,
         credits: 45,
         vendorRef,
       })
-    ).resolves.toBeUndefined()
+    ).resolves.toBe("duplicate")
 
     const { count } = await sb
       .from("usage_events")

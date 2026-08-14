@@ -54,8 +54,18 @@ function meteringWriter(fallback: SupabaseClient): SupabaseClient {
 }
 
 /**
- * Append a usage event. Best-effort — logs and swallows errors so metering
- * never breaks the action it's measuring. Replay-safe (P0-005 / D-023):
+ * Outcome of a metering write. `written` = new ledger row; `duplicate` =
+ * the (shop_id, kind, vendor_ref) unique already holds a row for this
+ * event — idempotent success; `failed` = a real DB/transport failure and
+ * the row is NOT durably present.
+ */
+export type UsageWriteResult = "written" | "duplicate" | "failed"
+
+/**
+ * Append a usage event. Best-effort — logs and NEVER throws, so metering
+ * can't break the action it's measuring; callers that must not proceed on
+ * a lost ledger write (P0-006 inbound classify) check the returned
+ * `UsageWriteResult` instead. Replay-safe (P0-005 / D-023):
  * (shop_id, kind, vendor_ref) carries a DB unique, so a provider retry
  * re-metering the same vendorRef is a clean duplicate no-op, not a
  * double-bill — logged at info, never an error.
@@ -76,7 +86,7 @@ export async function recordUsage(
      * enforced unique per (shop_id, kind); also feeds nightly reconciliation. */
     vendorRef?: string | null
   }
-): Promise<void> {
+): Promise<UsageWriteResult> {
   const quantity = opts?.quantity ?? 1
   try {
     const { error } = await meteringWriter(supabase).from("usage_events").insert({
@@ -94,12 +104,15 @@ export async function recordUsage(
         console.info(
           `[idempotency] duplicate usage ${kind}:${opts?.vendorRef ?? ""} ignored`
         )
-        return
+        return "duplicate"
       }
       console.error("[credits] recordUsage failed:", error)
+      return "failed"
     }
+    return "written"
   } catch (err) {
     console.error("[credits] recordUsage threw:", err)
+    return "failed"
   }
 }
 

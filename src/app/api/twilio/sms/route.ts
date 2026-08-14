@@ -18,6 +18,16 @@
  * The response is always empty TwiML — per OPERATIONS.md, every
  * outbound message must go through HITL. Auto-replies are out of
  * scope.
+ *
+ * Replay protection (P0-006, ADR-001): after signature verification
+ * succeeds, the handler claims (provider='twilio', event_id=MessageSid)
+ * in `provider_events` BEFORE any write or LLM call. Duplicate and
+ * concurrent deliveries of the same MessageSid lose the claim and return
+ * the same empty TwiML with zero side effects. Processing failures mark
+ * the claim failed and return 5xx, so a provider retry can reclaim and
+ * reprocess (reclaimed_failed / reclaimed_stale). Ordering is locked by
+ * ADR-001 C3: an unverified request must NEVER reach the claim — a forged
+ * payload cannot reserve (poison) a legitimate MessageSid.
  */
 
 import { revalidatePath } from "next/cache"
@@ -36,6 +46,12 @@ import { FEATURES } from "@/lib/features"
 import { recordInteraction } from "@/lib/memory"
 import { looksLikeConfirm } from "@/lib/no-show-ladder"
 import { getPricing, priceUsage } from "@/lib/pricing"
+import {
+  claimProviderEvent,
+  completeProviderEvent,
+  failProviderEvent,
+  type ProviderEventClaim,
+} from "@/lib/provider-events"
 import { checkRateLimit } from "@/lib/rate-limit"
 import {
   sendLeadApprovalRequest,
@@ -131,10 +147,75 @@ export async function POST(request: Request) {
     return new Response("Invalid signature", { status: 401 })
   }
 
+  // ── Everything below runs only on an authenticated Twilio request. ──
+
+  // MessageSid is the durable provider event id (ADR-001: globally unique
+  // within the Twilio namespace). A genuine inbound message always carries
+  // one; without it there is nothing to claim, and processing without a
+  // claim is forbidden — acknowledge with zero side effects.
+  const messageSid = sms.messageSid.trim()
+  if (!messageSid) {
+    console.warn(
+      "[twilio sms] signed request missing MessageSid — acknowledging without processing",
+      { shopId: shop.id }
+    )
+    return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+  }
+
+  // Claim strictly AFTER signature verification (ADR-001 C3) and strictly
+  // BEFORE any write or LLM call. A claim-storage outage fails closed:
+  // 5xx, never process unguarded — Twilio retries later.
+  let claim: ProviderEventClaim
   try {
-    await handleMessage(supabase, shop, sms)
+    claim = await claimProviderEvent(supabase, {
+      provider: "twilio",
+      eventId: messageSid,
+      shopId: shop.id,
+      // staleAfterSeconds default (300s) intentionally exceeds this
+      // route's maxDuration (60s) — a live claimer can never be
+      // reclaimed while still running.
+    })
+  } catch (err) {
+    console.error("[twilio sms] provider-event claim failed:", err)
+    return new Response("Server error", { status: 500 })
+  }
+
+  if (!claim.shouldProcess) {
+    // Duplicate suppression is a normal outcome (the helper already emits
+    // the [idempotency] info line P0-012 counts); this line adds the shop
+    // for the duplicate-messaging runbook.
+    console.info("[twilio sms] duplicate delivery suppressed", {
+      messageSid,
+      shopId: shop.id,
+      outcome: claim.outcome,
+    })
+    return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+  }
+
+  try {
+    await handleMessage(supabase, shop, sms, claim)
   } catch (err) {
     console.error("[twilio sms] handle failed:", err)
+    try {
+      await failProviderEvent(supabase, "twilio", messageSid, err)
+    } catch (markErr) {
+      // Claim stays 'processing' — reclaimable as stale after the
+      // threshold, so the event is never permanently stranded.
+      console.error("[twilio sms] fail-mark failed:", markErr)
+    }
+    // 5xx keeps Twilio's retry path open: the failed claim is explicitly
+    // reclaimable (reclaimed_failed), so a legitimate retry reprocesses.
+    return new Response("Processing failed", { status: 500 })
+  }
+
+  try {
+    await completeProviderEvent(supabase, "twilio", messageSid)
+  } catch (err) {
+    // Side effects already landed; return success so Twilio doesn't
+    // retry into a duplicate. The claim stays 'processing' and is only
+    // reachable again via a stale reclaim on an unusually late retry
+    // (ADR-001-accepted at-least-once residue).
+    console.error("[twilio sms] complete-mark failed:", err)
   }
 
   return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
@@ -143,7 +224,8 @@ export async function POST(request: Request) {
 async function handleMessage(
   supabase: SupabaseClient,
   shop: ShopRow,
-  sms: TwilioInboundSms
+  sms: TwilioInboundSms,
+  claim: ProviderEventClaim
 ): Promise<void> {
   const fromPhone = normalizePhone(sms.from) ?? sms.from
 
@@ -152,32 +234,71 @@ async function handleMessage(
   })
   const customerId = customerResult.ok ? customerResult.customer.id : null
 
-  await recordInteraction(supabase, {
-    shopId: shop.id,
-    customerId,
-    channel: "sms",
-    role: "customer",
-    content: sms.body.trim() || "(empty SMS body)",
-    metadata: {
-      twilio_message_sid: sms.messageSid,
-      from_phone: fromPhone,
-      from_city: sms.fromCity,
-      from_state: sms.fromState,
-      from_country: sms.fromCountry,
-      num_media: sms.numMedia,
-    },
-  })
+  // Retry-after-failure reprocesses the whole event (ADR-001), but the
+  // first attempt may already have written the interaction row before it
+  // failed. The claim serializes execution per MessageSid, so this
+  // check-then-skip is race-free here — never re-insert the same inbound
+  // message into the thread. First deliveries skip the lookup entirely.
+  let interactionRecorded = false
+  if (claim.outcome !== "claimed") {
+    const { data: existing, error: existingErr } = await supabase
+      .from("interactions")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("channel", "sms")
+      .eq("role", "customer")
+      .eq("metadata->>twilio_message_sid", sms.messageSid)
+      .limit(1)
+    if (existingErr) {
+      throw new Error(
+        `[twilio sms] reprocess interaction lookup failed: ${existingErr.message}`
+      )
+    }
+    interactionRecorded = (existing?.length ?? 0) > 0
+  }
+
+  if (!interactionRecorded) {
+    const recorded = await recordInteraction(supabase, {
+      shopId: shop.id,
+      customerId,
+      channel: "sms",
+      role: "customer",
+      content: sms.body.trim() || "(empty SMS body)",
+      metadata: {
+        twilio_message_sid: sms.messageSid,
+        from_phone: fromPhone,
+        from_city: sms.fromCity,
+        from_state: sms.fromState,
+        from_country: sms.fromCountry,
+        num_media: sms.numMedia,
+      },
+    })
+    if (!recorded.ok) {
+      // Losing the inbound message silently would strand the event as a
+      // false success. Fail the claim so Twilio's retry reprocesses.
+      throw new Error(
+        `[twilio sms] interaction insert failed: ${recorded.error}`
+      )
+    }
+  }
 
   // Consent ledger (B2): a STOP/START keyword updates the customer's marketing
   // opt-out / opt-in state — the affirmative-consent signal the send gate reads.
+  // Write failures throw (compliance-critical): the failed claim lets the
+  // provider retry re-apply consent instead of dropping it silently.
   if (customerId) {
     if (looksOptedOut(sms.body)) {
-      await supabase
+      const { error: consentErr } = await supabase
         .from("customers")
         .update({ sms_opted_out_at: new Date().toISOString(), marketing_consent_at: null })
         .eq("id", customerId)
+      if (consentErr) {
+        throw new Error(
+          `[twilio sms] opt-out consent write failed: ${consentErr.message}`
+        )
+      }
     } else if (looksOptedIn(sms.body)) {
-      await supabase
+      const { error: consentErr } = await supabase
         .from("customers")
         .update({
           marketing_consent_at: new Date().toISOString(),
@@ -185,6 +306,11 @@ async function handleMessage(
           sms_opted_out_at: null,
         })
         .eq("id", customerId)
+      if (consentErr) {
+        throw new Error(
+          `[twilio sms] opt-in consent write failed: ${consentErr.message}`
+        )
+      }
     }
   }
 
@@ -230,26 +356,42 @@ async function handleMessage(
   }
 
   let classification: SmsClassification | null = null
+  let classifyErr: unknown = null
   try {
     classification = await classifySms({ from: fromPhone, body: sms.body })
   } catch (err) {
-    console.warn(
-      "[twilio sms] classification failed, skipping lead proposal:",
-      err
-    )
+    classifyErr = err
   }
 
   // Meter the LLM work regardless of outcome — the cost was incurred.
+  // Replay-safe: (shop_id, kind, vendor_ref) carries a DB unique, so a
+  // failure-retry re-metering the same MessageSid is a clean duplicate
+  // (idempotent success). This write is REQUIRED before any downstream
+  // staging: a real DB failure here must fail the claim so the retry can
+  // land the ledger row — completing with the row permanently missing is
+  // exactly the silent-loss D-024 forbids.
   {
     const pricing = await getPricing(supabase)
     const priced = priceUsage(pricing, "inbound_classify", 1)
-    await recordUsage(supabase, shop.id, "inbound_classify", {
+    const metered = await recordUsage(supabase, shop.id, "inbound_classify", {
       quantity: 1,
       credits: 0, // cost-visibility SKU — never spends shop credits
       wholesaleCost: priced.wholesale_cost,
       retailCost: priced.retail_cost,
       vendorRef: sms.messageSid ?? null,
     })
+    if (metered === "failed") {
+      throw new Error(
+        "[twilio sms] inbound_classify metering write failed — failing event for retry"
+      )
+    }
+  }
+
+  if (classifyErr) {
+    // Classifier outage: fail the claim (after metering) so the provider's
+    // retry reprocesses once the classifier is back — never a silent
+    // captured-but-unclassified success (P0-006 manual acceptance step 4).
+    throw classifyErr
   }
 
   if (!classification || !classification.is_lead) return
@@ -396,8 +538,12 @@ async function proposeLead(
     .single()
 
   if (pendingErr || !pending) {
-    console.error("[twilio sms] pending_action insert failed:", pendingErr)
-    return
+    // Staging is the user-visible outcome of the whole pipeline — a lost
+    // card is not a success. Fail the claim so a provider retry can
+    // restage (the interaction re-insert is deduped on reprocess).
+    throw new Error(
+      `[twilio sms] pending_action insert failed: ${pendingErr?.message ?? "no row"}`
+    )
   }
 
   const crossChannelHint = await getCrossChannelHint(

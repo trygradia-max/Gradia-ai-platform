@@ -2,6 +2,12 @@
 
 _Created 2026-07-25 by the Organizer. Customers of a shop received the same SMS/email more than once, or the approvals inbox is filling with duplicate cards. Until **P0-005/P0-006/P0-007** land, inbound webhooks are not idempotent — a normal Twilio/Aurinko/Vapi retry duplicates interactions, Claude classification spend, and staged approval cards (audit doc 04 traces F/G/H). Duplicate *sends* additionally implicate automations/autopilot._
 
+> **Status update (P0-006, 2026-08-13):** P0-005 (ledger uniques + `provider_events` claims) and P0-006 (Twilio inbound SMS wiring) are implemented. A Twilio retry of the same `MessageSid` is now suppressed durably. **Suppression log lines to look for** (both info-level, Vercel logs):
+> - `[idempotency] duplicate twilio:<MessageSid> ignored (<outcome>)` — emitted by the claim helper (`src/lib/provider-events.ts`); the counter P0-012's alerting will consume.
+> - `[twilio sms] duplicate delivery suppressed { messageSid, shopId, outcome }` — emitted by the inbound route with the shop for per-tenant triage.
+>
+> A *rise* in these lines is normal provider retry behavior, not an incident; this runbook now applies mainly to Aurinko email (still un-deduped) and Vapi (until P0-007).
+
 ## Trigger / symptoms
 - Owner reports a customer got the same text twice; duplicate rows in `interactions` with the same body minutes apart; two identical cards in `/approvals`.
 - `usage_events` shows doubled `message` metering for one logical send.
@@ -38,6 +44,7 @@ _Created 2026-07-25 by the Organizer. Customers of a shop received the same SMS/
 - Update risk R-04.
 
 ## Known gaps
-- No inbound idempotency until P0-005/006/007 — this runbook is the manual compensation for a known defect.
+- Twilio inbound SMS is deduped as of P0-006; Aurinko email inbound and Vapi end-of-call remain un-deduped until their tickets (Aurinko follow-up, P0-007) — this runbook is still the manual compensation there.
+- Failure-retry on Twilio inbound is at-least-once by design (ADR-001): a retry after a mid-processing failure reprocesses the event (the interaction row is deduped on reprocess; a card staged before an unusually-late stale reclaim could in principle duplicate — Dismiss handles it).
 - No queue/dead-letter (E10): a paused cron loses its window; weekly jobs have no catch-up.
 - Cooldown/opt-out keying misses leads with no linked customer — dupes to those numbers also escape cooldown logic.

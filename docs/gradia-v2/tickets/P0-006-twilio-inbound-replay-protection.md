@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-006
 - **Epic:** E00 — Stabilization
-- **Status:** draft (becomes ready when P0-005 is done)
+- **Status:** **in-review** (implemented 2026-08-13 on `fix/p0-006-twilio-replay` — Builder completion record at the end of this file; awaiting Cursor Reviewer sign-off per `../12-definition-of-done.md` §H)
 - **Priority:** High
 
 ## Objective
@@ -115,3 +115,50 @@ Revert the handler commit; claim rows are inert. No migration to reverse.
 ## Definition of done
 
 All of `../12-definition-of-done.md` plus: replay tests green in gating CI including the DB tier; manual staging replay evidenced in the completion report; forgery-before-claim ordering locked by test; webhook suite extended, not weakened; duplicate-suppression log line documented in `../runbooks/duplicate-messaging.md`.
+
+## Completion record (Builder, 2026-08-13)
+
+Implemented on `fix/p0-006-twilio-replay`. Summary (full report in the Builder
+session handoff):
+
+- **Route:** `src/app/api/twilio/sms/route.ts` claims
+  `(provider='twilio', event_id=MessageSid)` via the P0-005
+  `claimProviderEvent` strictly AFTER signature verification and strictly
+  BEFORE any write/LLM call (ADR-001 C3). Duplicates
+  (`duplicate_completed`/`duplicate_processing`) return the same 200 empty
+  TwiML with zero side effects and an info log carrying MessageSid + shop id.
+  Signed requests missing `MessageSid` are acknowledged without processing
+  (never process-without-claim). Claim-storage outage → 500 (fail closed).
+- **Failure semantics (ADR-001):** processing failure → `failProviderEvent`
+  + 500, so a provider retry reclaims (`reclaimed_failed`, attempts+1);
+  crashed claimers age into `reclaimed_stale` (route `maxDuration` 60s <
+  300s stale threshold — reclaim-while-running impossible). New throw
+  points: interaction-insert failure, consent-write failure, classifier
+  exception (metered first; the vendor_ref unique makes retry re-metering a
+  no-op), lead-staging insert failure. On reprocess the interaction insert
+  is deduped by sid lookup (race-free under the serialized claim).
+  Complete-mark failure after successful processing logs and still returns
+  200 (never retry into duplicates); the ADR-accepted at-least-once residue
+  is a stale reclaim on an unusually late retry.
+- **Consent:** replayed STOP/START applies once (claim-suppressed); a new
+  sid with the same keyword still processes; consent write failures fail
+  the claim instead of dropping compliance state silently. Policy unchanged.
+- **Tests:** `eval/webhooks.test.ts` extended (+18 route-level tests:
+  forgery-never-claims/no-poisoning ordering, duplicate suppression,
+  fail-closed, retry semantics, consent replay, tenant-unresolved,
+  malformed) — existing forgery suite untouched;
+  `eval/integration/twilio-inbound-replay.int.test.ts` (9 DB-backed tests
+  incl. 25-round genuine `Promise.all` duplicate-delivery stress per run;
+  6 local runs = 150 rounds, zero flake; cross-tenant sid weaponization,
+  failed-then-retry attempts accounting, ×5 replay, consent replay against
+  real Postgres).
+- **No schema changes, no migrations, no new dependencies.** Status/A2P
+  callback routes untouched (P0-008); Vapi untouched (P0-007); production
+  conflict enforcement remains OFF.
+- **Validation:** `tsc --noEmit` clean · lint clean · Tier-1 547 green ·
+  integration tier 7 files / 61 tests green · production build green.
+- **Manual acceptance:** staging steps 1–4 assigned to the founder (Twilio
+  CLI replay + classifier-outage retry per the procedure above); local
+  equivalents executed via the integration suite.
+- Runbook updated: `../runbooks/duplicate-messaging.md` documents both
+  suppression log lines.
