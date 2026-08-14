@@ -1,6 +1,6 @@
 # ADR-001 — Provider-Event Idempotency Mechanism
 
-**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007. **Condition status 2026-08-13:** C1, C2 and C7 — the P0-005-close conditions — are satisfied; C3–C6 remain binding on P0-006/P0-007 and the follow-up tickets. See the Condition status update below)
+**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007. **Condition status 2026-08-14:** C1, C2 and C7 — the P0-005-close conditions — are satisfied; **C3 is satisfied for the Twilio inbound route** (P0-006 done, PR #19) and remains binding on P0-007; C4, C5 and C6 remain open on their consumers. See the Condition status updates below)
 
 ## Context
 
@@ -259,6 +259,37 @@ P0-005 is **done** (close record in the ticket file); the staging manual
 acceptance run remains outstanding and gates full rollout acceptance of the
 production migrations — tracked in the ticket's close record, not as an ADR
 condition.
+
+## Condition status update (docs-close session, 2026-08-14 — P0-006 close)
+
+P0-006 merged to `main` in PR #19 (`76847e4`). Condition disposition:
+
+- **C3 — SATISFIED for the Twilio inbound route.** The route claims
+  `(provider='twilio', event_id=MessageSid)` strictly after server-side
+  credential/shop resolution + signature verification and strictly before
+  any write or LLM call; forged/missing-signature requests can never claim
+  or poison a MessageSid. Test-locked by extending `eval/webhooks.test.ts`
+  (not parallel-tracked) plus the DB-backed
+  `eval/integration/twilio-inbound-replay.int.test.ts` suite, per this
+  condition's terms. **C3 remains binding on P0-007** (the Vapi route).
+- **The stale-threshold discipline C5 formalizes for Vapi held on this
+  route:** the Twilio inbound route's `maxDuration` (60s) is strictly below
+  the provider_events stale threshold (300s) — reclaim-while-running is
+  impossible by construction. C5 itself remains open on P0-007.
+- **C4 (Aurinko namespacing), C6 (`outreach_draft` time-box) — OPEN,
+  unchanged.**
+
+Route-level evidence beyond the conditions (recorded in the ticket close
+record): the durable receipt is `provider_events` alone — no
+Twilio-specific duplicate table and no new migration, exactly as this ADR's
+Consequences predicted; the P0-005 `usage_events` unique (MessageSid as
+`vendor_ref`) acts as defense-in-depth behind the claim; and `recordUsage`
+now surfaces `written`/`duplicate`/`failed` so a caller that needs durable
+metering (the Twilio inbound path) can fail the provider event and retry
+instead of silently completing without a usage row. One accepted residual:
+a provider retry after a genuine metering-write failure may re-run the
+classifier (output not persisted) — non-blocking; optional optimization
+only if future cost/reliability data justifies it.
 
 ## Links
 

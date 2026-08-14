@@ -20,14 +20,14 @@ _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evid
 |---|---|---|
 | P0-005 | Webhook event idempotency foundation | **Done 2026-08-13** — merged PR #17 (`e1dedfb`); Cursor APPROVE, no BLOCKER/HIGH; ADR-001 C1/C2/C7 satisfied (incl. zero-row founder production duplicate audit); staging manual acceptance still gates full rollout acceptance of the migrations. Close record in the ticket file. |
 | P0-005A | provider_events retention and pruning | **Filed 2026-08-13** (ADR-001 C2); ready, unscheduled — Organizer sequences; must land before P0-006/007 receipt volume grows. |
-| P0-006 | Twilio inbound replay protection | **Next implementation position — blocked** until the P0-005 closeout commit (P0-005A filing + planning closeout) lands on `main`; see `blocked.md`. ADR-001 C3 binds scope (claim after signature verification, test-locked). |
-| P0-007 | Vapi transcript and usage replay protection | Depends on P0-005 (done); sequenced after P0-006 or in its slot, respecting the max-2 active limit. ADR-001 C3 + C5 bind scope (claim-after-verify; explicit route `maxDuration` with `staleAfterSeconds` strictly above it). |
+| P0-006 | Twilio inbound replay protection | **Done 2026-08-14** — merged PR #19 (`76847e4`); CI green incl. integration tier; independent Cursor verdict **APPROVE / safe to merge**, no BLOCKER/HIGH, no review-fix commit; founder real-Twilio staging acceptance completed pre-merge; ADR-001 C3 satisfied for this route; no new migration. Close record in the ticket file. |
+| P0-007 | Vapi transcript and usage replay protection | **Next implementation position — blocked** until the `docs/close-p0-006` closeout commit lands on `main`; see `blocked.md`. ADR-001 C3 + C5 bind scope (claim-after-verify, test-locked; explicit route `maxDuration` with `staleAfterSeconds` strictly above it). Payment/metering high-risk slot when it starts. |
 
 ## Selection rules
 
 1. **Max 2 active at any moment** — the expected cadence is one Track A ticket + one Track B ticket concurrently (e.g. P0-003 + P0-005), each with its own Builder and Reviewer.
 2. P0-003/P0-004/P0-004A share the calendar high-risk slot and are strictly sequential (policy implemented in 003, wired in 004, executor hardened in 004A).
-3. **P0-004A precedes P0-005** (2026-08-11 resequencing — harden the now-authoritative booking executor before continuing; **satisfied: P0-004A done 2026-08-11**); P0-005 must finish before P0-006 or P0-007 begins — they build on its foundation (**satisfied: P0-005 done 2026-08-13**; P0-006 additionally waits on the closeout-merge unblock in `blocked.md`).
+3. **P0-004A precedes P0-005** (2026-08-11 resequencing — harden the now-authoritative booking executor before continuing; **satisfied: P0-004A done 2026-08-11**); P0-005 must finish before P0-006 or P0-007 begins — they build on its foundation (**satisfied: P0-005 done 2026-08-13; P0-006 done 2026-08-14**; P0-007 now waits only on the P0-006 closeout-merge unblock in `blocked.md`).
 4. If Sprint 1 carries over a ticket, it keeps its slot and Sprint 2 admits only one new ticket until it closes.
 5. Any ticket whose decision dependency reopens (see `decision-queue.md`) moves to `blocked.md` immediately.
 

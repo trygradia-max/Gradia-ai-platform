@@ -18,7 +18,7 @@ _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capabi
 | 12 | Recurring jobs | P6 | planned | Separate domain (D-017); maintenance_schedule armed, unconsumed |
 | 13 | Memberships | P6 | planned | Separate domain; billing rides on E05 |
 | 14 | Fleet accounts and service | P6 | planned | Separate domain; nothing exists today |
-| 15 | Communications | P0 / P7 | pilot / planned | P0-006/008 fixes now; email inbox + composer in E07 |
+| 15 | Communications | P0 / P7 | pilot / planned | P0-006 done 2026-08-14 (PR #19 — inbound SMS replay-safe); P0-008 status-callback fix still pending; email inbox + composer in E07 |
 | 16 | Imports and exports | P3 | internal | Recovery import real; structured wizard to D-022 bar; exports missing |
 | 17 | Reporting | P8 | building | Home analytics exemplary; funnels/campaign analytics/daily brief missing |
 | 18 | Gradia Agent | P1 / P9 | pilot | Strongest subsystem; LLM seam + eval gating (E01) mature it |
@@ -28,7 +28,7 @@ _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capabi
 | 22 | Integrations | P1–P3 | pilot (mixed) | HCP unverified live; A2P SIDs unverified; LLM seam missing |
 | 23 | Trial and subscription billing | P0 / P1 | pilot / planned | Billing loop is beta-grade; trial model waits on Q-13 (D-005) + Q-22 (D-031 pricing) |
 | 24 | Security and privacy | P0 / P10 | building | P0-001 first; then P0-011; GDPR deletion/export at P10 |
-| 25 | Reliability and observability | P0 / P10 | building | **P0-005 idempotency foundation merged 2026-08-13** (PR #17 — `provider_events` claiming, ledger uniques, SELECT-only ledger RLS; Cursor APPROVE; production duplicate audit zero rows; staging acceptance pending). Next: P0-006/007 wire the claim into Twilio/Vapi routes (P0-006 blocked pending closeout merge) + P0-005A pruning; P0-012 alerting later; outbox/queue + logging at P10 |
+| 25 | Reliability and observability | P0 / P10 | building | **P0-005 foundation merged 2026-08-13** (PR #17; staging acceptance of its migrations still pending) and **P0-006 Twilio inbound replay hardening merged 2026-08-14** (PR #19 — inbound SMS route claims `provider_events` after signature verification; classification metering now durable-or-retry via `recordUsage` written/duplicate/failed; Cursor APPROVE / safe to merge; founder real-Twilio staging acceptance done). Next: P0-007 wires the Vapi route (blocked pending closeout merge) + P0-005A pruning; P0-008 status callbacks; P0-012 alerting later; outbox/queue + logging at P10 |
 | 26 | Support operations | P10 | planned | No support tooling exists; scope with pilot feedback |
 | 27 | Responsive PWA | P8 | planned | Responsive today; installable/offline PWA in E08 (D-020) |
 | 28 | Marketing website | P0–P8 | building | Claims discipline (D-028); category/headline decided (D-033); pricing page waits on Q-22 |
