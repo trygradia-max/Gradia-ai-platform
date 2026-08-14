@@ -11,6 +11,11 @@
  *   - `end-of-call-report` — when the call ends, every turn lands in the
  *     `interactions` table with channel="voice" so future calls (or other
  *     channels) can recall this conversation via the shared memory layer.
+ *     Replay-safe (P0-007, ADR-001): the branch claims
+ *     (provider='vapi', event_id=call.id) via provider_events strictly
+ *     after signature verification and before any write, so provider
+ *     retries produce zero duplicate transcript rows, zero duplicate
+ *     voice-minute metering, and no repeated budget/call-record effects.
  *
  * Multi-tenancy: Vapi has no concept of a Gradia shop. The webhook
  * resolves the shop by matching `message.call.assistantId` against
@@ -51,6 +56,12 @@ import { tryDecryptSecret } from "@/lib/crypto"
 import { findOrCreateCustomer } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
 import { getPricing, priceUsage } from "@/lib/pricing"
+import {
+  claimProviderEvent,
+  completeProviderEvent,
+  failProviderEvent,
+  type ProviderEventClaim,
+} from "@/lib/provider-events"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { InteractionRole, ShopRow } from "@/lib/types/database"
 import { voiceBudgetState } from "@/lib/voice-provider"
@@ -68,6 +79,15 @@ import {
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// ADR-001 C5: an explicit execution ceiling, strictly below the
+// provider_events stale threshold passed to the end-of-call claim, so a
+// live claimer can never be reclaimed as stale while still running.
+// Both values are test-locked together in eval/webhooks.test.ts.
+export const maxDuration = 60
+
+/** provider_events stale-reclaim threshold for the end-of-call claim —
+ *  must stay STRICTLY above maxDuration (ADR-001 C5). */
+const STALE_AFTER_SECONDS = 300
 
 type VapiCall = {
   id?: string
@@ -143,6 +163,15 @@ function verifyVapiSecret(request: Request, shop: WebhookShop | null): boolean {
   return secretMatches(provided, process.env.VAPI_WEBHOOK_SECRET?.trim() || null)
 }
 
+/** Production runtime detection for the VAPI_DEFAULT_SHOP_ID guard.
+ *  VERCEL_ENV distinguishes production from preview (both build with
+ *  NODE_ENV=production); self-hosted prod falls back to NODE_ENV. */
+function isProductionRuntime(): boolean {
+  const vercelEnv = process.env.VERCEL_ENV?.trim()
+  if (vercelEnv) return vercelEnv === "production"
+  return process.env.NODE_ENV === "production"
+}
+
 async function resolveShop(
   supabase: SupabaseClient,
   message: VapiMessage
@@ -164,6 +193,17 @@ async function resolveShop(
 
   const fallback = process.env.VAPI_DEFAULT_SHOP_ID?.trim()
   if (!fallback) return null
+  // P0-007: the fallback is a single-shop DEV convenience only. In
+  // production an unmatched assistant must fail closed — silently routing
+  // another assistant's calls, transcripts, and metering into the default
+  // shop is a cross-tenant misrouting hole (audit trace H).
+  if (isProductionRuntime()) {
+    console.error(
+      "[vapi] VAPI_DEFAULT_SHOP_ID fallback refused in production — unmatched assistant fails closed",
+      { assistantId: assistantId || null }
+    )
+    return null
+  }
   const { data } = await supabase
     .from("shops")
     .select(select)
@@ -357,14 +397,114 @@ async function handleFunctionCall(
 }
 
 /**
- * Persists every turn of the call into the shared memory layer so future
- * touchpoints across any channel can recall this conversation.
+ * End-of-call report — the one Vapi event type this route claims through
+ * provider_events (P0-007, ADR-001 C3/C5). Ordering is load-bearing:
+ * signature verification happened in POST; here we validate the call id
+ * (the durable provider event id — never claim or meter without one),
+ * claim, process, then complete/fail. Replays of the same call id are
+ * suppressed with the same 2xx Vapi expects; processing failures 5xx so
+ * Vapi's retry reclaims and reprocesses.
+ *
+ * Event-identity assumption (documented per the ticket): the bare
+ * `call.id` is the event id because the end-of-call report is the ONLY
+ * Vapi event type that claims. If a future ticket claims another Vapi
+ * event type it must namespace (`${callId}:${type}`) or amend ADR-001.
  */
 async function handleEndOfCall(
   supabase: SupabaseClient,
   shop: WebhookShop,
   message: VapiMessage
 ): Promise<Response> {
+  const shopId = shop.id
+  const vapiCallId = asString(message.call?.id).trim()
+  if (!vapiCallId) {
+    // D-023: never process a provider event with no provider identifier —
+    // there is nothing durable to claim, dedupe, or meter against.
+    console.error(
+      "[vapi] end-of-call report missing call id — refusing to process",
+      { shopId }
+    )
+    return new Response("Missing call id", { status: 400 })
+  }
+
+  // Claim strictly AFTER signature verification (ADR-001 C3) and strictly
+  // BEFORE any write. A claim-storage outage fails closed: 5xx, never
+  // process unguarded — Vapi retries later.
+  let claim: ProviderEventClaim
+  try {
+    claim = await claimProviderEvent(supabase, {
+      provider: "vapi",
+      eventId: vapiCallId,
+      shopId,
+      staleAfterSeconds: STALE_AFTER_SECONDS,
+    })
+  } catch (err) {
+    console.error("[vapi] provider-event claim failed:", err)
+    return new Response("Server error", { status: 500 })
+  }
+
+  if (!claim.shouldProcess) {
+    // Duplicate suppression is a normal outcome (the helper already emits
+    // the [idempotency] info line P0-012 counts); this line adds the shop
+    // + which writes were skipped, per the ticket's observability spec.
+    console.info(
+      "[vapi] duplicate end-of-call delivery suppressed — transcript, metering, budget, and call-record writes skipped",
+      { vapiCallId, shopId, outcome: claim.outcome }
+    )
+    return Response.json({ ok: true, duplicate: true })
+  }
+
+  let turnsIngested = 0
+  try {
+    turnsIngested = await processEndOfCall(
+      supabase,
+      shop,
+      message,
+      vapiCallId,
+      claim
+    )
+  } catch (err) {
+    console.error("[vapi] end-of-call processing failed:", err)
+    try {
+      await failProviderEvent(supabase, "vapi", vapiCallId, err)
+    } catch (markErr) {
+      // Claim stays 'processing' — reclaimable as stale after the
+      // threshold, so the event is never permanently stranded.
+      console.error("[vapi] fail-mark failed:", markErr)
+    }
+    // 5xx keeps Vapi's retry path open: the failed claim is explicitly
+    // reclaimable (reclaimed_failed), so a legitimate retry reprocesses.
+    return new Response("Processing failed", { status: 500 })
+  }
+
+  try {
+    await completeProviderEvent(supabase, "vapi", vapiCallId)
+  } catch (err) {
+    // Side effects already landed; return success so Vapi doesn't retry
+    // into an error loop. The claim stays 'processing' and is only
+    // reachable again via a stale reclaim on an unusually late retry —
+    // safe here because every end-of-call write is individually
+    // idempotent (turn resume, metering unique, call-record upsert).
+    console.error("[vapi] complete-mark failed:", err)
+  }
+
+  return Response.json({ ok: true, turnsIngested })
+}
+
+/**
+ * The processing body of an owned end-of-call claim. Persists every turn
+ * of the call into the shared memory layer, meters the minutes, applies
+ * the budget policy, and captures the call record. Throws on any loss of
+ * required durable state so the claim is failed and Vapi's retry can
+ * converge — every write is resume-safe under the serialized claim.
+ */
+async function processEndOfCall(
+  supabase: SupabaseClient,
+  shop: WebhookShop,
+  message: VapiMessage,
+  vapiCallId: string,
+  claim: ProviderEventClaim
+): Promise<number> {
   const shopId = shop.id
   const callerPhone =
     asString(message.call?.customer?.number).trim() ||
@@ -387,11 +527,43 @@ async function handleEndOfCall(
     }
   }
 
-  const turns = message.messages ?? []
-  for (const turn of turns) {
-    const content = (asString(turn.message) || asString(turn.content)).trim()
-    if (!content) continue
+  const turns = (message.messages ?? [])
+    .map((turn) => ({
+      turn,
+      content: (asString(turn.message) || asString(turn.content)).trim(),
+    }))
+    .filter((t) => t.content)
 
+  // Retry-after-failure resume (ADR-001): a failed first attempt may have
+  // persisted a prefix of the transcript. The claim serializes execution
+  // per call id, so a count-based resume is race-free — skip exactly the
+  // turns already written (the retried payload is the same report, so
+  // turn order is deterministic) and write the rest. Fresh claims skip
+  // the lookup entirely.
+  let alreadyWritten = 0
+  if (claim.outcome !== "claimed") {
+    const { count, error } = await supabase
+      .from("interactions")
+      .select("id", { count: "exact", head: true })
+      .eq("shop_id", shopId)
+      .eq("channel", "voice")
+      .eq("metadata->>vapi_call_id", vapiCallId)
+    if (error) {
+      throw new Error(
+        `[vapi] reprocess transcript lookup failed: ${error.message}`
+      )
+    }
+    alreadyWritten = count ?? 0
+    if (alreadyWritten > 0) {
+      console.info(
+        "[idempotency] vapi transcript resume — skipping already-written turns",
+        { shopId, vapiCallId, alreadyWritten }
+      )
+    }
+  }
+
+  for (let i = alreadyWritten; i < turns.length; i++) {
+    const { turn, content } = turns[i]
     const role: InteractionRole =
       turn.role === "user"
         ? "customer"
@@ -406,14 +578,18 @@ async function handleEndOfCall(
       role,
       content,
       metadata: {
-        vapi_call_id: message.call?.id ?? null,
+        vapi_call_id: vapiCallId,
         ended_reason: message.endedReason ?? null,
         recording_url: message.recordingUrl ?? null,
       },
     })
 
     if (!result.ok) {
-      console.error("[vapi] recordInteraction failed:", result.error)
+      // Losing a transcript turn silently would complete the event with a
+      // partial transcript. Fail the claim so Vapi's retry resumes here.
+      throw new Error(
+        `[vapi] transcript interaction insert failed: ${result.error}`
+      )
     }
   }
 
@@ -422,17 +598,32 @@ async function handleEndOfCall(
   // credits: 0 — minutes are their OWN meter (GRADIA_PRICING.md: the two
   // meters never cross; voice can't drain message credits). wholesale +
   // retail stay on the row so margin is computable.
+  //
+  // vendor_ref = call id: the P0-005 (shop_id, kind, vendor_ref) unique is
+  // the defense-in-depth behind the claim — a replayed write is a clean
+  // duplicate, a lost write must NOT silently bill nothing (P0-006's
+  // metering lesson): failed → throw → the provider retry re-meters.
   const minutes = callMinutes(message)
   const pricing = await getPricing(supabase)
   const priced = priceUsage(pricing, "voice_minute", minutes)
-  await recordUsage(supabase, shopId, "voice_minute", {
+  const metered = await recordUsage(supabase, shopId, "voice_minute", {
     quantity: minutes,
     credits: 0,
     wholesaleCost: priced.wholesale_cost,
     retailCost: priced.retail_cost,
-    vendorRef: message.call?.id ?? null,
-    refId: message.call?.id ?? null,
+    vendorRef: vapiCallId,
+    refId: vapiCallId,
   })
+  if (metered === "duplicate") {
+    console.info(
+      "[idempotency] vapi voice-minute metering already recorded — skipped",
+      { shopId, vapiCallId }
+    )
+  } else if (metered === "failed") {
+    throw new Error(
+      "[vapi] voice-minute metering write failed — failing event so the provider retry re-meters"
+    )
+  }
 
   // Minute budget (spec §2.5): warn at 80%; at 100% mark the assistant
   // stale so the hourly voice sync PATCHes in the take-a-message fallback
@@ -457,7 +648,7 @@ async function handleEndOfCall(
   await persistCallRecord(supabase, {
     shopId,
     customerId,
-    vapiCallId: message.call?.id,
+    vapiCallId,
     summary: message.summary ?? null,
     endedReason: message.endedReason ?? null,
     recordingUrl: message.recordingUrl ?? null,
@@ -471,5 +662,5 @@ async function handleEndOfCall(
   revalidatePath("/leads")
   revalidatePath("/approvals")
 
-  return Response.json({ ok: true, turnsIngested: turns.length })
+  return turns.length
 }
