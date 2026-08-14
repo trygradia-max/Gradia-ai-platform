@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto"
-import { describe, it, expect, beforeAll, afterAll } from "vitest"
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest"
 
 import { verifyTwilioSignature } from "@/lib/twilio"
 import { verifyStripeSignature } from "@/lib/stripe"
@@ -12,7 +12,101 @@ import { verifySlackSignature } from "@/lib/slack"
  * is a remote-write hole, and nothing crashes to tell you. Pure HMAC, so these
  * run free on every change. We forge valid signatures with the same scheme,
  * then assert tamper / wrong-secret / replay / missing-header all reject.
+ *
+ * P0-006 extends this suite (ADR-001 C3 — extend, never parallel-track) with
+ * route-level tests for the Twilio inbound SMS handler: signature verification
+ * strictly BEFORE the provider_events claim, claim strictly BEFORE side
+ * effects, duplicates suppressed with the same success TwiML, and failures
+ * marked so a provider retry can reprocess. DB and vendor layers are mocked
+ * here; the real-Postgres proofs live in
+ * eval/integration/twilio-inbound-replay.int.test.ts.
  */
+
+// ── Route-dependency mocks (Twilio inbound route tests only — the pure
+// signature suites above/below never touch these). Verifiers stay REAL.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }))
+vi.mock("@/lib/supabase/service", () => ({
+  createServiceClient: () => fakeDb.client(),
+}))
+vi.mock("@/lib/provider-events", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/provider-events")>()),
+  claimProviderEvent: vi.fn(),
+  completeProviderEvent: vi.fn(async () => true),
+  failProviderEvent: vi.fn(async () => true),
+}))
+vi.mock("@/lib/customers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/customers")>()),
+  findOrCreateCustomer: vi.fn(async () => ({ ok: false as const, error: "no customer" })),
+}))
+vi.mock("@/lib/memory", () => ({
+  recordInteraction: vi.fn(async () => ({ ok: true as const, id: "int-1", embedded: false })),
+}))
+vi.mock("@/lib/customer-context", () => ({
+  getCrossChannelHint: vi.fn(async () => null),
+}))
+vi.mock("@/lib/knowledge", () => ({
+  searchShopKnowledge: vi.fn(async () => []),
+  formatKnowledgeForPrompt: vi.fn(() => ""),
+}))
+vi.mock("@/lib/credits", () => ({
+  recordUsage: vi.fn(async () => {}),
+}))
+vi.mock("@/lib/pricing", () => ({
+  getPricing: vi.fn(async () => ({})),
+  priceUsage: vi.fn(() => ({ wholesale_cost: 1, retail_cost: 0 })),
+}))
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 99, resetInSeconds: 60 })),
+}))
+vi.mock("@/lib/sms-classifier", () => ({
+  classifySms: vi.fn(async () => ({ is_lead: false })),
+}))
+vi.mock("@/lib/sms-drafter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sms-drafter")>()),
+  draftSmsReply: vi.fn(async () => null),
+}))
+vi.mock("@/lib/slack", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/slack")>()),
+  sendLeadApprovalRequest: vi.fn(async () => {}),
+  sendSmsApprovalRequest: vi.fn(async () => {}),
+}))
+
+/**
+ * Minimal chainable Supabase stub. Every chained method returns the same
+ * thenable; terminals resolve the per-table result configured for the test.
+ * Calls are logged so tests can assert which tables were (not) written.
+ */
+const fakeDb = {
+  tables: {} as Record<string, { data: unknown; error: unknown }>,
+  calls: [] as Array<{ table: string; method: string }>,
+  reset() {
+    this.tables = {}
+    this.calls = []
+  },
+  client() {
+    return {
+      from: (table: string) => {
+        const result = fakeDb.tables[table] ?? { data: null, error: null }
+        const q: Record<string, unknown> = {
+          then: (resolve: (v: unknown) => unknown) =>
+            Promise.resolve(result).then(resolve),
+        }
+        for (const m of [
+          "select", "eq", "is", "gt", "order", "limit", "insert", "update",
+        ]) {
+          q[m] = () => {
+            fakeDb.calls.push({ table, method: m })
+            return q
+          }
+        }
+        q.maybeSingle = () => Promise.resolve(result)
+        q.single = () => Promise.resolve(result)
+        return q
+      },
+    }
+  },
+}
 
 const SECRETS: Record<string, string> = {
   TWILIO_AUTH_TOKEN: "twilio_test_token",
@@ -112,6 +206,319 @@ describe("Aurinko (HMAC-SHA256 over `v0:ts:body`, 5-min window)", () => {
   it("rejects a missing timestamp or signature", () => {
     expect(verifyAurinkoSignature({ rawBody: body, timestamp: null, signature: sign(nowSec()) })).toBe(false)
     expect(verifyAurinkoSignature({ rawBody: body, timestamp: String(nowSec()), signature: null })).toBe(false)
+  })
+})
+
+describe("Twilio inbound SMS route — claim after verify + replay suppression (P0-006, ADR-001 C3)", () => {
+  const ROUTE_URL = "https://app.test/api/twilio/sms"
+  const SID = "SM_p0006_test"
+  const SHOP = {
+    id: "shop-1",
+    owner_id: "owner-1",
+    name: "Test Shop",
+    twilio_phone_number: "+15035550111",
+  }
+
+  const signRoute = (u: string, f: URLSearchParams) => {
+    let s = u
+    for (const k of [...f.keys()].sort()) s += k + (f.get(k) ?? "")
+    return createHmac("sha1", SECRETS.TWILIO_AUTH_TOKEN).update(s).digest("base64")
+  }
+
+  const makeForm = (over: Record<string, string> = {}) =>
+    new URLSearchParams({
+      MessageSid: SID,
+      AccountSid: "ACtest",
+      From: "+15035550133",
+      To: "+15035550111",
+      Body: "do you do ceramic?",
+      ...over,
+    })
+
+  /** sig: undefined → sign correctly; null → omit header; string → use as-is. */
+  const post = (form: URLSearchParams, sig?: string | null) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/x-www-form-urlencoded",
+    }
+    if (sig !== null) headers["x-twilio-signature"] = sig ?? signRoute(ROUTE_URL, form)
+    return POST(new Request(ROUTE_URL, { method: "POST", headers, body: form.toString() }))
+  }
+
+  const claimed = (outcome = "claimed", attempts = 1) => ({
+    outcome,
+    id: "pe-1",
+    attempts,
+    shouldProcess: ["claimed", "reclaimed_failed", "reclaimed_stale"].includes(outcome),
+  })
+
+  let POST: (req: Request) => Promise<Response>
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  let claimMock: any
+  let completeMock: any
+  let failMock: any
+  let recordInteractionMock: any
+  let classifyMock: any
+  let recordUsageMock: any
+  let findOrCreateMock: any
+  let sendLeadMock: any
+  let rateLimitMock: any
+  let draftMock: any
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const savedEnv: Record<string, string | undefined> = {}
+  beforeAll(async () => {
+    // The route derives its public URL from GRADIA_DASHBOARD_URL /
+    // forwarded headers; pin the test to the raw request URL.
+    for (const k of ["GRADIA_DASHBOARD_URL", "TWILIO_ACCOUNT_SID"]) {
+      savedEnv[k] = process.env[k]
+    }
+    delete process.env.GRADIA_DASHBOARD_URL
+    process.env.TWILIO_ACCOUNT_SID = "ACtest"
+    ;({ POST } = await import("@/app/api/twilio/sms/route"))
+    claimMock = vi.mocked((await import("@/lib/provider-events")).claimProviderEvent)
+    completeMock = vi.mocked((await import("@/lib/provider-events")).completeProviderEvent)
+    failMock = vi.mocked((await import("@/lib/provider-events")).failProviderEvent)
+    recordInteractionMock = vi.mocked((await import("@/lib/memory")).recordInteraction)
+    classifyMock = vi.mocked((await import("@/lib/sms-classifier")).classifySms)
+    recordUsageMock = vi.mocked((await import("@/lib/credits")).recordUsage)
+    findOrCreateMock = vi.mocked((await import("@/lib/customers")).findOrCreateCustomer)
+    sendLeadMock = vi.mocked((await import("@/lib/slack")).sendLeadApprovalRequest)
+    rateLimitMock = vi.mocked((await import("@/lib/rate-limit")).checkRateLimit)
+    draftMock = vi.mocked((await import("@/lib/sms-drafter")).draftSmsReply)
+  })
+  afterAll(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fakeDb.reset()
+    fakeDb.tables.shops = { data: SHOP, error: null }
+    fakeDb.tables.pending_actions = { data: { id: "pa-1" }, error: null }
+    fakeDb.tables.interactions = { data: [], error: null }
+    claimMock.mockResolvedValue(claimed())
+    completeMock.mockResolvedValue(true)
+    failMock.mockResolvedValue(true)
+    recordInteractionMock.mockResolvedValue({ ok: true, id: "int-1", embedded: false })
+    classifyMock.mockResolvedValue({ is_lead: false })
+    recordUsageMock.mockResolvedValue(undefined)
+    findOrCreateMock.mockResolvedValue({ ok: false, error: "no customer" })
+    sendLeadMock.mockResolvedValue(undefined)
+    rateLimitMock.mockResolvedValue({ allowed: true, remaining: 99, resetInSeconds: 60 })
+    draftMock.mockResolvedValue(null)
+  })
+
+  it("rejects a forged signature BEFORE any claim — no provider_events reach, no side effects", async () => {
+    const res = await post(makeForm(), "not-a-real-signature")
+    expect(res.status).toBe(401)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(classifyMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+  })
+
+  it("rejects a missing signature without claiming", async () => {
+    const res = await post(makeForm(), null)
+    expect(res.status).toBe(401)
+    expect(claimMock).not.toHaveBeenCalled()
+  })
+
+  it("a forged request cannot poison a MessageSid — the legitimate delivery still processes", async () => {
+    const forged = await post(makeForm(), "forged-signature")
+    expect(forged.status).toBe(401)
+    expect(claimMock).not.toHaveBeenCalled()
+
+    const real = await post(makeForm())
+    expect(real.status).toBe(200)
+    expect(claimMock).toHaveBeenCalledTimes(1)
+    expect(claimMock.mock.calls[0][1]).toMatchObject({
+      provider: "twilio",
+      eventId: SID,
+      shopId: SHOP.id,
+    })
+  })
+
+  it("valid first delivery: claims before any side effect, processes once, completes, stages one card", async () => {
+    classifyMock.mockResolvedValue({
+      is_lead: true,
+      customer_name: "Dana",
+      service: "ceramic coating",
+      vehicle: null,
+      summary: "wants ceramic",
+    })
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain("<Response></Response>")
+
+    // Ordering: claim strictly before the first write and the LLM call.
+    expect(claimMock).toHaveBeenCalledTimes(1)
+    expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
+      recordInteractionMock.mock.invocationCallOrder[0]
+    )
+    expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
+      classifyMock.mock.invocationCallOrder[0]
+    )
+    expect(recordInteractionMock).toHaveBeenCalledTimes(1)
+    expect(classifyMock).toHaveBeenCalledTimes(1)
+    expect(recordUsageMock).toHaveBeenCalledTimes(1)
+    expect(sendLeadMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).toHaveBeenCalledWith(expect.anything(), "twilio", SID)
+    expect(failMock).not.toHaveBeenCalled()
+  })
+
+  it("duplicate after completion: same success TwiML, ZERO side effects", async () => {
+    claimMock.mockResolvedValue(claimed("duplicate_completed"))
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain("<Response></Response>")
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(classifyMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+    expect(sendLeadMock).not.toHaveBeenCalled()
+    expect(completeMock).not.toHaveBeenCalled()
+    expect(fakeDb.calls.filter((c) => c.table !== "shops")).toHaveLength(0)
+  })
+
+  it("duplicate while the winner is still processing: loser exits cleanly with success", async () => {
+    claimMock.mockResolvedValue(claimed("duplicate_processing"))
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(completeMock).not.toHaveBeenCalled()
+    expect(failMock).not.toHaveBeenCalled()
+  })
+
+  it("claim storage failure fails closed — 5xx, nothing processed unguarded", async () => {
+    claimMock.mockRejectedValue(new Error("db unreachable"))
+    const res = await post(makeForm())
+    expect(res.status).toBe(500)
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(classifyMock).not.toHaveBeenCalled()
+  })
+
+  it("processing failure marks the claim failed and returns 5xx so a retry can reprocess", async () => {
+    recordInteractionMock.mockResolvedValue({ ok: false, error: "insert exploded" })
+    const res = await post(makeForm())
+    expect(res.status).toBe(500)
+    expect(failMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "twilio",
+      SID,
+      expect.any(Error)
+    )
+    expect(completeMock).not.toHaveBeenCalled()
+  })
+
+  it("classifier outage: still meters once, fails the claim, 5xx (manual-acceptance step 4 semantics)", async () => {
+    classifyMock.mockRejectedValue(new Error("anthropic down"))
+    const res = await post(makeForm())
+    expect(res.status).toBe(500)
+    expect(recordUsageMock).toHaveBeenCalledTimes(1)
+    expect(failMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).not.toHaveBeenCalled()
+  })
+
+  it("retry after failure (reclaimed_failed) reprocesses but never re-inserts the interaction", async () => {
+    claimMock.mockResolvedValue(claimed("reclaimed_failed", 2))
+    fakeDb.tables.interactions = { data: [{ id: "int-existing" }], error: null }
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(recordInteractionMock).not.toHaveBeenCalled() // deduped on reprocess
+    expect(classifyMock).toHaveBeenCalledTimes(1) // pipeline still completes
+    expect(completeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("retry after an early failure (nothing written yet) records the interaction exactly once", async () => {
+    claimMock.mockResolvedValue(claimed("reclaimed_failed", 2))
+    fakeDb.tables.interactions = { data: [], error: null }
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(recordInteractionMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("a signed request without a MessageSid is acknowledged but never claimed or processed", async () => {
+    const form = makeForm()
+    form.delete("MessageSid")
+    const res = await post(form)
+    expect(res.status).toBe(200)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+  })
+
+  it("unknown To number (no tenant): acknowledged safely, no claim, no side effects", async () => {
+    fakeDb.tables.shops = { data: null, error: null }
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+  })
+
+  it("shop lookup outage fails closed with 5xx before any claim", async () => {
+    fakeDb.tables.shops = { data: null, error: { message: "pg down" } }
+    const res = await post(makeForm())
+    expect(res.status).toBe(500)
+    expect(claimMock).not.toHaveBeenCalled()
+  })
+
+  it("malformed payload (missing From/To) is acknowledged with zero side effects", async () => {
+    const res = await post(new URLSearchParams({ MessageSid: SID }))
+    expect(res.status).toBe(200)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+  })
+
+  it("non-lead message completes the claim without staging any card", async () => {
+    classifyMock.mockResolvedValue({ is_lead: false })
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(sendLeadMock).not.toHaveBeenCalled()
+    expect(completeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("STOP applies consent exactly once; a replayed STOP applies nothing", async () => {
+    findOrCreateMock.mockResolvedValue({
+      ok: true,
+      customer: { id: "cust-1" },
+      created: false,
+    })
+    const stopForm = makeForm({ Body: "STOP" })
+    const first = await post(stopForm)
+    expect(first.status).toBe(200)
+    const consentWrites = fakeDb.calls.filter(
+      (c) => c.table === "customers" && c.method === "update"
+    )
+    expect(consentWrites).toHaveLength(1)
+
+    // Replay of the SAME MessageSid: suppressed — no second consent write.
+    fakeDb.calls = []
+    claimMock.mockResolvedValue(claimed("duplicate_completed"))
+    const replay = await post(stopForm)
+    expect(replay.status).toBe(200)
+    expect(
+      fakeDb.calls.filter((c) => c.table === "customers" && c.method === "update")
+    ).toHaveLength(0)
+  })
+
+  it("a consent write failure fails the claim (compliance never fails silently)", async () => {
+    findOrCreateMock.mockResolvedValue({
+      ok: true,
+      customer: { id: "cust-1" },
+      created: false,
+    })
+    fakeDb.tables.customers = { data: null, error: { message: "rls denied" } }
+    const res = await post(makeForm({ Body: "STOP" }))
+    expect(res.status).toBe(500)
+    expect(failMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("complete-mark failure after successful processing still returns success (no duplicate-inducing retry)", async () => {
+    completeMock.mockRejectedValue(new Error("pg blip"))
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(failMock).not.toHaveBeenCalled()
   })
 })
 
