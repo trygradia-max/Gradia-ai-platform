@@ -20,6 +20,13 @@ import { verifySlackSignature } from "@/lib/slack"
  * marked so a provider retry can reprocess. DB and vendor layers are mocked
  * here; the real-Postgres proofs live in
  * eval/integration/twilio-inbound-replay.int.test.ts.
+ *
+ * P0-007 extends it again (same C3 condition, plus C5) for the Vapi webhook's
+ * end-of-call branch: claim after per-shop secret verification, replay
+ * suppression across transcript/metering/budget/call-record writes, strict
+ * metering semantics (a lost usage write fails the event), and the
+ * maxDuration < staleAfterSeconds lock. Real-Postgres proofs:
+ * eval/integration/vapi-replay.int.test.ts.
  */
 
 // ── Route-dependency mocks (Twilio inbound route tests only — the pure
@@ -71,6 +78,28 @@ vi.mock("@/lib/slack", async (importOriginal) => ({
   sendLeadApprovalRequest: vi.fn(async () => {}),
   sendSmsApprovalRequest: vi.fn(async () => {}),
 }))
+// ── Vapi route dependencies (P0-007 suite below) ──
+vi.mock("@/lib/call-records", () => ({
+  persistCallRecord: vi.fn(async () => {}),
+}))
+vi.mock("@/lib/voice-provider", () => ({
+  voiceBudgetState: vi.fn(async () => ({
+    usedMinutes: 0,
+    budget: 100,
+    warn: false,
+    over: false,
+  })),
+}))
+vi.mock("@/lib/vapi-tools", () => ({
+  captureLead: vi.fn(async () => "ok"),
+  proposeBooking: vi.fn(async () => "ok"),
+  quoteService: vi.fn(async () => "ok"),
+  proposeQuote: vi.fn(async () => "ok"),
+  lookupCustomerHistory: vi.fn(async () => "ok"),
+  lookupShopPolicy: vi.fn(async () => "ok"),
+  rescheduleAppointment: vi.fn(async () => "ok"),
+  cancelAppointment: vi.fn(async () => "ok"),
+}))
 
 /**
  * Minimal chainable Supabase stub. Every chained method returns the same
@@ -113,6 +142,7 @@ const SECRETS: Record<string, string> = {
   STRIPE_WEBHOOK_SECRET: "whsec_test_secret",
   AURINKO_SIGNING_SECRET: "aurinko_test_secret",
   SLACK_SIGNING_SECRET: "slack_test_secret",
+  VAPI_WEBHOOK_SECRET: "vapi_test_secret",
 }
 
 const saved: Record<string, string | undefined> = {}
@@ -565,5 +595,307 @@ describe("Slack (v0= HMAC-SHA256 over `v0:ts:body`, 5-min window)", () => {
   })
   it("rejects a missing signature", () => {
     expect(verifySlackSignature({ rawBody: body, timestamp: String(nowSec()), signature: null })).toBe(false)
+  })
+})
+
+describe("Vapi webhook route — claim after verify + end-of-call replay suppression (P0-007, ADR-001 C3/C5)", () => {
+  const ROUTE_URL = "https://app.test/api/vapi/webhook"
+  const CALL_ID = "call_p0007_test"
+  const SHOP = {
+    id: "shop-v1",
+    name: "Test Shop",
+    vapi_server_secret_enc: null,
+    voice_addon: true,
+    voice_minutes_budget: null,
+  }
+
+  type VapiOver = Record<string, unknown>
+  const endOfCall = (over: VapiOver = {}, callOver: VapiOver = {}) => ({
+    message: {
+      type: "end-of-call-report",
+      call: {
+        id: CALL_ID,
+        assistantId: "asst_1",
+        customer: { number: "+15035550142", name: "Dana" },
+        ...callOver,
+      },
+      messages: [
+        { role: "user", message: "hi, do you do ceramic?" },
+        { role: "assistant", message: "We do — want a quote?" },
+      ],
+      durationSeconds: 95,
+      endedReason: "customer-ended-call",
+      ...over,
+    },
+  })
+
+  /** secret: undefined → correct secret; null → omit header; string → as-is. */
+  const post = (body: unknown, secret?: string | null) => {
+    const headers: Record<string, string> = { "content-type": "application/json" }
+    if (secret !== null) headers["x-vapi-secret"] = secret ?? SECRETS.VAPI_WEBHOOK_SECRET
+    return VAPI_POST(
+      new Request(ROUTE_URL, { method: "POST", headers, body: JSON.stringify(body) })
+    )
+  }
+
+  const claimed = (outcome = "claimed", attempts = 1) => ({
+    outcome,
+    id: "pe-v1",
+    attempts,
+    shouldProcess: ["claimed", "reclaimed_failed", "reclaimed_stale"].includes(outcome),
+  })
+
+  let VAPI_POST: (req: Request) => Promise<Response>
+  let routeMaxDuration: number
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  let claimMock: any
+  let completeMock: any
+  let failMock: any
+  let recordInteractionMock: any
+  let recordUsageMock: any
+  let findOrCreateMock: any
+  let persistCallRecordMock: any
+  let voiceBudgetMock: any
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const savedEnv: Record<string, string | undefined> = {}
+  beforeAll(async () => {
+    for (const k of ["VAPI_DEFAULT_SHOP_ID", "VERCEL_ENV"]) {
+      savedEnv[k] = process.env[k]
+      delete process.env[k]
+    }
+    const route = await import("@/app/api/vapi/webhook/route")
+    VAPI_POST = route.POST
+    routeMaxDuration = route.maxDuration
+    claimMock = vi.mocked((await import("@/lib/provider-events")).claimProviderEvent)
+    completeMock = vi.mocked((await import("@/lib/provider-events")).completeProviderEvent)
+    failMock = vi.mocked((await import("@/lib/provider-events")).failProviderEvent)
+    recordInteractionMock = vi.mocked((await import("@/lib/memory")).recordInteraction)
+    recordUsageMock = vi.mocked((await import("@/lib/credits")).recordUsage)
+    findOrCreateMock = vi.mocked((await import("@/lib/customers")).findOrCreateCustomer)
+    persistCallRecordMock = vi.mocked((await import("@/lib/call-records")).persistCallRecord)
+    voiceBudgetMock = vi.mocked((await import("@/lib/voice-provider")).voiceBudgetState)
+  })
+  afterAll(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fakeDb.reset()
+    fakeDb.tables.shops = { data: SHOP, error: null }
+    fakeDb.tables.interactions = { data: null, error: null }
+    claimMock.mockResolvedValue(claimed())
+    completeMock.mockResolvedValue(true)
+    failMock.mockResolvedValue(true)
+    recordInteractionMock.mockResolvedValue({ ok: true, id: "int-1", embedded: false })
+    recordUsageMock.mockResolvedValue("written")
+    findOrCreateMock.mockResolvedValue({
+      ok: true,
+      customer: { id: "cust-v1" },
+      created: false,
+    })
+    persistCallRecordMock.mockResolvedValue(undefined)
+    voiceBudgetMock.mockResolvedValue({
+      usedMinutes: 2,
+      budget: 100,
+      warn: false,
+      over: false,
+    })
+  })
+
+  it("rejects a missing x-vapi-secret BEFORE any claim — no provider_events reach, no side effects", async () => {
+    const res = await post(endOfCall(), null)
+    expect(res.status).toBe(401)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+    expect(persistCallRecordMock).not.toHaveBeenCalled()
+  })
+
+  it("a forged secret cannot poison a call id — 401 with no claim; the legitimate delivery still processes", async () => {
+    const forged = await post(endOfCall(), "not-the-secret")
+    expect(forged.status).toBe(401)
+    expect(claimMock).not.toHaveBeenCalled()
+
+    const real = await post(endOfCall())
+    expect(real.status).toBe(200)
+    expect(claimMock).toHaveBeenCalledTimes(1)
+    expect(claimMock.mock.calls[0][1]).toMatchObject({
+      provider: "vapi",
+      eventId: CALL_ID,
+      shopId: SHOP.id,
+    })
+  })
+
+  it("valid first delivery: claims before any write, ingests each turn once, meters once with vendor_ref = call id, completes", async () => {
+    const res = await post(endOfCall())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, turnsIngested: 2 })
+
+    // Ordering: claim strictly before the first transcript write + metering.
+    expect(claimMock).toHaveBeenCalledTimes(1)
+    expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
+      recordInteractionMock.mock.invocationCallOrder[0]
+    )
+    expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
+      recordUsageMock.mock.invocationCallOrder[0]
+    )
+    expect(recordInteractionMock).toHaveBeenCalledTimes(2)
+    expect(recordUsageMock).toHaveBeenCalledTimes(1)
+    const [, usageShopId, usageKind, usageOpts] = recordUsageMock.mock.calls[0]
+    expect(usageShopId).toBe(SHOP.id)
+    expect(usageKind).toBe("voice_minute")
+    expect(usageOpts).toMatchObject({ vendorRef: CALL_ID, quantity: 2, credits: 0 })
+    expect(persistCallRecordMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).toHaveBeenCalledWith(expect.anything(), "vapi", CALL_ID)
+    expect(failMock).not.toHaveBeenCalled()
+  })
+
+  it("C5 lock: the claim's staleAfterSeconds is strictly above the route maxDuration", async () => {
+    await post(endOfCall())
+    expect(claimMock).toHaveBeenCalledTimes(1)
+    const staleAfterSeconds = claimMock.mock.calls[0][1].staleAfterSeconds
+    expect(typeof routeMaxDuration).toBe("number")
+    expect(typeof staleAfterSeconds).toBe("number")
+    expect(routeMaxDuration).toBeLessThan(staleAfterSeconds)
+  })
+
+  it("duplicate after completion: 2xx with ZERO side effects — no transcript, metering, budget, or call-record writes", async () => {
+    claimMock.mockResolvedValue(claimed("duplicate_completed"))
+    const res = await post(endOfCall())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, duplicate: true })
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+    expect(voiceBudgetMock).not.toHaveBeenCalled()
+    expect(persistCallRecordMock).not.toHaveBeenCalled()
+    expect(completeMock).not.toHaveBeenCalled()
+    expect(fakeDb.calls.filter((c) => c.table !== "shops")).toHaveLength(0)
+  })
+
+  it("duplicate while the winner is still processing: loser exits cleanly with 2xx and no writes", async () => {
+    claimMock.mockResolvedValue(claimed("duplicate_processing"))
+    const res = await post(endOfCall())
+    expect(res.status).toBe(200)
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+    expect(completeMock).not.toHaveBeenCalled()
+    expect(failMock).not.toHaveBeenCalled()
+  })
+
+  it("end-of-call with no call id: 400 structured rejection — never claim or meter without a provider identifier", async () => {
+    const res = await post(endOfCall({}, { id: undefined }))
+    expect(res.status).toBe(400)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+    expect(persistCallRecordMock).not.toHaveBeenCalled()
+  })
+
+  it("claim-storage outage fails closed: 5xx, nothing processed unguarded", async () => {
+    claimMock.mockRejectedValue(new Error("pg down"))
+    const res = await post(endOfCall())
+    expect(res.status).toBe(500)
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+  })
+
+  it("a transcript insert failure fails the event (5xx) so the provider retry can resume — never a silent partial transcript", async () => {
+    recordInteractionMock.mockResolvedValue({ ok: false, error: "rls denied" })
+    const res = await post(endOfCall())
+    expect(res.status).toBe(500)
+    expect(failMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
+  })
+
+  it("a real metering write failure fails the event (5xx) — a known-lost usage row never completes as billed", async () => {
+    recordUsageMock.mockResolvedValue("failed")
+    const res = await post(endOfCall())
+    expect(res.status).toBe(500)
+    expect(failMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).not.toHaveBeenCalled()
+    // Metering failed before the budget/capture stage ran.
+    expect(persistCallRecordMock).not.toHaveBeenCalled()
+  })
+
+  it("a duplicate usage row (unique violation) is idempotent success — processing continues and completes", async () => {
+    recordUsageMock.mockResolvedValue("duplicate")
+    const res = await post(endOfCall())
+    expect(res.status).toBe(200)
+    expect(completeMock).toHaveBeenCalledTimes(1)
+    expect(failMock).not.toHaveBeenCalled()
+    expect(persistCallRecordMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("complete-mark failure after successful processing still returns success (no duplicate-inducing retry)", async () => {
+    completeMock.mockRejectedValue(new Error("pg blip"))
+    const res = await post(endOfCall())
+    expect(res.status).toBe(200)
+    expect(failMock).not.toHaveBeenCalled()
+  })
+
+  it("retry after failure resumes the transcript at the already-written turn count (no duplicate turns)", async () => {
+    claimMock.mockResolvedValue(claimed("reclaimed_failed", 2))
+    fakeDb.tables.interactions = { data: null, error: null, count: 1 } as never
+    const res = await post(endOfCall())
+    expect(res.status).toBe(200)
+    // 2 turns in the payload, 1 already durable → exactly 1 new write.
+    expect(recordInteractionMock).toHaveBeenCalledTimes(1)
+    expect(recordUsageMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("prod guard: VAPI_DEFAULT_SHOP_ID fallback is refused in production mode — fail closed, zero writes", async () => {
+    process.env.VAPI_DEFAULT_SHOP_ID = SHOP.id
+    process.env.VERCEL_ENV = "production"
+    try {
+      // No assistant match: the shops lookup finds nothing.
+      fakeDb.tables.shops = { data: null, error: null }
+      const res = await post(endOfCall({}, { assistantId: "asst_unknown" }))
+      expect(res.status).toBe(404)
+      expect(claimMock).not.toHaveBeenCalled()
+      expect(recordInteractionMock).not.toHaveBeenCalled()
+      expect(recordUsageMock).not.toHaveBeenCalled()
+      expect(persistCallRecordMock).not.toHaveBeenCalled()
+    } finally {
+      delete process.env.VAPI_DEFAULT_SHOP_ID
+      delete process.env.VERCEL_ENV
+    }
+  })
+
+  it("prod guard: the dev fallback still works outside production mode", async () => {
+    process.env.VAPI_DEFAULT_SHOP_ID = SHOP.id
+    try {
+      // No assistantId at all → straight to the dev fallback lookup.
+      const res = await post(endOfCall({}, { assistantId: undefined }))
+      expect(res.status).toBe(200)
+      expect(claimMock).toHaveBeenCalledTimes(1)
+    } finally {
+      delete process.env.VAPI_DEFAULT_SHOP_ID
+    }
+  })
+
+  it("non-end-of-call events are acknowledged without any provider_events claim (out of P0-007 scope)", async () => {
+    const toolCalls = await post({
+      message: {
+        type: "tool-calls",
+        call: { id: CALL_ID, assistantId: "asst_1" },
+        toolCallList: [
+          { id: "tc-1", function: { name: "quote_service", arguments: { service: "ceramic" } } },
+        ],
+      },
+    })
+    expect(toolCalls.status).toBe(200)
+    const statusUpdate = await post({
+      message: { type: "status-update", call: { id: CALL_ID, assistantId: "asst_1" } },
+    })
+    expect(statusUpdate.status).toBe(200)
+    expect(claimMock).not.toHaveBeenCalled()
+    expect(recordUsageMock).not.toHaveBeenCalled()
   })
 })
