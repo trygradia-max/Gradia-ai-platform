@@ -7,7 +7,7 @@ P0-007
 E00 — Stabilization
 
 ## Status
-**Draft** — becomes **ready** when P0-005 (webhook event idempotency foundation) is done. This ticket consumes the dedupe pattern/foundation P0-005 establishes; do not start it before P0-005 merges.
+**Blocked — next implementation position** (moved up 2026-08-14 at P0-006 close; P0-005 done 2026-08-13 PR #17, P0-006 done 2026-08-14 PR #19). Blocked only until the `docs/close-p0-006` planning closeout lands on `main` — the Organizer flips this to ready on merge (entry in `../program/blocked.md`). Implementation is bound by ADR-001 **C3** (claim strictly after verification, test-locked, extending `eval/webhooks.test.ts`) and **C5** (explicit route `maxDuration` with a `staleAfterSeconds` strictly above it — reclaim-while-running impossible by construction). This ticket consumes the P0-005 `provider_events` mechanism exactly as P0-006 did; it invents no second one.
 
 ## Priority
 P0 — High. Double-billing customers for voice minutes is a financial-integrity defect (D-024) and occurs under *normal* provider retry behavior, not an edge case.
