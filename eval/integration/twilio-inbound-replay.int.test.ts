@@ -33,11 +33,43 @@ const cls = vi.hoisted(() => ({
   isLead: true,
 }))
 
+/** Deterministic metering-fault injection: while active, any insert into
+ *  usage_events resolves with a transport-style error — exactly the
+ *  PostgREST "invalid response from the upstream server" failure CI hit —
+ *  while every other table stays on the real local stack. */
+const meterFault = vi.hoisted(() => ({ active: false }))
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }))
 vi.mock("@/lib/supabase/service", async () => {
   const db = await import("./_db")
-  return { createServiceClient: () => db.serviceClient() }
+  return {
+    createServiceClient: () => {
+      const real = db.serviceClient()
+      return new Proxy(real, {
+        get(target, prop, receiver) {
+          if (prop === "from") {
+            return (table: string) => {
+              if (table === "usage_events" && meterFault.active) {
+                return {
+                  insert: () =>
+                    Promise.resolve({
+                      data: null,
+                      error: {
+                        message:
+                          "An invalid response was received from the upstream server",
+                      },
+                    }),
+                }
+              }
+              return target.from(table)
+            }
+          }
+          return Reflect.get(target, prop, receiver)
+        },
+      })
+    },
+  }
 })
 vi.mock("@/lib/sms-classifier", () => ({
   classifySms: async () => {
@@ -212,6 +244,7 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     cls.calls = 0
     cls.fail = false
     cls.isLead = true
+    meterFault.active = false
   })
 
   it("first valid delivery processes exactly once end-to-end", async () => {
@@ -302,6 +335,64 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     const after = await post(form)
     expect(after.status).toBe(200)
     expect((await providerEvent(id))?.attempts).toBe(2)
+  })
+
+  it("a real metering write failure fails the event; retry lands exactly one usage row and completes", async () => {
+    const id = sid("meter-fail")
+    const form = makeForm({ MessageSid: id })
+
+    // First delivery: classification happens, but the ledger write hits a
+    // transport failure (the CI 502 shape). The event must NOT complete —
+    // and nothing downstream of metering may be staged.
+    meterFault.active = true
+    const failed = await post(form)
+    expect(failed.status).toBe(500)
+    expect(cls.calls).toBe(1)
+    let pe = await providerEvent(id)
+    expect(pe?.status).toBe("failed")
+    expect(pe?.attempts).toBe(1)
+    expect(await usageFor(id, seed.shopId)).toBe(0)
+    expect(await pendingFor(id, seed.shopId)).toBe(0) // no card staged
+    expect(await interactionsFor(id, seed.shopId)).toBe(1) // durable, pre-metering
+
+    // Legitimate provider retry with metering healthy: exactly one usage
+    // row appears, the pipeline finishes, nothing durable duplicates.
+    meterFault.active = false
+    const retried = await post(form)
+    expect(retried.status).toBe(200)
+    pe = await providerEvent(id)
+    expect(pe?.status).toBe("completed")
+    expect(pe?.attempts).toBe(2)
+    expect(await usageFor(id, seed.shopId)).toBe(1)
+    expect(await interactionsFor(id, seed.shopId)).toBe(1)
+    expect(await pendingFor(id, seed.shopId)).toBe(1)
+
+    // Late replay after the successful retry: still one of everything.
+    const after = await post(form)
+    expect(after.status).toBe(200)
+    expect(await usageFor(id, seed.shopId)).toBe(1)
+    expect(await pendingFor(id, seed.shopId)).toBe(1)
+    expect((await providerEvent(id))?.attempts).toBe(2)
+  })
+
+  it("a pre-existing usage row for the sid (unique violation) is idempotent success, not a failure", async () => {
+    const id = sid("meter-dup")
+    // Simulate the false-negative shape: the ledger row landed but the
+    // first response was lost — the row already exists when we process.
+    const { error: seedErr } = await sb.from("usage_events").insert({
+      shop_id: seed.shopId,
+      kind: "inbound_classify",
+      quantity: 1,
+      credits: 0,
+      vendor_ref: id,
+    })
+    expect(seedErr).toBeNull()
+
+    const res = await post(makeForm({ MessageSid: id }))
+    expect(res.status).toBe(200)
+    expect((await providerEvent(id))?.status).toBe("completed")
+    expect(await usageFor(id, seed.shopId)).toBe(1) // still exactly one
+    expect(await pendingFor(id, seed.shopId)).toBe(1) // pipeline continued
   })
 
   it("a fresh processing claim is not stealable — concurrent reclaim before stale threshold is refused", async () => {

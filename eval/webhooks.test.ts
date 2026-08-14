@@ -50,7 +50,7 @@ vi.mock("@/lib/knowledge", () => ({
   formatKnowledgeForPrompt: vi.fn(() => ""),
 }))
 vi.mock("@/lib/credits", () => ({
-  recordUsage: vi.fn(async () => {}),
+  recordUsage: vi.fn(async () => "written"),
 }))
 vi.mock("@/lib/pricing", () => ({
   getPricing: vi.fn(async () => ({})),
@@ -304,7 +304,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     failMock.mockResolvedValue(true)
     recordInteractionMock.mockResolvedValue({ ok: true, id: "int-1", embedded: false })
     classifyMock.mockResolvedValue({ is_lead: false })
-    recordUsageMock.mockResolvedValue(undefined)
+    recordUsageMock.mockResolvedValue("written")
     findOrCreateMock.mockResolvedValue({ ok: false, error: "no customer" })
     sendLeadMock.mockResolvedValue(undefined)
     rateLimitMock.mockResolvedValue({ allowed: true, remaining: 99, resetInSeconds: 60 })
@@ -419,6 +419,30 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(recordUsageMock).toHaveBeenCalledTimes(1)
     expect(failMock).toHaveBeenCalledTimes(1)
     expect(completeMock).not.toHaveBeenCalled()
+  })
+
+  it("a real metering write failure fails the claim BEFORE any staging — retryable 5xx, no card", async () => {
+    classifyMock.mockResolvedValue({ is_lead: true, summary: "would stage" })
+    recordUsageMock.mockResolvedValue("failed")
+    const res = await post(makeForm())
+    expect(res.status).toBe(500)
+    expect(failMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).not.toHaveBeenCalled()
+    // Nothing non-idempotent staged downstream of the lost ledger write.
+    expect(sendLeadMock).not.toHaveBeenCalled()
+    expect(
+      fakeDb.calls.filter((c) => c.table === "pending_actions")
+    ).toHaveLength(0)
+  })
+
+  it("a duplicate metering write is idempotent success — processing continues and completes", async () => {
+    classifyMock.mockResolvedValue({ is_lead: true, summary: "stages fine" })
+    recordUsageMock.mockResolvedValue("duplicate")
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(sendLeadMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).toHaveBeenCalledTimes(1)
+    expect(failMock).not.toHaveBeenCalled()
   })
 
   it("retry after failure (reclaimed_failed) reprocesses but never re-inserts the interaction", async () => {

@@ -365,17 +365,26 @@ async function handleMessage(
 
   // Meter the LLM work regardless of outcome — the cost was incurred.
   // Replay-safe: (shop_id, kind, vendor_ref) carries a DB unique, so a
-  // failure-retry re-metering the same MessageSid is a clean no-op.
+  // failure-retry re-metering the same MessageSid is a clean duplicate
+  // (idempotent success). This write is REQUIRED before any downstream
+  // staging: a real DB failure here must fail the claim so the retry can
+  // land the ledger row — completing with the row permanently missing is
+  // exactly the silent-loss D-024 forbids.
   {
     const pricing = await getPricing(supabase)
     const priced = priceUsage(pricing, "inbound_classify", 1)
-    await recordUsage(supabase, shop.id, "inbound_classify", {
+    const metered = await recordUsage(supabase, shop.id, "inbound_classify", {
       quantity: 1,
       credits: 0, // cost-visibility SKU — never spends shop credits
       wholesaleCost: priced.wholesale_cost,
       retailCost: priced.retail_cost,
       vendorRef: sms.messageSid ?? null,
     })
+    if (metered === "failed") {
+      throw new Error(
+        "[twilio sms] inbound_classify metering write failed — failing event for retry"
+      )
+    }
   }
 
   if (classifyErr) {
