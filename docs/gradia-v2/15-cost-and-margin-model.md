@@ -34,7 +34,7 @@ SMS segment 4 · Email send 1 · Outreach draft (Haiku) 1 · BI answer 7 · Whis
 - **Entitlements** — Package-2 gating in `entitlements.ts`/`autonomy.ts` (drop Package 2 → everything reverts to suggest-first).
 - **Reconciliation** — nightly Twilio vendor reconciliation cron; margin report endpoint (CRON_SECRET-gated).
 - **Warnings** — 80% usage warning + top-up offer with ROI framing; owner-set auto-top-up ceiling.
-- Known leak to close: metering is not idempotent on webhook retry (double-billing voice minutes) — **P0-007**; `recordUsage` never throws (persistent metering failure = silent free usage) — alerting via **P0-012**.
+- ~~Known leak: metering not idempotent on webhook retry (double-billing voice minutes)~~ — **closed 2026-08-14**: P0-005 ledger unique + P0-007 Vapi route wiring (PR #21); replays are proven no-ops. `recordUsage` now reports `written`/`duplicate`/`failed` and the webhook paths that need durable metering fail closed and retry (P0-006/P0-007); silent-free-usage alerting for remaining best-effort callers still lands via **P0-012**.
 
 ## 5. Trial economics (D-005)
 
@@ -51,7 +51,7 @@ SMS segment 4 · Email send 1 · Outreach draft (Haiku) 1 · BI answer 7 · Whis
 | Anthropic | Haiku workers (classify/draft/extract), Sonnet planner + agent/BI loops + verifier | ✅ credits per action type | Per-step routing: cheapest model that clears the bar (locked principle #7) |
 | OpenAI | Embeddings (`text-embedding-3-small`), Whisper STT | Whisper → credits; embeddings unmetered (cost noise) | Embedding dim baked into schema — vendor swap = migration (audit doc 09) |
 | Twilio | SMS segments, numbers, A2P fees, subaccounts | ✅ per-segment metering + reconciliation | A2P ~$2/shop fixed; status-callback bug P0-008 |
-| Vapi | Voice minutes (hosts STT/LLM/TTS) | ✅ minutes meter | ~12¢/min wholesale all-in; double-meter risk → P0-007 |
+| Vapi | Voice minutes (hosts STT/LLM/TTS) | ✅ minutes meter | ~12¢/min wholesale all-in; double-meter risk closed (P0-007, 2026-08-14) |
 | Aurinko | Email + calendar API | Email sends → credits | Per-account subscription cost — verify current rate in `vendors/transitional/aurinko.md` |
 | Stripe | Platform billing fees; Connect fees at E05 | n/a (COGS on revenue) | Connect economics get modeled in the E05 epic before build |
 | Supabase | DB/storage/auth | No (infra fixed) | In the ~$0.50/shop infra estimate; verify plan headroom at scale |

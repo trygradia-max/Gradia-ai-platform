@@ -7,7 +7,7 @@ P0-008
 E00 — Stabilization
 
 ## Status
-**ready-after-P0-002** (reconciled with the index 2026-07-27) — no technical dependencies or open decisions; enters review only after P0-002 per the global review gate. (Coordinate merge order with P0-006 if both touch the Twilio webhook area, but neither blocks the other.)
+**Blocked — next implementation position** (moved up 2026-08-14 at P0-007 close; P0-006 done 2026-08-14 PR #19, P0-007 done 2026-08-14 PR #21). Blocked only until the `docs/close-p0-007` planning closeout lands on `main` — the Organizer flips this to ready on merge (entry in `../program/blocked.md`). At slotting, fold in the P0-006-deferred status-callback findings recorded in `../program/backlog.md` Band 2 (provider_events replay hardening for this route, query-string shop/token selection, unknown-SID behavior, stale/out-of-order status updates, A2P subaccount credential/signature verification). The Vapi tool-call replay follow-up is deliberately **separate** from this ticket. (Prior state: ready-after-P0-002, reconciled 2026-07-27; that review gate is long satisfied.)
 
 ## Priority
 P0 — High. Delivery-status tracking is silently dead for exactly the shops the ISV model serves (Gradia-provisioned numbers), and the failure is invisible to owners.

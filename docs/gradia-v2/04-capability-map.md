@@ -270,10 +270,10 @@ Each capability records:
 
 ## 20. Voice receptionist
 
-- **Current audit status:** OPERATIONAL in code / CANNOT_VERIFY live (audit 03, 04-H): self-serve builder, synthesized prompt, 8 HITL tools, transcripts to shared memory, budget fail-closed. Known defects: end-of-call report not idempotent (**double-meters minutes on retry**), `VAPI_DEFAULT_SHOP_ID` footgun, A2P TrustHub SIDs unverified live, subaccount status-callback bug (SMS side).
+- **Current audit status:** OPERATIONAL in code / CANNOT_VERIFY live (audit 03, 04-H): self-serve builder, synthesized prompt, 8 HITL tools, transcripts to shared memory, budget fail-closed. Known defects (as audited): end-of-call report not idempotent (**double-meters minutes on retry**) — **closed 2026-08-14 by P0-007 (PR #21)**; `VAPI_DEFAULT_SHOP_ID` footgun — **code-side prod guard closed by P0-007** (fails closed for unmatched assistants; operational env verification stays P0-010); A2P TrustHub SIDs unverified live; subaccount status-callback bug (SMS side, P0-008). New recorded follow-up: synchronous tool-call/function-call events are not replay-deduped (backlog Band 2).
 - **Existing foundation:** `vapi.ts`/`voice-provider.ts` seam, `vapi-prompt.ts`, `call_records` idempotent upsert, per-call glass-box view, voice-sync cron.
-- **Target state:** replay-safe metering (P0-007), verified A2P + live acceptance run, then claimable per WHAT_GRADIA_DOES; later post-call quote verifier (P9).
-- **Missing work:** P0-006/007/008; founder live-acceptance run (FOUNDER_OPS_RUNBOOK); voice quote verifier.
+- **Target state:** replay-safe metering (P0-007 — **done 2026-08-14**), verified A2P + live acceptance run, then claimable per WHAT_GRADIA_DOES; later post-call quote verifier (P9).
+- **Missing work:** P0-008 (P0-006 done 2026-08-14, P0-007 done 2026-08-14); founder live-acceptance run (FOUNDER_OPS_RUNBOOK); voice quote verifier; tool-call replay dedupe follow-up.
 - **Dependencies:** P0-005 foundation; founder actions (accounts).
 - **Priority phase:** P0 (integrity), P9 (verifier).
 - **Risks:** double-billed minutes = customer-visible billing error; marketing before acceptance run violates claims discipline (D-028).

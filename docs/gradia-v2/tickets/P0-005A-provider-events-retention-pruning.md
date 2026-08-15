@@ -2,7 +2,7 @@
 
 - **Ticket ID:** P0-005A
 - **Epic:** E00 — Stabilization
-- **Status:** **ready** (filed 2026-08-13 at the P0-005 close, satisfying **ADR-001 condition C2** — this ticket must exist before P0-006 enters implementation; unscheduled — the Organizer sequences it. Pilot-scale growth gives long headroom, but pruning must land before P0-006/P0-007 receipt volume makes the table operationally significant)
+- **Status:** **ready** (filed 2026-08-13 at the P0-005 close, satisfying **ADR-001 condition C2** — this ticket must exist before P0-006 enters implementation; unscheduled — the Organizer sequences it. Pilot-scale growth gives long headroom, but pruning must land before P0-006/P0-007 receipt volume makes the table operationally significant. **Note 2026-08-14 at the P0-007 close: both consumer routes — Twilio inbound (P0-006, PR #19) and Vapi end-of-call (P0-007, PR #21) — are now live and writing receipts; this ticket remains open and the sequencing pressure is now real, not hypothetical.**)
 - **Priority:** Medium (hygiene/limits, not a live correctness gap; becomes High if P0-006/007 volume outpaces sequencing)
 
 ## Objective

@@ -156,8 +156,8 @@ Requirement verbs: **MUST** (binding), **MUST NOT** (binding prohibition). Anyth
 | FR-058 | Every voice tool write MUST stage HITL; booking/quote remain inside the ALWAYS_HITL floor. | Preserve | audit trace H |
 | FR-059 | Budget exhaustion MUST NOT cut a live call — state flips at the next call (take-a-message fallback). | Preserve | GRADIA_PRICING §paywall |
 | FR-060 | Vapi tool parameters MUST be zod-validated like every other tool boundary. | P1 | audit 07/11 |
-| FR-061 | Voice-minute metering MUST be idempotent per call (vendor_ref uniqueness). | P0 | P0-007 |
-| FR-062 | `VAPI_DEFAULT_SHOP_ID` MUST be unset in production. | P0 | P0-010, audit Q18 |
+| FR-061 | Voice-minute metering MUST be idempotent per call (vendor_ref uniqueness). | P0 | P0-007 — **met 2026-08-14** (PR #21; P0-005 unique + provider_events claim) |
+| FR-062 | `VAPI_DEFAULT_SHOP_ID` MUST be unset in production. | P0 | P0-010, audit Q18 — code-side guard shipped in P0-007 (prod fallback fails closed); operational verification remains P0-010 |
 
 ## 21. Earned autonomy
 

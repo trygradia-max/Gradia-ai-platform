@@ -37,10 +37,10 @@ External provider events must be idempotent, enforced by **database uniques on p
 |---|---|---|---|
 | Stripe webhooks | `stripe_ref` / invoice uniques | ✅ done — the reference pattern | — |
 | Voice call records | UNIQUE `(shop_id, vapi_call_id)` | ✅ done | — |
-| Inbound SMS | Twilio `MessageSid` | ❌ none — duplicate cards/spend on retry | **P0-005/P0-006** |
-| Inbound email | `aurinko_message_id` | ❌ none | **P0-005** |
-| Voice minutes metering | Vapi call id as `usage_events` vendor_ref | ❌ none — **double-billing** on retry | **P0-007** |
-| Automation fires | `(automation_id, trigger_ref)` | ⚠️ code-side check only, race-prone | P0-005 foundation; unique index rides with it |
+| Inbound SMS | Twilio `MessageSid` | ✅ done — `provider_events` claim after signature verify (2026-08-14, PR #19) | **P0-005/P0-006** (done) |
+| Inbound email | `aurinko_message_id` | ❌ none — `accountId:`-prefixed ids per ADR-001 C4 | Aurinko dedupe follow-up (backlog) |
+| Voice minutes metering | Vapi call id as `usage_events` vendor_ref | ✅ done — durable unique (P0-005) + `provider_events` claim on the end-of-call route (2026-08-14, PR #21); tool-call events still un-deduped (backlog) | **P0-005/P0-007** (done) |
+| Automation fires | `(automation_id, trigger_ref)` | ✅ done — partial unique landed with P0-005 (2026-08-13, PR #17) | **P0-005** (done) |
 
 Rule for every new integration: identify the provider's event id before writing the handler; the unique constraint ships in the same migration as the table/column it protects.
 
@@ -51,8 +51,8 @@ Vendor classifications (D-030) and per-provider outage behavior, failure fallbac
 ## 4. Financial integrity (D-024)
 
 - Ledgers (`usage_events`, `payments`, `credit_grants`, `shop_metrics`) are **append-only and immutable**; corrections are new offsetting rows, never updates/deletes.
-- Audit found `usage_events`, `payments`, `shop_metrics` RLS is FOR ALL — **owner sessions can write their own billing/revenue rows.** Target: SELECT-only for owner keys (the `credit_grants` pattern). Rides with P0-011's scoping review (migration follow-up ticket if not absorbed).
-- Financial events must be **replay-safe**: metering keyed by vendor refs (P0-007), grants idempotent (already), reconciliation cron continues nightly.
+- Audit found `usage_events`, `payments`, `shop_metrics` RLS is FOR ALL — **owner sessions could write their own billing/revenue rows.** ✅ Closed 2026-08-13: P0-005 (PR #17, migration `20260812130000`) flipped all three to SELECT-only for owner keys (the `credit_grants` pattern); the two legitimate session-client writers moved to service-role.
+- Financial events must be **replay-safe**: metering keyed by vendor refs (P0-005 unique + P0-007 route wiring — done 2026-08-14), grants idempotent (already), reconciliation cron continues nightly.
 - The cascade chain `auth.users → shops → ledgers` destroys financial/compliance history on delete. Soft-delete/archival is **P10** scope; until then, account deletion is a founder-manual operation, never self-serve.
 
 ### Transaction boundaries for money movement (added 2026-07-27)

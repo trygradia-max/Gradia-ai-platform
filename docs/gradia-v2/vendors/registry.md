@@ -266,9 +266,9 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-0
 | Data exchanged | Tool calls + end-of-call reports in (transcripts → `interactions`, minutes → metering); synthesized prompt out (identity, exact prices, knowledge, hours) |
 | Credentials used | Per-shop `x-vapi-secret` (encrypted, `timingSafeEqual`, env fallback legacy) |
 | Webhooks | `/api/vapi/webhook` — tools (all writes HITL-staged; ALWAYS_HITL floor) + end-of-call |
-| Provider event identifiers | `vapi_call_id` — UNIQUE on `call_records` (good); **absent on usage metering (P0-007)** |
-| Idempotency status | call_records idempotent; transcript rows + voice minutes **duplicate on retry** (P0-007); Vapi retry behavior itself **requires verification** |
-| Tenant-isolation considerations | Shop by `assistantId`; **`VAPI_DEFAULT_SHOP_ID` fallback misroutes unmatched assistants — must be unset in prod (P0-010)** |
+| Provider event identifiers | `vapi_call_id` — UNIQUE on `call_records`; `usage_events.vendor_ref` unique (P0-005); `provider_events` claim on `(vapi, call.id)` for end-of-call (P0-007, 2026-08-14) |
+| Idempotency status | **End-of-call fully replay-safe as of P0-007 (PR #21):** call_records, transcript rows and voice minutes all idempotent under retry; metering retryable/fail-closed. Remaining: tool-call/function-call events un-deduped (backlog follow-up); Vapi retry behavior itself **requires verification** |
+| Tenant-isolation considerations | Shop by `assistantId`; `VAPI_DEFAULT_SHOP_ID` fallback **fails closed in production as of P0-007** (unmatched assistant → 404, zero writes); operational must-be-unset check stays P0-010. Accepted ADR-001 residual: cross-tenant global call-id pre-claim griefing (denial/under-billing only; mitigation follow-up in backlog) |
 | Outage behavior | Budget 80% warn / 100% → `vapi_stale` → hourly voice-sync PATCHes take-a-message fallback |
 | Failure fallback | **Never cut a live call** — budget state flips the next call (pricing invariant) |
 | Monitoring | Glass-box `/calls/[callId]`; minutes metered; vendor-side monitoring **requires verification** |

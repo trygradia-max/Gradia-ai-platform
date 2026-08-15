@@ -27,7 +27,7 @@ REQUIRES VERIFICATION (Vapi dashboard/docs). Gradia-side ceiling: voice-minute b
 Budget at 80% → warn; at 100% → assistant flagged `vapi_stale` and the hourly voice-sync cron PATCHes a take-a-message fallback. **Never cut a live call** — budget state flips the next call (pricing doc invariant). Webhook auth failure → reject.
 
 ## Idempotency
-`call_records` upsert is idempotent on UNIQUE `(shop_id, vapi_call_id)` — the good pattern. **Gap:** the rest of the end-of-call report is not idempotent — a Vapi retry duplicates transcript interaction rows and **double-meters voice minutes** (no vendor_ref uniqueness on `usage_events`). Ticket P0-007. Actual Vapi retry behavior REQUIRES VERIFICATION (audit open question #13).
+**Closed 2026-08-14 (P0-007, PR #21):** the whole end-of-call report is now replay-safe — the route claims `provider_events` (`provider='vapi'`, `event_id=call.id`) strictly after `x-vapi-secret` authentication (ADR-001 C3); transcript ingestion is idempotent; voice minutes carry `vapi_call_id` as `usage_events.vendor_ref` under the P0-005 durable unique, with `recordUsage` failure retryable/fail-closed; route `maxDuration=60` sits strictly below the 300s stale threshold (ADR-001 C5); completed events never reopen. `call_records` upsert remains idempotent on UNIQUE `(shop_id, vapi_call_id)` (and stays best-effort — accepted residual). **Remaining gap:** synchronous tool-call/function-call events are not replay-deduped (backlog follow-up — candidate identity `toolCallId`). Actual Vapi retry behavior still REQUIRES VERIFICATION (audit open question #13), but replay is now structurally a no-op regardless.
 
 ## Cost model
 Wholesale ~12¢/min all-in (pricing doc). Retail: Package 2 includes 60 min/mo; extra $10/40-minute pack; metered in minutes on its own meter (never crosses with message credits).
@@ -39,8 +39,9 @@ Per-call glass-box records at `/calls/[callId]`; minutes metered into `usage_eve
 Voice builder includes a go-live gate + test call (audit doc 00). Live round-trips (tool-call payload shapes, retry behavior, number-import webhook clobbering) CANNOT be verified locally — audit open question #13; founder acceptance run required before marketing the voice claim (WHAT_GRADIA_DOES "not yet claimable").
 
 ## Known audit gaps
-- End-of-call double-metering on retry (P0-007).
-- `VAPI_DEFAULT_SHOP_ID` fallback routes unmatched assistants to that shop — must be unset in prod (P0-010; audit open question #18).
+- ~~End-of-call double-metering on retry~~ — **closed by P0-007** (2026-08-14, PR #21; see §Idempotency).
+- `VAPI_DEFAULT_SHOP_ID` fallback — **code-side prod guard closed by P0-007** (production fails closed for unmatched assistants); the operational must-be-unset verification stays P0-010 (audit open question #18).
+- Vapi tool-call/function-call events not replay-deduped — recorded P0-007 follow-up (backlog Band 2).
 - Vapi tool params are not zod-validated (tolerant string coercion, `vapi-tools.ts:79-91`) — gap-analysis P2 item.
 - Voice trusts prompt-only price/policy enforcement — no post-call verifier on what was *said* (E09 voice quote verifier).
 - Knowledge text spliced verbatim into the voice prompt (prompt-injection surface, E09).
