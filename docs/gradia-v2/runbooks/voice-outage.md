@@ -6,7 +6,7 @@ _Created 2026-07-25 by the Organizer. The voice receptionist is Vapi-hosted (tel
 - Owners report calls ringing out, dead air, or the assistant answering wrong/stale (stale synthesized prompt).
 - `call_records` stop appearing for shops with active numbers; Vapi dashboard shows failures.
 - Tool calls failing: Vercel logs on `/api/vapi/webhook` (per-shop `x-vapi-secret` verification failures would also present as "assistant answers but can't do anything").
-- Misroute variant: an unmatched assistant landing on the `VAPI_DEFAULT_SHOP_ID` fallback shop — **that is a tenant incident, switch to `tenant-data-leak.md`** (and confirm the var is unset in prod — audit open question #18).
+- Misroute variant: an unmatched assistant landing on the `VAPI_DEFAULT_SHOP_ID` fallback shop — **that is a tenant incident, switch to `tenant-data-leak.md`**. Since P0-007 (2026-08-14, PR #21) the production fallback **fails closed** — an unmatched assistant in prod gets HTTP 404 "Shop not configured" with zero writes, so in prod this presents as calls that "can't do anything" for a misconfigured assistant, not as misrouted data. If misrouted rows nonetheless appear in prod, the guard was bypassed — treat as its own defect. (Operational verification that the var is unset in prod remains P0-010.)
 
 ## Severity
 - Provider-wide Vapi outage: **SEV-1** — missed calls are the exact loss the product exists to prevent, and Package-2 owners pay for this capability.
@@ -25,7 +25,7 @@ _Created 2026-07-25 by the Organizer. The voice receptionist is Vapi-hosted (tel
 
 ## Recovery
 - Provider recovery: hourly voice-sync cron re-PATCHes stale assistants; force it early by invoking the cron route with `CRON_SECRET` if needed.
-- Lost end-of-call reports: transcripts/metering for those calls are gone unless Vapi can re-deliver — **REQUIRES VERIFICATION** of Vapi redelivery behavior (audit open question #13). Reconcile minutes from the Vapi dashboard; grant/meter compensation per `double-billing.md` discipline.
+- Lost end-of-call reports: transcripts/metering for those calls are gone unless Vapi can re-deliver — **REQUIRES VERIFICATION** of Vapi redelivery behavior (audit open question #13). Since P0-007, a redelivery is safe to accept at any time: the report is replay-idempotent (one transcript set, one meter row, no matter how many deliveries; a redelivery after a mid-processing failure is retried/reclaimed rather than stranded). Note: the transcript resume is count-based and assumes a retry carries the same ordered final report (accepted P0-007 residual). Reconcile minutes from the Vapi dashboard; grant/meter compensation per `double-billing.md` discipline.
 - Missed-call make-good: owner texts the callers back — `call_records`/Twilio logs give the numbers; draft outreach through the normal HITL path.
 
 ## Verification

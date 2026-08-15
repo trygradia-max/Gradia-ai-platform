@@ -1,6 +1,6 @@
 # ADR-001 — Provider-Event Idempotency Mechanism
 
-**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007. **Condition status 2026-08-14:** C1, C2 and C7 — the P0-005-close conditions — are satisfied; **C3 is satisfied for the Twilio inbound route** (P0-006 done, PR #19) and remains binding on P0-007; C4, C5 and C6 remain open on their consumers. See the Condition status updates below)
+**Status:** accepted with conditions (Organizer review 2026-08-13, under explicit founder mandate — see Approval record below; conditions C1–C7 are binding on P0-005 close and on P0-006/007. **Condition status 2026-08-14 (P0-007 close):** C1, C2 and C7 — the P0-005-close conditions — are satisfied; **C3 is satisfied for both consumer routes** (Twilio inbound, P0-006 PR #19; Vapi end-of-call, P0-007 PR #21); **C5 is satisfied** (P0-007: route `maxDuration=60` with the 300s stale threshold strictly above it); C4 (Aurinko namespacing) and C6 (`outreach_draft` time-box) remain open on their consumers. See the Condition status updates below)
 
 ## Context
 
@@ -290,6 +290,54 @@ instead of silently completing without a usage row. One accepted residual:
 a provider retry after a genuine metering-write failure may re-run the
 classifier (output not persisted) — non-blocking; optional optimization
 only if future cost/reliability data justifies it.
+
+## Condition status update (docs-close session, 2026-08-14 — P0-007 close)
+
+P0-007 merged to `main` in PR #21 (`8a4d4d1`). Condition disposition:
+
+- **C3 — SATISFIED for the Vapi end-of-call route** (and therefore for both
+  current consumers). The route claims `(provider='vapi',
+  event_id=call.id)` — for the end-of-call-report event only — strictly
+  after per-shop `x-vapi-secret` authentication and strictly before any
+  write; a forged request can never claim or poison a call id. Test-locked
+  per this condition's terms. Independent Cursor verdict APPROVE, no
+  BLOCKER/HIGH findings.
+- **C5 — SATISFIED.** The Vapi route now exports an explicit
+  `maxDuration = 60` and the `provider_events` stale threshold is `300`
+  seconds — `staleAfterSeconds` strictly above the route ceiling, so
+  reclaim-while-running is impossible by construction. (Founder acceptance
+  additionally proved post-restart durability: a replay more than 300s
+  after original completion returned `duplicate:true` and the completed
+  receipt did not reopen.) Follow-up note: revisit `maxDuration=60` only
+  if real end-of-call processing approaches the ceiling (backlog).
+- **C4 (Aurinko `accountId:` namespacing), C6 (`outreach_draft`
+  time-box) — OPEN, unchanged.** They bind the Aurinko dedupe follow-up
+  and the `outreach_draft` coverage follow-up respectively.
+
+Route-level evidence beyond the conditions (recorded in the ticket close
+record): no new migration — the P0-005 schema sufficed, exactly as this
+ADR's Consequences predicted; `voice_minute` metering is protected by the
+claim plus the durable `usage_events` unique, with `recordUsage` failure
+retryable/fail-closed on this path (the P0-006 contract); transcript
+ingestion is idempotent under replay; completed events never reopen and
+stale reclaim converges safely; the production `VAPI_DEFAULT_SHOP_ID`
+fallback now fails closed for unmatched assistants.
+
+**Accepted residuals recorded against this ADR (non-blocking):**
+
+1. **Cross-tenant global call-id griefing** — an authenticated malicious
+   tenant with knowledge of another shop's opaque Vapi `call.id` could
+   pre-claim the global `(provider, event_id)` receipt, causing
+   denial/under-billing, never cross-tenant mutation or disclosure. This is
+   an accepted residual of the deliberate global-key design (see the
+   Approval record's key-shape reasoning — adding `shop_id` to the key
+   would re-open the duplicate window on tenant-resolution failure). A
+   mitigation follow-up (duplicate-claim shop-mismatch security warning;
+   evaluate tenant-safe namespacing where the tenant is deterministically
+   resolvable, preserving this reasoning) is in `../program/backlog.md`.
+2. **Vapi synchronous tool-call/function-call events are not
+   replay-deduped** — independently confirmed outside P0-007 scope;
+   follow-up in the backlog (candidate identity: provider `toolCallId`).
 
 ## Links
 

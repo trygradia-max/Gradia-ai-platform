@@ -47,7 +47,7 @@ An owner who hits a server error sees a designed, written error screen instead o
 - No root-directory doc-clutter sweep (post-merge task per audit doc 08; blocked on the home-redesign branch merging).
 - No redesign of settings cards beyond token compliance.
 - No `tracesSampleRate` changes.
-- The code-side prod guard for `VAPI_DEFAULT_SHOP_ID` lives in **P0-007** — this ticket only verifies the env var is unset operationally.
+- The code-side prod guard for `VAPI_DEFAULT_SHOP_ID` lives in **P0-007** (shipped 2026-08-14, PR #21 — the production fallback now fails closed for unmatched assistants) — this ticket only verifies the env var is unset operationally.
 
 ## Dependencies
 None. May run in parallel with anything (low collision risk — mostly additive files and copy).

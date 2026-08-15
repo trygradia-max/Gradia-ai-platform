@@ -26,7 +26,7 @@ Package 2 entitlement; a number (Gradia-provisioned subaccount or BYO Twilio); A
 - Entitlement-gated: dropping Package 2 disables the receptionist next-call, never mid-call; number reserved 30 days (pricing doc).
 - Prices/policies come only from the shop's own data — one pricing module across voice/quotes/drafts.
 - **(P0-004)** `propose_booking` consults the conflict service and tells the caller when a slot is taken.
-- **(P0-007)** End-of-call reports deduped; voice minutes never double-metered on webhook retry.
+- **(P0-007 — live as of 2026-08-14, PR #21)** End-of-call reports deduped; voice minutes never double-metered on webhook retry.
 
 ## AI involvement
 The call itself is AI (Vapi-hosted `gpt-4o-mini`), but every write it proposes is staged HITL; money/calendar ALWAYS ask. Post-call verifier (spoken-price check) is E09.

@@ -7,7 +7,7 @@ P0-007
 E00 — Stabilization
 
 ## Status
-**Blocked — next implementation position** (moved up 2026-08-14 at P0-006 close; P0-005 done 2026-08-13 PR #17, P0-006 done 2026-08-14 PR #19). Blocked only until the `docs/close-p0-006` planning closeout lands on `main` — the Organizer flips this to ready on merge (entry in `../program/blocked.md`). Implementation is bound by ADR-001 **C3** (claim strictly after verification, test-locked, extending `eval/webhooks.test.ts`) and **C5** (explicit route `maxDuration` with a `staleAfterSeconds` strictly above it — reclaim-while-running impossible by construction). This ticket consumes the P0-005 `provider_events` mechanism exactly as P0-006 did; it invents no second one.
+**done** (2026-08-14 — merged to `main` in PR #21, commit `8a4d4d1`; independent Cursor verdict **APPROVE**, no BLOCKER or HIGH findings, no review-fix commit required; founder acceptance run **PASSED** on isolated local staging; ADR-001 C3 and C5 satisfied for the Vapi route; close record at the end of this file. Prior state: blocked until the `docs/close-p0-006` closeout landed — resolved by `def97ab` PR #20, after which implementation proceeded.)
 
 ## Priority
 P0 — High. Double-billing customers for voice minutes is a financial-integrity defect (D-024) and occurs under *normal* provider retry behavior, not an edge case.
@@ -116,3 +116,123 @@ A shop owner is never billed twice for the same call, and a call's transcript ne
 
 ## Definition of done
 Per `12-definition-of-done.md`, plus ticket-specific: all automated tests above green in CI (including the replay suite), manual acceptance steps 1–6 recorded with evidence, completion report notes whether prod duplicate rows were detected, and reviewer confirms no scope creep beyond the Vapi event surface.
+
+## Close record (docs-close session, 2026-08-14)
+
+**Merged:** PR #21 → `main` as `8a4d4d1` ("fix: harden Vapi replay and
+metering"), 2026-08-14.
+
+**Review evidence:** independent Cursor verdict **APPROVE**; **no BLOCKER or
+HIGH findings**; **no review-fix commit was required**.
+
+### Final architecture (as merged)
+
+- The end-of-call-report branch of `/api/vapi/webhook` now consumes the
+  P0-005 `provider_events` mechanism — exactly as this ticket required, no
+  second mechanism invented. Claimed identity: **`provider='vapi'`,
+  `event_id=call.id`, for the end-of-call-report event only.**
+- **Authentication occurs before claim** (ADR-001 C3, satisfied for this
+  route): the per-shop `x-vapi-secret` verification runs strictly before any
+  `provider_events` claim; a forged request can never claim or poison a
+  call id.
+- **Transcript replay is idempotent:** a redelivered end-of-call report
+  writes zero new `interactions` rows.
+- **voice_minute metering is doubly protected:** the `provider_events` claim
+  plus the durable P0-005 `usage_events` unique (`vapi_call_id` as
+  `vendor_ref`). A `recordUsage` failure on this path is
+  **retryable/fail-closed** — the provider event fails and Vapi's retry
+  reprocesses, rather than completing without a usage row (the P0-006
+  `written`/`duplicate`/`failed` contract).
+- **Completed events never reopen; stale reclaim converges safely.** Route
+  `maxDuration=60` with the `provider_events` stale threshold at `300`
+  seconds — `staleAfterSeconds` strictly above `maxDuration`, so
+  reclaim-while-running is impossible by construction (**ADR-001 C5
+  satisfied**).
+- **Production `VAPI_DEFAULT_SHOP_ID` fallback now fails closed** for
+  unmatched assistants (HTTP 404, structured refusal, zero writes). The
+  operational verification that the var is unset in the Vercel prod env
+  remains P0-010's founder checklist item, per this ticket's scope note.
+- **No new migration was required** — the spec's expected migration
+  (`usage_events` vendor_ref unique) had already landed in P0-005; this
+  reconciles the ticket's pre-P0-005 "Database impact / Migration impact"
+  sections, exactly as the WIP board's slotting note anticipated. The
+  DB-sensitive WIP slot was never occupied.
+- P0-008 (status callbacks) was not touched. Production conflict
+  enforcement remains **OFF**.
+
+### Founder acceptance — PASS (isolated local staging, 2026-08-14)
+
+Environment: isolated local staging only — local Supabase, seeded P0-007
+test shop, no production customer traffic, no Production Vercel config
+changed, production conflict enforcement OFF throughout. Evidence:
+
+1. **First delivery:** HTTP 200 `{ok:true, turnsIngested:3}`; one
+   `provider_events` receipt (`provider=vapi`, `status=completed`,
+   `attempts=1`); one three-turn final transcript; one `voice_minute` usage
+   row (`duration_seconds=150`, billed quantity 3 minutes); one
+   `call_records` row; budget under threshold.
+2. **Replay #1:** HTTP 200 `duplicate:true`; zero additional receipt,
+   transcript, usage, call-record, or financial/budget deltas; attempts
+   remained 1.
+3. **Replay #2:** same result, zero deltas.
+4. **Post-restart durability replay:** new server process, replay more than
+   300 seconds after original completion → still `duplicate:true`; the
+   completed provider receipt did not reopen; all counts unchanged —
+   durable Postgres idempotency, not in-memory dedupe.
+5. **Financial reconciliation:** exactly one logical voice call, exactly one
+   `voice_minute` ledger row (quantity=3), no duplicate `vendor_ref`,
+   billed minutes match call duration, no message-credit deduction, no
+   doubled budget effect, zero unexplained financial drift; no financial
+   records were altered or deleted to make acceptance pass.
+6. **Production fallback guard:** isolated local server with
+   `VERCEL_ENV=production` and a non-empty staging/test
+   `VAPI_DEFAULT_SHOP_ID`; unmatched assistant delivered → HTTP 404 "Shop
+   not configured"; the production fallback explicitly refused; zero
+   `provider_events`, transcript, usage, call_records, or customer rows;
+   zero writes to the fallback shop; real Production untouched.
+7. **Global reconciliation:** zero duplicate `(provider, event_id)`
+   receipts; zero duplicate metering vendor_refs; zero duplicate
+   call_records; zero duplicate transcript turns.
+8. **Security/cleanliness:** no secrets exposed; no repo files changed
+   during acceptance; clean git status; temporary test processes stopped;
+   production conflict enforcement remains OFF.
+
+### Accepted residuals (Cursor-recorded, non-blocking)
+
+1. **Cross-tenant global call-id griefing:** an authenticated malicious
+   tenant with knowledge of another shop's opaque Vapi `call.id` could
+   pre-claim the global `(provider, event_id)` receipt, causing
+   denial/under-billing — never cross-tenant mutation or disclosure. This
+   is an accepted ADR-001 residual of the global-key design, not a P0-007
+   merge blocker; mitigation follow-up recorded in `../program/backlog.md`.
+2. **Vapi tool-call/function-call replay:** end-of-call is protected, but
+   synchronous tool-call/function-call events are not replay-deduped —
+   independently confirmed outside P0-007 scope; follow-up in the backlog
+   (kept separate from P0-008).
+3. **`call_records` remains best-effort** — potential loss is non-financial
+   and accepted under the current ticket/DoD.
+4. **Count-based transcript resume** assumes a provider retry carries the
+   same ordered final report.
+5. **`maxDuration=60`** may deserve future review if real end-of-call
+   processing approaches that ceiling.
+
+### Follow-ups recorded at close (Organizer sequences)
+
+1. **Vapi tool-call/function-call replay protection** — investigate the
+   provider `toolCallId` as a stable idempotency identity;
+   captureLead/proposeBooking staging must not duplicate under provider
+   retry. Separate from P0-008.
+2. **Cross-tenant provider-event griefing mitigation** — emit a security
+   warning when a duplicate claim's stored shop differs from the
+   authenticated shop; evaluate per-provider tenant-safe namespacing where
+   the tenant is deterministically resolvable; preserve ADR-001's
+   global-key reasoning.
+3. **P0-005A** provider_events retention/pruning remains open — both
+   consumer routes (Twilio inbound, Vapi end-of-call) are now writing
+   receipts.
+4. Optional: revisit `maxDuration=60` if real production end-of-call
+   processing approaches the ceiling; revisit `call_records` durability if
+   Glass Box completeness becomes contractual; revisit the transcript
+   resume strategy if Vapi retry payload ordering semantics change.
+5. Production P0-004 conflict enforcement remains **OFF**; the P0-004
+   manual production-enable gate remains outstanding.
