@@ -75,6 +75,12 @@ import type { ShopRow } from "@/lib/types/database"
 export type TwilioCredentials = {
   accountSid: string
   authToken: string
+  /**
+   * Which credential class resolveTwilioCredentials picked. Optional so
+   * hand-built credentials (A2P route, tests) stay valid; used for
+   * structured logging on webhook verification — never log the token.
+   */
+  source?: "subaccount" | "byo" | "env"
 }
 
 type ShopCredFields = Partial<
@@ -110,17 +116,21 @@ export function resolveTwilioCredentials(
     Boolean(shop?.gradia_number_e164) &&
     shop?.twilio_phone_number === shop?.gradia_number_e164
   if (shop?.twilio_subaccount_sid && subToken && gradiaNumberActive) {
-    return { accountSid: shop.twilio_subaccount_sid, authToken: subToken }
+    return {
+      accountSid: shop.twilio_subaccount_sid,
+      authToken: subToken,
+      source: "subaccount",
+    }
   }
   const shopSid = tryDecryptSecret(shop?.twilio_account_sid_enc)
   const shopToken = tryDecryptSecret(shop?.twilio_auth_token_enc)
   if (shopSid && shopToken) {
-    return { accountSid: shopSid, authToken: shopToken }
+    return { accountSid: shopSid, authToken: shopToken, source: "byo" }
   }
   const envSid = envAccountSid()
   const envToken = envAuthToken()
   if (envSid && envToken) {
-    return { accountSid: envSid, authToken: envToken }
+    return { accountSid: envSid, authToken: envToken, source: "env" }
   }
   return null
 }

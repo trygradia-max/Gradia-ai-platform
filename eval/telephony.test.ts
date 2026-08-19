@@ -153,13 +153,14 @@ describe("credential resolution — subaccount wins for the Gradia number", () =
     expect(resolveTwilioCredentials(gradiaShop())).toEqual({
       accountSid: "ACsub",
       authToken: "sub-token",
+      source: "subaccount",
     })
   })
 
   it("falls back to BYO creds when the active number is not the Gradia number", () => {
     expect(
       resolveTwilioCredentials({ ...gradiaShop(), twilio_phone_number: "+19998887777" })
-    ).toEqual({ accountSid: "ACbyo", authToken: "byo-token" })
+    ).toEqual({ accountSid: "ACbyo", authToken: "byo-token", source: "byo" })
   })
 
   it("ignores a stored subaccount when no Gradia number was ever purchased", () => {
@@ -169,6 +170,6 @@ describe("credential resolution — subaccount wins for the Gradia number", () =
         gradia_number_e164: null,
         twilio_phone_number: "+19998887777",
       })
-    ).toEqual({ accountSid: "ACbyo", authToken: "byo-token" })
+    ).toEqual({ accountSid: "ACbyo", authToken: "byo-token", source: "byo" })
   })
 })
