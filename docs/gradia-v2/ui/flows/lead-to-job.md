@@ -2,7 +2,7 @@
 
 _Created 2026-07-25 by the Organizer. Grounded in audit traces E (lead intake), C (quote lifecycle), D (booking) and the 6-stage pipeline. This is the spine of the product._
 
-**Maturity:** PARTIAL — inbound → classify → staged lead/reply → approve → pipeline → quote → book all exist; known gaps: no conflict check on any booking path (P0-003/P0-004), quote-accept forks a duplicate lead and quotes never close (P0-009), pre-approval work nearly invisible on the board.
+**Maturity:** PARTIAL — inbound → classify → staged lead/reply → approve → pipeline → quote → book all exist; known gaps: no conflict check on any booking path (P0-003/P0-004), ~~quote-accept forks a duplicate lead and quotes never close~~ (fixed by P0-009, 2026-08-26), pre-approval work nearly invisible on the board.
 **Phase/Epic:** Live today; P0 tickets repair the seams.
 
 ## Entry point
@@ -26,7 +26,7 @@ At least one channel identity (phone/email); service interest; vehicle (optional
 ## System decisions
 - Every customer-facing outbound is HITL-staged; money + calendar ALWAYS ask (D-011/D-012/D-021).
 - **(P0-004)** Booking paths consult the conflict service: automatic paths hard-block (D-015); approval cards show a conflict warning with documented override (D-016).
-- **(P0-009)** Quote acceptance resolves the quote's existing lead (no duplicate card); quote closes to booked; expired quotes refuse acceptance.
+- **(P0-009 — done 2026-08-26, PR #25)** Quote acceptance resolves the quote's existing lead (no duplicate card); quote closes to booked; expired quotes refuse acceptance.
 - Cooldowns and opt-outs enforced at audience and send time.
 
 ## AI involvement

@@ -29,10 +29,10 @@ Format per item: context · options · Organizer recommendation · what it block
 
 ## Q-04 — Expired-quote visitor UX
 
-- **Context:** P0-009 will enforce `valid_until` server-side; what does a visitor to an expired `/q/[token]` see?
+- **Context:** P0-009 enforces `valid_until` server-side (done 2026-08-26); what does a visitor to an expired `/q/[token]` see beyond the minimal honest state?
 - **Options:** dead end; "this quote expired — ask for a fresh quote" CTA that stages a lead/notification.
 - **Recommendation:** the CTA — it converts an expiry into a lead instead of a dead end.
-- **Blocks:** final copy/behavior in P0-009 (a minimal honest expired state ships regardless).
+- **Blocks:** ~~final copy/behavior in P0-009~~ — P0-009 shipped **2026-08-26 (PR #25)** with the minimal honest expired state, exactly as planned. Q-04 remains open and now gates only the richer re-quote CTA (an expiry-to-lead conversion surface — no ticket exists for it yet; the Organizer cuts one when the decision lands).
 
 ## Q-05 — Operator quick-reply vs STOP
 

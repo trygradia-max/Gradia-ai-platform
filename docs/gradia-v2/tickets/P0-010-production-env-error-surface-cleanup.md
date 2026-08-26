@@ -7,7 +7,7 @@ P0-010
 E00 — Stabilization
 
 ## Status
-**ready-after-P0-002** (reconciled with the index 2026-07-27) — no technical dependencies, no open decisions; enters review only after P0-002 per the global review gate. Batch ticket: each item is independently small; the ticket is done when all items land.
+**Blocked — next implementation position** (moved up 2026-08-26 at the P0-009 close; P0-009 done 2026-08-26 PR #25). Blocked only until the `docs/close-p0-009` planning closeout lands on `main` — the Organizer flips this to ready on merge (entry in `../program/blocked.md`). No technical dependencies, no open decisions. Batch ticket: each item is independently small; the ticket is done when all items land. (Prior state: ready-after-P0-002, reconciled 2026-07-27; that review gate is long satisfied.)
 
 ## Priority
 P0 — Medium-high. Individually small; collectively they are the difference between "silently broken in prod" and "fails loudly with a recovery path". Includes one MEDIUM security finding (M-1).

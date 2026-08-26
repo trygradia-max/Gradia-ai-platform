@@ -7,7 +7,7 @@ P0-011
 E00 — Stabilization
 
 ## Status
-**ready-after-P0-002** (reconciled with the index 2026-07-28) — no hard dependencies or open decisions; enters review only after P0-002 per the global review gate, so the new tenant-isolation tests gate from day one. Sequencing note: mutually exclusive in-flight with P0-009 (both touch `approvals.ts` — see Dependencies). The helper **design** portion produces an ADR, which needs Organizer/founder sign-off before any migration ticket is cut.
+**ready-after-P0-002** (reconciled with the index 2026-07-28) — no hard dependencies or open decisions; enters review only after P0-002 per the global review gate, so the new tenant-isolation tests gate from day one. Sequencing note: mutually exclusive in-flight with P0-009 (both touch `approvals.ts` — see Dependencies) — **satisfied 2026-08-26: P0-009 is done (PR #25)**, so the sweep now reviews final executor code; it must include the post-P0-009 `approvals.ts` re-review item below. The helper **design** portion produces an ADR, which needs Organizer/founder sign-off before any migration ticket is cut.
 
 ## Priority
 P0 — High. Audit doc 05 calls service-role discipline "the single largest structural risk in the data layer," and C-2 is the proof-of-pattern that a missed scope becomes a cross-tenant hole.
@@ -22,7 +22,8 @@ No shop's data can be read or mutated through a machine path (webhook, cron, MCP
 - `createServiceClient()` (`src/lib/supabase/service.ts`) bypasses RLS; used in ~29–32 files: every webhook, every cron, MCP, Slack interactivity, recovery import, public quote page, several actions (audit docs 05 §RLS analysis, 06 §tenant-isolation model — the two docs count 29 and ~32; the sweep produces the authoritative list).
 - **C-2:** `claimPendingAction` (`src/lib/approvals.ts:209`) updates by `.eq("id", pendingId)` with **no shop_id filter**; Slack route (`api/slack/interactivity/route.ts:64`) passes `pendingId` straight from the button payload — cross-tenant approval execution, dormant only because `FEATURES.slackApprovals=false` (audit doc 06 C-2; mitigation locked by D-026).
 - **L-1:** `deleteService` (`actions/services.ts:209`) and `revokeMcpToken` (`actions/mcp.ts:60`) omit `.eq("shop_id")` on the RLS client (defense-in-depth inconsistency).
-- **L-2:** `executeBookAppointment` `customers.update` missing shop_id (`approvals.ts:797`) — note: if P0-009 already fixed this line, verify and mark done, don't double-fix.
+- **L-2:** `executeBookAppointment` `customers.update` missing shop_id (`approvals.ts:797`) — note: if P0-009 already fixed this line, verify and mark done, don't double-fix. (P0-009 done 2026-08-26 with tenant-scoped quote/lead/customer linkage enforced and acceptance-verified — verify this specific line at sweep, don't assume.)
+- **Post-P0-009 re-review item (recorded at the 2026-08-26 P0-009 close, Cursor-noted pre-existing finding):** `recordPayloadReconciliation` in `approvals.ts` performs its update by id **without an explicit `shop_id` predicate**. Safe under the current claimed-UUID path, but the sweep must re-review `approvals.ts` as it stands after P0-009's executor changes and either add the predicate or document why the claimed-UUID invariant suffices.
 - **M-2:** `saveCustomAgent`/`previewCustomAgentPlan` (`actions/custom-agents.ts:89,109`) accept `z.unknown()` cast to `AgentConfig` (audit doc 06 M-2; doc 09 names it the notable `any`-adjacent cast).
 - Both RPCs (`match_customer_memory`, `match_shop_knowledge`) trust the caller's `p_shop_id` (audit doc 05).
 - Helper concept: audit doc 09 §highest-cost decisions #2 — "a `forShop(shopId)`-scoped query helper (or Postgres-level session variable + RLS-for-service-role pattern) would convert discipline into mechanism."

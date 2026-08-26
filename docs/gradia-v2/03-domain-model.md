@@ -32,7 +32,7 @@ Each domain lists **current** (what the schema does today, audited) → **target
 
 **Current:** `quotes` — jsonb line items, cents totals, unique `public_token`, public accept page. Defects: expiry display-only (`quote-response.ts:82`), status never passes `accepted`, accept→book forks a duplicate lead. No deposits, no discounts.
 
-**Target:** P0-009 repairs acceptance/linkage/expiry on the current model. E05/P5 adds **deposits** via Stripe Connect (D-019): deposit requirement on quote, payment record on acceptance, immutable (D-024). Discounts modeled with deposits, not before.
+**Target:** P0-009 repairs acceptance/linkage/expiry on the current model — **done 2026-08-26** (PR #25; one additive status value `quote_status = booked`, the circular quote↔lead link used as-is, not extended). E05/P5 adds **deposits** via Stripe Connect (D-019): deposit requirement on quote, payment record on acceptance, immutable (D-024). Discounts modeled with deposits, not before.
 
 ## 5. Calendar, availability & appointments
 

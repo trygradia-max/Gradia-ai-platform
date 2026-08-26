@@ -16,7 +16,7 @@ Audit scores: security **4/10** (capped by C-1), reliability **5/10**, observabi
 | M-1 | MEDIUM | `processRawLeadNote` (`actions/ai-lead.ts:24`) unauthenticated, unmetered LLM call — cost/DoS amplifier. | **P0-010** |
 | M-2 | MEDIUM | Agent `config` accepted as `z.unknown()` cast to `AgentConfig`, feeds audience queries/prompts. | **P0-010** (real zod schema) |
 | L-1/L-2 | LOW | Missing `.eq("shop_id")` on two RLS-client mutations; one executor update unbound. | **P0-011** (sweep + helper adoption) |
-| L-3 | LOW | Public quote token: uuid-derived (not CSPRNG-guaranteed), no expiry, no rate limit on `/q/[token]`. | **P0-009** (expiry enforcement) + follow-up ticket for randomBytes/rate limit (backlog) |
+| L-3 | LOW | Public quote token: uuid-derived (not CSPRNG-guaranteed), no expiry, no rate limit on `/q/[token]`. | **P0-009 — partially closed 2026-08-26** (PR #25: `valid_until` enforced server-side; `respondToQuote` rate-limited via `rate-limit.ts`, shop-keyed, + token length-check parity). Remaining: `randomBytes` token regeneration + token-level expiry — deferred E03-era follow-up (backlog) |
 
 **Strengths to preserve (never regress):** uniform RLS on all 28 tables; all four provider webhooks signature-verified, timing-safe, fail-closed, test-locked; no text-to-SQL; no direct LLM-triggered side effects; money+calendar ALWAYS_HITL in code; AES-256-GCM for stored credentials; CSRF-protected OAuth.
 
