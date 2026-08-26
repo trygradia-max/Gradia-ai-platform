@@ -33,5 +33,5 @@ _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evid
 
 ## Explicitly not in Sprint 2
 
-- P0-008 through P0-012 — remain in `backlog.md`, ordered there; promoted as slots free. (Update 2026-08-14: **P0-008 is now the next implementation position** — blocked only on the `docs/close-p0-007` closeout merge; see `blocked.md`.)
+- P0-009 through P0-012 — remain in `backlog.md`, ordered there; promoted as slots free. (Update 2026-08-25: **P0-008 done** — merged PR #23 `1ea198f`, close record in its ticket file; **P0-009 is now the next implementation position** — blocked only on the `docs/close-p0-008` closeout merge; see `blocked.md`.)
 - Anything from P1+ (E01 onward) — D-018 sequencing and the P0-exit gate in `../10-roadmap.md` forbid it before E00 closes.

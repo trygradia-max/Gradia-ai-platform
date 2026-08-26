@@ -111,7 +111,7 @@ Requirement verbs: **MUST** (binding), **MUST NOT** (binding prohibition). Anyth
 | ID | Requirement | Phase | Source |
 |---|---|---|---|
 | FR-040 | A provider-retried inbound webhook (Twilio `MessageSid`, Aurinko `aurinko_message_id`, Vapi end-of-call) MUST NOT create a duplicate interaction, approval card, classification spend, or meter row — enforced by database uniques, not check-then-insert. | P0 | D-023, P0-005/006/007 |
-| FR-041 | Delivery status MUST record correctly for Gradia-provisioned (subaccount) numbers. | P0 | P0-008, audit trace F bug |
+| FR-041 | Delivery status MUST record correctly for Gradia-provisioned (subaccount) numbers. | P0 | P0-008 — **met 2026-08-25** (PR #23; subaccount → BYO → env-master resolution restored on the status route; audit trace F bug closed) |
 | FR-042 | All outbound SMS/email MUST flow through the single approval executor with send-policy (quiet hours, STOP, consent) evaluated at send time regardless of trigger. | Preserve | audit 07 |
 | FR-043 | An email-classifier failure MUST NOT default to "is a lead" (no outage-driven card flood); failure polarity matches SMS (skip + log). | P7 | audit trace G |
 | FR-044 | Outbound email replies MUST thread into the original conversation. | P7 | audit trace G, roadmap item 16 |

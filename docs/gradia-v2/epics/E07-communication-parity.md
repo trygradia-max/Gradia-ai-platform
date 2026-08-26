@@ -57,7 +57,7 @@ Conversations: channel-complete thread list, thread view with composer + channel
 
 ## Integrations
 
-Aurinko (threading/bounce capabilities need live verification — record findings in `vendors/transitional/aurinko.md`), Twilio (status chips ride P0-008 fix). Note (2026-07-27): **application-generated transactional email is a separate concern** from connected-mailbox conversations (this epic) and from campaign email — no single provider is assumed to own all three; see `vendors/planned-evaluations/transactional-email.md`. No scope change here.
+Aurinko (threading/bounce capabilities need live verification — record findings in `vendors/transitional/aurinko.md`), Twilio (status chips ride the P0-008 fix — **landed 2026-08-25, PR #23**: subaccount shops now receive delivery status). Note (2026-07-27): **application-generated transactional email is a separate concern** from connected-mailbox conversations (this epic) and from campaign email — no single provider is assumed to own all three; see `vendors/planned-evaluations/transactional-email.md`. No scope change here.
 
 ## Security implications
 

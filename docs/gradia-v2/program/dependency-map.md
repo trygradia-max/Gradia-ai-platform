@@ -26,7 +26,7 @@ Prose:
 - **P0-003 → P0-004**: the conflict service exists before any call site consumes it; the two share the single calendar high-risk WIP slot and are never active together.
 - **P0-005 → P0-006 and P0-007**: the dedupe foundation (unique indexes / provider_events strategy, `usage_events` vendor_ref uniqueness) lands once; the two provider tickets build on it rather than inventing per-route mechanisms. **Chain complete 2026-08-14:** P0-005 done (PR #17), P0-006 done (PR #19), P0-007 done (PR #21) — neither consumer added schema. Remaining on this branch of the graph: the Aurinko email dedupe follow-up (ADR-001 C4) and P0-005A retention/pruning.
 - **P0-011 → E01**: P0-011's `forShop()` helper *design* is an input to the E01 tenancy mechanism. P0-011 itself has no P0 dependencies beyond P0-001/002.
-- **P0-008, P0-009, P0-010, P0-012** are independent of each other and of tracks A/B — schedulable whenever slots free (P0-009's expired-quote copy consults Q-04; P0-012's destination consults Q-08 — see `blocked.md` for what may proceed regardless).
+- **P0-008, P0-009, P0-010, P0-012** are independent of each other and of tracks A/B — schedulable whenever slots free (P0-009's expired-quote copy consults Q-04; P0-012's destination consults Q-08 — see `blocked.md` for what may proceed regardless). **P0-008 done 2026-08-25** (PR #23 — no dependency edges changed; it consumed nothing and nothing waits on it except the E07 delivery-chip UI, which now has live data).
 - **P0-009 → P0-011 (soft ordering, added 2026-07-27):** both touch `approvals.ts`; P0-009's quote-linkage fix should merge before P0-011's scoping sweep re-reviews that file, so the sweep reviews final code, not code about to change.
 
 ## Decision dependencies (from `decision-queue.md`)

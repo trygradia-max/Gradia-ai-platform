@@ -50,7 +50,7 @@ SMS segment 4 · Email send 1 · Outreach draft (Haiku) 1 · BI answer 7 · Whis
 |---|---|---|---|
 | Anthropic | Haiku workers (classify/draft/extract), Sonnet planner + agent/BI loops + verifier | ✅ credits per action type | Per-step routing: cheapest model that clears the bar (locked principle #7) |
 | OpenAI | Embeddings (`text-embedding-3-small`), Whisper STT | Whisper → credits; embeddings unmetered (cost noise) | Embedding dim baked into schema — vendor swap = migration (audit doc 09) |
-| Twilio | SMS segments, numbers, A2P fees, subaccounts | ✅ per-segment metering + reconciliation | A2P ~$2/shop fixed; status-callback bug P0-008 |
+| Twilio | SMS segments, numbers, A2P fees, subaccounts | ✅ per-segment metering + reconciliation | A2P ~$2/shop fixed; status-callback bug closed (P0-008, 2026-08-25) |
 | Vapi | Voice minutes (hosts STT/LLM/TTS) | ✅ minutes meter | ~12¢/min wholesale all-in; double-meter risk closed (P0-007, 2026-08-14) |
 | Aurinko | Email + calendar API | Email sends → credits | Per-account subscription cost — verify current rate in `vendors/transitional/aurinko.md` |
 | Stripe | Platform billing fees; Connect fees at E05 | n/a (COGS on revenue) | Connect economics get modeled in the E05 epic before build |

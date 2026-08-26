@@ -207,7 +207,7 @@ Each capability records:
 
 - **Current audit status:** SMS in/out OPERATIONAL (one send path, policy at boundary) but **no inbound idempotency** and **delivery status BROKEN for Gradia-provisioned numbers** (status route resolves wrong creds). Email OPERATIONAL-with-pilot-caveats: no outbound threading, classifier failure polarity inverted, no idempotency. Unified inbox PARTIAL: voice+SMS only, **no reply composer**. Operator quick-reply skips send-policy (audit 03, 04-F/G).
 - **Existing foundation:** `interactions` shared memory, signature-verified webhooks (all four), consent ledger + STOP/START, A2P pipeline, templates via automation overrides.
-- **Target state:** P0: idempotent inbound (P0-005/006), status-callback fix (P0-008). P7: email in Conversations, in-thread reply composer, outbound threading, delivery tracking, template library; operator-send policy decision (Q-05).
+- **Target state:** P0: idempotent inbound (P0-005/006 — done), status-callback fix (P0-008 — **done 2026-08-25, PR #23**). P7: email in Conversations, in-thread reply composer, outbound threading, delivery tracking, template library; operator-send policy decision (Q-05).
 - **Missing work:** as above + email consent/quiet-hours model.
 - **Dependencies:** P0-005 foundation precedes P0-006/007; Q-05 (operator STOP behavior).
 - **Priority phase:** P0 (integrity), P7 (parity).
@@ -270,10 +270,10 @@ Each capability records:
 
 ## 20. Voice receptionist
 
-- **Current audit status:** OPERATIONAL in code / CANNOT_VERIFY live (audit 03, 04-H): self-serve builder, synthesized prompt, 8 HITL tools, transcripts to shared memory, budget fail-closed. Known defects (as audited): end-of-call report not idempotent (**double-meters minutes on retry**) — **closed 2026-08-14 by P0-007 (PR #21)**; `VAPI_DEFAULT_SHOP_ID` footgun — **code-side prod guard closed by P0-007** (fails closed for unmatched assistants; operational env verification stays P0-010); A2P TrustHub SIDs unverified live; subaccount status-callback bug (SMS side, P0-008). New recorded follow-up: synchronous tool-call/function-call events are not replay-deduped (backlog Band 2).
+- **Current audit status:** OPERATIONAL in code / CANNOT_VERIFY live (audit 03, 04-H): self-serve builder, synthesized prompt, 8 HITL tools, transcripts to shared memory, budget fail-closed. Known defects (as audited): end-of-call report not idempotent (**double-meters minutes on retry**) — **closed 2026-08-14 by P0-007 (PR #21)**; `VAPI_DEFAULT_SHOP_ID` footgun — **code-side prod guard closed by P0-007** (fails closed for unmatched assistants; operational env verification stays P0-010); A2P TrustHub SIDs unverified live; subaccount status-callback bug (SMS side) — **closed 2026-08-25 by P0-008 (PR #23)**. New recorded follow-up: synchronous tool-call/function-call events are not replay-deduped (backlog Band 2).
 - **Existing foundation:** `vapi.ts`/`voice-provider.ts` seam, `vapi-prompt.ts`, `call_records` idempotent upsert, per-call glass-box view, voice-sync cron.
 - **Target state:** replay-safe metering (P0-007 — **done 2026-08-14**), verified A2P + live acceptance run, then claimable per WHAT_GRADIA_DOES; later post-call quote verifier (P9).
-- **Missing work:** P0-008 (P0-006 done 2026-08-14, P0-007 done 2026-08-14); founder live-acceptance run (FOUNDER_OPS_RUNBOOK); voice quote verifier; tool-call replay dedupe follow-up.
+- **Missing work:** founder live-acceptance run (FOUNDER_OPS_RUNBOOK); voice quote verifier; tool-call replay dedupe follow-up. (P0-006 done 2026-08-14, P0-007 done 2026-08-14, P0-008 done 2026-08-25.)
 - **Dependencies:** P0-005 foundation; founder actions (accounts).
 - **Priority phase:** P0 (integrity), P9 (verifier).
 - **Risks:** double-billed minutes = customer-visible billing error; marketing before acceptance run violates claims discipline (D-028).

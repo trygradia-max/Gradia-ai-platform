@@ -23,7 +23,7 @@ Carrier/API throughput limits REQUIRES VERIFICATION (Twilio console). Gradia-sid
 Signature failure → reject (fail closed). Send failures surface through the one executor (approval rolls back to pending). Inbound webhook always returns empty TwiML — no auto-reply path exists.
 
 ## Idempotency
-**Gap:** no dedupe on `MessageSid` — a Twilio retry duplicates interactions, Claude calls, and approval cards (P0-006, on the P0-005 foundation). Status callbacks update metadata (low harm on replay) but currently fail credential resolution for subaccount shops (P0-008).
+Inbound `MessageSid` deduped via `provider_events` claim after signature verification (**P0-006, done 2026-08-14 PR #19** — retries no longer duplicate interactions, Claude calls, or approval cards). Status callbacks update metadata last-write-wins — naturally idempotent on replay (test-asserted), and as of **P0-008 (done 2026-08-25 PR #23)** they verify against the correct credential class for subaccount shops.
 
 ## Cost model
 Wholesale SMS cost per segment carried on every `usage_events` row (wholesale vs retail; ~3.3× markup per pricing doc). A2P fixed cost ~$2/shop/month. Number cost folded into Package 2. Exact Twilio tariffs REQUIRES VERIFICATION (Twilio console / pricing doc worksheets).
@@ -35,8 +35,8 @@ Nightly Twilio reconciliation cron compares vendor usage to the ledger; drift al
 Webhook suite covers forgery/tamper/replay deterministically. Live SMS/A2P behavior CANNOT be verified locally (audit doc 03 CANNOT_VERIFY*). Twilio test credentials/magic numbers REQUIRES VERIFICATION (docs/twilio-go-live.md).
 
 ## Known audit gaps
-- **Status-callback bug:** `api/twilio/sms/status/route.ts:75-83` resolves only BYO credential columns — delivery status never records for Gradia-provisioned (subaccount) shops (P0-008).
-- **No inbound idempotency** on `MessageSid` (P0-006).
+- ~~**Status-callback bug:** `api/twilio/sms/status/route.ts` resolves only BYO credential columns — delivery status never records for Gradia-provisioned (subaccount) shops~~ — **closed 2026-08-25 by P0-008 (PR #23)**: full-field credential resolution (subaccount → BYO → env master), unknown `?shop=` rejects with no fallback, tenant-scoped writes, retryable 500s on DB errors. Residuals M1/L1/L2/L3/L4 in the ticket close record (M1 subaccount-decryption observability + L4 A2P DB-error retryability are backlog follow-ups).
+- ~~**No inbound idempotency** on `MessageSid`~~ — **closed 2026-08-14 by P0-006 (PR #19)**.
 - **A2P TrustHub policy SIDs self-declared unverified** (`twilio-a2p.ts:11-15`) — first real registration is the test (founder action, audit open question #11).
 - Operator quick-reply (`sendOperatorSms`) skips send-policy (TCPA-adjacent; decision queue).
 - A2P business jsonb holds EIN in plaintext (encryption warranted — E00/E10 follow-up).
