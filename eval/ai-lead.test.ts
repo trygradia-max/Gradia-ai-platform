@@ -29,8 +29,10 @@ vi.mock("@/lib/credits", () => ({
 }))
 vi.mock("@/lib/pricing", () => ({
   getPricing: vi.fn(async () => ({})),
+  // Trap: inbound_classify retail is 0, but priceUsage still returns
+  // credits=1 (Math.max(1, ceil(0))). The action must not pass that through.
   priceUsage: vi.fn(() => ({
-    credits: 0,
+    credits: 1,
     wholesale_cost: 0.2,
     retail_cost: 0,
   })),
@@ -162,7 +164,7 @@ describe("processRawLeadNote — auth gate (M-1)", () => {
       expect.anything(),
       "shop-1",
       "inbound_classify",
-      expect.objectContaining({ retailCost: 0 })
+      expect.objectContaining({ credits: 0, retailCost: 0, wholesaleCost: 0.2 })
     )
   })
 

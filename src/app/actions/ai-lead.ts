@@ -91,15 +91,18 @@ export async function processRawLeadNote(
 }
 
 /** Cost visibility on the locked menu's classify SKU (retail 0 by design —
- *  wholesale lands in the ledger/margin report). A dedicated AI-Lead SKU or
- *  repricing is a founder decision, not this ticket's. */
+ *  wholesale lands in the ledger/margin report). `priceUsage` rounds
+ *  credits UP to 1 even when retail is 0 (`Math.max(1, ceil(retail))`),
+ *  so we pass credits: 0 explicitly — same contract as Twilio/Aurinko
+ *  inbound classify. A dedicated AI-Lead SKU or repricing is a founder
+ *  decision, not this ticket's. */
 async function meterAiLeadExtraction(
   supabase: Awaited<ReturnType<typeof createClient>>,
   shopId: string
 ): Promise<void> {
   const priced = priceUsage(await getPricing(supabase), "inbound_classify", 1)
   await recordUsage(supabase, shopId, "inbound_classify", {
-    credits: priced.credits,
+    credits: 0, // cost-visibility SKU — never spends shop credits
     wholesaleCost: priced.wholesale_cost,
     retailCost: priced.retail_cost,
   })
