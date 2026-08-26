@@ -388,6 +388,9 @@ export type QuoteStatus =
   | "accepted"
   | "declined"
   | "expired"
+  /** P0-009: set by the booking executor after the appointment durably
+   *  persisted — never on intent (staged/approved is not booked). */
+  | "booked"
 
 export type QuoteLineItem = {
   service_id: string | null

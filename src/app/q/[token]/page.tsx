@@ -3,7 +3,9 @@ import { notFound } from "next/navigation"
 
 import { loadPublicQuote } from "@/app/actions/quote-response"
 import { QuoteResponsePanel } from "@/components/gradia/quote-response-panel"
+import { isQuoteExpired } from "@/lib/quotes"
 import { formatPriceUsd } from "@/lib/service-pricing"
+import { STRINGS } from "@/lib/strings"
 import { describeVehicle } from "@/lib/vehicles"
 
 export const dynamic = "force-dynamic"
@@ -34,9 +36,9 @@ export default async function PublicQuotePage({
     bookingMode === "calendar_link"
       ? shop.voice_config?.calendar_link?.trim() || null
       : null
-  const expired = Boolean(
-    quote.valid_until && new Date(quote.valid_until) < new Date()
-  )
+  // P0-009: the SAME rule respondToQuote enforces server-side — display and
+  // enforcement can't disagree ("Good through" means through that day).
+  const expired = isQuoteExpired(quote.valid_until)
 
   return (
     <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:py-16">
@@ -91,8 +93,8 @@ export default async function PublicQuotePage({
           {quote.valid_until ? (
             <p className="mt-3 text-xs text-muted-foreground">
               {expired
-                ? `This quote expired on ${quote.valid_until}. Reach out and we'll refresh it.`
-                : `Good through ${quote.valid_until}.`}
+                ? STRINGS.quotePublic.expiredNotice(quote.valid_until)
+                : STRINGS.quotePublic.validThrough(quote.valid_until)}
             </p>
           ) : null}
         </section>

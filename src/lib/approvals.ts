@@ -96,6 +96,13 @@ export type BookingProposal = {
   timezone: string | null
   email: string | null
   pin_notes: string | null
+  /** P0-009: set when the booking was staged from a quote acceptance. The
+   *  executor RE-VALIDATES both against claimed.shop_id (never trusted as
+   *  authorization) and reuses the quote's existing lead instead of creating
+   *  a duplicate. Absent on voice-originated bookings and old in-flight
+   *  payloads — those keep the create-lead behavior unchanged. */
+  quote_id?: string | null
+  lead_id?: string | null
 }
 
 export type SmsProposal = {
@@ -989,6 +996,165 @@ async function executeCancelAppointment(
   }
 }
 
+// ---------------------------------------------------------------------------
+// P0-009 — quote-backed booking: reuse the quote's existing lead, advance the
+// quote to `booked` only after the appointment durably persisted.
+// ---------------------------------------------------------------------------
+
+type QuoteLeadRefs = {
+  quoteId: string | null
+  leadId: string | null
+  /** The payload carried refs at all (voice bookings don't). */
+  hadRefs: boolean
+  fallbackReason: "quote_not_found" | "lead_not_found" | null
+}
+
+/**
+ * Resolve the payload's quote/lead references SERVER-SIDE, scoped to
+ * claimed.shop_id. Payload ids are hints, never authorization: a forged or
+ * foreign-shop id simply fails to resolve and the executor falls back to its
+ * historical create-lead behavior — no cross-tenant row is ever read into the
+ * result. When the quote resolves, ITS lead link is the trusted anchor and
+ * wins over the payload's lead_id.
+ */
+async function resolveQuoteLeadRefs(
+  supabase: SupabaseClient,
+  shopId: string,
+  proposal: BookingProposal
+): Promise<QuoteLeadRefs> {
+  const rawQuoteId =
+    typeof proposal.quote_id === "string" && proposal.quote_id ? proposal.quote_id : null
+  const rawLeadId =
+    typeof proposal.lead_id === "string" && proposal.lead_id ? proposal.lead_id : null
+  if (!rawQuoteId && !rawLeadId) {
+    return { quoteId: null, leadId: null, hadRefs: false, fallbackReason: null }
+  }
+
+  let quoteId: string | null = null
+  let candidateLeadId = rawLeadId
+  let fallbackReason: QuoteLeadRefs["fallbackReason"] = null
+  if (rawQuoteId) {
+    const { data } = await supabase
+      .from("quotes")
+      .select("id, lead_id")
+      .eq("id", rawQuoteId)
+      .eq("shop_id", shopId)
+      .maybeSingle()
+    const quote = data as { id: string; lead_id: string | null } | null
+    if (quote) {
+      quoteId = quote.id
+      if (quote.lead_id) candidateLeadId = quote.lead_id
+    } else {
+      fallbackReason = "quote_not_found"
+    }
+  }
+
+  let leadId: string | null = null
+  if (candidateLeadId) {
+    const { data } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("id", candidateLeadId)
+      .eq("shop_id", shopId)
+      .maybeSingle()
+    leadId = (data as { id: string } | null)?.id ?? null
+    if (!leadId) fallbackReason = "lead_not_found"
+  } else if (!fallbackReason) {
+    fallbackReason = "lead_not_found"
+  }
+
+  return { quoteId, leadId, hadRefs: true, fallbackReason }
+}
+
+/**
+ * Idempotent quote/lead bookkeeping for a DURABLY persisted quote-backed
+ * booking. Runs on the success path AND on both replay fast-paths, so a
+ * crash between the appointment write and these writes self-heals on the
+ * next execution: the stage move no-ops when the lead is already `booked`,
+ * and the guarded quote update matches zero rows once `booked` landed.
+ * Never called for payloads without refs (voice bookings unchanged).
+ * Returns the resolved lead id, or null when the caller must fall back to
+ * the historical create-lead path.
+ */
+async function applyQuoteBookingBookkeeping(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  proposal: BookingProposal,
+  appointmentId: string,
+  opts: { vehicleId?: string | null } = {}
+): Promise<string | null> {
+  const refs = await resolveQuoteLeadRefs(supabase, claimed.shop_id, proposal)
+  if (!refs.hadRefs) return null
+
+  if (refs.leadId) {
+    console.warn(
+      `[approvals] quote booking resolved existing lead — action ${claimed.id} shop ${claimed.shop_id} quote ${refs.quoteId ?? "(none)"} lead ${refs.leadId} appointment ${appointmentId}`
+    )
+    await supabase
+      .from("appointments")
+      .update({ lead_id: refs.leadId })
+      .eq("id", appointmentId)
+      .eq("shop_id", claimed.shop_id)
+    if (opts.vehicleId) {
+      // Best-effort — only reachable when the C1 migration is applied.
+      await supabase
+        .from("leads")
+        .update({ vehicle_id: opts.vehicleId })
+        .eq("id", refs.leadId)
+        .eq("shop_id", claimed.shop_id)
+    }
+    // Auto-move (C2, code): idempotent — no duplicate stage-history entries.
+    await moveLeadToStage(supabase, claimed.shop_id, refs.leadId, "booked", {
+      by: "system",
+    })
+  } else {
+    console.warn(
+      `[approvals] quote booking falling back to create-lead (${refs.fallbackReason}) — action ${claimed.id} shop ${claimed.shop_id} quote ${refs.quoteId ?? proposal.quote_id ?? "(none)"}`
+    )
+  }
+
+  if (refs.quoteId) {
+    // Best-effort job link — appointments.quote_id exists post-C1-migration.
+    await supabase
+      .from("appointments")
+      .update({ quote_id: refs.quoteId })
+      .eq("id", appointmentId)
+      .eq("shop_id", claimed.shop_id)
+
+    // Quote status truth (P0-009): `booked` records DURABLE booking success
+    // only — this runs strictly after the serialized appointment write
+    // returned a persisted row. Guarded so declined/expired are never
+    // overwritten and a replay matches zero rows.
+    const { data: advanced, error: quoteErr } = await supabase
+      .from("quotes")
+      .update({ status: "booked", updated_at: new Date().toISOString() })
+      .eq("id", refs.quoteId)
+      .eq("shop_id", claimed.shop_id)
+      .in("status", ["accepted", "viewed", "sent"])
+      .select("id")
+    if (quoteErr) {
+      console.error(
+        `[approvals] quote booked-status update failed — action ${claimed.id} quote ${refs.quoteId}; appointment ${appointmentId} stands, quote state needs reconciliation: ${quoteErr.message}`
+      )
+      await recordPayloadReconciliation(supabase, claimed, {
+        reconciliation_quote: {
+          kind: "quote_status_stale",
+          quote_id: refs.quoteId,
+          appointment_id: appointmentId,
+          error: quoteErr.message,
+          at: new Date().toISOString(),
+        },
+      })
+    } else if ((advanced as { id: string }[] | null)?.length) {
+      console.warn(
+        `[approvals] quote advanced to booked — action ${claimed.id} shop ${claimed.shop_id} quote ${refs.quoteId} appointment ${appointmentId}`
+      )
+    }
+  }
+
+  return refs.leadId
+}
+
 async function executeBookAppointment(
   supabase: SupabaseClient,
   claimed: ClaimedAction,
@@ -1021,6 +1187,10 @@ async function executeBookAppointment(
       console.warn(
         `[approvals] booking replay for action ${claimed.id} — appointment ${priorId} already exists; returning executed idempotently`
       )
+      // P0-009: idempotent repair — a crash between the appointment write
+      // and the quote/lead bookkeeping must not leave them stale forever.
+      // No-op for payloads without quote refs (voice bookings).
+      await applyQuoteBookingBookkeeping(supabase, claimed, proposal, priorId)
       return {
         ok: true,
         status: "executed",
@@ -1144,6 +1314,8 @@ async function executeBookAppointment(
     console.warn(
       `[approvals] booking replay for action ${claimed.id} — appointment ${appointmentId} already exists; returning executed idempotently`
     )
+    // P0-009: same idempotent quote/lead repair as the fast-path above.
+    await applyQuoteBookingBookkeeping(supabase, claimed, proposal, appointmentId)
     return {
       ok: true,
       status: "executed",
@@ -1167,55 +1339,67 @@ async function executeBookAppointment(
 
   // Lead + CRM bookkeeping. The appointment row is the booking truth — a
   // lead failure below is explicit reconciliation state, never a reason to
-  // report the booking failed.
-  const { data: lead, error: leadErr } = await supabase
-    .from("leads")
-    .insert({
-      shop_id: claimed.shop_id,
-      customer_id: customerResult.customer.id,
-      customer_name: proposal.customer_name,
-      phone: proposal.phone,
-      car_info: proposal.car_info,
-      vehicle_make: vehicle.make,
-      vehicle_model: vehicle.model,
-      vehicle_year: vehicle.year,
-      vehicle_color: vehicle.color,
-      pin_notes: proposal.pin_notes,
-      status: "booked",
-    })
-    .select("id")
-    .single()
-  const leadId = (lead as { id: string } | null)?.id ?? null
+  // report the booking failed. Quote-backed bookings (P0-009) resolve the
+  // quote's EXISTING lead server-side; the create path below runs only when
+  // no reference resolves (voice bookings, old payloads, deleted leads).
+  let leadId = await applyQuoteBookingBookkeeping(
+    supabase,
+    claimed,
+    proposal,
+    appointmentId,
+    { vehicleId }
+  )
+  if (!leadId) {
+    const { data: lead, error: leadErr } = await supabase
+      .from("leads")
+      .insert({
+        shop_id: claimed.shop_id,
+        customer_id: customerResult.customer.id,
+        customer_name: proposal.customer_name,
+        phone: proposal.phone,
+        car_info: proposal.car_info,
+        vehicle_make: vehicle.make,
+        vehicle_model: vehicle.model,
+        vehicle_year: vehicle.year,
+        vehicle_color: vehicle.color,
+        pin_notes: proposal.pin_notes,
+        status: "booked",
+      })
+      .select("id")
+      .single()
+    leadId = (lead as { id: string } | null)?.id ?? null
 
-  if (leadErr || !leadId) {
-    console.error(
-      `[approvals] lead insert failed for action ${claimed.id} — appointment ${appointmentId} IS booked; lead bookkeeping needs reconciliation: ${leadErr?.message ?? "no row returned"}`
-    )
-    await recordPayloadReconciliation(supabase, claimed, {
-      reconciliation: {
-        kind: "lead_missing",
-        appointment_id: appointmentId,
-        error: leadErr?.message ?? "no row returned",
-        at: new Date().toISOString(),
-      },
-    })
-  } else {
-    await supabase
-      .from("appointments")
-      .update({ lead_id: leadId })
-      .eq("id", appointmentId)
-      .eq("shop_id", claimed.shop_id)
-    if (vehicleId) {
-      // Best-effort — only reachable when the C1 migration is applied.
+    if (leadErr || !leadId) {
+      console.error(
+        `[approvals] lead insert failed for action ${claimed.id} — appointment ${appointmentId} IS booked; lead bookkeeping needs reconciliation: ${leadErr?.message ?? "no row returned"}`
+      )
+      await recordPayloadReconciliation(supabase, claimed, {
+        reconciliation: {
+          kind: "lead_missing",
+          appointment_id: appointmentId,
+          error: leadErr?.message ?? "no row returned",
+          at: new Date().toISOString(),
+        },
+      })
+    } else {
       await supabase
-        .from("leads")
-        .update({ vehicle_id: vehicleId })
-        .eq("id", leadId)
+        .from("appointments")
+        .update({ lead_id: leadId })
+        .eq("id", appointmentId)
+        .eq("shop_id", claimed.shop_id)
+      if (vehicleId) {
+        // Best-effort — only reachable when the C1 migration is applied.
+        await supabase
+          .from("leads")
+          .update({ vehicle_id: vehicleId })
+          .eq("id", leadId)
+          .eq("shop_id", claimed.shop_id)
+      }
+      // Auto-move (C2, code): booking approved → booked card + lifecycle flip.
+      await moveLeadToStage(supabase, claimed.shop_id, leadId, "booked", {
+        by: "system",
+      })
     }
-    // Auto-move (C2, code): booking approved → booked card + lifecycle flip.
-    await moveLeadToStage(supabase, claimed.shop_id, leadId, "booked", {
-      by: "system",
-    })
   }
   {
     const { error: lifecycleErr } = await supabase
@@ -1234,6 +1418,7 @@ async function executeBookAppointment(
     .from("customers")
     .update({ last_visit_at: start.toISOString() })
     .eq("id", customerResult.customer.id)
+    .eq("shop_id", claimed.shop_id)
     .or(`last_visit_at.is.null,last_visit_at.lt.${start.toISOString()}`)
 
   if (vehicleId) {

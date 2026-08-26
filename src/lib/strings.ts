@@ -208,6 +208,21 @@ export const STRINGS = {
     sendFailedPattern: (to: string) =>
       `The follow-up text to ${to} didn't send. We'll retry twice over the next 10 minutes.`,
   },
+
+  /** Public quote page (/q/[token]) — P0-009. The expired state is the
+   *  MINIMAL honest one; a richer re-quote CTA awaits decision Q-04. */
+  quotePublic: {
+    validThrough: (date: string) => `Good through ${date}.`,
+    expiredNotice: (date: string) =>
+      `This quote expired on ${date}. Reach out and we'll price it fresh.`,
+    /** Server refusal when a response arrives past valid_until (covers the
+     *  page-open-before-expiry, submit-after case). */
+    expiredRefusal: "This quote has expired — reach out and we'll price it fresh.",
+    invalidLink: "This quote link isn't valid.",
+    alreadyDecided: "This quote can't be responded to anymore.",
+    rateLimited: "Too many tries — wait a minute and try again.",
+    saveFailed: "We couldn't save your response. Try again.",
+  },
 } as const
 
 export type Strings = typeof STRINGS
