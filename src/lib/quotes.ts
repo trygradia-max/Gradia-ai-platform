@@ -113,3 +113,23 @@ export function quoteEmailBody(input: {
 export function quotePath(publicToken: string): string {
   return `/q/${publicToken}`
 }
+
+/**
+ * P0-009 — the one expiry rule, shared by the public page (display) and
+ * respondToQuote (server enforcement) so they can never disagree.
+ * `valid_until` is a DATE column ("Good through {date}"): the quote stays
+ * acceptable through the WHOLE of that day, UTC; it expires at the first
+ * instant of the next day. Null (and unreadable values) never expire —
+ * non-expiring quotes must not be locked out.
+ */
+export function isQuoteExpired(
+  validUntil: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!validUntil) return false
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(validUntil)
+    ? Date.parse(`${validUntil}T23:59:59.999Z`)
+    : Date.parse(validUntil)
+  if (Number.isNaN(end)) return false
+  return now.getTime() > end
+}

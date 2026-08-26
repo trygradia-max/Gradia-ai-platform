@@ -21,6 +21,7 @@ const GROUPS: { status: QuoteStatus; title: string; blurb: string }[] = [
   { status: "sent", title: "Sent", blurb: "Waiting on the customer." },
   { status: "viewed", title: "Opened", blurb: "They've looked — a nudge works here." },
   { status: "accepted", title: "Accepted", blurb: "Won — get them scheduled." },
+  { status: "booked", title: "Booked", blurb: "Accepted and on the calendar." },
   { status: "declined", title: "Declined", blurb: "Passed this time." },
   { status: "expired", title: "Expired", blurb: "Past their validity date." },
 ]

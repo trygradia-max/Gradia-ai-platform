@@ -35,6 +35,19 @@ vi.mock("@/lib/pipeline", () => ({
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }))
 vi.mock("@/lib/supabase/service", () => ({ createServiceClient: vi.fn() }))
 
+// P0-009: respondToQuote now consults the per-shop rate limiter first.
+vi.mock("@/lib/rate-limit", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/rate-limit")>()
+  return {
+    ...original,
+    checkRateLimit: vi.fn(async () => ({
+      allowed: true,
+      remaining: 9,
+      resetInSeconds: 60,
+    })),
+  }
+})
+
 vi.mock("@/lib/availability", async (importOriginal) => {
   const original = await importOriginal<typeof availability>()
   return {
@@ -392,7 +405,23 @@ describe("quote accept — advisory snapshot rides the staged card", () => {
           Promise.resolve(resolve({ data: null, error: null }))
         return {
           ...chain,
-          update: () => chain,
+          // P0-009: the accept path claims the status transition atomically
+          // (update … in(sent,viewed) … select → rows). Return the claimed
+          // row for quotes so the transition "wins" in this mock.
+          update: () => {
+            const uc: Record<string, unknown> = {}
+            for (const m of ["eq", "in", "select"]) {
+              uc[m] = () => uc
+            }
+            uc.then = (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(
+                resolve({
+                  data: table === "quotes" ? [{ id: "quote-1" }] : null,
+                  error: null,
+                })
+              )
+            return uc
+          },
           insert: (row: Record<string, unknown>) => {
             if (table === "pending_actions") inserts.push(row)
             return {
