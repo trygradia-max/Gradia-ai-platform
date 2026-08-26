@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto"
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest"
 
+import { encryptSecret } from "@/lib/crypto"
 import { verifyTwilioSignature } from "@/lib/twilio"
 import { verifyStripeSignature } from "@/lib/stripe"
 import { verifyAurinkoSignature } from "@/lib/aurinko"
@@ -27,6 +28,14 @@ import { verifySlackSignature } from "@/lib/slack"
  * metering semantics (a lost usage write fails the event), and the
  * maxDuration < staleAfterSeconds lock. Real-Postgres proofs:
  * eval/integration/vapi-replay.int.test.ts.
+ *
+ * P0-008 extends it for the Twilio delivery-status callback route: signature
+ * verification against the credential class that actually signed the request
+ * (subaccount → BYO → env master — the subaccount fixture is the missing
+ * case that let the bug ship), no credential fallback for unknown shops,
+ * shop-scoped interaction updates, replay/out-of-order/unknown-sid behavior,
+ * and fail-closed DB failure paths. Real-Postgres proofs:
+ * eval/integration/twilio-status-callback.int.test.ts.
  */
 
 // ── Route-dependency mocks (Twilio inbound route tests only — the pure
@@ -104,33 +113,44 @@ vi.mock("@/lib/vapi-tools", () => ({
 /**
  * Minimal chainable Supabase stub. Every chained method returns the same
  * thenable; terminals resolve the per-table result configured for the test.
- * Calls are logged so tests can assert which tables were (not) written.
+ * Calls are logged (with args) so tests can assert which tables were (not)
+ * written and how queries were scoped. `ops` optionally overrides the
+ * result per opening operation (select/insert/update) on a table, so one
+ * test can make a lookup succeed while the update on the same table fails.
  */
 const fakeDb = {
   tables: {} as Record<string, { data: unknown; error: unknown }>,
-  calls: [] as Array<{ table: string; method: string }>,
+  ops: {} as Record<string, Record<string, { data: unknown; error: unknown }>>,
+  calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
   reset() {
     this.tables = {}
+    this.ops = {}
     this.calls = []
   },
   client() {
     return {
       from: (table: string) => {
-        const result = fakeDb.tables[table] ?? { data: null, error: null }
+        let op: string | null = null
+        const resultFor = () =>
+          (op ? fakeDb.ops[table]?.[op] : undefined) ??
+          fakeDb.tables[table] ?? { data: null, error: null }
         const q: Record<string, unknown> = {
           then: (resolve: (v: unknown) => unknown) =>
-            Promise.resolve(result).then(resolve),
+            Promise.resolve(resultFor()).then(resolve),
         }
         for (const m of [
           "select", "eq", "is", "gt", "order", "limit", "insert", "update",
         ]) {
-          q[m] = () => {
-            fakeDb.calls.push({ table, method: m })
+          q[m] = (...args: unknown[]) => {
+            if (!op && (m === "select" || m === "insert" || m === "update")) {
+              op = m
+            }
+            fakeDb.calls.push({ table, method: m, args })
             return q
           }
         }
-        q.maybeSingle = () => Promise.resolve(result)
-        q.single = () => Promise.resolve(result)
+        q.maybeSingle = () => Promise.resolve(resultFor())
+        q.single = () => Promise.resolve(resultFor())
         return q
       },
     }
@@ -897,5 +917,366 @@ describe("Vapi webhook route — claim after verify + end-of-call replay suppres
     expect(statusUpdate.status).toBe(200)
     expect(claimMock).not.toHaveBeenCalled()
     expect(recordUsageMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("Twilio SMS status callback route — subaccount credential repair (P0-008)", () => {
+  const BASE_URL = "https://app.test/api/twilio/sms/status"
+  const SID = "SM_p0008_test"
+  const SUB_TOKEN = "sub-token-p0008"
+  const BYO_TOKEN = "byo-token-p0008"
+
+  const SUB_SHOP_ID = "shop-sub-1"
+  const BYO_SHOP_ID = "shop-byo-1"
+  const ENV_SHOP_ID = "shop-env-1"
+
+  // Built in beforeAll — encryptSecret needs ENCRYPTION_KEY in env first.
+  let subShop: Record<string, unknown>
+  let byoShop: Record<string, unknown>
+  const envShop = {
+    twilio_account_sid_enc: null,
+    twilio_auth_token_enc: null,
+    twilio_subaccount_sid: null,
+    twilio_subaccount_token_enc: null,
+    twilio_phone_number: "+15035550111",
+    gradia_number_e164: null,
+  }
+
+  const sign = (u: string, f: URLSearchParams, token: string) => {
+    let s = u
+    for (const k of [...f.keys()].sort()) s += k + (f.get(k) ?? "")
+    return createHmac("sha1", token).update(s).digest("base64")
+  }
+
+  const makeForm = (over: Record<string, string> = {}) =>
+    new URLSearchParams({
+      MessageSid: SID,
+      MessageStatus: "delivered",
+      To: "+15035550133",
+      From: "+16175550100",
+      AccountSid: "ACsub",
+      ...over,
+    })
+
+  /** sig: undefined → sign with `token`; null → omit header; string → as-is. */
+  const post = (opts: {
+    shop?: string | null
+    form?: URLSearchParams
+    token?: string
+    sig?: string | null
+    /** URL to actually POST to when it should differ from the signed one. */
+    postUrl?: string
+  } = {}) => {
+    const url =
+      opts.postUrl ??
+      (opts.shop === null || opts.shop === undefined
+        ? BASE_URL
+        : `${BASE_URL}?shop=${opts.shop}`)
+    const signedUrl =
+      opts.shop === null || opts.shop === undefined
+        ? BASE_URL
+        : `${BASE_URL}?shop=${opts.shop}`
+    const form = opts.form ?? makeForm()
+    const headers: Record<string, string> = {
+      "content-type": "application/x-www-form-urlencoded",
+    }
+    if (opts.sig !== null) {
+      headers["x-twilio-signature"] =
+        opts.sig ?? sign(signedUrl, form, opts.token ?? SUB_TOKEN)
+    }
+    return STATUS_POST(
+      new Request(url, { method: "POST", headers, body: form.toString() })
+    )
+  }
+
+  const interactionRow = (shopId: string) => ({
+    id: "int-out-1",
+    shop_id: shopId,
+    metadata: {
+      direction: "outbound",
+      twilio_message_sid: SID,
+      twilio_status: "sent",
+    },
+  })
+
+  const interactionCalls = () =>
+    fakeDb.calls.filter((c) => c.table === "interactions")
+  const updateCalls = () =>
+    fakeDb.calls.filter(
+      (c) => c.table === "interactions" && c.method === "update"
+    )
+  const updatedMetadata = (i = 0) =>
+    (updateCalls()[i]?.args[0] as { metadata: Record<string, unknown> })
+      .metadata
+
+  let STATUS_POST: (req: Request) => Promise<Response>
+
+  const savedEnv: Record<string, string | undefined> = {}
+  beforeAll(async () => {
+    for (const k of [
+      "GRADIA_DASHBOARD_URL",
+      "TWILIO_ACCOUNT_SID",
+      "ENCRYPTION_KEY",
+    ]) {
+      savedEnv[k] = process.env[k]
+    }
+    // Pin the route's public-URL derivation to the raw request URL.
+    delete process.env.GRADIA_DASHBOARD_URL
+    process.env.TWILIO_ACCOUNT_SID = "ACtest"
+    process.env.ENCRYPTION_KEY ??= "ab".repeat(32)
+
+    // Gradia-provisioned shop: subaccount active (the fixture whose absence
+    // shipped the bug) — BYO columns ALSO set to prove the subaccount wins.
+    subShop = {
+      twilio_subaccount_sid: "ACsub",
+      twilio_subaccount_token_enc: encryptSecret(SUB_TOKEN),
+      twilio_account_sid_enc: encryptSecret("ACbyo"),
+      twilio_auth_token_enc: encryptSecret(BYO_TOKEN),
+      twilio_phone_number: "+16175550100",
+      gradia_number_e164: "+16175550100",
+    }
+    byoShop = {
+      twilio_subaccount_sid: null,
+      twilio_subaccount_token_enc: null,
+      twilio_account_sid_enc: encryptSecret("ACbyo"),
+      twilio_auth_token_enc: encryptSecret(BYO_TOKEN),
+      twilio_phone_number: "+15035550177",
+      gradia_number_e164: null,
+    }
+
+    ;({ POST: STATUS_POST } = await import("@/app/api/twilio/sms/status/route"))
+  })
+  afterAll(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fakeDb.reset()
+    fakeDb.tables.shops = { data: subShop, error: null }
+    fakeDb.tables.interactions = {
+      data: interactionRow(SUB_SHOP_ID),
+      error: null,
+    }
+  })
+
+  it("subaccount shop: a callback signed with the SUBACCOUNT token verifies and records the status (the case that shipped broken)", async () => {
+    const res = await post({ shop: SUB_SHOP_ID, token: SUB_TOKEN })
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain("<Response></Response>")
+    expect(updateCalls()).toHaveLength(1)
+    expect(updatedMetadata()).toMatchObject({
+      direction: "outbound",
+      twilio_message_sid: SID,
+      twilio_status: "delivered",
+    })
+    // Lookup and update are scoped to the verified shop.
+    expect(
+      fakeDb.calls.some(
+        (c) =>
+          c.table === "interactions" &&
+          c.method === "eq" &&
+          c.args[0] === "shop_id" &&
+          c.args[1] === SUB_SHOP_ID
+      )
+    ).toBe(true)
+  })
+
+  it("subaccount shop: the same callback signed with the MASTER env token is rejected — verification uses the actual signer's class", async () => {
+    const res = await post({ shop: SUB_SHOP_ID, token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("subaccount shop: the BYO token no longer verifies when the subaccount signs (the pre-fix resolution order is dead)", async () => {
+    const res = await post({ shop: SUB_SHOP_ID, token: BYO_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("BYO shop: a callback signed with the BYO token still verifies and records the status", async () => {
+    fakeDb.tables.shops = { data: byoShop, error: null }
+    fakeDb.tables.interactions = {
+      data: interactionRow(BYO_SHOP_ID),
+      error: null,
+    }
+    const res = await post({ shop: BYO_SHOP_ID, token: BYO_TOKEN })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+    expect(updatedMetadata().twilio_status).toBe("delivered")
+  })
+
+  it("env-master shop (?shop= present, no per-shop creds): the master token verifies", async () => {
+    fakeDb.tables.shops = { data: envShop, error: null }
+    fakeDb.tables.interactions = {
+      data: interactionRow(ENV_SHOP_ID),
+      error: null,
+    }
+    const res = await post({ shop: ENV_SHOP_ID, token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+  })
+
+  it("legacy callback URL without ?shop=: env-master verification still works", async () => {
+    fakeDb.tables.interactions = {
+      data: interactionRow(ENV_SHOP_ID),
+      error: null,
+    }
+    const res = await post({ token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+    // No shop param → no shops lookup at all.
+    expect(fakeDb.calls.filter((c) => c.table === "shops")).toHaveLength(0)
+  })
+
+  it("wrong token rejects with zero interaction reads or writes", async () => {
+    const res = await post({ shop: SUB_SHOP_ID, token: "completely-wrong" })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("a tampered body rejects", async () => {
+    const form = makeForm()
+    const sig = sign(`${BASE_URL}?shop=${SUB_SHOP_ID}`, form, SUB_TOKEN)
+    const tampered = makeForm({ MessageStatus: "failed", ErrorCode: "30007" })
+    const res = await post({ shop: SUB_SHOP_ID, form: tampered, sig })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("a missing signature header rejects", async () => {
+    const res = await post({ shop: SUB_SHOP_ID, sig: null })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("a tampered ?shop= param breaks the signature — the query string is inside the signed URL", async () => {
+    // Signed for shop A's URL with shop A's subaccount token, then replayed
+    // against shop B's URL: verification runs against shop B's creds and
+    // the signed-URL mismatch rejects. Nothing is read from interactions.
+    fakeDb.tables.shops = { data: byoShop, error: null }
+    const form = makeForm()
+    const sig = sign(`${BASE_URL}?shop=${SUB_SHOP_ID}`, form, SUB_TOKEN)
+    const res = await post({
+      shop: BYO_SHOP_ID,
+      form,
+      sig,
+      postUrl: `${BASE_URL}?shop=${BYO_SHOP_ID}`,
+    })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("unknown shop id rejects with NO credential fallback — even a correctly master-signed request cannot pick another class", async () => {
+    fakeDb.tables.shops = { data: null, error: null }
+    const res = await post({ shop: "shop-unknown", token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(404)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("shop lookup outage fails closed with 5xx before verification", async () => {
+    fakeDb.tables.shops = { data: null, error: { message: "pg down" } }
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(500)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("no resolvable credentials anywhere → reject, never skip verification", async () => {
+    fakeDb.tables.shops = { data: envShop, error: null }
+    const savedToken = process.env.TWILIO_AUTH_TOKEN
+    const savedSid = process.env.TWILIO_ACCOUNT_SID
+    delete process.env.TWILIO_AUTH_TOKEN
+    delete process.env.TWILIO_ACCOUNT_SID
+    try {
+      const res = await post({ shop: ENV_SHOP_ID, token: "anything" })
+      expect(res.status).toBe(401)
+      expect(interactionCalls()).toHaveLength(0)
+    } finally {
+      process.env.TWILIO_AUTH_TOKEN = savedToken
+      process.env.TWILIO_ACCOUNT_SID = savedSid
+    }
+  })
+
+  it("a corrupt subaccount token blob fails closed: the subaccount-signed callback is rejected, not accepted unverified", async () => {
+    fakeDb.tables.shops = {
+      data: {
+        ...subShop,
+        twilio_subaccount_token_enc: "not-a-valid-encrypted-blob",
+        // No BYO fallback either — decryption failure must not silently
+        // succeed through another class for a subaccount-signed request.
+        twilio_account_sid_enc: null,
+        twilio_auth_token_enc: null,
+      },
+      error: null,
+    }
+    const res = await post({ shop: SUB_SHOP_ID, token: SUB_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("a signed callback without a MessageSid is acknowledged with zero DB reads/writes on interactions", async () => {
+    const form = makeForm()
+    form.delete("MessageSid")
+    const res = await post({ shop: SUB_SHOP_ID, form })
+    expect(res.status).toBe(200)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("a signed callback without a MessageStatus is acknowledged with zero interaction access", async () => {
+    const form = makeForm()
+    form.delete("MessageStatus")
+    const res = await post({ shop: SUB_SHOP_ID, form })
+    expect(res.status).toBe(200)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("unknown MessageSid: acknowledged, no write, no fabricated state", async () => {
+    fakeDb.tables.interactions = { data: null, error: null }
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain("<Response></Response>")
+    expect(updateCalls()).toHaveLength(0)
+  })
+
+  it("interaction lookup failure returns 5xx so Twilio retries (replay-safe)", async () => {
+    fakeDb.tables.interactions = { data: null, error: { message: "pg blip" } }
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(500)
+    expect(updateCalls()).toHaveLength(0)
+  })
+
+  it("interaction update failure returns 5xx — a lost terminal status is never reported as success", async () => {
+    fakeDb.ops.interactions = {
+      update: { data: null, error: { message: "write refused" } },
+    }
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(500)
+    expect(updateCalls()).toHaveLength(1) // attempted, refused, surfaced
+  })
+
+  it("replaying the identical callback is harmless — same terminal metadata both times", async () => {
+    const first = await post({ shop: SUB_SHOP_ID })
+    const second = await post({ shop: SUB_SHOP_ID })
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(updateCalls()).toHaveLength(2)
+    const a = { ...updatedMetadata(0) }
+    const b = { ...updatedMetadata(1) }
+    delete a.twilio_status_updated_at
+    delete b.twilio_status_updated_at
+    expect(b).toEqual(a)
+  })
+
+  it("terminal failure statuses record the ErrorCode", async () => {
+    const form = makeForm({ MessageStatus: "undelivered", ErrorCode: "30003" })
+    const res = await post({ shop: SUB_SHOP_ID, form })
+    expect(res.status).toBe(200)
+    expect(updatedMetadata()).toMatchObject({
+      twilio_status: "undelivered",
+      twilio_error_code: "30003",
+    })
   })
 })
