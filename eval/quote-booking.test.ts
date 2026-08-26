@@ -114,6 +114,8 @@ function mockDb(opts: {
   rpcResult?: Record<string, unknown> | Error
   /** maybeSingle/single terminal rows per table (quotes, leads, appointments…). */
   tables?: Record<string, Record<string, unknown> | null>
+  /** Per-table read ERROR (a real fault, distinct from a clean not-found). */
+  readErrors?: Record<string, { message: string }>
   writes?: Write[]
 }): SupabaseClient {
   const writes = opts.writes ?? []
@@ -151,8 +153,11 @@ function mockDb(opts: {
       for (const m of ["select", "eq", "in", "gte", "lt", "order", "limit", "or"]) {
         chain[m] = () => chain
       }
-      chain.maybeSingle = () => Promise.resolve({ data: terminal, error: null })
-      chain.single = () => Promise.resolve({ data: terminal, error: null })
+      const readErr = opts.readErrors?.[table] ?? null
+      chain.maybeSingle = () =>
+        Promise.resolve(readErr ? { data: null, error: readErr } : { data: terminal, error: null })
+      chain.single = () =>
+        Promise.resolve(readErr ? { data: null, error: readErr } : { data: terminal, error: null })
       chain.then = (resolve: (v: unknown) => unknown) =>
         Promise.resolve(resolve({ data: null, error: null }))
       return {
@@ -245,6 +250,30 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
     expect(mockedMoveLeadToStage).toHaveBeenCalledWith(db, "shop-1", "leads-new", "booked", {
       by: "system",
     })
+  })
+
+  it("lead READ ERROR (transient fault, not a clean not-found): FAILS CLOSED — no duplicate lead, reconciliation recorded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const writes: Write[] = []
+    const db = mockDb({
+      tables: RESOLVING_TABLES,
+      readErrors: { leads: { message: "connection reset" } },
+      writes,
+    })
+    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    // Appointment persisted → booking succeeds; but the uncertain lead read
+    // must NOT spawn a replacement lead (that resurrects the duplicate card).
+    expect(res.ok).toBe(true)
+    expect(leadInserts(writes)).toHaveLength(0)
+    expect(quoteStatusUpdates(writes)).toHaveLength(0)
+    const recon = writes.find(
+      (w) =>
+        w.table === "pending_actions" &&
+        w.op === "update" &&
+        (w.values.payload as { reconciliation?: { kind?: string } } | undefined)?.reconciliation
+          ?.kind === "lead_resolve_error"
+    )
+    expect(recon).toBeDefined()
   })
 
   it("quote resolves but its lead was deleted: fallback create, quote STILL advances to booked", async () => {

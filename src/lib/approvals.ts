@@ -1007,6 +1007,11 @@ type QuoteLeadRefs = {
   /** The payload carried refs at all (voice bookings don't). */
   hadRefs: boolean
   fallbackReason: "quote_not_found" | "lead_not_found" | null
+  /** A quote/lead lookup returned a genuine ERROR (not a clean not-found).
+   *  `.maybeSingle()` reports error:null for zero rows, so a non-null error
+   *  is a real fault — the caller must FAIL CLOSED rather than create a
+   *  replacement lead (that would resurrect the duplicate-card bug). */
+  readError: boolean
 }
 
 /**
@@ -1016,6 +1021,10 @@ type QuoteLeadRefs = {
  * historical create-lead behavior — no cross-tenant row is ever read into the
  * result. When the quote resolves, ITS lead link is the trusted anchor and
  * wins over the payload's lead_id.
+ *
+ * A clean not-found (deleted/foreign row) is a documented fallback-to-create.
+ * A read ERROR is different: the reference may still be valid, so we surface
+ * `readError` and let the caller fail closed instead of duplicating the lead.
  */
 async function resolveQuoteLeadRefs(
   supabase: SupabaseClient,
@@ -1027,21 +1036,24 @@ async function resolveQuoteLeadRefs(
   const rawLeadId =
     typeof proposal.lead_id === "string" && proposal.lead_id ? proposal.lead_id : null
   if (!rawQuoteId && !rawLeadId) {
-    return { quoteId: null, leadId: null, hadRefs: false, fallbackReason: null }
+    return { quoteId: null, leadId: null, hadRefs: false, fallbackReason: null, readError: false }
   }
 
   let quoteId: string | null = null
   let candidateLeadId = rawLeadId
   let fallbackReason: QuoteLeadRefs["fallbackReason"] = null
+  let readError = false
   if (rawQuoteId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("quotes")
       .select("id, lead_id")
       .eq("id", rawQuoteId)
       .eq("shop_id", shopId)
       .maybeSingle()
     const quote = data as { id: string; lead_id: string | null } | null
-    if (quote) {
+    if (error) {
+      readError = true
+    } else if (quote) {
       quoteId = quote.id
       if (quote.lead_id) candidateLeadId = quote.lead_id
     } else {
@@ -1051,20 +1063,31 @@ async function resolveQuoteLeadRefs(
 
   let leadId: string | null = null
   if (candidateLeadId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("leads")
       .select("id")
       .eq("id", candidateLeadId)
       .eq("shop_id", shopId)
       .maybeSingle()
-    leadId = (data as { id: string } | null)?.id ?? null
-    if (!leadId) fallbackReason = "lead_not_found"
-  } else if (!fallbackReason) {
+    if (error) {
+      readError = true
+    } else {
+      leadId = (data as { id: string } | null)?.id ?? null
+      if (!leadId) fallbackReason = "lead_not_found"
+    }
+  } else if (!fallbackReason && !readError) {
     fallbackReason = "lead_not_found"
   }
 
-  return { quoteId, leadId, hadRefs: true, fallbackReason }
+  return { quoteId, leadId, hadRefs: true, fallbackReason, readError }
 }
+
+/** Outcome of quote/lead bookkeeping. `createFallback` tells the caller
+ *  whether it is SAFE to create a fresh lead: true for no-refs (voice/old
+ *  payloads) and clean not-founds (deleted/foreign row, per the ticket's
+ *  documented fallback); false when a read error means resolution is
+ *  uncertain — creating then would risk a duplicate pipeline card. */
+type QuoteBookkeepingOutcome = { leadId: string | null; createFallback: boolean }
 
 /**
  * Idempotent quote/lead bookkeeping for a DURABLY persisted quote-backed
@@ -1072,9 +1095,7 @@ async function resolveQuoteLeadRefs(
  * crash between the appointment write and these writes self-heals on the
  * next execution: the stage move no-ops when the lead is already `booked`,
  * and the guarded quote update matches zero rows once `booked` landed.
- * Never called for payloads without refs (voice bookings unchanged).
- * Returns the resolved lead id, or null when the caller must fall back to
- * the historical create-lead path.
+ * Never creates a lead itself — it tells the caller whether to.
  */
 async function applyQuoteBookingBookkeeping(
   supabase: SupabaseClient,
@@ -1082,9 +1103,28 @@ async function applyQuoteBookingBookkeeping(
   proposal: BookingProposal,
   appointmentId: string,
   opts: { vehicleId?: string | null } = {}
-): Promise<string | null> {
+): Promise<QuoteBookkeepingOutcome> {
   const refs = await resolveQuoteLeadRefs(supabase, claimed.shop_id, proposal)
-  if (!refs.hadRefs) return null
+  if (!refs.hadRefs) return { leadId: null, createFallback: true }
+
+  // Fail closed on a genuine read error: the payload carried a quote/lead
+  // reference that may still be valid, so DON'T create a replacement lead
+  // (that resurrects the duplicate-card bug). The appointment already stands;
+  // record reconciliation and let replay re-resolve once the read recovers.
+  if (!refs.leadId && refs.readError) {
+    console.error(
+      `[approvals] quote booking lead resolution errored — action ${claimed.id} shop ${claimed.shop_id} quote ${refs.quoteId ?? proposal.quote_id ?? "(none)"}; appointment ${appointmentId} stands, lead linkage needs reconciliation (NOT creating a duplicate)`
+    )
+    await recordPayloadReconciliation(supabase, claimed, {
+      reconciliation: {
+        kind: "lead_resolve_error",
+        appointment_id: appointmentId,
+        quote_id: refs.quoteId ?? proposal.quote_id ?? null,
+        at: new Date().toISOString(),
+      },
+    })
+    return { leadId: null, createFallback: false }
+  }
 
   if (refs.leadId) {
     console.warn(
@@ -1152,7 +1192,9 @@ async function applyQuoteBookingBookkeeping(
     }
   }
 
-  return refs.leadId
+  // Clean not-found (deleted/foreign lead) falls back to create per the
+  // ticket; a resolved lead does not.
+  return { leadId: refs.leadId, createFallback: !refs.leadId }
 }
 
 async function executeBookAppointment(
@@ -1342,14 +1384,15 @@ async function executeBookAppointment(
   // report the booking failed. Quote-backed bookings (P0-009) resolve the
   // quote's EXISTING lead server-side; the create path below runs only when
   // no reference resolves (voice bookings, old payloads, deleted leads).
-  let leadId = await applyQuoteBookingBookkeeping(
+  const bookkeeping = await applyQuoteBookingBookkeeping(
     supabase,
     claimed,
     proposal,
     appointmentId,
     { vehicleId }
   )
-  if (!leadId) {
+  let leadId = bookkeeping.leadId
+  if (!leadId && bookkeeping.createFallback) {
     const { data: lead, error: leadErr } = await supabase
       .from("leads")
       .insert({
