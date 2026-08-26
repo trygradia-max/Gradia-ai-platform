@@ -162,7 +162,7 @@ export async function approveRecoveryCandidates(
     }
   }
 
-  revalidatePath("/recovery")
+  revalidatePath("/customers/recovery")
   revalidatePath("/customers")
   return { ok: true, added, merged, skipped }
 }
@@ -333,7 +333,7 @@ export async function undoRecoveryImport(
     .eq("shop_id", shop.id)
     .eq("metadata->>import_job_id", jobId)
 
-  revalidatePath("/recovery")
+  revalidatePath("/customers/recovery")
   revalidatePath("/customers")
   return { ok: true, deleted, unmerged }
 }

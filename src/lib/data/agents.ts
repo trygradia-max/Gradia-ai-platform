@@ -159,7 +159,7 @@ function buildAgents(shop: ShopRow): Agent[] {
       iconKey: "phone",
       oneLiner: "Answers calls, books, quotes, remembers every caller.",
       description:
-        "When customers call, Gradia picks up as us — knows our service menu, recalls past touchpoints, captures leads, and proposes bookings that route into Slack for our approval.",
+        "When customers call, Gradia picks up as us — knows our service menu, recalls past touchpoints, captures leads, and proposes bookings that land in our Approvals inbox for sign-off.",
       capabilities: [
         "Greets callers as us, in our voice (HUMAN.md)",
         "Quotes services from our live menu — never invents prices",
@@ -180,7 +180,7 @@ function buildAgents(shop: ShopRow): Agent[] {
         "Classifies leads vs newsletters / receipts / spam",
         "Drafts a plain-text reply signed as us",
         "Files the lead with vehicle, service, summary",
-        "Posts both lead + draft cards to Slack",
+        "Stages both lead + draft cards in Approvals",
       ],
       status: status(emailPrereqs),
       prerequisites: emailPrereqs,
@@ -191,7 +191,7 @@ function buildAgents(shop: ShopRow): Agent[] {
       iconKey: "sms",
       oneLiner: "Catches every text, drafts a reply within a minute, drops nothing.",
       description:
-        "Inbound texts hit our Twilio number, get classified, and turn into approval cards in Slack — both the lead and our draft response. Status callbacks tell us whether the customer actually received our outbound texts.",
+        "Inbound texts hit our business number, get classified, and turn into cards in our Approvals inbox — both the lead and our draft response. Status callbacks tell us whether the customer actually received our outbound texts.",
       capabilities: [
         "Distinguishes new inquiries from one-word follow-ups",
         "Drafts a short reply signed as us",
@@ -223,7 +223,7 @@ function buildAgents(shop: ShopRow): Agent[] {
       iconKey: "billing",
       oneLiner: "Voice command to invoice — \"charge Smith $450 for ceramic.\"",
       description:
-        "Tap Whisper, say \"charge Smith $450 for ceramic.\" Gradia parses it, drops a charge card in Slack with the customer's email pre-filled, and on approve Stripe emails them a hosted-payment link. Paid-status webhooks update our dashboard tiles automatically.",
+        "Tap Whisper, say \"charge Smith $450 for ceramic.\" Gradia parses it, stages a charge card in our Approvals inbox with the customer's email pre-filled, and on approve Stripe emails them a hosted-payment link. Paid-status webhooks update our dashboard tiles automatically.",
       capabilities: [
         "Parses Whisper intent: customer, amount, service",
         "Sends Stripe invoice on our connected account on approve",
@@ -239,11 +239,11 @@ function buildAgents(shop: ShopRow): Agent[] {
       iconKey: "memory",
       oneLiner: "Every touchpoint, every channel, all searchable. Ask us anything.",
       description:
-        "Voice, email, SMS, and Whisper notes all flow into one embedded memory layer. Ask Gradia in plain English at /chat — counts, schedules, who asked about ceramic, revenue this month. Streams answers back as we work.",
+        "Voice, email, SMS, and Whisper notes all flow into one embedded memory layer. Ask Gradia in plain English from Conversations — counts, schedules, who asked about ceramic, revenue this month. Streams answers back as we work.",
       capabilities: [
         "pgvector RAG over every customer touchpoint",
         "BI chat with six read-only tools (counts, revenue, etc.)",
-        "Cross-channel sync hints on every Slack approval card",
+        "Cross-channel sync hints on every approval card",
         "Customer detail timeline merges every channel into one view",
       ],
       status: status(memoryPrereqs),

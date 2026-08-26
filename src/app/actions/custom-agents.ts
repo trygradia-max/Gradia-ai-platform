@@ -133,7 +133,7 @@ export async function saveCustomAgent(input: {
     return { ok: false, error: error?.message ?? "Couldn't save the agent." }
   }
 
-  revalidatePath("/agents")
+  revalidatePath("/receptionist")
   return { ok: true, agent: data as CustomAgentRow }
 }
 
@@ -155,7 +155,7 @@ export async function deleteCustomAgent(
     .eq("shop_id", shop.id)
   if (error) return { ok: false, error: error.message }
 
-  revalidatePath("/agents")
+  revalidatePath("/receptionist")
   return { ok: true }
 }
 
@@ -187,7 +187,7 @@ export async function runCustomAgentNow(
   }
 
   const outcome = await runCustomAgent(supabase, data as CustomAgentRow)
-  revalidatePath("/agents")
+  revalidatePath("/receptionist")
   revalidatePath("/approvals")
   return { ok: true, outcome }
 }
@@ -242,6 +242,6 @@ export async function setCustomAgentEnabled(input: {
     .eq("shop_id", shop.id)
   if (error) return { ok: false, error: error.message }
 
-  revalidatePath("/agents")
+  revalidatePath("/receptionist")
   return { ok: true }
 }

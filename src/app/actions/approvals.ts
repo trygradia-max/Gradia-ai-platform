@@ -50,7 +50,7 @@ export async function approveFromDashboard(
   }
 
   revalidatePath("/dashboard")
-  revalidatePath("/leads")
+  revalidatePath("/customers")
   revalidatePath("/approvals")
   return { ok: true, alreadyDecided: result.status === "already_decided" }
 }

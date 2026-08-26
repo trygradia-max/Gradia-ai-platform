@@ -38,6 +38,9 @@ export const RATE_LIMITS = {
   /** P0-009: the public /q/[token] respond action — a money surface with no
    *  session. Per-shop burst guard; a real customer responds once or twice. */
   quote_response: { limit: 10, windowSeconds: 60 },
+  /** P0-010 (M-1): the AI Lead "Process" action — owner-initiated LLM
+   *  extraction. Same burst posture as the other owner LLM surfaces. */
+  ai_lead: { limit: 20, windowSeconds: 60 },
 } as const
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS

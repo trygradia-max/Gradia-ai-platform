@@ -207,6 +207,17 @@ export const STRINGS = {
   errors: {
     sendFailedPattern: (to: string) =>
       `The follow-up text to ${to} didn't send. We'll retry twice over the next 10 minutes.`,
+    /** Dashboard route error boundary (P0-010) — honest, no invented excuse. */
+    dashboardTitle: "This page hit an error on our side.",
+    dashboardBody:
+      "Your data is safe — the page just failed to load. Trying again usually fixes it; the error report is already with us.",
+    dashboardRetry: "Try again",
+    dashboardHome: "Back to Home",
+    /** Dashboard not-found (P0-010) — stale links after the IA consolidation. */
+    notFoundTitle: "That page isn't in the dashboard.",
+    notFoundBody:
+      "The link may be old — a few pages moved when the dashboard was reorganized. Everything still exists; start from Home.",
+    notFoundHome: "Go to Home",
   },
 
   /** Public quote page (/q/[token]) — P0-009. The expired state is the
