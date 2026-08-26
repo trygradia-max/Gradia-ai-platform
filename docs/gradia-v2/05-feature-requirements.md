@@ -66,8 +66,8 @@ Requirement verbs: **MUST** (binding), **MUST NOT** (binding prohibition). Anyth
 
 | ID | Requirement | Phase | Source |
 |---|---|---|---|
-| FR-023 | Accepting a quote MUST resolve the quote's existing lead — never fork a duplicate pipeline card — and MUST advance quote status through `accepted` to booked/won linkage. | P0 | P0-009, audit trace C |
-| FR-024 | An expired quote (`valid_until` past) MUST be rejected server-side; the expired-quote visitor experience follows the founder decision (queue Q-04). | P0 | P0-009, audit 03 (BROKEN) |
+| FR-023 | Accepting a quote MUST resolve the quote's existing lead — never fork a duplicate pipeline card — and MUST advance quote status through `accepted` to booked/won linkage. | P0 | P0-009, audit trace C — **met 2026-08-26** (PR #25; lead reused, quote → `booked` only after durable appointment persistence; integration-tested + founder acceptance) |
+| FR-024 | An expired quote (`valid_until` past) MUST be rejected server-side; the expired-quote visitor experience follows the founder decision (queue Q-04). | P0 | P0-009, audit 03 (BROKEN) — **met 2026-08-26** (PR #25; accept AND decline refused past `valid_until`, replay refused; minimal honest expired state live — Q-04 richer CTA still open, non-blocking) |
 | FR-025 | The public quote token MUST be CSPRNG-generated with expiry and a rate-limited guess surface. | P1 | audit 06 L-3 |
 | FR-026 | Quote deposits MUST be collected via Stripe Connect and recorded as immutable payment events. | P5 | D-019, D-024 |
 | FR-094 | Quotes MUST support versions (revisions preserved, one active), lost reasons on decline/close, taxes & fees, and discounts; customer signature capture where the shop requires it. | P3 (versions/lost reasons) · P5 (taxes/fees/discounts/signature) | Founder master definition parity, added 2026-07-27 |

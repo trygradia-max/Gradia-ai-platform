@@ -113,15 +113,15 @@ Each capability records:
 
 ## 8. Quotes and deposits
 
-- **Current audit status:** Quotes OPERATIONAL with real defects: accept→book forks a duplicate lead, status never passes `accepted`, **expired quotes still acceptable server-side (BROKEN)**, spoofable public-URL base when env unset (audit 03, 04-C). Deposits: NOT_FOUND (Stripe Connect flag off). Discounts: NOT_FOUND.
+- **Current audit status:** Quotes OPERATIONAL — the audit's three lifecycle defects are **fixed as of 2026-08-26 (P0-009, PR #25)**: accept→book now reuses the quote's existing lead (no duplicate card), status closes to `booked` after durable appointment persistence, and expired quotes are refused server-side with an honest expired state (the audit had flagged these as: duplicate-lead fork, status stuck at `accepted`, expiry BROKEN — audit 03, 04-C). Spoofable public-URL base when env unset remains (audit 04-C). Deposits: NOT_FOUND (Stripe Connect flag off). Discounts: NOT_FOUND.
 - **Existing foundation:** `quotes` table + pure pricing (`quotes.ts`, `service-pricing.ts` shared with voice/drafts), public `/q/[token]` accept page, day-2/5/12 follow-up sweeps.
 - **Target state:** defect-free quote lifecycle (P0-009); then deposits via Stripe Connect (D-019) with immutable payment records (D-024); quote expiry UX per decision Q-04. Added 2026-07-27 (founder master definition parity): quote versions, lost reasons, taxes & fees, discounts (P3/P5), and customer signature where needed (P5) join the target state.
-- **Missing work:** P0-009 (lead linkage, status closure, expiry enforcement, token hardening per audit L-3); E05 deposit flow (`ui/flows/quote-to-deposit.md`).
+- **Missing work:** ~~P0-009~~ — **done 2026-08-26** (PR #25: lead linkage, status closure, expiry enforcement, and the rate-limit/length-check half of audit L-3; token regeneration deferred to an E03-era ticket; residuals in the ticket close record). Remaining: Q-04 richer expired-quote CTA (open, non-blocking); E05 deposit flow (`ui/flows/quote-to-deposit.md`).
 - **Dependencies:** deposits ⇐ capability 11 + D-019; expiry UX ⇐ decision queue Q-04.
 - **Priority phase:** P0 (fixes), P5 (deposits).
-- **Risks:** money-path correctness — a customer can accept a stale price today; duplicate pipeline cards erode trust in the board.
+- **Risks:** ~~money-path correctness — a customer can accept a stale price today; duplicate pipeline cards erode trust in the board~~ — closed by P0-009 (2026-08-26). Remaining watch items: acceptance-side crash-window reconciliation (P0-009 M-1 follow-up, backlog) and UTC-day expiry vs shop-local midnight (L-1, backlog).
 - **Feature flag:** deposits behind `payments` (existing flag, currently false).
-- **Acceptance evidence:** replaying an accept on an expired quote is rejected server-side with a designed page; accepting a quote advances the ORIGINAL lead to booked (no duplicate row, integration-tested); deposit collected in Stripe test mode with immutable `payments` row.
+- **Acceptance evidence:** replaying an accept on an expired quote is rejected server-side with a designed page — **evidenced 2026-08-26** (P0-009 founder acceptance §2); accepting a quote advances the ORIGINAL lead to booked (no duplicate row, integration-tested) — **evidenced 2026-08-26** (founder acceptance §1 + `eval/integration/quote-acceptance.int.test.ts`); deposit collected in Stripe test mode with immutable `payments` row — outstanding (E05).
 - **Status:** **pilot** (quotes) / deposits: **planned**
 
 ## 9. Calendar and availability

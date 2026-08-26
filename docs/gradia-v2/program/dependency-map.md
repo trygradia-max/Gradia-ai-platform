@@ -26,15 +26,15 @@ Prose:
 - **P0-003 → P0-004**: the conflict service exists before any call site consumes it; the two share the single calendar high-risk WIP slot and are never active together.
 - **P0-005 → P0-006 and P0-007**: the dedupe foundation (unique indexes / provider_events strategy, `usage_events` vendor_ref uniqueness) lands once; the two provider tickets build on it rather than inventing per-route mechanisms. **Chain complete 2026-08-14:** P0-005 done (PR #17), P0-006 done (PR #19), P0-007 done (PR #21) — neither consumer added schema. Remaining on this branch of the graph: the Aurinko email dedupe follow-up (ADR-001 C4) and P0-005A retention/pruning.
 - **P0-011 → E01**: P0-011's `forShop()` helper *design* is an input to the E01 tenancy mechanism. P0-011 itself has no P0 dependencies beyond P0-001/002.
-- **P0-008, P0-009, P0-010, P0-012** are independent of each other and of tracks A/B — schedulable whenever slots free (P0-009's expired-quote copy consults Q-04; P0-012's destination consults Q-08 — see `blocked.md` for what may proceed regardless). **P0-008 done 2026-08-25** (PR #23 — no dependency edges changed; it consumed nothing and nothing waits on it except the E07 delivery-chip UI, which now has live data).
-- **P0-009 → P0-011 (soft ordering, added 2026-07-27):** both touch `approvals.ts`; P0-009's quote-linkage fix should merge before P0-011's scoping sweep re-reviews that file, so the sweep reviews final code, not code about to change.
+- **P0-008, P0-009, P0-010, P0-012** are independent of each other and of tracks A/B — schedulable whenever slots free (P0-012's destination consults Q-08 — see `blocked.md` for what may proceed regardless). **P0-008 done 2026-08-25** (PR #23 — no dependency edges changed; it consumed nothing and nothing waits on it except the E07 delivery-chip UI, which now has live data). **P0-009 done 2026-08-26** (PR #25 — Q-04 stayed non-blocking exactly as mapped: the minimal honest expired state shipped, the richer CTA still waits on the decision; E05's quote-linkage prerequisite is now satisfied).
+- **P0-009 → P0-011 (soft ordering, added 2026-07-27):** both touch `approvals.ts`; P0-009's quote-linkage fix should merge before P0-011's scoping sweep re-reviews that file, so the sweep reviews final code, not code about to change. **Satisfied 2026-08-26** — P0-009 merged; the sweep must include the post-P0-009 `approvals.ts` re-review item (`recordPayloadReconciliation` `shop_id` predicate) recorded in the P0-011 ticket.
 
 ## Decision dependencies (from `decision-queue.md`)
 
 | Ticket / work | Decision | Effect |
 |---|---|---|
 | P0-001 (history-scrub sub-step only) | Q-01 | Rotation proceeds; scrub waits |
-| P0-009 (expired-quote visitor copy) | Q-04 | Minimal honest state ships regardless |
+| P0-009 (expired-quote visitor copy) | Q-04 | Minimal honest state ships regardless — **shipped 2026-08-26 (P0-009 done, PR #25)**; Q-04 now gates only the richer re-quote CTA |
 | P0-012 (destination config) | Q-08 | Seam builds regardless |
 | E01 trial build | Q-13 | Design only until numbers land |
 | E02 Microsoft sync ordering | Q-09 | Scoping input |

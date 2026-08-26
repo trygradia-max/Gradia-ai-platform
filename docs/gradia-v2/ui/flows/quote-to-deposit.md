@@ -2,7 +2,7 @@
 
 _Created 2026-07-25 by the Organizer. Quote lifecycle grounded in audit trace C; deposits are net-new on Stripe Connect (D-019, existing flagged-off Connect foundation)._
 
-**Maturity:** TARGET — quoting EXISTS end-to-end (builder → pure pricing → send via HITL → public `/q/[token]` accept), but there are no deposits or customer payments today (Stripe Connect flag off). P0-009 repairs (lead linkage, status closure, expiry) land before deposits build on top.
+**Maturity:** TARGET — quoting EXISTS end-to-end (builder → pure pricing → send via HITL → public `/q/[token]` accept), but there are no deposits or customer payments today (Stripe Connect flag off). P0-009 repairs (lead linkage, status closure, expiry) landed 2026-08-26 (PR #25) — the deposit flow now builds on a truthful quote lifecycle.
 **Phase/Epic:** E05 / P5.
 
 ## Entry point
@@ -18,7 +18,7 @@ Customer, service line items (size-class pricing + condition multipliers), vehic
 1. Owner builds the quote → pure pricing (`quotes.ts`/`service-pricing.ts`) → draft with DB-generated public token.
 2. Send → staged as standard send action, executed as owner (A2P/quiet-hours/opt-out apply) → status `sent`, pipeline auto-moves to `quote_sent`.
 3. Customer opens `/q/[token]` → first view stamps `viewed`.
-4. **(P0-009)** Expired quotes refuse acceptance with an honest state; acceptance resolves the existing lead and closes the quote toward booked.
+4. **(P0-009 — done 2026-08-26, PR #25)** Expired quotes refuse acceptance with an honest state; acceptance resolves the existing lead and closes the quote toward booked.
 5. **(TARGET)** Accept screen shows deposit requirement → Stripe Checkout (Connect, on the shop's connected account) → payment succeeds.
 6. **(TARGET)** Deposit recorded as an immutable payment event (D-024), keyed by Stripe event id (idempotent, D-023); booking staged with the deposit noted on the approval card.
 7. Owner approves booking (calendar write = ALWAYS-HITL) → appointment created; remaining balance tracked toward invoicing (E05).
