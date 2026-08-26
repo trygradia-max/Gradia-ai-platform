@@ -7,7 +7,7 @@ P0-009
 E00 — Stabilization
 
 ## Status
-**ready-after-P0-002** (reconciled with the index 2026-07-27) — no technical dependencies; enters review only after P0-002 per the global review gate. One open decision noted: the expired-quote visitor experience copy (Q-04). Ship the minimal honest state described below; do not block on the decision.
+**Blocked — next implementation position** (moved up 2026-08-25 at the P0-008 close; P0-008 done 2026-08-25 PR #23). Blocked only until the `docs/close-p0-008` planning closeout lands on `main` — the Organizer flips this to ready on merge (entry in `../program/blocked.md`). One open decision noted: the expired-quote visitor experience copy (Q-04). Ship the minimal honest state described below; do not block on the decision. Soft ordering: merge before P0-011's scoping sweep re-reviews `approvals.ts` (`../program/dependency-map.md`). (Prior state: ready-after-P0-002, reconciled 2026-07-27; that review gate is long satisfied.)
 
 ## Priority
 P0 — High. Money-path correctness: the quote→booking seam forks duplicate pipeline cards, quote status lies, and expired prices remain accept-able server-side.

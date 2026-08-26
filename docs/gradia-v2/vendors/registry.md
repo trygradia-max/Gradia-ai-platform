@@ -138,9 +138,9 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-0
 | Data exchanged | SMS bodies + numbers → `interactions`/consent ledger; status callbacks; A2P identity (EIN plaintext gap); encrypted subaccount tokens |
 | Credentials used | Per-shop resolution **subaccount → BYO → env master** (`twilio.ts:105-168`); AES-256-GCM at rest |
 | Webhooks | `/api/twilio/sms`, `/api/twilio/sms/status`, `/api/twilio/a2p/status`; HMAC-SHA1, timing-safe, fail-closed, test-locked |
-| Provider event identifiers | `MessageSid` — **not deduped today (P0-006)** |
-| Idempotency status | Gap: inbound retry duplicates interactions/classify/cards (P0-006 on P0-005); status route resolves wrong creds for subaccount shops (P0-008) |
-| Tenant-isolation considerations | Shop by `To` number; service-role path (P0-011 discipline sweep) |
+| Provider event identifiers | `MessageSid` — inbound deduped via `provider_events` claim after signature verification (P0-006, 2026-08-14) |
+| Idempotency status | **Inbound replay-safe as of P0-006 (PR #19)**; **status callbacks correct + naturally idempotent as of P0-008 (PR #23, 2026-08-25)** — subaccount credential resolution fixed, last-write-wins metadata write (test-asserted, no claim needed). Remaining: A2P DB-error retryability (L4 follow-up); Twilio retry behavior itself rides live acceptance |
+| Tenant-isolation considerations | Shop by `To` number (inbound) / signed `?shop=` param (status — verification proves possession of that shop's token; lookup/update shop-scoped as of P0-008); service-role path (P0-011 discipline sweep) |
 | Outage behavior | Signature failure rejects; send failures roll approval back to pending |
 | Failure fallback | Empty TwiML always returned — no auto-reply path exists |
 | Monitoring | Nightly reconciliation vs ledger; console-only drift alerts until P0-012 |
