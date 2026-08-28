@@ -134,7 +134,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
   it("successful booking persists exactly once, stamped with its pending_action_id", async () => {
     const slot = freshSlot()
     const id = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(res.ok).toBe(true)
     const rows = await appointmentsInSlot(sb, seed.shopId, slot)
     expect(rows).toHaveLength(1)
@@ -144,8 +144,8 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
   it("repeated approval → already_decided, still exactly one appointment", async () => {
     const slot = freshSlot()
     const id = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    const first = await executeApproval(sb, id, { userId: seed.ownerId })
-    const second = await executeApproval(sb, id, { userId: seed.ownerId })
+    const first = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
+    const second = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(first.ok).toBe(true)
     expect(second.ok).toBe(true)
     expect(second).toMatchObject({ status: "already_decided" })
@@ -155,7 +155,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
   it("REPLAY of a successful booking (re-driven claim) → idempotent, no duplicate row", async () => {
     const slot = freshSlot()
     const id = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    const first = await executeApproval(sb, id, { userId: seed.ownerId })
+    const first = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(first.ok).toBe(true)
 
     // Simulate the crash-replay window: the claim is re-driven even though
@@ -165,7 +165,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
       .from("pending_actions")
       .update({ status: "pending", decided_at: null, decided_by_user: null })
       .eq("id", id)
-    const replay = await executeApproval(sb, id, { userId: seed.ownerId })
+    const replay = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(replay.ok).toBe(true)
     expect(replay).toMatchObject({ status: "executed" })
     // The durable unique + in-lock replay check kept it to ONE row.
@@ -181,8 +181,8 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
       // Two separate clients/connections, one Promise.all — genuinely
       // simultaneous requests, not sequential calls pretending.
       const [resA, resB] = await Promise.all([
-        executeApproval(sb, idA, { userId: seed.ownerId }, { context: "automatic" }),
-        executeApproval(sb2, idB, { userId: seed.ownerId }, { context: "automatic" }),
+        executeApproval(sb, idA, seed.shopId, { userId: seed.ownerId }, { context: "automatic" }),
+        executeApproval(sb2, idB, seed.shopId, { userId: seed.ownerId }, { context: "automatic" }),
       ])
 
       const winners = [resA, resB].filter((r) => r.ok)
@@ -209,7 +209,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
         "book_appointment",
         bookingPayload(slot.end)
       )
-      const resAfter = await executeApproval(sb, after, { userId: seed.ownerId })
+      const resAfter = await executeApproval(sb, after, seed.shopId, { userId: seed.ownerId })
       expect(resAfter.ok, `round ${round}: lock must be released`).toBe(true)
     }
   })
@@ -220,8 +220,8 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
     const idA = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slotA.start))
     const idB = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slotB.start))
     const [resA, resB] = await Promise.all([
-      executeApproval(sb, idA, { userId: seed.ownerId }),
-      executeApproval(sb2, idB, { userId: seed.ownerId }),
+      executeApproval(sb, idA, seed.shopId, { userId: seed.ownerId }),
+      executeApproval(sb2, idB, seed.shopId, { userId: seed.ownerId }),
     ])
     expect(resA.ok).toBe(true)
     expect(resB.ok).toBe(true)
@@ -230,7 +230,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
   it("capacity > 1 preserved: a documented override books over an existing appointment", async () => {
     const slot = freshSlot()
     const idFirst = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    const first = await executeApproval(sb, idFirst, { userId: seed.ownerId })
+    const first = await executeApproval(sb, idFirst, seed.shopId, { userId: seed.ownerId })
     expect(first.ok).toBe(true)
     const existing = (await appointmentsInSlot(sb, seed.shopId, slot))[0]
 
@@ -248,7 +248,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
         },
       })
     )
-    const second = await executeApproval(sb, idSecond, { userId: seed.ownerId })
+    const second = await executeApproval(sb, idSecond, seed.shopId, { userId: seed.ownerId })
     expect(second.ok).toBe(true)
     expect(await appointmentsInSlot(sb, seed.shopId, slot)).toHaveLength(2)
     // The executed override left its audit row (d43ce16 protections intact).
@@ -260,8 +260,8 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
     const idA = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
     const idB = await stagePending(sb, seedB.shopId, seedB.ownerId, "book_appointment", bookingPayload(slot.start))
     const [resA, resB] = await Promise.all([
-      executeApproval(sb, idA, { userId: seed.ownerId }),
-      executeApproval(sb2, idB, { userId: seedB.ownerId }),
+      executeApproval(sb, idA, seed.shopId, { userId: seed.ownerId }),
+      executeApproval(sb2, idB, seedB.shopId, { userId: seedB.ownerId }),
     ])
     expect(resA.ok).toBe(true)
     expect(resB.ok).toBe(true)
@@ -310,8 +310,8 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
     const slotHome = freshSlot()
     const idBusy = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slotBusy.start))
     const idHome = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slotHome.start))
-    expect((await executeApproval(sb, idBusy, { userId: seed.ownerId })).ok).toBe(true)
-    expect((await executeApproval(sb, idHome, { userId: seed.ownerId })).ok).toBe(true)
+    expect((await executeApproval(sb, idBusy, seed.shopId, { userId: seed.ownerId })).ok).toBe(true)
+    expect((await executeApproval(sb, idHome, seed.shopId, { userId: seed.ownerId })).ok).toBe(true)
     const mover = (await appointmentsInSlot(sb, seed.shopId, slotHome))[0]
 
     // Onto the busy slot → refused, position unchanged.
@@ -324,7 +324,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
       new_when: "moved",
       iso_new_start_time: slotBusy.start,
     })
-    const refused = await executeApproval(sb, idMoveBusy, { userId: seed.ownerId })
+    const refused = await executeApproval(sb, idMoveBusy, seed.shopId, { userId: seed.ownerId })
     expect(refused.ok).toBe(false)
     expect(await appointmentsInSlot(sb, seed.shopId, slotHome)).toHaveLength(1)
 
@@ -339,7 +339,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
       new_when: "moved",
       iso_new_start_time: slotFree.start,
     })
-    const moved = await executeApproval(sb, idMoveFree, { userId: seed.ownerId })
+    const moved = await executeApproval(sb, idMoveFree, seed.shopId, { userId: seed.ownerId })
     expect(moved.ok).toBe(true)
     const { data } = await sb
       .from("appointments")
@@ -354,7 +354,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
   it("block-time stays safe: serialized insert refuses over a busy slot at the database", async () => {
     const slot = freshSlot()
     const id = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    expect((await executeApproval(sb, id, { userId: seed.ownerId })).ok).toBe(true)
+    expect((await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })).ok).toBe(true)
 
     const blocked = await sb.rpc("write_appointment_serialized", {
       p_shop_id: seed.shopId,
@@ -379,7 +379,7 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
     const slot = freshSlot()
     mockedCreateEvent.mockRejectedValueOnce(new Error("Aurinko 500"))
     const id = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(res.ok).toBe(true)
 
     const rows = await appointmentsInSlot(sb, seed.shopId, slot)
@@ -406,13 +406,13 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
     try {
       const slot = freshSlot()
       const idFirst = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-      expect((await executeApproval(sb, idFirst, { userId: seed.ownerId })).ok).toBe(true)
+      expect((await executeApproval(sb, idFirst, seed.shopId, { userId: seed.ownerId })).ok).toBe(true)
 
       // Second booking over the SAME slot, no override. With enforcement OFF
       // the serialized write must NOT refuse (behaves as before P0-004A) — the
       // deploy-with-flag-off release condition. Two rows coexist.
       const idSecond = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-      const second = await executeApproval(sb, idSecond, { userId: seed.ownerId })
+      const second = await executeApproval(sb, idSecond, seed.shopId, { userId: seed.ownerId })
       expect(second.ok).toBe(true)
       expect(await appointmentsInSlot(sb, seed.shopId, slot)).toHaveLength(2)
     } finally {
@@ -424,11 +424,11 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
   it("no orphan external event: a refused booking never calls the provider", async () => {
     const slot = freshSlot()
     const idFirst = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    expect((await executeApproval(sb, idFirst, { userId: seed.ownerId })).ok).toBe(true)
+    expect((await executeApproval(sb, idFirst, seed.shopId, { userId: seed.ownerId })).ok).toBe(true)
 
     mockedCreateEvent.mockClear()
     const idSecond = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
-    const refused = await executeApproval(sb, idSecond, { userId: seed.ownerId })
+    const refused = await executeApproval(sb, idSecond, seed.shopId, { userId: seed.ownerId })
     expect(refused.ok).toBe(false)
     expect(mockedCreateEvent).not.toHaveBeenCalled()
   })

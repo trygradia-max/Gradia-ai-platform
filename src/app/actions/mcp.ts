@@ -52,12 +52,14 @@ export type RevokeMcpTokenResult =
 
 export async function revokeMcpToken(id: string): Promise<RevokeMcpTokenResult> {
   await requireUser()
-  await requireShop()
+  const shop = await requireShop()
   const supabase = await createClient()
+  // P0-011 (audit L-1): explicit shop scope alongside RLS — defense in depth.
   const { error } = await supabase
     .from("mcp_tokens")
     .update({ revoked_at: new Date().toISOString() })
     .eq("id", id)
+    .eq("shop_id", shop.id)
   if (error) return { ok: false, error: error.message }
   revalidatePath("/settings")
   return { ok: true }

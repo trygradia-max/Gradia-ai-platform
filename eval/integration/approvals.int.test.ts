@@ -46,7 +46,7 @@ describe.skipIf(!INTEGRATION)("approval engine [integration]", () => {
       "create_lead",
       leadPayload
     )
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
 
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", actionType: "create_lead" })
@@ -66,8 +66,8 @@ describe.skipIf(!INTEGRATION)("approval engine [integration]", () => {
     )
     const before = await countLeads(sb, seed.shopId)
 
-    const first = await executeApproval(sb, id, { userId: seed.ownerId })
-    const second = await executeApproval(sb, id, { userId: seed.ownerId })
+    const first = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
+    const second = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
 
     expect(first.ok).toBe(true)
     expect(second).toEqual({ ok: true, status: "already_decided" })
@@ -90,7 +90,7 @@ describe.skipIf(!INTEGRATION)("approval engine [integration]", () => {
       pin_notes: null,
     })
 
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
 
     expect(res.ok).toBe(false)
     const p = await getPending(sb, id)
@@ -108,7 +108,7 @@ describe.skipIf(!INTEGRATION)("approval engine [integration]", () => {
     )
     const before = await countLeads(sb, seed.shopId)
 
-    const res = await executeRejection(sb, id, { userId: seed.ownerId })
+    const res = await executeRejection(sb, id, seed.shopId, { userId: seed.ownerId })
 
     expect(res.ok).toBe(true)
     const p = await getPending(sb, id)

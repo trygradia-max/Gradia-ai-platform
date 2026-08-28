@@ -268,9 +268,12 @@ export async function sendQuote(
     return { ok: false, held: false, error: pendingErr?.message ?? "Couldn't stage the send." }
   }
 
-  const result = await executeApproval(supabase, (pending as { id: string }).id, {
-    userId: user.id,
-  })
+  const result = await executeApproval(
+    supabase,
+    (pending as { id: string }).id,
+    shop.id,
+    { userId: user.id }
+  )
   if (!result.ok) {
     // The send path held it (A2P / quiet hours / opt-out) — it's rolled back
     // to pending, visible in /approvals, and goes out when approvable.

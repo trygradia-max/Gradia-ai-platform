@@ -325,7 +325,9 @@ export async function afterCatalogStage(
   let held: string | null = null
   if (autopilot) {
     const { executeApproval } = await import("@/lib/approvals")
-    const result = await executeApproval(supabase, pendingId, { userId: shop.owner_id })
+    const result = await executeApproval(supabase, pendingId, shop.id, {
+      userId: shop.owner_id,
+    })
     if (result.ok && result.status === "executed") status = "sent"
     else if (!result.ok) held = result.error
   }
@@ -480,7 +482,9 @@ export async function runAutomationForTarget(
   }
 
   const { executeApproval } = await import("@/lib/approvals")
-  const result = await executeApproval(supabase, pendingId, { userId: shop.owner_id })
+  const result = await executeApproval(supabase, pendingId, shop.id, {
+    userId: shop.owner_id,
+  })
   if (!result.ok) {
     // Held by the send path (quiet hours / A2P / opt-out) — the pending
     // action was rolled back to pending and stays visible in /approvals.

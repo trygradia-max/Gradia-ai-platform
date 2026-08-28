@@ -1,6 +1,8 @@
 import { revalidatePath } from "next/cache"
 
 import { executeApproval, markEditRequested } from "@/lib/approvals"
+import { FEATURES } from "@/lib/features"
+import { reportTenantScopeViolation } from "@/lib/monitoring"
 import { createServiceClient } from "@/lib/supabase/service"
 import {
   bookingApprovedBlocks,
@@ -27,10 +29,21 @@ type SlackInteractionPayload = {
     action_id: string
     value: string
   }>
+  /** Where the clicked button lives — Slack stamps these server-side. */
+  container?: { channel_id?: string; message_ts?: string }
+  channel?: { id?: string }
   response_url: string
 }
 
 export async function POST(request: Request) {
+  // P0-011 / D-026: Slack approvals are OFF for the MVP. The flag used to
+  // gate only the card *sending*; the callback endpoint itself stayed live.
+  // Dormancy is now structural — the route refuses outright until the
+  // surface is deliberately re-enabled.
+  if (!FEATURES.slackApprovals) {
+    return new Response("Not found", { status: 404 })
+  }
+
   const rawBody = await request.text()
   const timestamp = request.headers.get("x-slack-request-timestamp")
   const signature = request.headers.get("x-slack-signature")
@@ -69,8 +82,56 @@ export async function POST(request: Request) {
   const supabase = createServiceClient()
   const decider = { slackUserId: payload.user.id }
 
+  // -------------------------------------------------------------------------
+  // P0-011 (audit C-2): tenant binding. The button value alone is NOT
+  // authorization — the service client bypasses RLS, so a forged/replayed
+  // pendingId could previously claim ANY tenant's action. The trusted tenant
+  // source here is the Slack message WE posted: when a card goes out via the
+  // bot token, the pending row is stamped with its slack_channel +
+  // slack_message_ts. The callback's container must match that stamp; the
+  // row's shop_id — proven ours-posted — becomes the authorized shop for the
+  // claim (which additionally enforces `.eq("shop_id")` atomically).
+  // Cards without a stored message ref (e.g. posted via incoming webhook,
+  // which returns no ts) fail CLOSED here and are decided in-app instead.
+  // -------------------------------------------------------------------------
+  const channelId = payload.container?.channel_id ?? payload.channel?.id ?? null
+  const messageTs = payload.container?.message_ts ?? null
+  if (!channelId || !messageTs) {
+    return new Response("Missing message context", { status: 400 })
+  }
+
+  const { data: boundRow } = await supabase
+    .from("pending_actions")
+    .select("id, shop_id")
+    .eq("id", pendingId)
+    .eq("slack_channel", channelId)
+    .eq("slack_message_ts", messageTs)
+    .maybeSingle()
+  const bound = (boundRow as { id: string; shop_id: string } | null) ?? null
+  if (!bound) {
+    // Distinguish a stale/foreign id from a binding mismatch for the log —
+    // enforcement is identical either way: refuse, touch nothing.
+    const { data: probe } = await supabase
+      .from("pending_actions")
+      .select("id, shop_id")
+      .eq("id", pendingId)
+      .maybeSingle()
+    const row = probe as { id: string; shop_id: string } | null
+    if (row) {
+      reportTenantScopeViolation({
+        surface: "slack.interactivity",
+        authorizedShopId: "(no slack message binding)",
+        rowShopId: row.shop_id,
+        rowId: pendingId,
+        detail: `callback channel=${channelId} ts=${messageTs} did not match the stored card reference`,
+      })
+    }
+    return new Response("Unknown action", { status: 404 })
+  }
+  const shopId = bound.shop_id
+
   if (action.action_id === "approve_lead") {
-    const result = await executeApproval(supabase, pendingId, decider)
+    const result = await executeApproval(supabase, pendingId, shopId, decider)
 
     if (!result.ok) {
       console.error("[slack] approve failed:", result.error)
@@ -180,7 +241,7 @@ export async function POST(request: Request) {
   }
 
   if (action.action_id === "edit_lead") {
-    const result = await markEditRequested(supabase, pendingId, decider)
+    const result = await markEditRequested(supabase, pendingId, shopId, decider)
 
     if (!result.ok) {
       console.error("[slack] edit_requested failed:", result.error)

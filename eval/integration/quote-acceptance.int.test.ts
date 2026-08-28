@@ -224,7 +224,7 @@ describe.skipIf(!INTEGRATION)("P0-009 quote acceptance [integration]", () => {
       expect(staged[0].payload.lead_id).toBe(fx.leadId)
 
       const before = await leadRows(sb, seed.shopId)
-      const approve = await executeApproval(sb, staged[0].id, { userId: seed.ownerId })
+      const approve = await executeApproval(sb, staged[0].id, seed.shopId, { userId: seed.ownerId })
       expect(approve.ok).toBe(true)
 
       // ONE lead total — the quote's original lead, now booked. No duplicate.
@@ -251,7 +251,7 @@ describe.skipIf(!INTEGRATION)("P0-009 quote acceptance [integration]", () => {
       await respondToQuote(fx.token, "accept", slot.start)
       const staged = await stagedBookings(sb, seed.shopId, fx.quoteId)
       expect(staged).toHaveLength(1)
-      expect((await executeApproval(sb, staged[0].id, { userId: seed.ownerId })).ok).toBe(true)
+      expect((await executeApproval(sb, staged[0].id, seed.shopId, { userId: seed.ownerId })).ok).toBe(true)
 
       const leadsBefore = await leadRows(sb, seed.shopId)
       const historyBefore = leadsBefore.find((l) => l.id === fx.leadId)?.stage_history
@@ -261,7 +261,7 @@ describe.skipIf(!INTEGRATION)("P0-009 quote acceptance [integration]", () => {
         .from("pending_actions")
         .update({ status: "pending", decided_at: null, decided_by_user: null })
         .eq("id", staged[0].id)
-      const replay = await executeApproval(sb, staged[0].id, { userId: seed.ownerId })
+      const replay = await executeApproval(sb, staged[0].id, seed.shopId, { userId: seed.ownerId })
       expect(replay.ok).toBe(true)
       expect(replay).toMatchObject({ status: "executed" })
 
@@ -416,7 +416,7 @@ describe.skipIf(!INTEGRATION)("P0-009 quote acceptance [integration]", () => {
         })
         .select("id")
         .single()
-      const res = await executeApproval(sb, (pending as { id: string }).id, {
+      const res = await executeApproval(sb, (pending as { id: string }).id, seedA.shopId, {
         userId: seedA.ownerId,
       })
       expect(res.ok).toBe(true)

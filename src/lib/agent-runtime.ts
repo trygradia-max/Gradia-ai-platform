@@ -1962,10 +1962,14 @@ async function maybeAutoExecute(
   if (!hasPackage2(shop)) return outcome
   const agentAuto = resolveAgentMode(shop, agent.id) === "autonomous"
 
+  // P0-011: ids come from this run's own shop-scoped inserts, but the
+  // explicit predicate makes that an enforced mechanism — a handler bug
+  // leaking a foreign id can never auto-execute another tenant's action.
   const { data } = await supabase
     .from("pending_actions")
     .select("id, action_type, status")
     .in("id", ids)
+    .eq("shop_id", shop.id)
   const rows =
     (data as
       | { id: string; action_type: PendingActionType; status: string }[]
@@ -1988,6 +1992,7 @@ async function maybeAutoExecute(
       const result = await executeApproval(
         supabase,
         row.id,
+        shop.id,
         { userId: agent.owner_id },
         { context: "automatic" }
       )

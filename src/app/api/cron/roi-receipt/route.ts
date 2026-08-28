@@ -19,6 +19,7 @@
  */
 
 import { composeReceiptSms, computeRoiReceipt } from "@/lib/data/roi-receipt"
+import { forShop } from "@/lib/supabase/for-shop"
 import { createServiceClient } from "@/lib/supabase/service"
 import { smsGateForShop } from "@/lib/telephony-provider"
 import { resolveTwilioCredentials, sendOutboundSms } from "@/lib/twilio"
@@ -89,22 +90,22 @@ export async function GET(request: Request) {
 
       // Persist the snapshot first — the Found Money Ledger keeps every week,
       // including empty ones, so the cumulative history has no gaps. Upsert on
-      // the period so a re-run updates rather than duplicates.
-      const { error: metricsErr } = await supabase
-        .from("shop_metrics")
-        .upsert(
-          {
-            shop_id: shop.id,
-            period_start: receipt.periodStart,
-            period_end: receipt.periodEnd,
-            attributed_revenue_cents: receipt.moneyInPlayCents,
-            recovered_leads_count: receipt.recoveredLeadsCount,
-            leads_count: receipt.leadsCaught,
-            messages_count: receipt.messagesSent,
-            bookings_count: receipt.bookingsMade,
-          },
-          { onConflict: "shop_id,period_start,period_end" }
-        )
+      // the period so a re-run updates rather than duplicates. Tenant scope via
+      // forShop (P0-011 helper proof): shop_id is stamped by the facade from
+      // the cron-loaded row, never spelled per call.
+      const { error: metricsErr } = await forShop(supabase, shop.id).upsert(
+        "shop_metrics",
+        {
+          period_start: receipt.periodStart,
+          period_end: receipt.periodEnd,
+          attributed_revenue_cents: receipt.moneyInPlayCents,
+          recovered_leads_count: receipt.recoveredLeadsCount,
+          leads_count: receipt.leadsCaught,
+          messages_count: receipt.messagesSent,
+          bookings_count: receipt.bookingsMade,
+        },
+        { onConflict: "shop_id,period_start,period_end" }
+      )
       if (metricsErr) {
         console.error("[cron/roi-receipt] metrics upsert failed for", shop.id, metricsErr)
       }

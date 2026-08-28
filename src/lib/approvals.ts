@@ -40,6 +40,7 @@ import {
 } from "@/lib/aurinko"
 import { recordActionDecision } from "@/lib/decision-log"
 import { FEATURES } from "@/lib/features"
+import { reportTenantScopeViolation } from "@/lib/monitoring"
 import { recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
@@ -226,9 +227,18 @@ export type DecisionResult =
   | ({ ok: true } & DecisionSuccess)
   | { ok: false; error: string }
 
+/**
+ * P0-011 (audit C-2): the claim is TENANT-BOUND. `shopId` must come from a
+ * trusted server-side source (the caller's RLS-resolved session shop, a
+ * cron-loaded shop row, or — for Slack — the shop of the card WE posted),
+ * never from request input. The `.eq("shop_id")` predicate makes a claim
+ * against another tenant's action match zero rows, atomically, regardless of
+ * which client (session or service-role) runs it.
+ */
 async function claimPendingAction(
   supabase: SupabaseClient,
   pendingId: string,
+  shopId: string,
   nextStatus: PendingActionStatus,
   decider: Decider
 ): Promise<ClaimedAction | null> {
@@ -243,6 +253,7 @@ async function claimPendingAction(
     .from("pending_actions")
     .update(updates)
     .eq("id", pendingId)
+    .eq("shop_id", shopId)
     .in("status", ["pending", "edit_requested"])
     .select("id, shop_id, action_type, payload")
     .maybeSingle()
@@ -250,12 +261,36 @@ async function claimPendingAction(
   if (error) {
     throw error
   }
-  return (data as ClaimedAction | null) ?? null
+  const claimed = (data as ClaimedAction | null) ?? null
+
+  // Observability (attack/bug signal, not noise): distinguish "already
+  // decided" from "exists under ANOTHER shop". The probe is best-effort and
+  // read-only — enforcement already happened atomically in the predicate
+  // above. Under a session client, RLS hides foreign rows and the probe
+  // stays silent (cross-tenant was impossible there to begin with).
+  if (!claimed) {
+    const { data: probe } = await supabase
+      .from("pending_actions")
+      .select("id, shop_id")
+      .eq("id", pendingId)
+      .maybeSingle()
+    const row = probe as { id: string; shop_id: string } | null
+    if (row && row.shop_id !== shopId) {
+      reportTenantScopeViolation({
+        surface: "approvals.claimPendingAction",
+        authorizedShopId: shopId,
+        rowShopId: row.shop_id,
+        rowId: pendingId,
+        detail: `attempted status → ${nextStatus}`,
+      })
+    }
+  }
+  return claimed
 }
 
 async function rollbackClaim(
   supabase: SupabaseClient,
-  pendingId: string
+  claimed: ClaimedAction
 ): Promise<void> {
   await supabase
     .from("pending_actions")
@@ -265,7 +300,8 @@ async function rollbackClaim(
       decided_by_slack: null,
       decided_by_user: null,
     })
-    .eq("id", pendingId)
+    .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 }
 
 async function executeCreateLead(
@@ -280,7 +316,7 @@ async function executeCreateLead(
   })
 
   if (!customerResult.ok) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: `Customer resolution failed: ${customerResult.error}`,
@@ -318,7 +354,7 @@ async function executeCreateLead(
     .single()
 
   if (insertErr || !created) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: insertErr?.message ?? "Lead insert failed" }
   }
 
@@ -342,6 +378,7 @@ async function executeCreateLead(
     .from("pending_actions")
     .update({ result_id: created.id })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   // Best-effort CRM push (Jobber, Housecall Pro, …). Never blocks the
   // approval; the seam pushes to every connected CRM independently.
@@ -374,7 +411,7 @@ async function executeAddNote(
   const content = (proposal.content ?? "").trim()
 
   if (!content) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: "Note content is empty" }
   }
 
@@ -402,7 +439,7 @@ async function executeAddNote(
   })
 
   if (!result.ok) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: `Note save failed: ${result.error}` }
   }
 
@@ -410,6 +447,7 @@ async function executeAddNote(
     .from("pending_actions")
     .update({ result_id: result.id })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   return {
     ok: true,
@@ -438,13 +476,20 @@ export type ExecuteApprovalOptions = {
 export async function executeApproval(
   supabase: SupabaseClient,
   pendingId: string,
+  shopId: string,
   decider: Decider,
   options?: ExecuteApprovalOptions
 ): Promise<ApprovalResult> {
   const context: ConflictPolicyContext = options?.context ?? "hitl"
   let claimed: ClaimedAction | null
   try {
-    claimed = await claimPendingAction(supabase, pendingId, "approved", decider)
+    claimed = await claimPendingAction(
+      supabase,
+      pendingId,
+      shopId,
+      "approved",
+      decider
+    )
   } catch (err) {
     return {
       ok: false,
@@ -477,7 +522,7 @@ export async function executeApproval(
     case "create_quote":
       return executeCreateQuote(supabase, claimed)
     default:
-      await rollbackClaim(supabase, claimed.id)
+      await rollbackClaim(supabase, claimed)
       return {
         ok: false,
         error: `Unsupported action_type: ${claimed.action_type}`,
@@ -625,6 +670,7 @@ async function recordAvailabilityOnCard(
     .from("pending_actions")
     .update({ payload })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
   if (error) {
     console.warn(
       `[availability] payload availability write failed for action ${claimed.id}: ${error.message}`
@@ -672,6 +718,7 @@ async function recordPayloadReconciliation(
     .from("pending_actions")
     .select("payload")
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
     .maybeSingle()
   const current =
     ((data as { payload?: Record<string, unknown> } | null)?.payload ??
@@ -680,6 +727,7 @@ async function recordPayloadReconciliation(
     .from("pending_actions")
     .update({ payload: { ...current, ...patch } })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
   if (error) {
     console.warn(
       `[approvals] reconciliation payload write failed for action ${claimed.id}: ${error.message}`
@@ -766,7 +814,7 @@ async function executeRescheduleAppointment(
     ? new Date(proposal.iso_new_start_time)
     : null
   if (!newStart || Number.isNaN(newStart.getTime())) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: `No exact new time on this request ("${proposal.new_when ?? "?"}") — edit it in before approving.`,
@@ -779,7 +827,7 @@ async function executeRescheduleAppointment(
     proposal
   )
   if (!appointment) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: "Couldn't match this to a booking — find it in Schedule and move it there.",
@@ -798,7 +846,7 @@ async function executeRescheduleAppointment(
   })
   if (!gate.allowed) {
     await recordAvailabilityOnCard(supabase, claimed, gate.summary, null)
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: gate.error, availability: gate.summary }
   }
 
@@ -823,7 +871,7 @@ async function executeRescheduleAppointment(
       `[approvals] appointment move failed for action ${claimed.id} — nothing was moved:`,
       err instanceof Error ? err.message : err
     )
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: `Appointment update failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -836,7 +884,7 @@ async function executeRescheduleAppointment(
       excludeAppointmentId: appointment.id,
     })
     await recordAvailabilityOnCard(supabase, claimed, summary, null)
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error:
@@ -851,6 +899,7 @@ async function executeRescheduleAppointment(
     .from("pending_actions")
     .update({ result_id: appointment.id })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   // Audit trail — after authoritative persistence: an executed override is
   // recorded (D-016); a degraded check is recorded as "unverified" — never
@@ -931,7 +980,7 @@ async function executeCancelAppointment(
     proposal
   )
   if (!appointment) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: "Couldn't match this to a booking — find it in Schedule and cancel it there.",
@@ -956,7 +1005,7 @@ async function executeCancelAppointment(
           appointment.aurinko_event_id
         )
       } catch (err) {
-        await rollbackClaim(supabase, claimed.id)
+        await rollbackClaim(supabase, claimed)
         return {
           ok: false,
           error: `Calendar delete failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -977,6 +1026,7 @@ async function executeCancelAppointment(
     .from("pending_actions")
     .update({ result_id: appointment.id })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -1206,7 +1256,7 @@ async function executeBookAppointment(
 
   const start = new Date(proposal.iso_start_time)
   if (Number.isNaN(start.getTime())) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: "Booking start time is not a valid ISO date" }
   }
   const durationMinutes = Number(proposal.duration_minutes) || 90
@@ -1252,7 +1302,7 @@ async function executeBookAppointment(
   })
   if (!gate.allowed) {
     await recordAvailabilityOnCard(supabase, claimed, gate.summary, null)
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: gate.error, availability: gate.summary }
   }
 
@@ -1266,7 +1316,7 @@ async function executeBookAppointment(
     }
   }
   if (!shop || !accessToken) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error:
@@ -1280,7 +1330,7 @@ async function executeBookAppointment(
     email: proposal.email,
   })
   if (!customerResult.ok) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: `Customer resolution failed: ${customerResult.error}`,
@@ -1324,7 +1374,7 @@ async function executeBookAppointment(
       `[approvals] appointment write failed for action ${claimed.id} — nothing was booked:`,
       err instanceof Error ? err.message : err
     )
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: `Booking could not be saved — nothing was booked. ${err instanceof Error ? err.message : String(err)}`,
@@ -1340,7 +1390,7 @@ async function executeBookAppointment(
       end,
     })
     await recordAvailabilityOnCard(supabase, claimed, summary, null)
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error:
@@ -1476,6 +1526,7 @@ async function executeBookAppointment(
     .from("pending_actions")
     .update({ result_id: leadId ?? appointmentId })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   // External calendar sync SECOND (P0-004A ordering invariant): the event is
   // created only after the durable Gradia row exists — no orphan events. A
@@ -1681,7 +1732,7 @@ async function executeCreateQuote(
 ): Promise<ApprovalResult> {
   const proposal = claimed.payload as unknown as QuoteProposal
   if (!proposal.customer_name?.trim() || !proposal.phone?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: "Quote proposal is missing the customer." }
   }
 
@@ -1690,7 +1741,7 @@ async function executeCreateQuote(
     phone: proposal.phone,
   })
   if (!customerResult.ok) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: `Customer resolution failed: ${customerResult.error}` }
   }
 
@@ -1750,7 +1801,7 @@ async function executeCreateQuote(
     .single()
 
   if (quoteErr || !quote) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: quoteErr?.message ?? "Quote insert failed (is the C1 migration applied?)",
@@ -1761,6 +1812,7 @@ async function executeCreateQuote(
     .from("pending_actions")
     .update({ result_id: (quote as { id: string }).id })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -1792,13 +1844,13 @@ async function executeSendSms(
   const proposal = claimed.payload as unknown as SmsProposal
 
   if (!proposal.to_phone?.trim() || !proposal.body?.trim()) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: "SMS proposal is missing recipient or body." }
   }
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
   if (!shop?.twilio_phone_number) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: "Connect SMS in /settings before approving outbound messages.",
@@ -1809,7 +1861,7 @@ async function executeSendSms(
   // approve its campaign. Enforced here at the send boundary, in code.
   const smsGate = smsGateForShop(shop, shop.twilio_phone_number)
   if (!smsGate.allowed) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: smsGate.reason }
   }
 
@@ -1821,7 +1873,7 @@ async function executeSendSms(
     category: proposal.category ?? "transactional",
   })
   if (!policy.allowed) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
   }
 
@@ -1835,7 +1887,7 @@ async function executeSendSms(
       creds: resolveTwilioCredentials(shop),
     })
   } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: `Twilio send failed: ${
@@ -1876,6 +1928,7 @@ async function executeSendSms(
     .from("pending_actions")
     .update({ result_id: resultId })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   // Locked menu: 4 credits per SMS segment, metered on send.
   {
@@ -1912,7 +1965,7 @@ async function executeSendEmail(
     !proposal.subject?.trim() ||
     !proposal.body?.trim()
   ) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: "Email needs a recipient, subject, and body.",
@@ -1929,7 +1982,7 @@ async function executeSendEmail(
     }
   }
   if (!shop || !accessToken) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error: "Connect Gmail via Aurinko (in /settings) before approving emails.",
@@ -1945,7 +1998,7 @@ async function executeSendEmail(
     })
     sentId = sent.id
   } catch (err) {
-    await rollbackClaim(supabase, claimed.id)
+    await rollbackClaim(supabase, claimed)
     return {
       ok: false,
       error:
@@ -1985,6 +2038,7 @@ async function executeSendEmail(
     .from("pending_actions")
     .update({ result_id: resultId })
     .eq("id", claimed.id)
+    .eq("shop_id", claimed.shop_id)
 
   // Locked menu: 1 credit per email send.
   {
@@ -2069,6 +2123,7 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
 export async function markEditRequested(
   supabase: SupabaseClient,
   pendingId: string,
+  shopId: string,
   decider: Decider
 ): Promise<DecisionResult> {
   let claimed: ClaimedAction | null
@@ -2076,6 +2131,7 @@ export async function markEditRequested(
     claimed = await claimPendingAction(
       supabase,
       pendingId,
+      shopId,
       "edit_requested",
       decider
     )
@@ -2097,6 +2153,7 @@ export async function markEditRequested(
 export async function executeRejection(
   supabase: SupabaseClient,
   pendingId: string,
+  shopId: string,
   decider: Decider
 ): Promise<DecisionResult> {
   let claimed: ClaimedAction | null
@@ -2104,6 +2161,7 @@ export async function executeRejection(
     claimed = await claimPendingAction(
       supabase,
       pendingId,
+      shopId,
       "rejected",
       decider
     )

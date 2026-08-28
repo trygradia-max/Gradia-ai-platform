@@ -354,8 +354,13 @@ export async function POST(request: Request) {
     return handlePlatformRenewal(supabase, invoice)
   }
 
-  // Resolve the connected account → shop up front. We'll reuse it for
-  // both the interaction lookup AND the payments mirror insert.
+  // P0-011: tenant resolution is MANDATORY before any tenant-row read/write.
+  // A platform event (no Connect account envelope) reaching this point is
+  // `invoice.payment_failed` on the Gradia subscription — no connected-shop
+  // interaction exists for it, so tenant-row work is skipped (the Slack
+  // notice below still fires). A Connect event whose account has no shops
+  // row is a wiring anomaly: ack + log, never fall back to an UNSCOPED
+  // interactions/payments query (the service client bypasses RLS).
   let shopId: string | null = null
   if (event.account) {
     const { data: shopRow } = await supabase
@@ -364,18 +369,24 @@ export async function POST(request: Request) {
       .eq("stripe_account_id", event.account)
       .maybeSingle()
     shopId = (shopRow as { id: string } | null)?.id ?? null
+    if (!shopId) {
+      console.warn(
+        `[stripe webhook] no shop for connected account ${event.account} — ignoring ${eventType} for invoice ${invoice.id}`
+      )
+      return Response.json({ ok: true, ignored: "unknown connected account" })
+    }
   }
 
   // Match the original outbound interaction we recorded when the
-  // charge was approved.
-  let interactionQuery = supabase
-    .from("interactions")
-    .select("id, shop_id, customer_id, metadata")
-    .eq("metadata->>stripe_invoice_id", invoice.id)
-  if (shopId) interactionQuery = interactionQuery.eq("shop_id", shopId)
-
-  const { data: interaction, error: lookupErr } =
-    await interactionQuery.maybeSingle()
+  // charge was approved — always shop-scoped when a shop is in play.
+  const { data: interaction, error: lookupErr } = shopId
+    ? await supabase
+        .from("interactions")
+        .select("id, shop_id, customer_id, metadata")
+        .eq("metadata->>stripe_invoice_id", invoice.id)
+        .eq("shop_id", shopId)
+        .maybeSingle()
+    : { data: null, error: null }
 
   if (lookupErr) {
     console.error("[stripe webhook] lookup failed:", lookupErr)
@@ -407,10 +418,11 @@ export async function POST(request: Request) {
       .from("interactions")
       .update({ metadata: next })
       .eq("id", interaction.id)
+      .eq("shop_id", interaction.shop_id)
     if (updateErr) {
       console.error("[stripe webhook] metadata update failed:", updateErr)
     }
-  } else {
+  } else if (shopId) {
     console.warn(
       "[stripe webhook] no matching interaction for invoice:",
       invoice.id
@@ -490,6 +502,7 @@ export async function POST(request: Request) {
         .from("customers")
         .select("phone")
         .eq("id", customerId)
+        .eq("shop_id", shopId)
         .maybeSingle()
       customerPhone = (customerRow as { phone: string | null } | null)?.phone ?? null
     }
@@ -535,24 +548,33 @@ async function handleChargeRefunded(event: StripeEvent): Promise<Response> {
 
   const supabase = createServiceClient()
 
-  let shopId: string | null = null
-  if (event.account) {
-    const { data: shopRow } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("stripe_account_id", event.account)
-      .maybeSingle()
-    shopId = (shopRow as { id: string } | null)?.id ?? null
+  // P0-011: refunds mirror only for a RESOLVED Connect shop — a missing
+  // account envelope or an unmapped account acks + logs instead of running
+  // an unscoped payments lookup with the RLS-bypassing service client.
+  if (!event.account) {
+    return Response.json({ ok: true, ignored: "no connected account" })
+  }
+  const { data: shopRow } = await supabase
+    .from("shops")
+    .select("id")
+    .eq("stripe_account_id", event.account)
+    .maybeSingle()
+  const shopId = (shopRow as { id: string } | null)?.id ?? null
+  if (!shopId) {
+    console.warn(
+      `[stripe webhook] no shop for connected account ${event.account} — ignoring refund for invoice ${invoiceId}`
+    )
+    return Response.json({ ok: true, ignored: "unknown connected account" })
   }
 
-  let q = supabase
+  const { data: paymentRow, error: paymentErr } = await supabase
     .from("payments")
     .select(
       "id, shop_id, amount_cents, refunded_amount_cents, stripe_invoice_number, hosted_invoice_url, description"
     )
     .eq("stripe_invoice_id", invoiceId)
-  if (shopId) q = q.eq("shop_id", shopId)
-  const { data: paymentRow, error: paymentErr } = await q.maybeSingle()
+    .eq("shop_id", shopId)
+    .maybeSingle()
 
   if (paymentErr) {
     console.error("[stripe webhook] refund lookup failed:", paymentErr)
@@ -593,6 +615,7 @@ async function handleChargeRefunded(event: StripeEvent): Promise<Response> {
       refunded_at: new Date().toISOString(),
     })
     .eq("id", payment.id)
+    .eq("shop_id", payment.shop_id)
 
   if (updateErr) {
     console.error("[stripe webhook] payments refund update failed:", updateErr)
@@ -620,6 +643,7 @@ async function handleChargeRefunded(event: StripeEvent): Promise<Response> {
       .from("interactions")
       .update({ metadata: nextMeta })
       .eq("id", (interactionRow as { id: string }).id)
+      .eq("shop_id", payment.shop_id)
     if (interactionErr) {
       console.error(
         "[stripe webhook] refund interaction update failed:",
