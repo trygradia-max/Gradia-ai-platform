@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (banner added 2026-08-28).** This plan has been replaced. Do NOT work from it. Successor: `platform/docs/gradia-v2/` — roadmap `10-roadmap.md`, decisions `11-decision-log.md`, precedence `16-document-source-map.md`.
+
 # Gradia — MVP Implementation Plan
 
 _Authored 2026-06-01. Companion to `GRADIA_MVP_PLAN.md` (the build spec) and `MVP_GATING_PLAN.md` (the Phase-0 hide-pass detail). This doc is the engineering execution plan: what's already true in the code, the corrections that shrink the work, and the file-level changes per phase._

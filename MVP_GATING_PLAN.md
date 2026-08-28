@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (banner added 2026-08-28).** This plan has been replaced. Do NOT work from it. Successor: `platform/docs/gradia-v2/` — roadmap `10-roadmap.md`, decisions `11-decision-log.md`, precedence `16-document-source-map.md`.
+
 # Gradia MVP Re-scope — Feature Gating Plan
 
 _Last updated: 2026-06-01_

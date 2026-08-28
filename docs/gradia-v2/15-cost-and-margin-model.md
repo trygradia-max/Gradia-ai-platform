@@ -2,7 +2,7 @@
 
 _Created 2026-07-25 by the Organizer. Condensed operating view of Gradia's unit economics. **`_docs/GRADIA_PRICING.md` (locked 2026-06-11, reframed 06-15) remains the SKU/price/margin source of truth** — this doc summarizes it, adds the vendor cost-driver view, and records the D-005 trial economics frame. On any numeric conflict, GRADIA_PRICING.md wins unless the decision log amends it._
 
-> **⚠ Re-pricing in progress (D-031, 2026-07-27 — contradiction C-14).** The founder has re-based public pricing to three tiers: **Core $99 / Pro $149 / Operator $249** per month. Everything below (§1–§3 SKUs, credit menu, margin floors, $49 full stack) describes the **currently-implemented $20/$29 model**, which live billing and deployed Stripe products still charge — it stays accurate as a description of today only. Tier feature split, per-tier allowances, re-derived margin floors, adoption timing, and existing-shop migration are open in **Q-22** (`program/decision-queue.md`); `GRADIA_PRICING.md` requires a founder rewrite. Do not size any new allowance, trial number (Q-13), or marketing pricing claim from the tables below. The margin *rules* framework in §3 (retail multiple on wholesale, floor verification from `usage_events`, `pricing_config`-only changes) carries forward; its numbers get re-derived under Q-22._
+> **⚠ Re-pricing RESOLVED at the decision layer (D-034/D-035, 2026-08-28) — implementation pending (P0-013).** Public/forward pricing: **Core $99 (7,000 credits) / Pro $149 (6,000 credits + 100 min, adds voice + earned autonomy) / Operator $249 (10,000 credits + 180 min, adds team seats)**; trial = 14 days from activation, card-to-convert, 500 credits + 15 min. Full model: rewritten `_docs/GRADIA_PRICING.md` (2026-08-28). The §1–§3 tables below still describe the **$20/$29 model that live billing charges today**, until P0-013 ships. New-tier worst-case margin floors ≈ 76–77%. C-14 narrows from "contradiction" to "implementation lag".
 
 ## 1. Packages & meters
 
@@ -41,7 +41,7 @@ SMS segment 4 · Email send 1 · Outreach draft (Haiku) 1 · BI answer 7 · Whis
 **Full operational trial with controlled variable-cost allowances**: trial shops get the real product (D-005) including real imports (D-006), with variable costs capped by trial allowances enforced through the existing fail-closed credit/minute machinery — the same rails as paid caps, smaller numbers.
 
 - Worst-case trial COGS = trial credit allowance × wholesale + trial minutes × ~12¢ + fixed onboarding costs (A2P registration timing is a design point — registering during trial spends ~$2 + carrier fees per shop that may not convert).
-- **Numbers pending founder decision (Q-13 in `program/decision-queue.md`):** trial length, included trial credits/minutes, card-upfront or not, and whether a Gradia number is provisioned during trial.
+- **Numbers set by D-035 (2026-08-28, resolves Q-13):** 14 days from activation (gate: import committed OR service menu + calendar connected), card optional to start / required to convert, 500 credits + 15 voice minutes, number only after card on file. Worst-case trial COGS ≈ $5/shop.
 - This supersedes the pre-trial "free = explore only" paywall posture in GRADIA_PRICING §Paywall (recorded as contradiction C-04 in `16-document-source-map.md`); GRADIA_PRICING needs a trial amendment once Q-13 resolves.
 
 ## 6. Vendor cost drivers

@@ -90,7 +90,7 @@ Format per item: context · options · Organizer recommendation · what it block
 - **Recommendation:** own-DB events table first — consistent with the ledger-derived culture and zero new data processors before GDPR-shaped work (P10).
 - **Blocks:** analytics instrumentation tickets (P1+).
 
-## Q-13 — Trial length and variable-cost allowances (D-005)
+## Q-13 — RESOLVED 2026-08-28 → D-035 (trial: 14d from activation, card-to-convert, 500 credits + 15 min)
 
 - **Context:** D-005 approves a full operational trial with controlled variable-cost allowances; the numbers are unset. GRADIA_PRICING's "free = explore only" paywall text needs a trial amendment (contradiction C-04). **Amended 2026-07-27:** D-032 fixes that the trial starts after *meaningful setup or activation*, not email signup — the definition of that activation gate (which onboarding steps count: e.g. import committed, service menu saved, calendar connected, first simulated workflow run) is now part of this decision. Allowance numbers must also be re-derived against D-031 three-tier pricing (Q-22), not the $20/$29 model.
 - **Options:** founder sets length + allowances + the activation-gate step list.
@@ -150,7 +150,7 @@ Marketing category language: resolved by the founder master product definition �
 - **Recommendation:** *keep Aurinko through stabilization and native-calendar development; evaluate direct providers after the Gradia-native appointment system and `CalendarProvider` interface are stable* (post-E02).
 - **Blocks:** nothing now; a planned-evaluations decision post-E02.
 
-## Q-22 — Three-tier pricing implementation (D-031)
+## Q-22 — RESOLVED 2026-08-28 → D-034 (tier split + allowances; implementation remains ticket P0-013)
 
 - **Context:** D-031 (founder master definition, 2026-07-27) re-bases public pricing to Core $99 / Pro $149 / Operator $249. Everything downstream is unset: the docs' margin floors, credit menu, and $49-full-stack framing (`../15-cost-and-margin-model.md`) are derived from the superseded $20/$29 model, live Stripe products still bill $20/$29, and the trial allowances (Q-13) were sized against the old model. Contradiction C-14.
 - **Options (founder sets each):** (1) tier feature split — what Core vs Pro vs Operator each include (voice, autonomy, seats, locations, allowances); (2) included credit/minute allowances per tier + re-derived margin floors (keep the ~3.3×-wholesale / ≥~67%-margin rules or re-set them); (3) adoption timing — before alpha (2026-08-07), at alpha, or post-alpha relaunch; (4) existing pilot/shop migration — grandfather, migrate with notice, or none exist to migrate.
