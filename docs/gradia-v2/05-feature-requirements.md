@@ -157,7 +157,7 @@ Requirement verbs: **MUST** (binding), **MUST NOT** (binding prohibition). Anyth
 | FR-059 | Budget exhaustion MUST NOT cut a live call — state flips at the next call (take-a-message fallback). | Preserve | GRADIA_PRICING §paywall |
 | FR-060 | Vapi tool parameters MUST be zod-validated like every other tool boundary. | P1 | audit 07/11 |
 | FR-061 | Voice-minute metering MUST be idempotent per call (vendor_ref uniqueness). | P0 | P0-007 — **met 2026-08-14** (PR #21; P0-005 unique + provider_events claim) |
-| FR-062 | `VAPI_DEFAULT_SHOP_ID` MUST be unset in production. | P0 | P0-010, audit Q18 — code-side guard shipped in P0-007 (prod fallback fails closed); operational verification remains P0-010 |
+| FR-062 | `VAPI_DEFAULT_SHOP_ID` MUST be unset in production. | P0 | P0-010, audit Q18 — code-side guard shipped in P0-007 (prod fallback fails closed); **met 2026-08-28**: founder manually confirmed the var ABSENT from Vercel Production at the P0-010 acceptance |
 
 ## 21. Earned autonomy
 
@@ -193,7 +193,7 @@ Requirement verbs: **MUST** (binding), **MUST NOT** (binding prohibition). Anyth
 | FR-074 | All webhooks remain signature-verified, timing-safe, fail-closed, and test-locked. | Preserve | audit 06 |
 | FR-075 | Slack approvals remain disabled until claims are shop-bound (tenant authorization rebuilt); re-enabling requires an ADR. | Standing | D-026, audit C-2 |
 | FR-076 | `a2p_registrations.business` (EIN/legal identity) MUST be encrypted at rest like other per-shop credentials. | P1 | audit 05/06 |
-| FR-077 | Unauthenticated LLM-invoking endpoints MUST NOT exist (`processRawLeadNote` gets auth + metering + rate limit). | P0 | P0-010, audit M-1 |
+| FR-077 | Unauthenticated LLM-invoking endpoints MUST NOT exist (`processRawLeadNote` gets auth + metering + rate limit). | P0 | P0-010, audit M-1 — **met 2026-08-28** (PR #27; session auth, fail-closed gates, `ai_lead` rate bucket, credits=0 metering; unauthenticated replay refused at acceptance) |
 | FR-078 | Customer data deletion and export flows MUST exist before scale sales; cascade-delete of ledgers/consent history is removed (soft-delete/archival). | P10 | audit 05 §weakness 2, roadmap item 29 |
 
 ## 25. Reliability and observability
@@ -201,7 +201,7 @@ Requirement verbs: **MUST** (binding), **MUST NOT** (binding prohibition). Anyth
 | ID | Requirement | Phase | Source |
 |---|---|---|---|
 | FR-079 | Monitoring anomalies, reconciliation drift, and cron failures MUST alert a human (not console-only). | P0 | P0-012, audit 00 weakness 5 |
-| FR-080 | The dashboard MUST have `error.tsx` boundaries and `loading.tsx` on every section; a thrown server error never renders the framework default screen. | P0 | P0-010, audit 08 |
+| FR-080 | The dashboard MUST have `error.tsx` boundaries and `loading.tsx` on every section; a thrown server error never renders the framework default screen. | P0 | P0-010, audit 08 — **met 2026-08-28** (PR #27; root boundaries pre-existed, `(dashboard)`-level `error.tsx`/`not-found.tsx` added, all four missing `loading.tsx` routes covered; boundary + Sentry capture verified at acceptance) |
 | FR-081 | New code MUST NOT add silent failure paths; failures carry structured, actionable information. | All | Builder contract, audit 09 |
 | FR-082 | A health endpoint, structured logging, and trace sampling MUST exist before P10 exit. | P10 | audit 03/12 item 31 |
 

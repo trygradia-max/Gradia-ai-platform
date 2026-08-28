@@ -16,7 +16,7 @@ The design system is real and enforced in the codebase, but its rules are spread
 | `navigation-model.md` | The shipped IA (seven destinations + two pinned — C-15/Q-15), consolidations, deep-link rules, future surfaces |
 | `interaction-principles.md` | Motion, optimism, skeletons, HITL affordances, friction gradient |
 | `copy-guidelines.md` | Narrator vs character voice, chrome copy rules, empty states |
-| `state-matrix.md` | Required states per surface type; current gaps (→ P0-010) |
+| `state-matrix.md` | Required states per surface type; audit gaps closed at the P0-010 close (2026-08-28) |
 | `responsive-rules.md` | Mobile-first behavior, PWA direction (D-020, E08) |
 | `accessibility-standard.md` | Contrast, focus, status legibility, keyboard, reduced motion |
 | `component-inventory.md` | Existing components, sourcing rules, planned gaps for future epics |

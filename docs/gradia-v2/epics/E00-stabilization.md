@@ -63,7 +63,7 @@ P0-001 is the single most serious issue in the audit — treat the credential as
 
 ## Tenant implications
 
-No tenancy model change (that is E01). P0-011 produces the design that makes tenant scoping mechanism instead of discipline; the two stray `.eq("shop_id")` omissions (audit L-1/L-2) are fixed in P0-010.
+No tenancy model change (that is E01). P0-011 produces the design that makes tenant scoping mechanism instead of discipline; the two stray `.eq("shop_id")` omissions (audit L-1/L-2) belong to the P0-011 sweep, not P0-010 (accuracy correction at the 2026-08-28 P0-010 close — P0-009 already tenant-scoped the `approvals.ts` executor path; P0-011 verifies L-2 there rather than double-fixing).
 
 ## Migration implications
 

@@ -102,7 +102,7 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-0
 | Core workflows depend on it | Yes — paywall/billing; customer payments only from E05 |
 | Public marketing status | Pricing is public claim territory (D-004; `_docs/GRADIA_PRICING.md` wins) |
 | Feature flag | Paywall active; **Stripe Connect flag OFF** until E05 |
-| Live-verification status | Billing live; test-mode config, fee treatment in margins, 5 Stripe env vars in prod **requires verification** (P0-010) |
+| Live-verification status | Billing live; test-mode config + fee treatment in margins still unverified. The 5 Stripe env vars **verified in prod 2026-08-28** (P0-010 founder acceptance): `STRIPE_API_BASE` correctly absent; the four `STRIPE_PRICE_*` ids **intentionally absent — recorded exception**, checkout fail-closed until P0-013 (Q-22-gated, launch-blocking) lands |
 | Data exchanged | Subscription state, paid-invoice mirror (`payments`), grants (`stripe_ref`), checkout sessions; no card data touches Gradia |
 | Credentials used | `STRIPE_SECRET_KEY`, webhook secret (fails closed if unset) |
 | Webhooks | `/api/stripe/webhook` (648-line route — god-file candidate), signature-verified, 5-min tolerance, test-locked |
@@ -268,7 +268,7 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-0
 | Webhooks | `/api/vapi/webhook` — tools (all writes HITL-staged; ALWAYS_HITL floor) + end-of-call |
 | Provider event identifiers | `vapi_call_id` — UNIQUE on `call_records`; `usage_events.vendor_ref` unique (P0-005); `provider_events` claim on `(vapi, call.id)` for end-of-call (P0-007, 2026-08-14) |
 | Idempotency status | **End-of-call fully replay-safe as of P0-007 (PR #21):** call_records, transcript rows and voice minutes all idempotent under retry; metering retryable/fail-closed. Remaining: tool-call/function-call events un-deduped (backlog follow-up); Vapi retry behavior itself **requires verification** |
-| Tenant-isolation considerations | Shop by `assistantId`; `VAPI_DEFAULT_SHOP_ID` fallback **fails closed in production as of P0-007** (unmatched assistant → 404, zero writes); operational must-be-unset check stays P0-010. Accepted ADR-001 residual: cross-tenant global call-id pre-claim griefing (denial/under-billing only; mitigation follow-up in backlog) |
+| Tenant-isolation considerations | Shop by `assistantId`; `VAPI_DEFAULT_SHOP_ID` fallback **fails closed in production as of P0-007** (unmatched assistant → 404, zero writes); operational must-be-unset check **done 2026-08-28** (P0-010 founder acceptance: var confirmed ABSENT from Vercel Production). Accepted ADR-001 residual: cross-tenant global call-id pre-claim griefing (denial/under-billing only; mitigation follow-up in backlog) |
 | Outage behavior | Budget 80% warn / 100% → `vapi_stale` → hourly voice-sync PATCHes take-a-message fallback |
 | Failure fallback | **Never cut a live call** — budget state flips the next call (pricing invariant) |
 | Monitoring | Glass-box `/calls/[callId]`; minutes metered; vendor-side monitoring **requires verification** |

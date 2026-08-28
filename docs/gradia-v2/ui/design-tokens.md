@@ -15,7 +15,7 @@ _Created 2026-07-25 by the Organizer. Condenses the token rules from `platform/d
 | Canvas & surfaces | `--bg-canvas`, surface/elevation tokens | Near-black neutral. Elevation = hairline borders + soft shadows, never colored fills. |
 | Text | white primary; silver scale for secondary/tertiary | Hierarchy via weight + text color, not size jumps. |
 | Accent | `--accent: #7C3AED` (Tailwind `primary`), `--accent-text` (AA-safe on dark) | Primary buttons, links, focus rings, active nav — nothing else. One accent-colored primary action per screen. |
-| Status | `--status-success/warning/danger/info` + `-fg`/`-bg` companions | ONLY on status. Always icon + text, never color alone. Raw amber/red/green utility classes are violations (audit doc 08 flagged raw `text-amber-600` in settings cards — cleanup rides P0-010). |
+| Status | `--status-success/warning/danger/info` + `-fg`/`-bg` companions | ONLY on status. Always icon + text, never color alone. Raw amber/red/green utility classes are violations (audit doc 08 flagged raw `text-amber-600` in settings cards — already token-compliant at HEAD when P0-010 audited it, 2026-08-28; the public `how-it-works` page's amber remains a cosmetic follow-up). |
 | Type | Geist 400/500/600; Geist Mono via `.font-data` (+ `tabular-nums`) | Closed app scale: 12/13/14 (body)/16/20/24. `clamp()` and hero sizes are public-pages-only. `.label-eyebrow` = 11px uppercase, letter-spaced. No new fonts, ever. |
 | Shape | radii: 6px inputs/buttons (`rounded-sm`), 10px cards (`rounded-md`), 16px modals (`rounded-lg`) | Full-round for avatars/pills only. Closed set — no new radii. |
 | Motion | 100–150ms ease-out functional; 250–400ms onboarding/celebration only | Respect `prefers-reduced-motion`. Cinematic layer public-pages-only. |

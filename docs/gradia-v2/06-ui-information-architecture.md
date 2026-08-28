@@ -14,7 +14,7 @@ Numbers & Billing · Settings          (pinned bottom)
 
 Consolidations already executed (all legacy routes are redirect stubs, audit 08): agent/agents/agents-build → **Receptionist** · chat (Ask Gradia) → **Conversations** · leads + recovery → **Customers** · `/schedule` → `/calendar`.
 
-**Known IA tension (reframed 2026-07-27):** the Calendar destination shipped ahead of the planning docs — decision queue **Q-15** now asks the founder to *ratify or revert* it (ratification amends BUILD_REFERENCE §2). Contradiction C-15 in `16-document-source-map.md` records the drift; the stale "exactly these six" code comment rides P0-010.
+**Known IA tension (reframed 2026-07-27):** the Calendar destination shipped ahead of the planning docs — decision queue **Q-15** now asks the founder to *ratify or revert* it (ratification amends BUILD_REFERENCE §2). Contradiction C-15 in `16-document-source-map.md` records the drift; the stale "exactly these six" code comment did not ship with P0-010 (done 2026-08-28; out of cut scope) — cosmetic follow-up in `program/backlog.md`.
 
 **Target IA (recorded, not adopted — Q-23):** the founder master definition (2026-07-27) recommends a 9-item navigation: **Home · Inbox · Calendar · Customers · Sales · Jobs · Gradia · Reports · Settings**. This is held in decision queue **Q-23** as the convergence target, phase-by-phase: Sales → E03, Jobs → E04, Reports → E08 (Q-16), Gradia → E09, Inbox (consolidating Approvals/Conversations/Activity) → Q-23. Each promotion is a BUILD_REFERENCE §2 amendment via the queue — never a silent addition. Until a Q-23 resolution, the shipped IA above stands.
 
@@ -27,7 +27,7 @@ Consolidations already executed (all legacy routes are redirect stubs, audit 08)
 | **Activity** | Reverse-chronological glass-box feed; outcome badge, AI/human flag, "because" line only where decision-log data exists. "Needs review" filter deep-links to Approvals. |
 | **Conversations** | Calls + SMS unified today (email pending P7); caller, time, one-line summary, outcome badge. |
 | **Customers** | One file per person; channels stitched; recovery is a flow inside customer context. |
-| **Receptionist** | Progressive disclosure: 5 up-front settings, rest behind Advanced. (Catalog copy is stale — P0-010.) |
+| **Receptionist** | Progressive disclosure: 5 up-front settings, rest behind Advanced. (Catalog copy fixed 2026-08-28 by P0-010 — in-app Approvals/Conversations.) |
 | **Numbers & Billing** | Numbers, plan, packs, usage pill ("~200 texts · ~20 calls", credits in fine print). |
 | **Settings** | Connections (ConnectionTile 3-state), shop profile, service menu, automations, advanced/MCP behind disclosure. |
 | **Calendar** | Week view + working hours (shipped as the seventh destination — ratify/revert in Q-15). |

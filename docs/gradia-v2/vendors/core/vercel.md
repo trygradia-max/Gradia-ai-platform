@@ -35,8 +35,8 @@ Vercel dashboard shows cron registration/runs (GO_LIVE_CHECKLIST §3 verifies th
 Preview deploys exist (GO_LIVE_CHECKLIST uses a preview/staging deploy for the recovery smoke). No dedicated staging environment established in repo; REQUIRES VERIFICATION.
 
 ## Known audit gaps
-- Five env vars used by code but undocumented in `.env.example` (`STRIPE_PRICE_VOICE_ADDON`, `STRIPE_PRICE_CREDIT_PACK`, `STRIPE_PRICE_MINUTE_PACK`, `STRIPE_API_BASE`, `GLOBAL_DAILY_COST_CEILING_CENTS`) — whether they are set in prod REQUIRES VERIFICATION (audit open question #15; ticket P0-010).
-- `VAPI_DEFAULT_SHOP_ID` must be unset in production (footgun; P0-010, audit open question #18).
+- ~~Five env vars used by code but undocumented in `.env.example`~~ — **resolved 2026-08-28 (P0-010, PR #27):** all five documented; prod verified at founder acceptance (`STRIPE_API_BASE` correctly absent; the `STRIPE_PRICE_*` ids **intentionally absent — recorded billing exception**, checkout fail-closed until P0-013 lands; audit open question #15 closed).
+- ~~`VAPI_DEFAULT_SHOP_ID` must be unset in production~~ — **verified ABSENT 2026-08-28** (P0-010 founder acceptance; code-side prod guard shipped in P0-007; audit open question #18 closed).
 - No health endpoint (P0-012); no structured logging (E10).
 - CI depth: typecheck/lint/build not enforced before deploy (P0-002).
 

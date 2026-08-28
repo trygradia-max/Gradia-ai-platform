@@ -19,7 +19,7 @@ Numbers & Billing  (pinned)
 Settings           (pinned)
 ```
 
-The stale `app-sidebar.tsx` code comment ("exactly these six") is a P0-010 cleanup item. The founder's 9-item target IA (Home/Inbox/Calendar/Customers/Sales/Jobs/Gradia/Reports/Settings) is held in decision queue **Q-23** — convergence is per-phase, never silent.
+The stale `app-sidebar.tsx` code comment ("exactly these six") did NOT ship with P0-010 (done 2026-08-28 — not in the cut ticket's scope) and stands as a cosmetic follow-up in `../program/backlog.md`. The founder's 9-item target IA (Home/Inbox/Calendar/Customers/Sales/Jobs/Gradia/Reports/Settings) is held in decision queue **Q-23** — convergence is per-phase, never silent.
 
 ## Consolidation map (legacy → final)
 
@@ -34,7 +34,7 @@ All legacy routes are redirect stubs, none in nav:
 | `/schedule` | `/calendar` |
 | `/` | `/dashboard` |
 
-Known defect: four server actions still `revalidatePath` legacy targets (`/agents`, `/recovery`, `/leads`) — fix rides P0-010.
+~~Known defect: four server actions still `revalidatePath` legacy targets (`/agents`, `/recovery`, `/leads`)~~ — fixed 2026-08-28 by P0-010 (PR #27; all `src/app/actions` targets repointed to live IA routes, locked by a source-scan test). Residual M-3: two `src/app/api` routes still revalidate `/leads` — follow-up in `../program/backlog.md`.
 
 ## Deep-link rules
 

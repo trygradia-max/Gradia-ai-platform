@@ -29,7 +29,7 @@ Not applicable.
 Plan/quota REQUIRES VERIFICATION; assumed inside the ~$0.50/shop infra line.
 
 ## Monitoring
-Sentry *is* monitoring, but note the gap it does NOT cover: `monitoring.ts` anomaly detection (spend spikes, margin floors), reconciliation drift, and cron failures alert via **console only** — P0-012 wires those to a real destination. Zero `error.tsx` boundaries mean many UI errors render Next's default screen rather than being handled surfaces (P0-010).
+Sentry *is* monitoring, but note the gap it does NOT cover: `monitoring.ts` anomaly detection (spend spikes, margin floors), reconciliation drift, and cron failures alert via **console only** — P0-012 wires those to a real destination. ~~Zero `error.tsx` boundaries~~ — resolved 2026-08-28 (P0-010, PR #27): root + `(dashboard)`-level `error.tsx`/`global-error.tsx`/`not-found.tsx` all render designed surfaces and report to Sentry via `captureException` (verified at acceptance).
 
 ## Test environment
 None established; REQUIRES VERIFICATION whether a separate Sentry env/DSN exists for preview deploys.

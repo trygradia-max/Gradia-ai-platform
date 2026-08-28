@@ -34,7 +34,7 @@ Status is icon + text. Text names the state in owner language: handled, booked, 
 
 ## Stale-copy debt (current, tracked)
 
-Audit doc 08 found chrome that lies: the `/receptionist` agent-catalog prose still describes the retired Slack approval flow and links `/chat`; `data/customers.ts` docstring claims IG/FB search it doesn't do. Rewrites ride **P0-010**. Rule going forward: copy describing a flow changes in the same PR that changes the flow.
+Audit doc 08 found chrome that lies: the `/receptionist` agent-catalog prose described the retired Slack approval flow and linked `/chat`; `data/customers.ts` docstring claimed IG/FB search it doesn't do. **Rewrites shipped 2026-08-28 in P0-010 (PR #27)** — catalog now describes in-app Approvals and Conversations; the docstring matches the code (name/phone/email only). Rule going forward: copy describing a flow changes in the same PR that changes the flow.
 
 ## Claims discipline (chrome that sells)
 

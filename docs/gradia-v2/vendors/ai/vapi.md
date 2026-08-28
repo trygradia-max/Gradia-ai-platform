@@ -40,7 +40,7 @@ Voice builder includes a go-live gate + test call (audit doc 00). Live round-tri
 
 ## Known audit gaps
 - ~~End-of-call double-metering on retry~~ — **closed by P0-007** (2026-08-14, PR #21; see §Idempotency).
-- `VAPI_DEFAULT_SHOP_ID` fallback — **code-side prod guard closed by P0-007** (production fails closed for unmatched assistants); the operational must-be-unset verification stays P0-010 (audit open question #18).
+- `VAPI_DEFAULT_SHOP_ID` fallback — **code-side prod guard closed by P0-007** (production fails closed for unmatched assistants); the operational must-be-unset verification **done 2026-08-28** — founder confirmed the var ABSENT from Vercel Production at the P0-010 acceptance (audit open question #18 closed).
 - Vapi tool-call/function-call events not replay-deduped — recorded P0-007 follow-up (backlog Band 2).
 - Vapi tool params are not zod-validated (tolerant string coercion, `vapi-tools.ts:79-91`) — gap-analysis P2 item.
 - Voice trusts prompt-only price/policy enforcement — no post-call verifier on what was *said* (E09 voice quote verifier).

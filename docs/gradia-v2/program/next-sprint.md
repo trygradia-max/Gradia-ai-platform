@@ -33,5 +33,5 @@ _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evid
 
 ## Explicitly not in Sprint 2
 
-- P0-010 through P0-012 — remain in `backlog.md`, ordered there; promoted as slots free. (Update 2026-08-26: **P0-009 done** — merged PR #25 `d3c0e4d`, Cursor APPROVE with one HIGH fixed pre-merge in `aba1068`, founder acceptance PASS; close record in its ticket file; **P0-010 is now the next implementation position** — blocked only on the `docs/close-p0-009` closeout merge; see `blocked.md`. Prior update 2026-08-25: P0-008 done, PR #23 `1ea198f`.)
+- P0-011 through P0-013 — remain in `backlog.md`, ordered there; promoted as slots free. (Update 2026-08-28: **P0-010 done** — merged PR #27 `5d82fa3`, reviewed tree `618cf41`, Cursor APPROVE with one HIGH fixed pre-merge, founder acceptance PASS incl. the recorded production billing exception — `STRIPE_PRICE_*` stays unset in Production until **P0-013** (draft, decision-gated on Q-22, launch-blocking before live paid billing) lands; **P0-011 is now the next implementation position** — ready, proceeds independently of P0-013. Prior updates: P0-009 done 2026-08-26 PR #25; P0-008 done 2026-08-25 PR #23.)
 - Anything from P1+ (E01 onward) — D-018 sequencing and the P0-exit gate in `../10-roadmap.md` forbid it before E00 closes.

@@ -1,6 +1,6 @@
 # UI — State Matrix
 
-_Created 2026-07-25 by the Organizer. The required-states checklist for every user-facing surface, per `../12-definition-of-done.md` (UI requirements) and `platform/docs/BUILD_REFERENCE.md`. Current gaps from audit doc 08; remediation rides ticket P0-010._
+_Created 2026-07-25 by the Organizer. The required-states checklist for every user-facing surface, per `../12-definition-of-done.md` (UI requirements) and `platform/docs/BUILD_REFERENCE.md`. The audit doc 08 gaps below were closed by P0-010 (done 2026-08-28, PR #27)._
 
 ## Required states by surface type
 
@@ -23,14 +23,14 @@ Additional invariants:
 - **Mobile behavior** and **accessibility** (see `responsive-rules.md`, `accessibility-standard.md`) are states of the same checklist, verified per surface.
 - Degradation is **visible, not silent** — the "pre-C1 tolerance" pattern (warn-and-continue on missing schema) must never reach a shipped owner surface without a written degraded state.
 
-## Current gaps (audit doc 08 — tracked, fix rides P0-010)
+## Audit doc 08 gaps — resolved at the P0-010 close (2026-08-28, PR #27)
 
-| Gap | Where | Status |
+| Gap | Where | Resolution |
 |---|---|---|
-| **Zero `error.tsx` / `global-error.tsx` / `not-found.tsx` in `src/app`** — any thrown server-component error renders Next's default screen | app-wide | P0-010 adds boundaries at `(dashboard)` level minimum |
-| Missing `loading.tsx` | customers routes, `/calendar`, `/receptionist`, `/settings` (present: dashboard, activity, approvals, conversations, calls) | P0-010 |
-| Raw `text-amber-600` classes instead of `--status-warning` tokens | settings connection cards | P0-010 |
-| Stale catalog copy (Slack-era) overstating/misdescribing flows | `/receptionist` catalog, `data/customers.ts` docstring | P0-010 |
+| **Zero `error.tsx` / `global-error.tsx` / `not-found.tsx` in `src/app`** — any thrown server-component error rendered Next's default screen | app-wide | **Closed** — root boundaries landed pre-P0-010 (home-redesign era); P0-010 added the `(dashboard)`-level `error.tsx` + `not-found.tsx` pair (Sentry-reported, written copy via `strings.ts`, working recovery) and locked existence + capture with a source-scan test |
+| Missing `loading.tsx` | customers routes, `/calendar`, `/receptionist`, `/settings` (present: dashboard, activity, approvals, conversations, calls) | **Closed** — customers + settings had landed pre-P0-010; P0-010 added `/calendar` + `/receptionist` skeletons |
+| Raw `text-amber-600` classes instead of `--status-warning` tokens | settings connection cards | **Closed before P0-010** — settings cards were already token-compliant at HEAD (verified at the P0-010 audit; the only remaining amber is the public `how-it-works` page — cosmetic follow-up in `../../program/backlog.md`) |
+| Stale catalog copy (Slack-era) overstating/misdescribing flows | `/receptionist` catalog, `data/customers.ts` docstring | **Closed** — catalog rewritten to in-app Approvals/Conversations; docstring matches the code |
 
 ## Reviewer usage
 
