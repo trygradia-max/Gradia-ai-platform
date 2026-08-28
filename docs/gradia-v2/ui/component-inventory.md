@@ -14,7 +14,7 @@ _Created 2026-07-25 by the Organizer. Condenses `platform/docs/BUILD_REFERENCE.m
 
 | Component | Notes / status |
 |---|---|
-| Sidebar + NavItem | Shipped IA rendered (`app-sidebar.tsx`) — seven destinations incl. Calendar (C-15; ratify/revert in Q-15); stale "exactly these six" code comment fix rides P0-010 |
+| Sidebar + NavItem | Shipped IA rendered (`app-sidebar.tsx`) — seven destinations incl. Calendar (C-15; ratify/revert in Q-15); stale "exactly these six" code comment did not ship with P0-010 (out of cut scope) — cosmetic follow-up in `../program/backlog.md` |
 | SetupProgressPill | Onboarding progress |
 | SectionHeader | Eyebrow + Geist-600 headline + subhead |
 | KpiCard | `.font-data` numbers; delta chips only with real prior-period rows |
@@ -33,11 +33,10 @@ _Created 2026-07-25 by the Organizer. Condenses `platform/docs/BUILD_REFERENCE.m
 | **HomeAnalytics** | New (Home rebuild Phase 2) — stat tiles → weekly revenue chart → receipt proof strip; inherits the receipt's sacred discipline |
 | **AgentHomeBar** | New (Phase 3) — slim composer expanding into BiChat; ⌘K undemoted |
 
-## Known inventory debt (audit doc 08 — cleanup rides P0-010)
+## Known inventory debt (audit doc 08 — resolved at the P0-010 close, 2026-08-28, PR #27)
 
-- **Orphans to delete:** `co-owner-card.tsx` (+ `data/co-owner.ts`), `schedule-groups.tsx`, `data/revenue.ts`, `data/today-money.ts`, `data/interactions.ts`, unused `ui/badge.tsx`, `ui/scroll-area.tsx`; dead flag `FEATURES.askGradiaPage`.
-- `RevenueTiles` / `TodayMoneyRows`: removed from Home by the rebuild; delete once nothing references them (per HOME_REDESIGN_PLAN Phase 4).
-- Raw amber classes in settings cards → status tokens.
+- **Orphans deleted (fresh re-grep at delete time):** `co-owner-card.tsx` (+ `data/co-owner.ts`), `schedule-groups.tsx`, `data/interactions.ts`, `ui/scroll-area.tsx`; `ui/badge.tsx` was already gone at HEAD. **Kept — no longer orphaned:** `data/revenue.ts` + `data/today-money.ts` regained live Home importers (`RevenueTiles`/`TodayMoneyRows` are back on the dashboard, superseding the HOME_REDESIGN_PLAN Phase 4 deletion note); `FEATURES.askGradiaPage` gained a real consumer in `/conversations` (kept, comment corrected).
+- ~~Raw amber classes in settings cards~~ — already token-compliant at HEAD when P0-010 audited (only remaining amber: public `how-it-works` page, cosmetic follow-up in `../program/backlog.md`).
 
 ## Planned components for future epics (design before build; none exist today)
 

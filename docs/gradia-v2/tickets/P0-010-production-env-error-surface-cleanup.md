@@ -7,7 +7,7 @@ P0-010
 E00 — Stabilization
 
 ## Status
-**Blocked — next implementation position** (moved up 2026-08-26 at the P0-009 close; P0-009 done 2026-08-26 PR #25). Blocked only until the `docs/close-p0-009` planning closeout lands on `main` — the Organizer flips this to ready on merge (entry in `../program/blocked.md`). No technical dependencies, no open decisions. Batch ticket: each item is independently small; the ticket is done when all items land. (Prior state: ready-after-P0-002, reconciled 2026-07-27; that review gate is long satisfied.)
+**done** (2026-08-28 — merged to `main` in PR #27, merge commit `5d82fa3`; reviewed/accepted implementation tree `618cf41` = Builder `aea2d41` → Cursor review-fix `618cf41`; independent Cursor verdict **APPROVE**, one HIGH found and fixed pre-merge; founder acceptance **PASS 2026-08-28** on the exact reviewed commit. Full close record appended below. Process note: the unblock condition — the `docs/close-p0-009` closeout landing on `main` — was satisfied 2026-08-26 as `e70b287` PR #26; like P0-004 through P0-009, this ticket then ran founder-slotted without the status line or boards being flipped at start — corrected retroactively at this close.)
 
 ## Priority
 P0 — Medium-high. Individually small; collectively they are the difference between "silently broken in prod" and "fails loudly with a recovery path". Includes one MEDIUM security finding (M-1).
@@ -127,3 +127,30 @@ Revert the PR (all changes are code-only). Deletions restore from git. Founder e
 
 ## Definition of done
 Per `12-definition-of-done.md`, plus: every scope item checked off individually in the completion report (batch tickets die by vagueness), founder confirmations (item 9) recorded, and the re-grep evidence for each deletion included.
+
+---
+
+## Close record (2026-08-28)
+
+**Merged:** PR #27 "fix: harden production env and error surfaces", merged to `main` 2026-08-28T17:13:23Z as `5d82fa3`. Reviewed/accepted implementation tree: **`618cf41`** (Builder `aea2d41` 2026-08-26 → Cursor review-fix `618cf41`). CI on the exact reviewed commit: `ci / checks` PASS · `ci-integration / integration` PASS · Vercel Preview PASS.
+
+**Review:** independent Cursor verdict **APPROVE**. One HIGH found and fixed pre-merge in `618cf41`: AI-lead extraction reused `inbound_classify` via `priceUsage()` credits, which rounds the zero-retail SKU up to 1 — the action would have consumed 1 shop credit per extraction. Fix passes `credits: 0` explicitly (same contract as Twilio/Aurinko inbound classify) and locks it in the unit test with a rounding trap.
+
+**Founder acceptance: PASS 2026-08-28** on isolated local staging (local Supabase + `next start` production build; production untouched; staging tenants purged after). Evidence: local/origin/PR heads all `618cf41`; 633 unit + 101 integration tests green, `tsc` and production build clean at that commit. Verified live: unauthenticated server-action replay of the M-1 attack refused with zero writes; authenticated extraction succeeded via a real model call; tenant isolation (shop derived from session, no caller-supplied tenant input exists; bystander shop untouched across all probes); inactive-plan and exhausted-credit 402 refusals pre-model with zero ledger rows; successful extraction wrote exactly one `usage_events` row `kind=inbound_classify, credits=0` (wholesale 0.2¢ / retail 0) with the shop's 1,200-credit balance unchanged; provider/model failure (invalid key) created no usage row and no decrement; `ai_lead` rate limit exactly 20/60s per server-derived shop with cross-shop bucket isolation; dashboard error boundary rendered designed copy inside the sidebar shell with working Try again / Back to Home and production-redacted errors (digest only — no stack); dashboard not-found rendered with recovery; all four `loading.tsx` routes stream skeleton fallbacks (no fake data); revalidation targets verified by diff + the source-scan test; copy truth verified (zero Slack refs in `agents.ts`, Conversations not `/chat`, IG/FB claim removed); env-backup hygiene clean (no `.env.local.bak*`/`.save*`/`.pre-restore*`/`.env.production.pull*`); orphan deletions regression-free with retained `revenue.ts`/`today-money.ts` live; P0-007 Vapi production fail-closed guard untouched and green.
+
+**Scope item 9 (founder confirmations) — recorded:** founder manually confirmed in Vercel Production: `GRADIA_DASHBOARD_URL` PRESENT; `VAPI_DEFAULT_SHOP_ID` ABSENT; `STRIPE_API_BASE` ABSENT. `.env.local` backup variants confirmed absent (H-1 closed).
+
+**Production billing exception (recorded as PASS behavior, not a failure):** `STRIPE_PRICE_ID`, `STRIPE_PRICE_VOICE_ADDON`, `STRIPE_PRICE_CREDIT_PACK`, `STRIPE_PRICE_MINUTE_PACK` are **intentionally ABSENT from Production**. The current billing implementation still encodes the legacy Core $20 + Voice $29 model (C-14), so Production checkout must remain fail-closed. Acceptance proved empirically that with the price ids absent, every checkout path throws before any Stripe API call — no Checkout Session is created, no charge is possible, no local plan/subscription state changes. **Do not set these variables until P0-013 — Production billing model alignment — is implemented, reviewed, accepted, and ready for Production. P0-013 is launch-blocking before live paid billing activation** (see `P0-013-production-billing-model-alignment.md`, Q-22).
+
+**Builder deviations from spec (all verified at acceptance):** `askGradiaPage` flag kept — it gained a real consumer since the audit (comment corrected instead); `data/revenue.ts` + `data/today-money.ts` skipped — no longer orphaned (live dashboard importers); `ui/badge.tsx` already deleted at HEAD; settings amber classes already token-compliant at HEAD (nothing to do); customers/settings `loading.tsx` already existed (calendar + receptionist added); root `error.tsx`/`global-error.tsx`/`not-found.tsx` already existed ((dashboard)-level pair added). Five of the seven listed orphans deleted, each with a fresh re-grep at delete time.
+
+**Residual findings (recorded, not repaired — Organizer sequences):**
+- **M-1** — provider/model error details may surface raw to the owner (reproduced at acceptance: a `401 …` provider string reached the UI on model failure).
+- **M-2** — AI-lead extraction and inbound classification share the `inbound_classify` analytics kind, mixing the two in usage analytics.
+- **M-3** — two API routes still revalidate the legacy `/leads` stub (outside the ticket's `app/actions` scope and the source-scan test's coverage).
+- **M-4** — this docs closeout (satisfied by the `docs/close-p0-010` commit carrying this record).
+- LOW/OPTIONAL: the accepted Builder/Cursor residuals above stand as documented; no scope expansion.
+
+**Correction to the P0-013 discovery report:** that report claimed `inbound_classify` is missing from the `usage_events` kind CHECK constraint. **The claim is false** — migration `20260713130000_master_audit_perf.sql` already widens the constraint and seeds the SKU's `pricing_config` row, and acceptance inserted the kind successfully on a migrations-built database. No follow-up ticket exists or should be created for it.
+
+**Process deviations:** acceptance browser tooling wrote snapshot artifacts inside the pre-existing untracked `.playwright-mcp/` directory (tooling noise only — never staged, not product code). Production conflict enforcement remains **OFF** throughout.

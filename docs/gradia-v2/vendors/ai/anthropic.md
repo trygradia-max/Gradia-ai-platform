@@ -43,7 +43,7 @@ Tier 1 deterministic tests CI-gated; Tier 2 live-model goldens (`npm run eval`, 
 - No retry/timeout on most calls; no fallback model chain.
 - Live evals gate nothing in CI (violates locked principle #6 in practice).
 - Prompt-injection hardening essentially absent beyond structure (E09).
-- Unauthenticated LLM-burning action `processRawLeadNote` (M-1 → P0-010).
+- ~~Unauthenticated LLM-burning action `processRawLeadNote`~~ — **M-1 closed 2026-08-28 by P0-010** (PR #27: session auth, fail-closed plan/credit gates, `ai_lead` rate bucket, credits=0 metering).
 
 ## Backup or exit strategy
 No seam today — swapping vendors or upgrading models is a shotgun change across ~14 modules (audit doc 09). The planned `llm.ts` seam (model registry, timeouts, retries, error taxonomy) is the exit-readiness work. Until then: single-vendor concentration is an accepted, documented risk; outage runbook at `runbooks/ai-provider-outage.md`.

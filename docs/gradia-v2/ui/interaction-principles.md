@@ -11,7 +11,7 @@ _Created 2026-07-25 by the Organizer. Condenses motion and interaction rules fro
 
 ## Loading
 
-- **Skeletons on every async load — never spinners for page loads.** Every route section ships `loading.tsx` (gaps tracked in `state-matrix.md`, fix rides P0-010).
+- **Skeletons on every async load — never spinners for page loads.** Every route section ships `loading.tsx` (the audit gaps closed with P0-010, 2026-08-28 — see `state-matrix.md`).
 - Data that can be server-rendered is: the app is server-first (server components + actions + `revalidatePath`), no global client store, refresh-based rather than realtime.
 
 ## Optimistic patterns

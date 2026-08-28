@@ -25,7 +25,7 @@ Each capability records:
 - **Current audit status:** OPERATIONAL core (auth SSR+PKCE, feature flags, 8 authenticated crons, 54 idempotent migrations, Sentry) with PARTIAL edges: no queue/retry/dead-letter, no health endpoint, no structured logger, CI runs tests only (audit 03 §Infrastructure, §Testing).
 - **Existing foundation:** `proxy.ts`, `shop.ts`, `features.ts`, `env.ts`, `crypto.ts`, `rate-limit.ts`, `monitoring.ts`, Vercel crons, Supabase Auth/Postgres/Storage.
 - **Target state:** CI that can stop a broken build (typecheck/lint/build/integration), alert delivery that pages a human, health endpoint, structured logging; later outbox/queue.
-- **Missing work:** P0-002 (CI), P0-010 (env/error surfaces), P0-012 (alerts); P10 queue/logging/tracing.
+- **Missing work:** P0-002 (CI — done 2026-07-30), **P0-010 (env/error surfaces — done 2026-08-28, PR #27:** env docs, M-1 auth gate closed, `(dashboard)` error/not-found + loading surfaces, revalidation/copy truth, orphan cleanup; founder acceptance PASS**)**, P0-012 (alerts); P10 queue/logging/tracing.
 - **Dependencies:** none (this unblocks everything else).
 - **Priority phase:** P0 (hardening), P10 (scale).
 - **Risks:** main = production with CI that cannot fail; silent-degradation culture means failures go unnoticed (audit 09).
@@ -144,7 +144,7 @@ Each capability records:
 - **Existing foundation:** `appointments` as job object (C1 fields), `jobs.ts`, job-photos bucket, maintenance-schedule arming on completion.
 - **Target state:** work orders with assignments, checklists, and per-member schedules for 2–5-person shops.
 - **Missing work:** E04 — assignment model, checklist templates, team calendar views, mobile job flow (`ui/flows/job-completion.md`).
-- **Dependencies:** capability 3 (members/roles) — hard prerequisite; capability 9 (availability) for per-member scheduling; MIME validation on photo upload (audit 06 nit) rides with P0-010 follow-ups.
+- **Dependencies:** capability 3 (members/roles) — hard prerequisite; capability 9 (availability) for per-member scheduling; MIME validation on photo upload (audit 06 nit) is E10-hygiene backlog — never in P0-010's cut scope (P0-010 done 2026-08-28 without it).
 - **Priority phase:** P4.
 - **Risks:** building team features on the single-owner model wastes the work (D-018 exists to prevent this).
 - **Feature flag:** `teamOps` (new).
@@ -313,7 +313,7 @@ Each capability records:
 - **Current audit status:** Subscription billing OPERATIONAL — $20 Core + $29 voice add-on, Stripe checkout + webhook lifecycle, ledger-derived credits, fail-closed gates, rollover grants, margin report, nightly reconciliation (audit 00). Gaps: no idempotency key on `usage_events` (double-meter risk — P0-005/007), approval-time send skips cap re-check; 5 Stripe env vars undocumented. **Trial per D-005: not built** (today `free` = explore-only).
 - **Existing foundation:** `stripe.ts`, `credits.ts`, `entitlements.ts`, `pricing.ts`, `margin-report.ts`, `reconciliation.ts`, `pricing_config`.
 - **Target state:** full operational trial with controlled variable-cost allowances (D-005, starting at activation per D-032), fail-closed; full public pricing (D-004); no founding discounts (D-003); tier re-base per D-031/Q-22 (C-14).
-- **Missing work:** trial entitlement model + allowances (needs Q-13 numbers); env documentation (P0-010); metering idempotency (P0-005/007); ledger RLS tightening.
+- **Missing work:** trial entitlement model + allowances (needs Q-13 numbers); env documentation (P0-010 — **done 2026-08-28**, all five Stripe/monitoring vars documented); metering idempotency (P0-005/007 — done); ledger RLS tightening; **P0-013 tier re-base (draft, decision-gated on Q-22 — launch-blocking before live paid billing)**. **Production billing exception (recorded 2026-08-28, P0-010 close):** `STRIPE_PRICE_ID`/`STRIPE_PRICE_VOICE_ADDON`/`STRIPE_PRICE_CREDIT_PACK`/`STRIPE_PRICE_MINUTE_PACK` are intentionally ABSENT from Vercel Production because the live code still encodes the superseded $20/$29 model (C-14) — checkout is proven fail-closed before any Stripe call, and the vars stay unset until P0-013 is implemented, reviewed, accepted, and ready.
 - **Dependencies:** decision Q-13 (trial allowances); D-003/004/005; `15-cost-and-margin-model.md` margin floors.
 - **Priority phase:** P0 (integrity) / P1 (trial model).
 - **Risks:** trial cost blowout without allowances; double-metering is a billing-trust killer.
@@ -326,7 +326,7 @@ Each capability records:
 - **Current audit status:** Architecture strong (uniform RLS, signature-verified webhooks, encrypted credentials, CSRF-protected OAuth, no text-to-SQL) but **score capped at 4/10 by C-1: live DB superuser credential committed to pushed git history**. C-2 cross-tenant Slack approval path (dormant). Service-role tenant scoping = pure discipline across ~30 files. No data deletion/export flow; EIN plaintext; MIME validation missing (audit 06, 10).
 - **Existing foundation:** RLS on all 28 tables, `crypto.ts` AES-256-GCM, webhook forgery test suite, rate limiting, consent ledger.
 - **Target state:** credential rotated + history decision recorded (Q-01); scoping as mechanism (P0-011 helper); ledgers SELECT-only; GDPR-shaped deletion/export (P10); Slack path locked (D-026).
-- **Missing work:** P0-001 (NOW), P0-011; M-1 auth gate + quote-token hardening (P0-010 adjacencies); soft delete + data export/deletion (P10); EIN encryption.
+- **Missing work:** P0-001 (NOW), P0-011; ~~M-1 auth gate~~ (**closed 2026-08-28 by P0-010** — session auth + fail-closed gates + rate limit on `processRawLeadNote`); quote-token regeneration (deferred E03-era follow-up — the rate-limit half shipped in P0-009); soft delete + data export/deletion (P10); EIN encryption.
 - **Dependencies:** P0-001 precedes everything; runbooks exposed-credential + tenant-data-leak.
 - **Priority phase:** P0, P10.
 - **Risks:** until C-1 rotates, assume full cross-tenant compromise is possible (audit 00).
@@ -339,7 +339,7 @@ Each capability records:
 - **Current audit status:** Reliability 5/10, observability 4/10 (audit 10): approval rollback sound, webhooks fail closed — but no queue/retry/dead-letter, non-idempotent inbound webhooks, weekly crons with no catch-up, silent-degradation culture, **anomaly alerts go to console only**, no structured logs, no health endpoint, Sentry errors-only.
 - **Existing foundation:** `monitoring.ts` anomaly detection, Sentry wiring, reconciliation cron, fail-closed credit machinery.
 - **Target state:** alerts that page a human (P0-012); idempotent inbound everywhere (P0-005/006/007); later outbox/queue, structured logging, health, tracing (P10); SEV-0..3 runbooks live (`runbooks/`).
-- **Missing work:** P0-005..008, P0-012; P10 hardening list.
+- **Missing work:** ~~P0-005..008~~ (done 2026-08-13/14/25), P0-009/P0-010 also done (2026-08-26/28 — quote money-path repair; env docs + dashboard error/not-found/loading surfaces); remaining: P0-012; P10 hardening list.
 - **Dependencies:** decision Q-08 (alert destination); vendor monitoring sections.
 - **Priority phase:** P0, P10.
 - **Risks:** "failures are silent by design and nobody is paged" (audit 00 weakness #5).

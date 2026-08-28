@@ -44,7 +44,7 @@ A **full-stack modular monolith** — Next.js 16 / React 19 / Supabase (Postgres
 2. **C-2:** cross-tenant approval execution via the Slack path — `claimPendingAction` (`approvals.ts:209`) has no shop binding under service-role. Dormant only because `FEATURES.slackApprovals=false` (now locked by D-026).
 3. **Duplicate-communication risk:** non-idempotent inbound webhooks + no conflict checks = duplicate cards, double voice billing, double-booking under normal provider retries. → P0-005/006/007, P0-003/004.
 4. **Service-role tenant scoping is pure code discipline** across ~29–32 files; the DB will not catch a missed `.eq("shop_id")`. → P0-011.
-5. **Quiet-degradation culture without alerting** — `.catch(() => null)`, console-only anomaly alerts; failures are silent by design and nobody is paged. → P0-010/012.
+5. **Quiet-degradation culture without alerting** — `.catch(() => null)`, console-only anomaly alerts; failures are silent by design and nobody is paged. → P0-010 (error surfaces — done 2026-08-28, PR #27) / P0-012 (alert delivery — still open; this weakness stays live until it lands).
 6. **CI cannot stop a broken build reaching main = production.** → P0-002.
 
 Also open: owner-writable financial ledgers (`usage_events`, `payments`, `shop_metrics` RLS FOR ALL — audit 05 §4, vs D-024), plaintext EIN in `a2p_registrations.business`, unauthenticated LLM-burning action (`actions/ai-lead.ts`, M-1), `.env.local` backup pile (H-1), quote-token hardening (L-3).

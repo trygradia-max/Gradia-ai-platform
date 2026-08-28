@@ -38,7 +38,7 @@ Stripe test mode assumed for E05 acceptance ("collected end-to-end in test mode"
 - `payments` RLS is FOR ALL — an owner session could edit its own revenue mirror (should be SELECT-only; rides with P0-005/P0-011 follow-ups, D-024).
 - Approval-time send skips the cap re-check (usage metering gap, audit doc 03).
 - Webhook route is a god-file candidate (648 lines).
-- Whether the five Stripe-related env vars are set in prod REQUIRES VERIFICATION (P0-010).
+- ~~Whether the five Stripe-related env vars are set in prod REQUIRES VERIFICATION (P0-010).~~ **Verified 2026-08-28 (P0-010 founder acceptance):** `STRIPE_API_BASE` correctly absent; `STRIPE_PRICE_ID` / `STRIPE_PRICE_VOICE_ADDON` / `STRIPE_PRICE_CREDIT_PACK` / `STRIPE_PRICE_MINUTE_PACK` **intentionally absent from Production** — a recorded exception, not a gap: the live code still encodes the legacy $20/$29 SKUs (C-14), so checkout stays fail-closed (proven to throw before any Stripe API call — no session, no charge, no local state change). Do not set them, and do not create placeholder or legacy Price ids, until **P0-013 — Production billing model alignment** (decision-gated on Q-22, launch-blocking before live paid billing) is implemented, reviewed, accepted, and ready.
 
 ## Backup or exit strategy
 Stripe is the committed processor (D-019 — Connect first; no second processor before it). Financial history is mirrored into Gradia's ledgers (`payments`, `usage_events`, `credit_grants`) which must be immutable and replay-safe (D-024). Exit unplanned; accepted risk.

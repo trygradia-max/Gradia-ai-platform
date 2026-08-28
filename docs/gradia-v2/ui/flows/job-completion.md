@@ -25,7 +25,7 @@ The appointment/job row; final services performed (may differ from quote); befor
 
 ## System decisions
 - Status transitions validated in code; no skipping backward without an explicit action.
-- Photos: private storage only, signed URL reads (MIME allow-list is a known gap flagged in audit — rides P0-010/E10 hygiene).
+- Photos: private storage only, signed URL reads (MIME allow-list is a known gap flagged in audit — E10 hygiene; it was never in P0-010's cut scope and P0-010 closed 2026-08-28 without it).
 - Follow-up cooldowns prevent the customer being double-messaged by completion + campaign sweeps.
 
 ## AI involvement

@@ -38,7 +38,7 @@ Owner/admin configure and flip live; (post-E01) members may review calls per rol
 - Number purchase failure → fail-closed with named cause (e.g. missing `ENCRYPTION_KEY`); builder resumable.
 - A2P pending/rejected → voice can go live; SMS follow-ups stay gated with honest status copy.
 - Vapi assistant drift → hourly voice-sync repairs stale assistants; budget-exceeded flips take-a-message fallback.
-- Unmatched assistant webhook → rejected (VAPI_DEFAULT_SHOP_ID must be unset in prod — P0-010 verification).
+- Unmatched assistant webhook → rejected (VAPI_DEFAULT_SHOP_ID confirmed unset in prod — verified 2026-08-28 at the P0-010 founder acceptance; P0-007 code guard fails closed regardless).
 
 ## Empty states
 - Before setup: first-use teaching state — what the receptionist does, what it will never do without approval.
