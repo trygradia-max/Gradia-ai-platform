@@ -45,7 +45,7 @@ async function writeAutonomy(
     .eq("id", shopId)
   if (error) return { ok: false, error: error.message }
   revalidatePath("/settings")
-  revalidatePath("/agents")
+  revalidatePath("/receptionist")
   return { ok: true }
 }
 

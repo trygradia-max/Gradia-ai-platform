@@ -16,7 +16,7 @@ const LIST_LIMIT = 200
 
 /**
  * Lists customers for the current shop, optionally filtered by a
- * free-text query that matches name / phone / email / IG / FB.
+ * free-text query that matches name / phone / email.
  * Annotated with lead_count + last_seen_at for the index view's
  * "warmest customer first" sort. RLS scopes everything to the shop.
  */

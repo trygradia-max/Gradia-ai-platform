@@ -48,7 +48,7 @@ export const FEATURES = {
   freeformPlanner: true, // Phase 2 — executor + guardrails landed
   biChat: true, // Ask Gradia engine — kept; the standalone page is gated below
   workflowBuilder: false, // FOCUS spec §1: hide self-serve scheduled-agent builder for alpha
-  askGradiaPage: true, // standalone /chat page re-enabled (engine already shipped)
+  askGradiaPage: true, // Ask Gradia surface inside /conversations (/chat is a redirect)
   slackApprovals: false, // Phase 1 — Slack is now opt-in
   paywall: true, // Phase 3 — subscription gate + metering live
   customerRecovery: true, // import→extract pipeline surfaced as "Import your customers";
