@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git reset --hard*)",
+      "Bash(git add -A*)",
+      "Bash(git add .*)",
+      "Bash(git stash pop*)",
+      "Bash(git stash drop*)",
+      "Bash(git stash clear*)",
+      "Bash(git branch -D*)",
+      "Bash(git checkout main*)",
+      "Bash(git switch main*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh pr create*)",
+      "Bash(vercel env*)",
+      "Bash(vercel --prod*)",
+      "Bash(vercel deploy*)",
+      "Bash(supabase db push*)",
+      "Bash(supabase db reset*)",
+      "Bash(rm -rf*)",
+      "Read(.playwright-mcp/**)",
+      "Edit(.playwright-mcp/**)",
+      "Edit(.env*)",
+      "Read(.env.local)"
+    ]
+  }
+}
