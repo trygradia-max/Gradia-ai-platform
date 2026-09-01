@@ -33,8 +33,14 @@ export async function approveFromDashboard(
   resolution: ApprovalResolution = "approved_unedited"
 ): Promise<DashboardDecisionResult> {
   const user = await requireUser()
+  // P0-011 (C-2): the claim is tenant-bound — the session-resolved shop is
+  // the authorized tenant (RLS already limits the session client; the
+  // explicit id makes the binding mechanism, not policy).
+  const shop = await requireShop()
   const supabase = await createClient()
-  const result = await executeApproval(supabase, pendingId, { userId: user.id })
+  const result = await executeApproval(supabase, pendingId, shop.id, {
+    userId: user.id,
+  })
 
   if (!result.ok) {
     return { ok: false, error: result.error }
@@ -162,8 +168,11 @@ export async function rejectFromDashboard(
   pendingId: string
 ): Promise<DashboardDecisionResult> {
   const user = await requireUser()
+  const shop = await requireShop()
   const supabase = await createClient()
-  const result = await executeRejection(supabase, pendingId, { userId: user.id })
+  const result = await executeRejection(supabase, pendingId, shop.id, {
+    userId: user.id,
+  })
 
   if (!result.ok) {
     return { ok: false, error: result.error }

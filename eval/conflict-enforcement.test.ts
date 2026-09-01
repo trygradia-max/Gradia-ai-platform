@@ -220,6 +220,7 @@ describe("executor, automatic context — hard block (D-015)", () => {
     const res = await executeApproval(
       db,
       "pa-1",
+      "shop-1",
       { userId: "owner-1" },
       { context: "automatic" }
     )
@@ -244,6 +245,7 @@ describe("executor, automatic context — hard block (D-015)", () => {
     const res = await executeApproval(
       db,
       "pa-1",
+      "shop-1",
       { userId: "owner-1" },
       { context: "automatic" }
     )
@@ -260,6 +262,7 @@ describe("executor, automatic context — hard block (D-015)", () => {
     const res = await executeApproval(
       db,
       "pa-1",
+      "shop-1",
       { userId: "owner-1" },
       { context: "automatic" }
     )
@@ -274,6 +277,7 @@ describe("executor, automatic context — hard block (D-015)", () => {
     const res = await executeApproval(
       db,
       "pa-1",
+      "shop-1",
       { userId: "owner-1" },
       { context: "automatic" }
     )
@@ -296,6 +300,7 @@ describe("executor, automatic context — hard block (D-015)", () => {
     const res = await executeApproval(
       db,
       "pa-1",
+      "shop-1",
       { userId: "owner-1" },
       { context: "automatic" }
     )
@@ -326,7 +331,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
     mockedCheck.mockResolvedValue(conflictResult(conflict("appt-1")))
     const updates: Update[] = []
     const db = mockDb({ claimed: claimedBooking(), updates })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("Book it anyway")
@@ -340,7 +345,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
         conflict_override: { ...validOverride, reason: "" },
       }),
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
   })
 
@@ -349,7 +354,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
     const db = mockDb({
       claimed: claimedBooking({ conflict_override: validOverride }),
     })
-    const res = await executeApproval(db, "pa-1", { userId: "different-user" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "different-user" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("approving owner")
@@ -360,7 +365,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
     const db = mockDb({
       claimed: claimedBooking({ conflict_override: validOverride }),
     })
-    const res = await executeApproval(db, "pa-1", { slackUserId: "U123" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { slackUserId: "U123" })
     expect(res.ok).toBe(false)
   })
 
@@ -373,7 +378,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
       claimed: claimedBooking({ conflict_override: validOverride }),
       updates,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("schedule changed")
@@ -386,7 +391,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
       claimed: claimedBooking({ conflict_override: validOverride }),
       shop: null, // proves we got PAST the gate: failure is the Aurinko step
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("Google Calendar")
@@ -399,7 +404,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
     )
     const updates: Update[] = []
     const db = mockDb({ claimed: claimedBooking(), updates })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     // Distinct wording: a verification failure, not a conflict ("can't be
@@ -424,7 +429,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
     const db = mockDb({
       claimed: claimedBooking({ conflict_override: validOverride }),
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("Couldn't verify")
@@ -445,6 +450,7 @@ describe("executor, hitl context — warn + documented override (D-016)", () => 
         const res = await executeApproval(
           db,
           "pa-1",
+          "shop-1",
           { userId: "owner-1" },
           { context }
         )
@@ -497,7 +503,7 @@ describe("reschedule executor", () => {
       },
       appointment: appointmentRow,
     })
-    const res = await executeApproval(db, "pa-2", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-2", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     expect(mockedCheck).toHaveBeenCalledWith(
       expect.anything(),
@@ -519,7 +525,7 @@ describe("reschedule executor", () => {
       appointment: appointmentRow,
       rpcCalls,
     })
-    const res = await executeApproval(db, "pa-2", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-2", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     // P0-004A: the move goes through the ONE serialized write path — in-lock
     // re-verify + scheduled_at AND ends_at moving together.
@@ -573,6 +579,7 @@ describe("flag off → dormant (existing behavior preserved)", () => {
     const res = await executeApproval(
       db,
       "pa-1",
+      "shop-1",
       { userId: "owner-1" },
       { context: "automatic" }
     )
@@ -585,7 +592,7 @@ describe("flag off → dormant (existing behavior preserved)", () => {
   it('"false" in the deploy env is dormant too (Production config)', async () => {
     vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", "false")
     const db = mockDb({ claimed: claimedBooking(), shop: null })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(mockedCheck).not.toHaveBeenCalled()
     expect(res.ok).toBe(false)
   })

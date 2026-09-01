@@ -7,6 +7,7 @@ import {
   previewFreeformPlan,
   type FreeformPreview,
 } from "@/lib/agent-audience"
+import { parseAgentConfig } from "@/lib/agent-config-schema"
 import { planAgentFromProblem } from "@/lib/agent-planner"
 import { listAgentRunsForShop } from "@/lib/agent-runs"
 import { recordUsage } from "@/lib/credits"
@@ -52,14 +53,22 @@ export type PreviewAgentResult =
  * count + a few real sample drafts. Reads only — stages and sends nothing.
  */
 export async function previewCustomAgentPlan(
-  config: AgentConfig
+  rawConfig: AgentConfig
 ): Promise<PreviewAgentResult> {
   await requireUser()
   const shopCtx = await requireShop()
   if (!FEATURES.freeformPlanner) {
     return { ok: false, error: "Free-form preview isn't enabled yet." }
   }
-  if (!config?.freeform) {
+  // P0-011 (audit M-2): the config arrives from the client — validate the
+  // full runtime shape (whitelisted filter keys, bounded values) before the
+  // audience resolver sees any of it.
+  const validated = parseAgentConfig(rawConfig)
+  if (!validated.ok) {
+    return { ok: false, error: validated.error }
+  }
+  const config = validated.config
+  if (!config.freeform) {
     return {
       ok: false,
       error: "This plan has no free-form audience to preview.",
@@ -86,6 +95,9 @@ export async function previewCustomAgentPlan(
 
 const saveSchema = z.object({
   problem_text: z.string().trim().min(1).max(2000),
+  // P0-011 (audit M-2): was `z.unknown()` cast to AgentConfig — the client
+  // could persist arbitrary keys/values into custom_agents.config. The real
+  // runtime-shape validation happens via parseAgentConfig below.
   config: z.unknown(),
 })
 
@@ -94,9 +106,10 @@ export type SaveAgentResult =
   | { ok: false; error: string }
 
 /**
- * Persists a planned agent. We trust the config object that came out
- * of the planner (already validated by zod inside agent-planner.ts);
- * here we just confirm shape minimally and write the row.
+ * Persists a planned agent. The planner validated what IT emitted, but this
+ * action is client-invocable with any payload — so the config is re-validated
+ * server-side against the runtime's accepted shape (P0-011 / audit M-2)
+ * before it lands in custom_agents.config.
  */
 export async function saveCustomAgent(input: {
   problem_text: string
@@ -106,10 +119,11 @@ export async function saveCustomAgent(input: {
   if (!parsed.success) {
     return { ok: false, error: "Couldn't save — the plan was malformed." }
   }
-  const config = parsed.data.config as AgentConfig
-  if (!config?.name || !config?.short_description) {
-    return { ok: false, error: "The plan is missing a name or description." }
+  const validated = parseAgentConfig(parsed.data.config)
+  if (!validated.ok) {
+    return { ok: false, error: validated.error }
   }
+  const config = validated.config
 
   const user = await requireUser()
   const shop = await requireShop()

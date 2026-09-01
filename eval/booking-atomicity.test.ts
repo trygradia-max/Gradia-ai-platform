@@ -237,7 +237,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
       rpcCalls,
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("taken while this card waited")
@@ -259,7 +259,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
   it("serialized-write ERROR → failure result, never 'executed'", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     const db = mockDb({ rpcResult: new Error("insert exploded") })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("nothing was booked")
@@ -273,7 +273,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
       rpcResult: { status: "exists", id: "appt-original" },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", resultId: "appt-original" })
     expect(writes.filter((w) => w.table === "leads" && w.op === "insert")).toHaveLength(0)
@@ -293,7 +293,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
       order.push("rpc")
       return origRpc(fn, args)
     }) as typeof db.rpc
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(order.indexOf("rpc")).toBeLessThan(order.indexOf("calendar"))
   })
@@ -303,7 +303,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
     mockedCreateEvent.mockRejectedValue(new Error("Aurinko 500"))
     const writes: Write[] = []
     const db = mockDb({ writes })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", calendarEventId: null })
     // Explicit reconciliation evidence on the action payload.
@@ -326,7 +326,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
   it("success → executed, event linked onto the appointment row after creation", async () => {
     const writes: Write[] = []
     const db = mockDb({ writes })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", calendarEventId: "ev-1" })
     const link = writes.find(
@@ -342,7 +342,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
   it("flag ON → serialized write enforces (p_enforce_conflicts=true)", async () => {
     const rpcCalls: RpcCall[] = []
     const db = mockDb({ rpcCalls })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     const write = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
     expect(write?.args.p_enforce_conflicts).toBe(true)
@@ -352,7 +352,7 @@ describe("executeBookAppointment — atomicity invariants (P0-004A)", () => {
     vi.stubEnv("NEXT_PUBLIC_GRADIA_CONFLICT_ENFORCEMENT", undefined)
     const rpcCalls: RpcCall[] = []
     const db = mockDb({ rpcCalls })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     const write = rpcCalls.find((c) => c.fn === "write_appointment_serialized")
     expect(write?.args.p_enforce_conflicts).toBe(false)

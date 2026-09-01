@@ -190,6 +190,7 @@ async function stageReminder(
     .from("appointments")
     .update({ reminder_pending_action_id: pending.id })
     .eq("id", appt.id)
+    .eq("shop_id", appt.shop.id)
 
   try {
     await sendSmsApprovalRequest({

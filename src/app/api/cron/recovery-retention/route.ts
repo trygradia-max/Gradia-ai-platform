@@ -12,6 +12,7 @@
 
 import { planRetention, type RetentionJob } from "@/lib/recovery/retention"
 import { deleteJobBodies } from "@/lib/recovery/storage"
+import { forShop } from "@/lib/supabase/for-shop"
 import { createServiceClient } from "@/lib/supabase/service"
 
 export const runtime = "nodejs"
@@ -56,11 +57,15 @@ export async function GET(request: Request) {
   const shopById = new Map(rows.map((r) => [r.id, r.shop_id]))
   const plan = planRetention(rows, now)
 
-  // 1. Mark abandoned in-progress jobs failed.
+  // 1. Mark abandoned in-progress jobs failed. Tenant scope via forShop
+  // (P0-011 helper proof): the id came from this cron's own scan, but the
+  // explicit shop predicate makes that an enforced mechanism, not an
+  // invariant a future edit could silently break.
   for (const id of plan.toFail) {
-    await supabase
-      .from("import_jobs")
-      .update({
+    const shopId = shopById.get(id)
+    if (!shopId) continue
+    await forShop(supabase, shopId)
+      .update("import_jobs", {
         status: "failed",
         error: "Timed out — the import was abandoned mid-run.",
         updated_at: new Date(now).toISOString(),
@@ -74,9 +79,8 @@ export async function GET(request: Request) {
     const shopId = shopById.get(id)
     if (!shopId) continue
     await deleteJobBodies(supabase, shopId, id)
-    await supabase
-      .from("import_messages")
-      .update({ body_ref: null })
+    await forShop(supabase, shopId)
+      .update("import_messages", { body_ref: null })
       .eq("import_job_id", id)
       .not("body_ref", "is", null)
     purged += 1

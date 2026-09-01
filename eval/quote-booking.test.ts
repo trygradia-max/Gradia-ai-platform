@@ -208,7 +208,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
   it("payload with quote_id/lead_id: NO new lead; existing lead moves to booked; appointment linked", async () => {
     const writes: Write[] = []
     const db = mockDb({ tables: RESOLVING_TABLES, writes })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(leadInserts(writes)).toHaveLength(0)
     expect(mockedMoveLeadToStage).toHaveBeenCalledWith(db, "shop-1", "lead-1", "booked", {
@@ -227,7 +227,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       tables: { quotes: { id: "q-1", lead_id: "lead-real" }, leads: { id: "lead-real" } },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(leadInserts(writes)).toHaveLength(0)
     expect(mockedMoveLeadToStage).toHaveBeenCalledWith(db, "shop-1", "lead-real", "booked", {
@@ -241,7 +241,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       tables: { quotes: null, leads: null }, // .eq(shop_id) filtered them out
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     // Historical behavior: a fresh lead, in THIS shop — the foreign rows untouched.
     expect(leadInserts(writes)).toHaveLength(1)
@@ -260,7 +260,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       readErrors: { leads: { message: "connection reset" } },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     // Appointment persisted → booking succeeds; but the uncertain lead read
     // must NOT spawn a replacement lead (that resurrects the duplicate card).
     expect(res.ok).toBe(true)
@@ -282,7 +282,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       tables: { quotes: { id: "q-1", lead_id: "lead-gone" }, leads: null },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(leadInserts(writes)).toHaveLength(1)
     expect(quoteStatusUpdates(writes)).toHaveLength(1)
@@ -294,7 +294,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       payload: quotePayload({ quote_id: undefined, lead_id: undefined, source: undefined }),
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(leadInserts(writes)).toHaveLength(1)
     expect(quoteStatusUpdates(writes)).toHaveLength(0)
@@ -305,7 +305,7 @@ describe("executeBookAppointment — quote advances to booked only on DURABLE su
   it("successful serialized write → quotes.status = booked (shop-scoped, guarded)", async () => {
     const writes: Write[] = []
     const db = mockDb({ tables: RESOLVING_TABLES, writes })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(quoteStatusUpdates(writes)).toHaveLength(1)
     // Best-effort job link rides along.
@@ -322,7 +322,7 @@ describe("executeBookAppointment — quote advances to booked only on DURABLE su
       rpcResult: { status: "conflict", conflict_ids: ["appt-race"] },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     expect(quoteStatusUpdates(writes)).toHaveLength(0)
     expect(leadInserts(writes)).toHaveLength(0)
@@ -337,7 +337,7 @@ describe("executeBookAppointment — quote advances to booked only on DURABLE su
       rpcResult: new Error("insert exploded"),
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(false)
     expect(quoteStatusUpdates(writes)).toHaveLength(0)
   })
@@ -349,7 +349,7 @@ describe("executeBookAppointment — quote advances to booked only on DURABLE su
       rpcResult: { status: "exists", id: "appt-original" },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", resultId: "appt-original" })
     // No duplicate lead, but the (idempotent) stage move + quote advance re-run
@@ -367,7 +367,7 @@ describe("executeBookAppointment — quote advances to booked only on DURABLE su
       tables: { ...RESOLVING_TABLES, appointments: { id: "appt-prior" } },
       writes,
     })
-    const res = await executeApproval(db, "pa-1", { userId: "owner-1" })
+    const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", resultId: "appt-prior" })
     expect(leadInserts(writes)).toHaveLength(0)

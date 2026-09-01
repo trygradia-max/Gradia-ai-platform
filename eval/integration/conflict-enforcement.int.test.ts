@@ -153,7 +153,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
       bookingPayload("2030-06-03T18:00:00.000Z")
     )
 
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
 
     expect(res.ok).toBe(false)
     const p = await getPending(sb, id)
@@ -180,7 +180,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
     )
 
     // First approve without override → refused (proves the check ran).
-    const refused = await executeApproval(sb, id, { userId: seed.ownerId })
+    const refused = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(refused.ok).toBe(false)
 
     // Owner overrides exactly as the server action does: actor + timestamp +
@@ -200,7 +200,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
       .update({ payload: { ...payload, conflict_override: override } })
       .eq("id", id)
 
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(res.ok).toBe(true)
     expect(res).toMatchObject({ status: "executed", actionType: "book_appointment" })
 
@@ -230,7 +230,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
     expect(decisions?.[0].because).toContain("overrode")
 
     // Replay: approving again is already_decided — no duplicate booking.
-    const replay = await executeApproval(sb, id, { userId: seed.ownerId })
+    const replay = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(replay).toEqual({ ok: true, status: "already_decided" })
     expect(await countAppointments(sb, seed.shopId)).toBe(before + 1)
   })
@@ -257,6 +257,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
     const res = await executeApproval(
       sb,
       id,
+      seed.shopId,
       { userId: seed.ownerId },
       { context: "automatic" }
     )
@@ -278,7 +279,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
       "book_appointment",
       bookingPayload("2030-06-24T18:00:00.000Z")
     )
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(res.ok).toBe(false)
     if (res.ok) throw new Error("unreachable")
     expect(res.error).toContain("Blocked time")
@@ -298,7 +299,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
       "book_appointment",
       bookingPayload("2030-07-01T18:00:00.000Z")
     )
-    const res = await executeApproval(sb, id, { userId: seed.ownerId })
+    const res = await executeApproval(sb, id, seed.shopId, { userId: seed.ownerId })
     expect(res.ok).toBe(true)
     expect(await countAppointments(sb, seed.shopId)).toBe(before + 1)
   })
@@ -328,7 +329,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
         iso_new_start_time: "2030-07-08T19:00:00.000Z",
       }
     )
-    const refused = await executeApproval(sb, conflictingMove, {
+    const refused = await executeApproval(sb, conflictingMove, seed.shopId, {
       userId: seed.ownerId,
     })
     expect(refused.ok).toBe(false)
@@ -349,7 +350,7 @@ describe.skipIf(!INTEGRATION)("P0-004 conflict enforcement [integration]", () =>
         iso_new_start_time: "2030-07-08T13:00:00.000Z",
       }
     )
-    const res = await executeApproval(sb, clearMove, { userId: seed.ownerId })
+    const res = await executeApproval(sb, clearMove, seed.shopId, { userId: seed.ownerId })
     expect(res.ok).toBe(true)
 
     const { data: moved } = await sb

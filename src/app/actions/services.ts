@@ -206,7 +206,13 @@ export async function deleteService(
 
   const shop = await requireShop()
   const supabase = await createClient()
-  const { error } = await supabase.from("services").delete().eq("id", id)
+  // P0-011 (audit L-1): explicit shop scope alongside RLS — defense in depth,
+  // and the pattern every delete carries regardless of which client runs it.
+  const { error } = await supabase
+    .from("services")
+    .delete()
+    .eq("id", id)
+    .eq("shop_id", shop.id)
 
   if (error) {
     return { ok: false, error: error.message }

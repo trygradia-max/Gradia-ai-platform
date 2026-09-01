@@ -23,6 +23,25 @@ export type UsageAnomaly = {
   detail: string
 }
 
+/**
+ * Structured tenant-scope violation signal (P0-011). A claim or mutation was
+ * refused because the caller's authorized shop did not match the row's shop —
+ * an attack or a bug, never noise. Emitted with the same `[monitoring]`
+ * prefix the anomaly sweep uses so P0-012's log-based alerting picks it up
+ * from one channel. Log-only today (P0-012 owns delivery); never throws.
+ */
+export function reportTenantScopeViolation(input: {
+  surface: string
+  authorizedShopId: string
+  rowShopId: string | null
+  rowId: string
+  detail?: string
+}): void {
+  console.error(
+    `[monitoring] TENANT_SCOPE_VIOLATION surface=${input.surface} row=${input.rowId} authorized_shop=${input.authorizedShopId} row_shop=${input.rowShopId ?? "unknown"}${input.detail ? ` — ${input.detail}` : ""}`
+  )
+}
+
 const SPIKE_FACTOR = 3 // today ≥ 3× the trailing daily average
 const SPIKE_MIN_CENTS = 500 // ignore noise below $5/day
 const MARGIN_FLOOR = 0.5 // alert under 50% gross margin

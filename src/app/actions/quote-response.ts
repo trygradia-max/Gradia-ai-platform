@@ -54,6 +54,7 @@ export async function loadPublicQuote(token: string): Promise<QuoteWithShop | nu
         updated_at: viewedAt,
       })
       .eq("id", quote.id)
+      .eq("shop_id", quote.shop_id)
     await recordInteraction(supabase, {
       shopId: quote.shop_id,
       customerId: quote.customer_id,
