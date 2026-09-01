@@ -7,7 +7,7 @@ P0-011
 E00 — Stabilization
 
 ## Status
-**ready-after-P0-002** (reconciled with the index 2026-07-28) — no hard dependencies or open decisions; enters review only after P0-002 per the global review gate, so the new tenant-isolation tests gate from day one. Sequencing note: mutually exclusive in-flight with P0-009 (both touch `approvals.ts` — see Dependencies) — **satisfied 2026-08-26: P0-009 is done (PR #25)**, so the sweep now reviews final executor code; it must include the post-P0-009 `approvals.ts` re-review item below. The helper **design** portion produces an ADR, which needs Organizer/founder sign-off before any migration ticket is cut.
+**done** (2026-09-01 — merged to `main` in PR #29, squash `e02c81a`; reviewed implementation = Builder `34c83fa` (2026-08-28) → Cursor review-fix accepted tree `3446fe2`; independent Cursor verdict **APPROVE AFTER LOCAL FIX** — two HIGH findings found and fixed pre-merge; founder acceptance **PASS** on the exact accepted SHA `3446fe2`; **ADR-003 founder-APPROVED** as the proposed direction. Full close record appended below. Prior state for history: ready-after-P0-002, promoted to next implementation position 2026-08-28 at the P0-010 close; the P0-009 mutual-exclusion precondition was satisfied 2026-08-26 and the post-P0-009 `approvals.ts` re-review item was completed in the sweep.)
 
 ## Priority
 P0 — High. Audit doc 05 calls service-role discipline "the single largest structural risk in the data layer," and C-2 is the proof-of-pattern that a missed scope becomes a cross-tenant hole.
@@ -116,3 +116,71 @@ Revert the PR (code + tests only, no migrations). The ADR remains as a document 
 
 ## Definition of done
 Per `12-definition-of-done.md`, plus: sweep table complete over the authoritative file list (count reconciled against the audit's 29 vs ~32 discrepancy), C-2/L-1/L-2/M-2 each individually evidenced, ADR reviewed by the Organizer and queued for founder sign-off, and tenant-isolation tests green in gating CI.
+
+---
+
+## Close record (2026-09-01)
+
+**Merged:** PR #29 "fix: harden service-role tenant scoping", merged to `main` 2026-09-01 as squash **`e02c81a`**. Reviewed implementation history: Builder **`34c83fa`** (2026-08-28, 31 files +1,507/−169) → independent Cursor review-fix, accepted tree **`3446fe2`** (2026-09-01). CI on the exact accepted SHA: `ci / checks` PASS · `ci-integration / integration` PASS · Vercel + Vercel Preview Comments PASS. **No migration** (as specced).
+
+**Cursor review: APPROVE AFTER LOCAL FIX — two HIGH findings, both fixed pre-merge in `3446fe2`:**
+- **HIGH #1 — forShop update re-tenanting:** `forShop.update()` scoped the WHERE to the authorized shop but did not stamp `shop_id` into SET — a forged update payload could attempt to MOVE a row into another tenant. Fixed: `update` now stamps the trusted shop_id like insert/upsert (forged payload `shop_id` always loses); locked by new facade unit tests + a real-Postgres re-tenant-attack test.
+- **HIGH #2 — Connect events on the platform billing path:** a Stripe **Connect** `checkout.session.completed` (attacker-mintable on a connected account, carrying arbitrary `client_reference_id` / `metadata.shop_id`) could enter the PLATFORM subscription handler and write another shop's `shops.plan` / `stripe_subscription_id` / `credit_grants`. Fixed: events carrying an `account` envelope are rejected from the platform billing handler before any tenant mutation; locked by new `eval/stripe-webhook-tenancy.test.ts` (214 lines).
+
+**Founder acceptance: PASS** on `3446fe2` (npm test 660 passed / 4 skipped · tsc clean · lint clean · build clean · integration 109/109 on real Postgres). Verified: Shop A approval executed exactly once; A claiming B's pending action refused with B untouched, `TENANT_SCOPE_VIOLATION` structured log emitted, and B still able to execute legitimately afterward; the forShop re-tenant attack failed (A-owned row stayed A's despite a B `shop_id` in the update payload) while legitimate updates worked; forged Connect metadata caused **no** `shops.plan` change, **no** `stripe_subscription_id` mutation, **no** `credit_grants` write, with legitimate platform checkout behavior intact; invalid and forged-`shop_id` agent configs rejected by the strict schema with existing valid configs compatible; owning-shop service delete / MCP revoke worked while foreign identifiers could not mutate another tenant; Slack approvals remain disabled with the interactivity route structurally dormant, and callback binding requiring pending id + `slack_channel` + `slack_message_ts`; approvals claim/rollback/execution, `recordPayloadReconciliation` (read AND write), changed cron paths, the public-quote token→quote→shop chain, and MCP token→shop resolution all confirmed tenant-bound; the service-role importer inventory stands at exactly **31**; P0-005 financial SELECT-only owner RLS intact; billing model unchanged; **P0-005/006/007/008/009/010 regressions all PASS**; production conflict enforcement OFF; P0-012 and P0-013 not started.
+
+**Test-infrastructure note (not a P0-011 regression):** the first local acceptance integration run hit a P0-009 `quote_response` rate-limit **fixed-window timing flake**; the test passed in isolation, passed on full-suite rerun, and CI integration was green on the exact accepted SHA. Recorded as a known flaky-test follow-up in `../program/backlog.md` test-infra hygiene.
+
+**ADR-003 — FOUNDER-APPROVED** as the proposed direction (`forShop(client, trustedShopId)`: explicit trusted shopId; scoped select/update/delete; insert/upsert/UPDATE all stamp the authorized shop_id so forged payload shop_id loses; empty shopId fails closed; explicit loud `unscoped` escape hatch). The full repository migration is NOT started — TS-1…TS-6 remain future follow-up work for the Organizer to sequence post-P0.
+
+### Sweep table (scope item 1 — reconciled at close; residual M4 satisfied)
+
+Authoritative inventory: **31 files** import `createServiceClient` (resolving the audit's "29 vs ~32"), locked in code by the `REVIEWED_IMPORTERS` allowlist test (`eval/tenant-scoping.test.ts`) — a new importer fails CI until deliberately reviewed and added. Verdicts are POST-fix (`3446fe2`). "S-U-I" = safe-under-invariant: every id in the operation came from an already-tenant-scoped read/insert in the same flow; the invariant is named and rides the ADR-003 migration batches.
+
+| File | Tenant identity source | Verdict | P0-011 action |
+|---|---|---|---|
+| `actions/a2p.ts` | session `requireShop()` | SAFE | none |
+| `actions/jobs.ts` | session; service client for storage only, paths prefixed `${shop.id}/` | SAFE | none |
+| `actions/payments.ts` | session | SAFE | none |
+| `actions/quote-response.ts` | opaque public token → quote row (`quote.shop_id`) | SAFE (was S-U-I) | `viewed_at` stamp now carries `.eq("shop_id")` |
+| `actions/twilio-provision.ts` | session | SAFE | none |
+| `actions/voice-builder.ts` | session | SAFE | none |
+| `api/admin/margin-report` | `CRON_SECRET`; deliberately cross-tenant, read-only | SAFE (by design) | none |
+| `api/aurinko/webhook` | HMAC → `aurinko_account_id` mapping | SAFE | none |
+| `api/cron/agents` | `CRON_SECRET` → server-loaded agents | SAFE | none |
+| `api/cron/automations` | `CRON_SECRET` → shop iteration | SAFE | none |
+| `api/cron/no-show-ladder` | `CRON_SECRET`; `shops!inner` joined rows | SAFE (was S-U-I) | appointment stamp now shop-scoped |
+| `api/cron/reconcile` | `CRON_SECRET`; read-only by design | SAFE | none |
+| `api/cron/recovery-retention` | `CRON_SECRET`; own scoped scan | SAFE (was S-U-I) | **converted to `forShop`** (ADR-003 proof) |
+| `api/cron/reminders` | `CRON_SECRET`; joined rows | SAFE (was S-U-I) | appointment stamp now shop-scoped |
+| `api/cron/roi-receipt` | `CRON_SECRET`; active-shop iteration | SAFE | **converted to `forShop`** (ADR-003 proof) |
+| `api/cron/voice-sync` | `CRON_SECRET` | SAFE | none |
+| `api/mcp/route` (+`lib/mcp/server`) | bearer token → `mcp_tokens.shop_id`, `ctx.shopId` threaded | SAFE | none |
+| `api/recovery/import/[jobId]/extract` | session + `jobId` independently re-verified shop-scoped at every entry | S-U-I (documented) | none (TS-2) |
+| `api/recovery/import` | session | SAFE | none |
+| `api/slack/interactivity` | **was the C-2 hole** — button payload id only, service role, no shop binding (dormant behind the flag) | **FIXED** | route 404s while `slackApprovals` off; when on, tenant = the posted card's stored `slack_channel`+`slack_message_ts` matched against the callback container; bound row's shop drives the claim |
+| `api/stripe/webhook` | signature; account→shop / checkout metadata / subscription-id mapping | **FIXED** (was SUSPICIOUS) | mandatory tenant resolution before tenant-row work (unmapped Connect account acks+logs, never unscoped queries); refund path fully scoped; **HIGH #2**: Connect events rejected from the platform billing handler |
+| `api/twilio/a2p/status` | `?shop=` as lookup hint + per-shop subaccount signature as the gate | SAFE | none |
+| `api/twilio/sms` | P0-006 pattern (signature → number mapping) | SAFE (spot-checked) | none |
+| `api/twilio/sms/status` | P0-008 pattern | SAFE (spot-checked) | none |
+| `api/vapi/webhook` | P0-007 pattern (signature → assistant mapping, prod fallback fails closed) | SAFE (spot-checked) | none |
+| `lib/agent-events.ts` | publisher-resolved `event.shopId` (all current publishers server-resolve) | SAFE (inherited — LOW recorded) | none (TS-4) |
+| `lib/credits.ts` | explicit `shopId` param from callers | SAFE | none |
+| `lib/mcp/auth.ts` | the presented credential's own row (hash lookup) | S-U-I (self-row usage counter — LOW) | none (TS-4) |
+| `lib/rate-limit.ts` | explicit `(shop_id, bucket, window)` keys | SAFE | none |
+| `lib/slack.ts` | caller-fed `pendingActionId`, no shop context in-module | S-U-I | deferred — **residual M2 / TS-6** |
+| `lib/supabase/service.ts` | (the factory itself) | n/a | none |
+
+Supplementary (receive a service client without importing the factory): `lib/approvals.ts` — was the C-2 core, now tenant-bound end to end (claim `.eq("shop_id")`, all post-claim writes + rollback scoped to `claimed.shop_id`, `recordPayloadReconciliation` read+write scoped — the post-P0-009 re-review item, closed); `lib/automations.ts` — scoped inserts, `automation_runs` claim transitions S-U-I (own-insert ids, TS-1); `lib/agent-runtime.ts` — all reads/inserts scoped; auto-execute select now also carries `.eq("shop_id")`.
+
+### Scope items — individually evidenced
+1. **Sweep:** table above; inventory locked in CI. 2. **C-2:** `executeApproval`/`executeRejection`/`markEditRequested` take an authorized `shopId`; claim is atomic on `.eq("id").eq("shop_id").in("status")`; zero-row claims probe and emit `TENANT_SCOPE_VIOLATION` via `lib/monitoring.ts` (P0-012 pickup); Slack route bound as above and **not re-enabled** (D-026). 3. **L-1:** `deleteService` + `revokeMcpToken` carry explicit `.eq("shop_id")`; **L-2:** verified already fixed by P0-009 (customers updates shop-scoped) — no double-fix. 4. **M-2:** `lib/agent-config-schema.ts` strict runtime-shape zod at `saveCustomAgent`/`previewCustomAgentPlan` (planner's eval-locked tool schema untouched; reads of saved rows stay tolerant). 5. **Helper design:** ADR-003 (founder-approved) + `lib/supabase/for-shop.ts` + two cron proof conversions. 6. **Tests:** `eval/integration/tenant-isolation.int.test.ts` (incl. the re-tenant attack), `eval/slack-interactivity.test.ts`, `eval/agent-config-schema.test.ts`, `eval/tenant-scoping.test.ts` (claim-arg scan + importer inventory), `eval/stripe-webhook-tenancy.test.ts` (review-fix); existing claim-signature suites extended, never weakened.
+
+### Residual findings (preserved, not fixed)
+- **M1 — Slack tenant binding uses channel+message_ts, not a team/workspace→shop identity.** Sufficient for the disabled surface; a real workspace→shop mapping is REQUIRED before any Slack re-enable (rides D-026's re-enable gate).
+- **M2 — `storeSlackRef`/`updateSlackForPending` remain bare-id writes** (module has no shop context by design; callers verified correct today). Track with TS-6 / the Slack tenant-binding follow-up.
+- **M3 — `executeCancelAppointment` deletes the appointment by id after a shop-scoped load** — pre-existing invariant, documented (mechanized by the ADR-003 migration when approvals.ts converts).
+- **M4 — Builder sweep-table documentation gap** — satisfied by this close record.
+- **LOW/OPTIONAL (accepted):** whitespace-only shopId passes `forShop`'s empty-check; cross-tenant claims surface as `already_decided` rather than a distinct mismatch status (information-poor by choice; the structured log carries the signal); `match_customer_memory` mismatch lacks the integration test its `match_shop_knowledge` twin has; MCP usage counter stays id-only after the trusted credential lookup; quote-response race-echo SELECT stays id-only; some vehicle patches use bare id after trusted resolution; `agent-events` relies on publisher-resolved shopId until TS-4; the Slack route tests flip the frozen FEATURES object via cast.
+
+**Standing state at close:** Slack approvals OFF (D-026) · production conflict enforcement OFF · billing model unchanged and Production checkout fail-closed pending P0-013 · P0-012 not started · P0-013 not started · no migration shipped.

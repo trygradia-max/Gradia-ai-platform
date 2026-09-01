@@ -1,6 +1,6 @@
 # ADR-003 — Service-Role Tenant-Scoping Mechanism (`forShop`)
 
-**Status:** proposed (P0-011 Builder, 2026-08-28 — needs Organizer review and founder sign-off before the migration ticket set is cut; the design-proof conversions and the facade itself ship with P0-011 and stand regardless).
+**Status:** **accepted** — founder-APPROVED at the P0-011 acceptance (PASS on `3446fe2`; recorded at the 2026-09-01 closeout, PR #29 `e02c81a`). Approved invariants: explicit trusted shopId; scoped select/update/delete; insert, upsert AND update all stamp the authorized `shop_id` (forged payload `shop_id` loses — the update-stamping invariant was added by the Cursor review fix, HIGH #1); empty shopId fails closed; explicit/loud `unscoped` escape hatch. **The full repository migration is NOT started** — TS-1…TS-6 below remain future follow-up work for the Organizer to sequence (post-P0); TS-5 remains the E01-era design gate on the session-variable alternative. (Originally proposed by the P0-011 Builder, 2026-08-28.)
 
 ## Context
 
