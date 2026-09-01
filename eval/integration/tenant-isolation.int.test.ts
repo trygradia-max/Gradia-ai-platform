@@ -187,6 +187,33 @@ describe.skipIf(!INTEGRATION)("tenant isolation [integration]", () => {
     expect((owned as unknown[]).length).toBe(1)
   })
 
+  it("forShop: a forged shop_id on update cannot MOVE the row to another tenant", async () => {
+    const id = await stagePending(sb, shopA.shopId, shopA.ownerId, "create_lead", leadPayload)
+
+    const { data: moved } = await forShop(sb, shopA.shopId)
+      .update("pending_actions", { shop_id: shopB.shopId, status: "rejected" })
+      .eq("id", id)
+      .select("id, shop_id, status")
+    const row = (moved as { id: string; shop_id: string; status: string }[] | null)?.[0]
+    expect(row?.shop_id).toBe(shopA.shopId)
+    expect(row?.status).toBe("rejected")
+
+    const { data: stillA } = await sb
+      .from("pending_actions")
+      .select("id")
+      .eq("id", id)
+      .eq("shop_id", shopA.shopId)
+      .maybeSingle()
+    expect(stillA).not.toBeNull()
+    const { data: landedB } = await sb
+      .from("pending_actions")
+      .select("id")
+      .eq("id", id)
+      .eq("shop_id", shopB.shopId)
+      .maybeSingle()
+    expect(landedB).toBeNull()
+  })
+
   it("forShop: insert stamps the authorized tenant over a forged shop_id", async () => {
     const { data, error } = await forShop(sb, shopA.shopId)
       .insert("services", {

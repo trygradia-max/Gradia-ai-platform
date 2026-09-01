@@ -125,6 +125,15 @@ async function handleSubscriptionEvent(
   eventType: string,
   event: StripeEvent
 ): Promise<Response> {
+  // P0-011 review: platform billing (checkout/subscription/packs) is minted
+  // by Gradia on the PLATFORM account. Connect events carry an `account`
+  // envelope — a connected shop can create Stripe objects with arbitrary
+  // client_reference_id / metadata.shop_id. Those must never authorize a
+  // write to another tenant's shops/credit_grants rows.
+  if (event.account) {
+    return Response.json({ ok: true, ignored: "connect event on platform billing path" })
+  }
+
   const supabase = createServiceClient()
 
   if (eventType === "checkout.session.completed") {

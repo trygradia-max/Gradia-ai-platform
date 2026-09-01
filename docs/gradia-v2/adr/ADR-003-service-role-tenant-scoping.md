@@ -34,7 +34,9 @@ Shape (deliberately small — five verbs and an escape hatch):
   with the raw client.
 - `insert / upsert` stamp `shop_id` onto every row — the authorized tenant
   always overrides anything the payload carried (forged `shop_id` in content
-  can never choose tenancy).
+  can never choose tenancy). `update` stamps the same way, so a forged
+  `shop_id` in the patch cannot MOVE a row into another tenant (WHERE
+  remains the authorized shop; SET cannot change tenancy).
 - `unscoped` exposes the raw client for the legitimately global tables
   (`pricing_config`, `rate_limits`) and deliberate cross-tenant sweeps —
   making the exception *loud and greppable* instead of an absent predicate.

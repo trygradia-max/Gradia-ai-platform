@@ -123,6 +123,27 @@ describe("forShop facade (ADR-003 design proof)", () => {
     ).toThrowError(/requires a non-empty trusted shopId/)
   })
 
+  it("stamps the authorized shop over a forged shop_id on update (cannot re-tenant)", () => {
+    const captured: Record<string, unknown>[] = []
+    const builder = {
+      eq: () => builder,
+    }
+    const client = {
+      from: () => ({
+        update: (values: Record<string, unknown>) => {
+          captured.push(values)
+          return builder
+        },
+      }),
+    }
+    forShop(client as never, "shop-A").update("leads", {
+      status: "lost",
+      shop_id: "shop-B", // forged — must lose, or the row MOVES tenants
+    })
+    expect(captured[0].shop_id).toBe("shop-A")
+    expect(captured[0].status).toBe("lost")
+  })
+
   it("stamps the authorized shop over a forged shop_id on insert", () => {
     const captured: Record<string, unknown>[] = []
     const client = {

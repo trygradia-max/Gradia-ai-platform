@@ -47,9 +47,14 @@ export function forShop(client: SupabaseClient, shopId: string) {
     /** SELECT already filtered by shop_id; chain further filters freely. */
     select: (table: string, columns = "*") =>
       client.from(table).select(columns).eq("shop_id", shopId),
-    /** UPDATE already filtered by shop_id; chain `.eq("id", …)` etc. */
+    /** UPDATE already filtered by shop_id; chain `.eq("id", …)` etc.
+     *  shop_id in `values` is overwritten — a forged payload cannot
+     *  MOVE a row into another tenant. */
     update: (table: string, values: Row) =>
-      client.from(table).update(values).eq("shop_id", shopId),
+      client
+        .from(table)
+        .update(stamp(shopId, values) as Row)
+        .eq("shop_id", shopId),
     /** DELETE already filtered by shop_id; chain further filters. */
     delete: (table: string) =>
       client.from(table).delete().eq("shop_id", shopId),
