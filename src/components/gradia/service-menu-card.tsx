@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { ChevronDown, Loader2, Plus, Sparkles, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -68,8 +71,9 @@ export function ServiceMenuCard({ initialServices }: { initialServices: ServiceR
     <Card className="border-border/60">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="font-display text-lg tracking-tight">
+          <CardTitle className="flex items-center gap-1.5 font-display text-lg tracking-tight">
             Service menu
+            <HelpTip label="Service menu" text={STRINGS.help.settings.services} />
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Prices by vehicle size, durations, and condition bumps. Quotes,

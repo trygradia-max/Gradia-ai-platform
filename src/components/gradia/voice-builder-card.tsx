@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { useRouter } from "next/navigation"
 import {
   BadgeCheck,
@@ -132,7 +135,10 @@ export function VoiceBuilderCard({
   return (
     <Card className="border-border/70">
       <CardHeader className="space-y-1">
-        <p className="label-eyebrow text-muted-foreground/70">Voice receptionist</p>
+        <p className="label-eyebrow flex items-center gap-1.5 text-muted-foreground/70">
+          Voice receptionist
+          <HelpTip label="Voice receptionist" text={STRINGS.help.settings.voice} />
+        </p>
         <CardTitle className="font-display text-xl tracking-tight">
           Who answers when we&apos;re <em className="italic">under the hood</em>
         </CardTitle>
@@ -146,7 +152,10 @@ export function VoiceBuilderCard({
         {/* ---- The form (guardrailed — facts only) ---- */}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="vb-greeting">Greeting line</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-greeting">Greeting line</Label>
+              <HelpTip label="Greeting line" text={STRINGS.help.builder.greeting} />
+            </div>
             <Input
               id="vb-greeting"
               value={form.greeting ?? ""}
@@ -155,7 +164,10 @@ export function VoiceBuilderCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="vb-voice">Voice</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-voice">Voice</Label>
+              <HelpTip label="Voice" text={STRINGS.help.builder.voice} />
+            </div>
             <Select
               value={form.voice ?? undefined}
               onValueChange={(v) => {
@@ -175,7 +187,10 @@ export function VoiceBuilderCard({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="vb-tone">Tone</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-tone">Tone</Label>
+              <HelpTip label="Tone" text={STRINGS.help.builder.tone} />
+            </div>
             <Select
               value={form.tone ?? "warm"}
               onValueChange={(v) => set({ tone: v as VoiceConfigInput["tone"] })}
@@ -191,7 +206,10 @@ export function VoiceBuilderCard({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="vb-hours">Business hours (plain words)</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-hours">Business hours (plain words)</Label>
+              <HelpTip label="Business hours (plain words)" text={STRINGS.help.builder.hours} />
+            </div>
             <Input
               id="vb-hours"
               value={form.hours_text ?? ""}
@@ -200,7 +218,10 @@ export function VoiceBuilderCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="vb-after">After hours, we should…</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-after">After hours, we should…</Label>
+              <HelpTip label="After hours, we should…" text={STRINGS.help.builder.afterHours} />
+            </div>
             <Select
               value={form.after_hours ?? "take_message"}
               onValueChange={(v) =>
@@ -217,7 +238,10 @@ export function VoiceBuilderCard({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="vb-booking">Bookings</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-booking">Bookings</Label>
+              <HelpTip label="Bookings" text={STRINGS.help.builder.bookings} />
+            </div>
             <Select
               value={form.booking_mode ?? "propose_booking"}
               onValueChange={(v) =>
@@ -237,7 +261,10 @@ export function VoiceBuilderCard({
           </div>
           {form.booking_mode === "calendar_link" ? (
             <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
               <Label htmlFor="vb-cal">Booking link</Label>
+              <HelpTip label="Booking link" text={STRINGS.help.builder.bookingLink} />
+            </div>
               <Input
                 id="vb-cal"
                 value={form.calendar_link ?? ""}
@@ -247,7 +274,10 @@ export function VoiceBuilderCard({
             </div>
           ) : null}
           <div className="space-y-1.5">
-            <Label htmlFor="vb-escalation">Transfer-to-you number (optional)</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-escalation">Transfer-to-you number (optional)</Label>
+              <HelpTip label="Transfer-to-you number (optional)" text={STRINGS.help.builder.escalation} />
+            </div>
             <Input
               id="vb-escalation"
               value={form.escalation_phone ?? ""}
@@ -289,7 +319,7 @@ export function VoiceBuilderCard({
           </Button>
           {!vapiConfigured ? (
             <p className="text-xs text-muted-foreground">
-              We&apos;re finishing voice setup on our side — check back soon.
+              {STRINGS.connections.notAvailableReason.voice}
             </p>
           ) : null}
         </div>
@@ -307,7 +337,10 @@ export function VoiceBuilderCard({
 
         {/* ---- Launch checklist ---- */}
         <div className="space-y-3 rounded-md border border-border/50 bg-muted/15 p-3.5">
-          <p className="label-eyebrow text-muted-foreground/70">Going live</p>
+          <p className="label-eyebrow flex items-center gap-1.5 text-muted-foreground/70">
+            Going live
+            <HelpTip label="Going live" text={STRINGS.help.builder.goingLive} />
+          </p>
           <ol className="space-y-2 text-sm">
             <li className={cn("flex items-center gap-2", hasAssistant && "text-muted-foreground")}>
               <BadgeCheck
@@ -416,7 +449,10 @@ export function VoiceBuilderCard({
         {/* ---- Minute budget (spec §2.5) ---- */}
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1.5">
-            <Label htmlFor="vb-budget">Monthly minute budget (optional)</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vb-budget">Monthly minute budget (optional)</Label>
+              <HelpTip label="Monthly minute budget (optional)" text={STRINGS.help.builder.budget} />
+            </div>
             <Input
               id="vb-budget"
               value={budget}

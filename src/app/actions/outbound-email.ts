@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { requireShop, requireUser } from "@/lib/shop"
-import { sendEmailApprovalRequest } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
 
 const proposeSchema = z.object({
@@ -26,7 +25,7 @@ export type ProposeEmailResult =
 
 /**
  * Stages an AI-initiated outbound email for human approval.
- * Mirrors proposeOutboundSms. Operator approves in Slack or via the
+ * Mirrors proposeOutboundSms. Operator approves via the
  * /approvals/[id] editor.
  */
 export async function proposeOutboundEmail(
@@ -78,19 +77,6 @@ export async function proposeOutboundEmail(
       ok: false,
       error: pendingErr?.message ?? "Couldn't queue the email.",
     }
-  }
-
-  try {
-    await sendEmailApprovalRequest({
-      pendingActionId: pending.id,
-      toEmail: parsed.data.to_email,
-      customerName: parsed.data.customer_name ?? null,
-      subject: parsed.data.subject,
-      body: parsed.data.body,
-      reason: parsed.data.reason ?? null,
-    })
-  } catch (err) {
-    console.error("[outbound-email] Slack approval send failed:", err)
   }
 
   revalidatePath("/approvals")

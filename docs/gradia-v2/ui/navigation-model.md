@@ -63,3 +63,9 @@ Usage pill in **human units** ("~200 texts · ~20 calls"), credits in fine print
 | Online booking config (E02) | Receptionist (it is the shop's front door config) or Settings | Low |
 
 Rule: any added or renamed destination is an IA amendment — BUILD_REFERENCE §2 update via the decision queue (Q-15/Q-23), never a silent addition. Calendar shipping ahead of this rule is exactly the drift the rule exists to prevent; it is recorded (C-15), not excused.
+
+## ICP amendment (2026-09-01 — D-036 / D-048 / D-049)
+
+**Audience.** Per **D-036** the navigation now serves established shops with staff (multi-bay, 2+ people), so the sidebar is read by three roles — owner, admin, tech (**D-048**, E01-01/E01-03) — not one. The shipped IA above stays through alpha; what changes is *who sees which destinations*: money, billing and autonomy-mode controls are owner/admin only, and techs land on their assigned jobs plus the customer context those jobs need (E04-04). Role-aware nav ships with E01-03 as a BUILD_REFERENCE §2 amendment, not as hidden menu items.
+
+**Direction.** **D-049** makes the founder's 9-item model (Home · Inbox · Calendar · Customers · Sales · Jobs · Gradia · Reports · Settings) the recorded target, converged *per phase* — Sales with E03, Jobs with E04, Reports with E08, Gradia with E09, Inbox consolidation when its domains exist — with no empty destinations and no design-language change. Every promotion goes through the decision queue exactly as the rule above already requires; this amendment only fixes the audience and the destination-count trajectory.

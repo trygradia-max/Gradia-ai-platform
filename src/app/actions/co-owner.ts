@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache"
 
 import { requireShop, requireUser } from "@/lib/shop"
-import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftCustomSmsForCustomer } from "@/lib/sms-drafter"
 import { createClient } from "@/lib/supabase/server"
 import type { LeadRow, ShopRow } from "@/lib/types/database"
@@ -97,18 +96,6 @@ export async function draftFollowupForLead(
       ok: false,
       error: pendingErr?.message ?? "Couldn't stage the draft.",
     }
-  }
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: lead.phone,
-      customerName: lead.customer_name,
-      body: draft,
-      reason,
-    })
-  } catch (err) {
-    console.error("[co-owner] Slack approval send failed:", err)
   }
 
   revalidatePath("/approvals")

@@ -5,8 +5,8 @@
  * TTS latency and natural delivery.
  *
  * Tools:
- *   - capture_lead          — log a general inquiry (HITL via Slack)
- *   - propose_booking       — log a quoted booking request (HITL via Slack)
+ *   - capture_lead          — log a general inquiry (HITL via /approvals)
+ *   - propose_booking       — log a quoted booking request (HITL via /approvals)
  *   - quote_service         — read the shop's service menu
  *   - lookup_customer_history — recall recent touchpoints across channels
  *   - lookup_shop_policy    — RAG over the shop knowledge base (FAQs,
@@ -23,15 +23,10 @@ import {
   type AvailabilitySummary,
 } from "@/lib/availability"
 import { findCustomerByChannel } from "@/lib/customers"
-import { getCrossChannelHint } from "@/lib/customer-context"
 import { recordActionDecision } from "@/lib/decision-log"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
 import { describePrice, resolveDurationMinutes } from "@/lib/service-pricing"
-import {
-  sendBookingApprovalRequest,
-  sendLeadApprovalRequest,
-} from "@/lib/slack"
 import type {
   InteractionChannel,
   LeadStatus,
@@ -162,31 +157,6 @@ async function submitLeadProposal(
     },
   })
 
-  // Resolve customer (best-effort) so we can surface cross-channel
-  // context on the Slack card.
-  const customer = await findCustomerByChannel(supabase, shopId, {
-    phone: proposal.phone,
-  })
-  const crossChannelHint = await getCrossChannelHint(
-    supabase,
-    shopId,
-    customer?.id ?? null,
-    "voice"
-  )
-
-  try {
-    await sendLeadApprovalRequest({
-      pendingActionId: pending.id,
-      customerName: proposal.customerName,
-      phone: proposal.phone,
-      carInfo: proposal.carInfo,
-      pinNotes: proposal.pinNotes,
-      status: proposal.status,
-      crossChannelHint,
-    })
-  } catch (slackErr) {
-    console.error("[vapi-tools] Slack approval send failed:", slackErr)
-  }
 
   revalidatePath("/approvals")
 
@@ -341,31 +311,6 @@ async function submitBookingProposal(
     },
   })
 
-  const customer = await findCustomerByChannel(supabase, shopId, {
-    phone: proposal.phone,
-  })
-  const crossChannelHint = await getCrossChannelHint(
-    supabase,
-    shopId,
-    customer?.id ?? null,
-    "voice"
-  )
-
-  try {
-    await sendBookingApprovalRequest({
-      pendingActionId: pending.id,
-      customerName: proposal.customerName,
-      phone: proposal.phone,
-      service: proposal.service,
-      carInfo: proposal.carInfo,
-      startIso: proposal.isoStartTime,
-      durationMinutes: proposal.durationMinutes,
-      timezone: proposal.timezone,
-      crossChannelHint,
-    })
-  } catch (slackErr) {
-    console.error("[vapi-tools] booking Slack approval send failed:", slackErr)
-  }
 
   revalidatePath("/approvals")
   return { ok: true, pendingId: pending.id }

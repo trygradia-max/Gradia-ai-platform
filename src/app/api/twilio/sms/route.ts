@@ -13,7 +13,7 @@
  *   - record the interaction in the shared memory layer (channel=sms)
  *   - classify with Claude; if it's a real new inquiry (not a short
  *     follow-up in an existing thread), propose a lead via the HITL
- *     approval engine and post the Slack card
+ *     approval engine (card lands in /approvals)
  *
  * The response is always empty TwiML — per OPERATIONS.md, every
  * outbound message must go through HITL. Auto-replies are out of
@@ -35,7 +35,6 @@ import { headers } from "next/headers"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { findOrCreateCustomer, normalizePhone } from "@/lib/customers"
-import { getCrossChannelHint } from "@/lib/customer-context"
 import {
   formatKnowledgeForPrompt,
   searchShopKnowledge,
@@ -53,10 +52,6 @@ import {
   type ProviderEventClaim,
 } from "@/lib/provider-events"
 import { checkRateLimit } from "@/lib/rate-limit"
-import {
-  sendLeadApprovalRequest,
-  sendSmsApprovalRequest,
-} from "@/lib/slack"
 import { classifySms, type SmsClassification } from "@/lib/sms-classifier"
 import { draftSmsReply } from "@/lib/sms-drafter"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -397,7 +392,7 @@ async function handleMessage(
   if (!classification || !classification.is_lead) return
 
   await proposeLead(supabase, shop, sms, fromPhone, customerId, classification)
-  // Best-effort auto-draft. Drafter or Slack failing must not block
+  // Best-effort auto-draft. A drafter failure must not block
   // the lead proposal we just staged.
   try {
     await proposeDraftReply(
@@ -482,18 +477,6 @@ async function proposeDraftReply(
     )
     return
   }
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: fromPhone,
-      customerName,
-      body: draft,
-      reason,
-    })
-  } catch (err) {
-    console.error("[twilio sms] draft Slack send failed:", err)
-  }
 }
 
 async function proposeLead(
@@ -544,26 +527,5 @@ async function proposeLead(
     throw new Error(
       `[twilio sms] pending_action insert failed: ${pendingErr?.message ?? "no row"}`
     )
-  }
-
-  const crossChannelHint = await getCrossChannelHint(
-    supabase,
-    shop.id,
-    customerId,
-    "sms"
-  )
-
-  try {
-    await sendLeadApprovalRequest({
-      pendingActionId: pending.id,
-      customerName,
-      phone: fromPhone,
-      carInfo: vehicle,
-      pinNotes,
-      status: "new",
-      crossChannelHint,
-    })
-  } catch (err) {
-    console.error("[twilio sms] Slack send failed:", err)
   }
 }

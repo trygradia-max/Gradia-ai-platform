@@ -1,6 +1,8 @@
 # Vendor — Housecall Pro
 
-> **Classification:** customer-integrations · **Status:** quarantined · Amended 2026-07-27 (vendor-architecture amendment, D-030/ADR-002). Registry: ../registry.md
+> **REMOVED 2026-09-01 — CLEANUP-001 (D-052, autorun Batch 1).** Code, routes, settings tile, env vars and tests deleted; `crm-provider.ts` keeps Jobber only; HCP-only columns stay dormant with the optional drop in `supabase/rollbacks/cleanup-001_hcp_slack_columns_drop.sql` (not applied). Any future Housecall Pro work is a new decision + vendor evaluation. This file is the removal record; everything below is historical.
+>
+> **Former classification:** customer-integrations · **Former status:** quarantined · Amended 2026-07-27 (vendor-architecture amendment, D-030/ADR-002). Registry: ../registry.md
 
 _Created 2026-07-25 by the Organizer. Vendor registry entry. Facts grounded in the 2026-07-20 audit (docs 00, 03, 08, 13) and `_docs/GRADIA_CRM_INTEGRATIONS.md`; unverified items are marked. **This integration is UNVERIFIED end-to-end — treat as beta-at-best until the founder verification run.**_
 

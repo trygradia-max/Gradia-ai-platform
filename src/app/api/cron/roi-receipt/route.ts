@@ -18,6 +18,7 @@
  * Vercel cron auth: `Authorization: Bearer <CRON_SECRET>`. Fails closed.
  */
 
+import { runCron } from "@/lib/cron-run"
 import { composeReceiptSms, computeRoiReceipt } from "@/lib/data/roi-receipt"
 import { forShop } from "@/lib/supabase/for-shop"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -51,7 +52,7 @@ function unauthorized() {
   return new Response("Unauthorized", { status: 401 })
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/roi-receipt] CRON_SECRET not configured")
@@ -151,3 +152,6 @@ export async function GET(request: Request) {
     failed,
   })
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("roi-receipt", request, handle)

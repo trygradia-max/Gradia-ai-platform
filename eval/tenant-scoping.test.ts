@@ -72,9 +72,15 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/app/actions/voice-builder.ts",
     "src/app/api/admin/margin-report/route.ts",
     "src/app/api/aurinko/webhook/route.ts",
+    // P0-012: public uptime endpoint — one fixed service-role read of
+    // cron_heartbeats (no request input, no tenant data in the response).
+    "src/app/api/health/route.ts",
     "src/app/api/cron/agents/route.ts",
     "src/app/api/cron/automations/route.ts",
     "src/app/api/cron/no-show-ladder/route.ts",
+    // P0-005A: tenant-blind by spec — its only query is the service-role
+    // prune_provider_events RPC (time/status keyed, reads no request input).
+    "src/app/api/cron/provider-events-prune/route.ts",
     "src/app/api/cron/reconcile/route.ts",
     "src/app/api/cron/recovery-retention/route.ts",
     "src/app/api/cron/reminders/route.ts",
@@ -83,17 +89,17 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/app/api/mcp/route.ts",
     "src/app/api/recovery/import/[jobId]/extract/route.ts",
     "src/app/api/recovery/import/route.ts",
-    "src/app/api/slack/interactivity/route.ts",
     "src/app/api/stripe/webhook/route.ts",
     "src/app/api/twilio/a2p/status/route.ts",
     "src/app/api/twilio/sms/route.ts",
     "src/app/api/twilio/sms/status/route.ts",
     "src/app/api/vapi/webhook/route.ts",
     "src/lib/agent-events.ts",
+    // P0-012: cron wrapper — writes cron_heartbeats by cron name only.
+    "src/lib/cron-run.ts",
     "src/lib/credits.ts",
     "src/lib/mcp/auth.ts",
     "src/lib/rate-limit.ts",
-    "src/lib/slack.ts",
     "src/lib/supabase/service.ts",
   ])
 

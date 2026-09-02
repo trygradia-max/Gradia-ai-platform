@@ -5,7 +5,6 @@ import { encryptSecret } from "@/lib/crypto"
 import { verifyTwilioSignature } from "@/lib/twilio"
 import { verifyStripeSignature } from "@/lib/stripe"
 import { verifyAurinkoSignature } from "@/lib/aurinko"
-import { verifySlackSignature } from "@/lib/slack"
 
 /**
  * Tier 1 (pure) — webhook signature verification. Every inbound webhook is a
@@ -82,11 +81,6 @@ vi.mock("@/lib/sms-drafter", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sms-drafter")>()),
   draftSmsReply: vi.fn(async () => null),
 }))
-vi.mock("@/lib/slack", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/slack")>()),
-  sendLeadApprovalRequest: vi.fn(async () => {}),
-  sendSmsApprovalRequest: vi.fn(async () => {}),
-}))
 // ── Vapi route dependencies (P0-007 suite below) ──
 vi.mock("@/lib/call-records", () => ({
   persistCallRecord: vi.fn(async () => {}),
@@ -161,7 +155,6 @@ const SECRETS: Record<string, string> = {
   TWILIO_AUTH_TOKEN: "twilio_test_token",
   STRIPE_WEBHOOK_SECRET: "whsec_test_secret",
   AURINKO_SIGNING_SECRET: "aurinko_test_secret",
-  SLACK_SIGNING_SECRET: "slack_test_secret",
   VAPI_WEBHOOK_SECRET: "vapi_test_secret",
 }
 
@@ -424,7 +417,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   let classifyMock: any
   let recordUsageMock: any
   let findOrCreateMock: any
-  let sendLeadMock: any
   let rateLimitMock: any
   let draftMock: any
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -446,7 +438,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     classifyMock = vi.mocked((await import("@/lib/sms-classifier")).classifySms)
     recordUsageMock = vi.mocked((await import("@/lib/credits")).recordUsage)
     findOrCreateMock = vi.mocked((await import("@/lib/customers")).findOrCreateCustomer)
-    sendLeadMock = vi.mocked((await import("@/lib/slack")).sendLeadApprovalRequest)
     rateLimitMock = vi.mocked((await import("@/lib/rate-limit")).checkRateLimit)
     draftMock = vi.mocked((await import("@/lib/sms-drafter")).draftSmsReply)
   })
@@ -470,7 +461,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     classifyMock.mockResolvedValue({ is_lead: false })
     recordUsageMock.mockResolvedValue("written")
     findOrCreateMock.mockResolvedValue({ ok: false, error: "no customer" })
-    sendLeadMock.mockResolvedValue(undefined)
     rateLimitMock.mockResolvedValue({ allowed: true, remaining: 99, resetInSeconds: 60 })
     draftMock.mockResolvedValue(null)
   })
@@ -528,7 +518,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(recordInteractionMock).toHaveBeenCalledTimes(1)
     expect(classifyMock).toHaveBeenCalledTimes(1)
     expect(recordUsageMock).toHaveBeenCalledTimes(1)
-    expect(sendLeadMock).toHaveBeenCalledTimes(1)
     expect(completeMock).toHaveBeenCalledWith(expect.anything(), "twilio", SID)
     expect(failMock).not.toHaveBeenCalled()
   })
@@ -541,7 +530,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(recordInteractionMock).not.toHaveBeenCalled()
     expect(classifyMock).not.toHaveBeenCalled()
     expect(recordUsageMock).not.toHaveBeenCalled()
-    expect(sendLeadMock).not.toHaveBeenCalled()
     expect(completeMock).not.toHaveBeenCalled()
     expect(fakeDb.calls.filter((c) => c.table !== "shops")).toHaveLength(0)
   })
@@ -593,7 +581,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(failMock).toHaveBeenCalledTimes(1)
     expect(completeMock).not.toHaveBeenCalled()
     // Nothing non-idempotent staged downstream of the lost ledger write.
-    expect(sendLeadMock).not.toHaveBeenCalled()
     expect(
       fakeDb.calls.filter((c) => c.table === "pending_actions")
     ).toHaveLength(0)
@@ -604,7 +591,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     recordUsageMock.mockResolvedValue("duplicate")
     const res = await post(makeForm())
     expect(res.status).toBe(200)
-    expect(sendLeadMock).toHaveBeenCalledTimes(1)
     expect(completeMock).toHaveBeenCalledTimes(1)
     expect(failMock).not.toHaveBeenCalled()
   })
@@ -662,7 +648,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     classifyMock.mockResolvedValue({ is_lead: false })
     const res = await post(makeForm())
     expect(res.status).toBe(200)
-    expect(sendLeadMock).not.toHaveBeenCalled()
     expect(completeMock).toHaveBeenCalledTimes(1)
   })
 
@@ -707,28 +692,6 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const res = await post(makeForm())
     expect(res.status).toBe(200)
     expect(failMock).not.toHaveBeenCalled()
-  })
-})
-
-describe("Slack (v0= HMAC-SHA256 over `v0:ts:body`, 5-min window)", () => {
-  const body = "payload=%7B%22type%22%3A%22block_actions%22%7D"
-  const sign = (ts: number, b = body, secret = SECRETS.SLACK_SIGNING_SECRET) =>
-    "v0=" + createHmac("sha256", secret).update(`v0:${ts}:${b}`).digest("hex")
-
-  it("accepts a valid, fresh signature", () => {
-    const ts = nowSec()
-    expect(verifySlackSignature({ rawBody: body, timestamp: String(ts), signature: sign(ts) })).toBe(true)
-  })
-  it("rejects a tampered body", () => {
-    const ts = nowSec()
-    expect(verifySlackSignature({ rawBody: "payload=evil", timestamp: String(ts), signature: sign(ts) })).toBe(false)
-  })
-  it("rejects a replayed (stale-timestamp) signature", () => {
-    const ts = STALE()
-    expect(verifySlackSignature({ rawBody: body, timestamp: String(ts), signature: sign(ts) })).toBe(false)
-  })
-  it("rejects a missing signature", () => {
-    expect(verifySlackSignature({ rawBody: body, timestamp: String(nowSec()), signature: null })).toBe(false)
   })
 })
 

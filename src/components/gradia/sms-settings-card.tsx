@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { useRouter } from "next/navigation"
 import {
   AnimatePresence,
@@ -180,8 +183,9 @@ export function SmsSettingsCard({
           <MessageSquare className="size-5 text-primary" aria-hidden />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-base font-medium">
+          <CardTitle className="flex items-center gap-1.5 text-base font-medium">
             SMS receptionist
+            <HelpTip label="SMS receptionist" text={STRINGS.help.settings.sms} />
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Pick an area code, get a number, every text becomes an
@@ -301,13 +305,14 @@ export function SmsSettingsCard({
                   </Button>
                 ) : (
                   <Button type="button" disabled>
-                    Numbers coming soon
+                    {STRINGS.connections.notAvailable}
                   </Button>
                 )}
               </div>
               {!twilioConfigured ? (
-                <p className="text-xs text-status-warning-fg">
-                  We&apos;re finishing texting setup on our side — check back soon.
+                // Honest NOT AVAILABLE (UX-001): a server setting, not a roadmap item.
+                <p className="text-xs text-muted-foreground">
+                  {STRINGS.connections.notAvailableReason.sms}
                 </p>
               ) : null}
             </motion.div>

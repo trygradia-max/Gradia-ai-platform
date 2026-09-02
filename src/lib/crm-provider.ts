@@ -1,13 +1,12 @@
 /**
  * CRM provider seam. The single boundary every approval path crosses to
  * push leads/bookings into whatever CRM(s) a shop has connected — today
- * Jobber and Housecall Pro. Vendor modules (jobber-push.ts,
- * housecallpro-push.ts) never leak past this file; approvals.ts and any
+ * Jobber only (Housecall Pro was removed by CLEANUP-001 / D-052). Vendor
+ * modules (jobber-push.ts) never leak past this file; approvals.ts and any
  * future caller talk only to `pushLeadToCrm` / `pushBookingToCrm`.
  *
- * Adding a CRM = implement its `<vendor>-push.ts` (mirroring the two
- * existing ones) and add one entry to PROVIDERS below. No call-site
- * changes.
+ * Adding a CRM = implement its `<vendor>-push.ts` (mirroring Jobber's) and
+ * add one entry to PROVIDERS below. No call-site changes.
  *
  * Semantics: a shop may connect more than one CRM; we push to EVERY
  * connected provider, best-effort and independently. A vendor that
@@ -18,10 +17,6 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import {
-  pushBookingToHousecallPro,
-  pushLeadToHousecallPro,
-} from "@/lib/housecallpro-push"
 import { pushBookingToJobber, pushLeadToJobber } from "@/lib/jobber-push"
 
 export type CrmLeadPush = {
@@ -57,11 +52,6 @@ const PROVIDERS: CrmProvider[] = [
     name: "jobber",
     pushLead: pushLeadToJobber,
     pushBooking: pushBookingToJobber,
-  },
-  {
-    name: "housecallpro",
-    pushLead: pushLeadToHousecallPro,
-    pushBooking: pushBookingToHousecallPro,
   },
 ]
 

@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Briefcase,
   CalendarDays,
-  House,
   Mail,
   Phone,
   type LucideIcon,
@@ -27,6 +26,7 @@ import {
   StatusPill,
   type StatusPillTone,
 } from "@/components/ui/status-pill"
+import { connectionStatus } from "@/lib/data/connections"
 import { getCustomerDetailForCurrentShop } from "@/lib/data/customers"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -82,7 +82,8 @@ export default async function CustomerDetailPage({
     .eq("id", shopCtx.id)
     .single()
   const shop = shopRow as Pick<ShopRow, "twilio_phone_number"> | null
-  const canSms = Boolean(shop?.twilio_phone_number && customer.phone)
+  // One connection truth (UX-001): same predicate as Home/Settings.
+  const canSms = Boolean(connectionStatus(shop).sms.connected && customer.phone)
 
   // Heat of the customer's hottest active lead. Operator looks at this
   // first ("should I prioritize this person right now?").
@@ -177,7 +178,6 @@ function IdentityCard({
     phone: string | null
     email: string | null
     jobber_client_id: string | null
-    housecallpro_customer_id: string | null
   }
 }) {
   const rows: IdentityRow[] = [
@@ -188,13 +188,6 @@ function IdentityCard({
     rows.push({
       icon: Briefcase,
       label: "Jobber",
-      value: "Synced",
-    })
-  }
-  if (customer.housecallpro_customer_id) {
-    rows.push({
-      icon: House,
-      label: "Housecall Pro",
       value: "Synced",
     })
   }

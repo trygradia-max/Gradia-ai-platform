@@ -1,3 +1,4 @@
+import { connectionStatus } from "@/lib/data/connections"
 import { agentEnabled } from "@/lib/features"
 import { createClient } from "@/lib/supabase/server"
 import { requireShop } from "@/lib/shop"
@@ -41,11 +42,12 @@ function envHas(name: string): boolean {
 }
 
 function buildAgents(shop: ShopRow): Agent[] {
-  const vapiConnected = Boolean(shop.vapi_assistant_id?.trim())
-  const aurinkoConnected = Boolean(
-    shop.aurinko_account_id && shop.aurinko_access_token_enc
-  )
-  const twilioConnected = Boolean(shop.twilio_phone_number?.trim())
+  // One connection truth (UX-001) — the prerequisites list on /receptionist
+  // reads the same predicates as Home and Settings.
+  const connection = connectionStatus(shop)
+  const vapiConnected = connection.voice.connected
+  const aurinkoConnected = connection.email.connected
+  const twilioConnected = connection.sms.connected
   const stripeReady = Boolean(
     shop.stripe_account_id && shop.stripe_charges_enabled
   )
@@ -67,10 +69,10 @@ function buildAgents(shop: ShopRow): Agent[] {
   // ---- Voice receptionist ----
   const voicePrereqs: AgentPrerequisite[] = [
     {
-      label: "Vapi assistant connected in /settings",
+      label: "Voice receptionist set up in Settings",
       done: vapiConnected,
       ctaHref: SETTINGS,
-      ctaLabel: vapiConnected ? undefined : "Connect Vapi",
+      ctaLabel: vapiConnected ? undefined : "Set up voice",
     },
     {
       label: "Anthropic key on server (drafter brain)",
@@ -81,7 +83,7 @@ function buildAgents(shop: ShopRow): Agent[] {
   // ---- Email agent ----
   const emailPrereqs: AgentPrerequisite[] = [
     {
-      label: "Gmail connected via Aurinko",
+      label: "Gmail connected",
       done: aurinkoConnected,
       ctaHref: SETTINGS,
       ctaLabel: aurinkoConnected ? undefined : "Connect Gmail",
@@ -95,10 +97,10 @@ function buildAgents(shop: ShopRow): Agent[] {
   // ---- SMS agent ----
   const smsPrereqs: AgentPrerequisite[] = [
     {
-      label: "Twilio number connected in /settings",
+      label: "Business number connected in Settings",
       done: twilioConnected,
       ctaHref: SETTINGS,
-      ctaLabel: twilioConnected ? undefined : "Connect Twilio",
+      ctaLabel: twilioConnected ? undefined : "Pick a number",
     },
     {
       label: "Anthropic key on server (classifier + drafter)",
@@ -109,16 +111,16 @@ function buildAgents(shop: ShopRow): Agent[] {
   // ---- Booking agent ----
   const bookingPrereqs: AgentPrerequisite[] = [
     {
-      label: "Google Calendar (via Aurinko)",
+      label: "Google Calendar connected (comes with Gmail)",
       done: aurinkoConnected,
       ctaHref: SETTINGS,
       ctaLabel: aurinkoConnected ? undefined : "Connect Gmail + Calendar",
     },
     {
-      label: "Twilio number for confirmation + reminder SMS",
+      label: "Business number for confirmation + reminder texts",
       done: twilioConnected,
       ctaHref: SETTINGS,
-      ctaLabel: twilioConnected ? undefined : "Connect Twilio",
+      ctaLabel: twilioConnected ? undefined : "Pick a number",
     },
     {
       label: "Reminder cron secret on server",
@@ -195,7 +197,7 @@ function buildAgents(shop: ShopRow): Agent[] {
       capabilities: [
         "Distinguishes new inquiries from one-word follow-ups",
         "Drafts a short reply signed as us",
-        "Confirms deliveries via Twilio callbacks",
+        "Confirms deliveries with carrier receipts",
         "Quick Reply UI on /approvals/[id] for direct sends",
       ],
       status: status(smsPrereqs),

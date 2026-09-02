@@ -16,7 +16,7 @@ import {
  * The route runs end-to-end (signature verify → provider_events claim →
  * customer/interaction/consent/classify/stage/meter → complete) with only
  * the vendor boundaries mocked: the Claude classifier (counted, failable),
- * the SMS drafter, Slack posts, knowledge RAG, and the embeddings API.
+ * the SMS drafter, knowledge RAG, and the embeddings API.
  * Everything durable — provider_events, interactions, customers,
  * pending_actions, usage_events, rate_limits — is the real local stack.
  *
@@ -87,11 +87,6 @@ vi.mock("@/lib/sms-classifier", () => ({
 vi.mock("@/lib/sms-drafter", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sms-drafter")>()),
   draftSmsReply: vi.fn(async () => null),
-}))
-vi.mock("@/lib/slack", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/slack")>()),
-  sendLeadApprovalRequest: vi.fn(async () => {}),
-  sendSmsApprovalRequest: vi.fn(async () => {}),
 }))
 vi.mock("@/lib/knowledge", () => ({
   searchShopKnowledge: vi.fn(async () => []),
@@ -202,14 +197,12 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
       "GRADIA_DASHBOARD_URL",
       "TWILIO_ACCOUNT_SID",
       "TWILIO_AUTH_TOKEN",
-      "SLACK_BOT_TOKEN",
     ]) {
       savedEnv[k] = process.env[k]
     }
     process.env.GRADIA_DASHBOARD_URL = "https://gradia-int.test"
     process.env.TWILIO_ACCOUNT_SID = "ACinttest"
     process.env.TWILIO_AUTH_TOKEN = TOKEN
-    delete process.env.SLACK_BOT_TOKEN
 
     sb = serviceClient()
     seed = await seedShop(sb)

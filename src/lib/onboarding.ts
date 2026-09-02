@@ -3,25 +3,26 @@
  * the resume point and the dashboard gate are testable.
  */
 
-import type { ShopRow } from "@/lib/types/database"
+import { connectionStatus, type ConnectionShopFields } from "@/lib/data/connections"
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5
 
-type WizardShopFields = Pick<
-  ShopRow,
-  "aurinko_account_email" | "twilio_phone_number"
->
+type WizardShopFields = ConnectionShopFields
 
 /** The wizard resumes at the first incomplete step. Steps 3–5 are
- *  skippable, so "incomplete" is only a starting point — never a wall. */
+ *  skippable, so "incomplete" is only a starting point — never a wall.
+ *  Connection truth comes from `connectionStatus()` (UX-001): a mailbox
+ *  connected with no display email used to bounce the owner back to step 3
+ *  forever. */
 export function deriveWizardStep(
   shop: WizardShopFields | null,
   serviceCount: number
 ): WizardStep {
   if (!shop) return 1
   if (serviceCount === 0) return 2
-  if (!shop.aurinko_account_email) return 3
-  if (!shop.twilio_phone_number) return 4
+  const status = connectionStatus(shop)
+  if (!status.email.connected) return 3
+  if (!status.sms.connected) return 4
   return 5
 }
 

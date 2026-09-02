@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -45,7 +48,10 @@ export function ClearDemoDataCard() {
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-card/30 px-4 py-3">
       <div>
-        <p className="text-sm font-medium text-foreground">Clear demo data</p>
+        <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          Clear demo data
+          <HelpTip label="Clear demo data" text={STRINGS.help.settings.demoData} />
+        </p>
         <p className="text-xs text-muted-foreground">
           Removes rows created by the smoke seed (marked demo). Real
           customers are never touched.

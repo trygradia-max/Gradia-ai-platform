@@ -53,3 +53,11 @@ _Created 2026-07-25 by the Organizer. Condenses `platform/docs/BUILD_REFERENCE.m
 | ImportWizard (staging→mapping→preview→rollback) | E03 | Generalizes the recovery review-queue pattern (D-022) |
 
 Rule: each planned component gets a short spec in its epic before build; additions land in this inventory in the same PR that creates them.
+
+## UX-001 additions (2026-09-02, autorun Batch 1, item 3c)
+
+| Component / helper | Notes |
+|---|---|
+| **HelpTip** (`components/gradia/help-tip.tsx`) | A *composition* of the existing Tooltip primitive, not a new design component: ⓘ trigger is a real `<button aria-label="About <thing>">` (keyboard-reachable, Escape closes), ≤ 2 narrator sentences from `STRINGS.help`. Used on every Settings card title, every ConnectionTile, every approval card type, every voice-builder field (reference board, Stripe pattern §3). |
+| **ConnectionTile** — third state amended | NOT CONNECTED → CONNECTING… → CONNECTED, plus **NOT AVAILABLE** (`available=false`): honest `unavailableReason`, no Connect control, never "Coming soon". `connected` must come from `connectionStatus()`. |
+| **`connectionStatus(shop)` / `integrationAvailability()`** (`lib/data/connections.ts`) | The one predicate set for "is it connected?" (credentials, identity separate) and the one env-presence source for "is it wired for this deployment?". Consumed by Home (`summarizeChannels`), Settings tiles + cards, onboarding (page, wizard, launch steps, resume), BI channel status, Receptionist prerequisites, Gradia Agent channel checks. E02-02 replaces the predicates with `shop_connections`; this is the seam. |

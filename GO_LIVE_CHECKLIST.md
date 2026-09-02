@@ -50,7 +50,7 @@ All 16 are additive (new tables/columns/bucket); none drop or rewrite existing d
 - [ ] `OPENAI_API_KEY` — **Whisper transcription** (NOW-0 rotated this; confirm the prod value is the rotated one).
 - [ ] `CRON_SECRET` — every cron fails closed without it. All 7 crons need it.
 - [ ] `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` / `STRIPE_WEBHOOK_SECRET` — paywall (already live).
-- [ ] Jobber + Housecall Pro OAuth client id/secret — only if you'll smoke the CRM seam end-to-end.
+- [ ] Jobber OAuth client id/secret — only if you'll smoke the CRM seam end-to-end. _(Housecall Pro removed 2026-09-01 — CLEANUP-001, D-052.)_
 - [ ] Twilio / Aurinko / Vapi — already configured (app runs today).
 
 ---
@@ -91,7 +91,7 @@ These run with the flags at their **current** state (recovery OFF, no-show ladde
 
 ### NEXT-4 — CRM seam  _(on if a CRM is connected)_
 - [ ] With **no** CRM connected: approve a recovered customer → no error (seam no-ops). _(This also runs as part of the NEXT-3 smoke below.)_
-- [ ] (If smoking CRM) Connect Jobber or Housecall Pro in Settings → approve a lead → confirm the client appears in that CRM and the id mirrors back.
+- [ ] (If smoking CRM) Connect Jobber in Settings → approve a lead → confirm the client appears in Jobber and the id mirrors back. _(Housecall Pro removed 2026-09-01 — CLEANUP-001.)_
 
 ### NEXT-3 — Customer Recovery  _(flag: customerRecovery=OFF — smoke LAST, then flip)_
 This is the **only pipeline never run end-to-end.** Do it on a seeded/test shop.

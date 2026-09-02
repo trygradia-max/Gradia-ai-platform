@@ -6,7 +6,7 @@ import { pushLeadToCrm } from "@/lib/crm-provider"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 /**
- * CRM connector seam (NEXT-4). The seam + Jobber/Housecall Pro adapters were
+ * CRM connector seam (NEXT-4). The seam + Jobber adapter were
  * already built; these lock the NEXT-4 acceptance: CSV import lands customers
  * through the SAME seam as lead/booking approvals, the seam is safe (best-effort,
  * no-op) for the CRM-less majority, and adding a vendor is an adapter — one
@@ -37,12 +37,11 @@ describe("CSV import is on the CRM seam", () => {
 describe("adding a vendor is an adapter, not a rebuild", () => {
   it("every provider in PROVIDERS supplies both push functions", () => {
     const src = read("lib/crm-provider.ts")
-    // Both adapters registered the same way — a new vendor is one more entry.
+    // Adapters register the same way — a new vendor is one more entry
+    // (Housecall Pro was removed by CLEANUP-001 / D-052).
     for (const fn of [
       "pushLeadToJobber",
       "pushBookingToJobber",
-      "pushLeadToHousecallPro",
-      "pushBookingToHousecallPro",
     ]) {
       expect(src).toContain(fn)
     }

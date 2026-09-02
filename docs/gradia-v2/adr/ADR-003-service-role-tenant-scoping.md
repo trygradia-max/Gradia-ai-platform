@@ -103,9 +103,12 @@ convert only with those suites green). Estimate: 3–5 ticket-sized batches,
    `agent-runtime.ts` / `agent-events.ts`.
 5. **TS-5 (design gate):** re-evaluate alternative 1 (session-variable RLS)
    at E01 when members/roles land — decide facade-forever vs DB-enforced.
-6. **TS-6 (small):** thread a `shopId` into `lib/slack.ts`
+6. ~~**TS-6 (small):** thread a `shopId` into `lib/slack.ts`
    `storeSlackRef`/`updateSlackForPending` (last invariant-dependent bare-id
-   writes on `pending_actions`).
+   writes on `pending_actions`).~~ **Closed by removal 2026-09-01 (CLEANUP-001,
+   D-052):** `lib/slack.ts` and the interactivity route are deleted, so the
+   bare-id writes no longer exist. The service-role importer inventory shrank
+   by two files (removal only).
 
 ## Links
 

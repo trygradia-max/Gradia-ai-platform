@@ -2,6 +2,8 @@
 
 _Created 2026-07-25 by the Organizer. The live instance of this runbook is audit finding C-1 (Supabase DB superuser URL committed at `.gitignore:46`, in pushed history) — remediation ticket **P0-001**. This runbook generalizes to any leaked secret (API keys, `ENCRYPTION_KEY`, `CRON_SECRET`, Stripe/Twilio/Vapi/Aurinko credentials)._
 
+_Related (2026-09-01): the complete inventory of secrets the app reads — 50 names, classified, with what each one unlocks — is `production-config-audit.md` (PROD-CONFIG-AUDIT); use it to scope the blast radius of a leaked name._
+
 ## Trigger / symptoms
 - A secret value found in git history, a committed file, logs, test output, a screenshot, or a paste.
 - Supabase/vendor dashboard shows unexplained access, or anomalous rows appear (see Diagnosis).

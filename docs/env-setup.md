@@ -18,6 +18,8 @@ the code reads (verified 2026-06-01). Pairs with the per-provider runbooks:
   need a stable HTTPS origin. Set `GRADIA_DASHBOARD_URL` to your real domain —
   several absolute URLs (Slack links, Stripe redirects, `/billing`) derive from it.
 
+> 📋 **Production presence audit (2026-09-01, PROD-CONFIG-AUDIT):** `docs/gradia-v2/runbooks/production-config-audit.md` — every `process.env` read in `src/` classified required / required-for-feature / optional / deprecated, with the PRESENT · ABSENT · UNKNOWN table and exactly which UI surfaces each absent var disables. It also lists what is stale in this file (§3.3).
+
 > ⚠️ `.env.example` is currently **missing** four keys the code reads — add them:
 > `STRIPE_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `META_APP_ID`,
 > `VAPI_API_KEY`. (Ask me to sync the template.)
@@ -49,17 +51,9 @@ Cron note: `vercel.json` already registers the hourly crons; Vercel sends
 
 ---
 
-## Tier 2 — Approvals surface (optional — Slack is opt-in)
+## Tier 2 — ~~Approvals surface (Slack)~~ REMOVED 2026-09-01 (CLEANUP-001, D-052)
 
-In-app `/approvals` is the default (Phase 1). Leave these unset to run in-app
-only. Set them + flip `FEATURES.slackApprovals = true` to also post to Slack.
-
-| Var | Scope | Purpose |
-|---|---|---|
-| `SLACK_WEBHOOK_URL` | secret | Incoming-webhook fallback for approval cards |
-| `SLACK_SIGNING_SECRET` | secret | Verifies Approve/Edit button callbacks |
-| `SLACK_BOT_TOKEN` | secret | `xoxb-…` — enables `chat.update` (fixes stale cards) |
-| `SLACK_DEFAULT_CHANNEL_ID` | secret | Channel the bot posts to (with bot token) |
+The Slack approvals surface was deleted: no `SLACK_*` variable is read any more (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_DEFAULT_CHANNEL_ID`, `SLACK_WEBHOOK_URL` — remove them from Production). In-app `/approvals` is the only HITL surface. Founder ops alerts use `OPS_ALERT_WEBHOOK_URL` (see "Founder ops alerts" below).
 
 ---
 
@@ -139,6 +133,15 @@ These power surfaces gated off in `src/lib/features.ts`. Skip until you un-hide 
 
 ---
 
+## Founder ops alerts (P0-012 — optional until set, then real)
+
+| Var | Scope | Purpose |
+|---|---|---|
+| `OPS_ALERT_WEBHOOK_URL` | secret | JSON webhook (`{ text }`) — the founder Slack ops channel incoming webhook (D-042). Receives every SEV-0..3 alert from `src/lib/alerts.ts`: usage anomalies, tenant-scope violations, reconciliation drift, cron failures. |
+| `OPS_ALERT_SMS_TO` / `OPS_ALERT_SMS_FROM` | secret | Optional pair (E.164). SEV-0/1 also go by SMS through the env Twilio master account. |
+
+Unset = console + Sentry only (the pre-P0-012 behavior); `GET /api/health` reports the seam as unconfigured. Test the wiring with `POST /api/admin/alert-test` (bearer `CRON_SECRET`).
+
 ## Observability (optional)
 
 | Var | Scope | Purpose |
@@ -154,7 +157,6 @@ These power surfaces gated off in `src/lib/features.ts`. Skip until you un-hide 
 `src/lib/features.ts` is the single switchboard. Current MVP state:
 
 - `paywall: false` → flip `true` after Tier 4 is wired + verified.
-- `slackApprovals: false` → flip `true` to also post approvals to Slack.
 - `freeformPlanner: true` → the free-form chat agent (executor + guardrails live).
 - `agents.instagram/billing: false`, `integrations.instagram/facebook/payments: false` → hidden.
 

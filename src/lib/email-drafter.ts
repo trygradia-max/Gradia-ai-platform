@@ -1,7 +1,7 @@
 /**
  * Drafts a short, on-brand email reply to an inbound lead. The
  * draft is staged as a `send_email` pending_action — operator
- * approves (or edits) in Slack before it actually sends.
+ * approves (or edits) in Approvals before it actually sends.
  *
  * Email constraints differ from SMS:
  *   - Has a subject (we draft "Re: ..." matching the inbound)

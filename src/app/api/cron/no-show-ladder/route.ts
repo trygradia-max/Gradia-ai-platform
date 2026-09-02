@@ -12,6 +12,7 @@
  * Vercel cron auth: `Authorization: Bearer <CRON_SECRET>`. Fails closed.
  */
 
+import { runCron } from "@/lib/cron-run"
 import {
   afterCatalogStage,
   catalogGateFor,
@@ -24,7 +25,6 @@ import {
   CONFIRM_LEAD_HOURS,
   buildConfirmSms,
 } from "@/lib/no-show-ladder"
-import { sendSmsApprovalRequest } from "@/lib/slack"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { AppointmentRow, CustomerRow, ShopRow } from "@/lib/types/database"
 
@@ -61,7 +61,7 @@ function formatWhen(iso: string, timezone: string | null): string {
   }
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/no-show-ladder] CRON_SECRET not configured")
@@ -188,24 +188,12 @@ async function stageConfirm(
     return false
   }
 
-  // Stamp BEFORE the Slack send so a hiccup can't double-stage next tick.
+  // Stamp right after staging so a hiccup can't double-stage next tick.
   await supabase
     .from("appointments")
     .update({ confirm_pending_action_id: pending.id })
     .eq("id", appt.id)
     .eq("shop_id", appt.shop.id)
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: appt.customer.phone,
-      customerName: appt.customer.name,
-      body,
-      reason,
-    })
-  } catch (err) {
-    console.error("[cron/no-show-ladder] Slack send failed:", err)
-  }
 
   // C5: run history + (owner-opted) autopilot. Approval mode = no-op here.
   await afterCatalogStage(supabase, appt.shop, gate, pending.id, {
@@ -215,3 +203,6 @@ async function stageConfirm(
 
   return true
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("no-show-ladder", request, handle)

@@ -13,6 +13,7 @@
  * rather than composing assistants pointed at localhost.
  */
 
+import { runCron } from "@/lib/cron-run"
 import { createServiceClient } from "@/lib/supabase/service"
 import { syncVoiceAssistant } from "@/lib/voice-provider"
 import type { ShopRow } from "@/lib/types/database"
@@ -25,7 +26,7 @@ function unauthorized() {
   return new Response("Unauthorized", { status: 401 })
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/voice-sync] CRON_SECRET not configured")
@@ -72,3 +73,6 @@ export async function GET(request: Request) {
 
   return Response.json({ ok: true, candidates: shops.length, synced, failed })
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("voice-sync", request, handle)

@@ -8,19 +8,13 @@ import {
   type ApprovalResolution,
 } from "@/lib/trust"
 
-import {
-  executeApproval,
-  executeRejection,
-  type ApprovalResult,
-  type DecisionResult,
-} from "@/lib/approvals"
+import { executeApproval, executeRejection } from "@/lib/approvals"
 import {
   stagingAvailability,
   type AvailabilitySummary,
   type ConflictOverride,
 } from "@/lib/availability"
 import { requireShop, requireUser } from "@/lib/shop"
-import { dashboardDecidedBlocks, updateSlackForPending } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
 import type { LeadStatus, PendingActionRow } from "@/lib/types/database"
 
@@ -48,12 +42,6 @@ export async function approveFromDashboard(
 
   // Earned-autonomy signal: approved unedited vs after an edit.
   void recordApprovalResolution(supabase, pendingId, resolution)
-
-  // Best-effort Slack card refresh — never block the dashboard
-  // response on it.
-  if (result.status === "executed") {
-    void notifySlackApproved(pendingId, user.email ?? null, result)
-  }
 
   revalidatePath("/dashboard")
   revalidatePath("/customers")
@@ -180,10 +168,6 @@ export async function rejectFromDashboard(
 
   void recordApprovalResolution(supabase, pendingId, "rejected")
 
-  if (result.status === "claimed") {
-    void notifySlackRejected(pendingId, user.email ?? null, result)
-  }
-
   revalidatePath("/approvals")
   return { ok: true, alreadyDecided: result.status === "already_decided" }
 }
@@ -225,120 +209,6 @@ export async function undoRejectFromDashboard(
 
   revalidatePath("/approvals")
   return { ok: true }
-}
-
-async function notifySlackApproved(
-  pendingId: string,
-  approverEmail: string | null,
-  result: Extract<ApprovalResult, { ok: true }>
-): Promise<void> {
-  if (result.status !== "executed") return
-  try {
-    await updateSlackForPending({
-      pendingActionId: pendingId,
-      text: `Approved · ${approvedSummary(result)}`,
-      blocks: dashboardDecidedBlocks({
-        headline: approvedHeadline(result),
-        summary: approvedSummary(result),
-        approverEmail,
-      }),
-    })
-  } catch (err) {
-    console.warn("[approvals] Slack update on approve failed:", err)
-  }
-}
-
-async function notifySlackRejected(
-  pendingId: string,
-  approverEmail: string | null,
-  result: Extract<DecisionResult, { ok: true }>
-): Promise<void> {
-  if (result.status !== "claimed") return
-  try {
-    await updateSlackForPending({
-      pendingActionId: pendingId,
-      text: `Dropped · ${rejectedSummary(result)}`,
-      blocks: dashboardDecidedBlocks({
-        headline: "Dropped",
-        summary: rejectedSummary(result),
-        approverEmail,
-      }),
-    })
-  } catch (err) {
-    console.warn("[approvals] Slack update on reject failed:", err)
-  }
-}
-
-function approvedHeadline(
-  result: Extract<ApprovalResult, { ok: true; status: "executed" }>
-): string {
-  switch (result.actionType) {
-    case "create_lead":
-      return "Lead approved"
-    case "add_note":
-      return "Note saved"
-    case "book_appointment":
-      return "Booking confirmed"
-    case "reschedule_appointment":
-      return "Booking moved"
-    case "cancel_appointment":
-      return "Booking cancelled"
-    case "send_sms":
-      return "SMS sent"
-    case "send_email":
-      return "Email sent"
-    case "create_quote":
-      return "Draft quote created"
-  }
-}
-
-function approvedSummary(
-  result: Extract<ApprovalResult, { ok: true; status: "executed" }>
-): string {
-  switch (result.actionType) {
-    case "create_lead":
-      return result.proposal.customer_name || "new lead"
-    case "add_note":
-      return (
-        result.proposal.customer_name?.trim() ||
-        result.proposal.content.slice(0, 60)
-      )
-    case "book_appointment":
-      return `${result.proposal.customer_name} · ${result.proposal.iso_start_time}`
-    case "reschedule_appointment":
-      return `${(result.proposal.customer_name as string | null) ?? "booking"} → ${(result.proposal.new_when as string | null) ?? "new time"}`
-    case "cancel_appointment":
-      return `${(result.proposal.customer_name as string | null) ?? "booking"} cancelled`
-    case "send_sms":
-      return `${result.proposal.customer_name ?? result.proposal.to_phone}`
-    case "send_email":
-      return `${result.proposal.customer_name ?? result.proposal.to_email}`
-    case "create_quote":
-      return `${(result.proposal.customer_name as string | null) ?? "customer"} — draft in Quotes`
-  }
-}
-
-function rejectedSummary(
-  result: Extract<DecisionResult, { ok: true; status: "claimed" }>
-): string {
-  switch (result.actionType) {
-    case "create_lead":
-      return result.proposal.customer_name || "lead proposal"
-    case "add_note":
-      return "note"
-    case "book_appointment":
-      return `booking for ${result.proposal.customer_name}`
-    case "reschedule_appointment":
-      return "reschedule request"
-    case "cancel_appointment":
-      return "cancellation request"
-    case "send_sms":
-      return `SMS to ${result.proposal.customer_name ?? result.proposal.to_phone}`
-    case "send_email":
-      return `email to ${result.proposal.customer_name ?? result.proposal.to_email}`
-    case "create_quote":
-      return `draft quote for ${(result.proposal.customer_name as string | null) ?? "customer"}`
-  }
 }
 
 // ---------- Edit / save-and-approve ----------
@@ -539,7 +409,7 @@ export type ApproveWithEditsResult =
 /**
  * Persists the edited payload, then runs the standard approval engine.
  * Atomically: the engine's claim still gates against concurrent decisions
- * elsewhere (Slack, /approvals).
+ * elsewhere (/approvals).
  */
 export async function approveWithEdits(
   pendingId: string,

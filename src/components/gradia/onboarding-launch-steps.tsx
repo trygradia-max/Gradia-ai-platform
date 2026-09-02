@@ -12,6 +12,7 @@ import { TwilioNumberPicker } from "@/components/gradia/twilio-number-picker"
 import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
 import { Button, buttonVariants } from "@/components/ui/button"
 import type { A2pState } from "@/app/actions/a2p"
+import { STRINGS } from "@/lib/strings"
 import type { ShopRow } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
 
@@ -66,10 +67,14 @@ function LaterButton({ onClick }: { onClick: () => void }) {
 // ---------- Step 3: Your inbox ----------
 
 export function InboxStep({
+  connected,
   connectedEmail,
   onBack,
   onContinue,
 }: {
+  /** Connection truth from `connectionStatus()` — never the display email. */
+  connected: boolean
+  /** Display identity; may be null while connected (UX-001 founder repro). */
   connectedEmail: string | null
   onBack: () => void
   onContinue: () => void
@@ -84,22 +89,26 @@ export function InboxStep({
             Back
           </Button>
           <div className="flex items-center gap-2">
-            {!connectedEmail ? <LaterButton onClick={onContinue} /> : null}
-            <Button type="button" onClick={onContinue} disabled={!connectedEmail}>
+            {!connected ? <LaterButton onClick={onContinue} /> : null}
+            <Button type="button" onClick={onContinue} disabled={!connected}>
               Continue
             </Button>
           </div>
         </>
       }
     >
-      {connectedEmail ? (
+      {connected ? (
         <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
             <BadgeCheck className="size-4" aria-hidden />
           </div>
           <div className="min-w-0">
-            <p className="label-eyebrow text-muted-foreground/70">Connected</p>
-            <p className="truncate text-sm text-foreground">{connectedEmail}</p>
+            <p className="label-eyebrow text-muted-foreground/70">
+              {STRINGS.connections.connected}
+            </p>
+            <p className="truncate text-sm text-foreground">
+              {connectedEmail ?? STRINGS.connections.identityFallback.email}
+            </p>
           </div>
         </div>
       ) : (

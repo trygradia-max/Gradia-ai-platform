@@ -96,7 +96,7 @@ const planSchema = z.object({
     .min(8)
     .max(300)
     .describe(
-      "One sentence reminding the operator about the HITL gate for this specific agent. Default: 'Every outbound message still lands as a Slack approval card before it actually sends.'"
+      "One sentence reminding the operator about the HITL gate for this specific agent. Default: 'Every outbound message still lands in Approvals before it actually sends.'"
     ),
   recipe: z
     .discriminatedUnion("id", [

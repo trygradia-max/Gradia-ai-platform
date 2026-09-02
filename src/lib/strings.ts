@@ -220,6 +220,117 @@ export const STRINGS = {
     notFoundHome: "Go to Home",
   },
 
+  /** Connection truth (UX-001). Three tile states — Connected / Connect /
+   *  NOT AVAILABLE. The unavailable line names what is missing in owner terms:
+   *  never an env var, never a vendor, never "coming soon" for something that
+   *  is a server setting rather than a roadmap item. */
+  connections: {
+    connected: "Connected",
+    notAvailable: "Not available yet",
+    connect: "Connect",
+    manage: "Manage",
+    notAvailableReason: {
+      email:
+        "Email isn't set up for this workspace yet — we're finishing the connection on our side.",
+      calendar:
+        "Calendar comes with email, which isn't set up for this workspace yet.",
+      sms:
+        "Texting isn't set up for this workspace yet — we're finishing the connection on our side.",
+      voice:
+        "Voice isn't set up for this workspace yet — we're finishing the connection on our side.",
+      crm:
+        "The Jobber connection isn't set up for this workspace yet — we're finishing it on our side.",
+      payments:
+        "Payments aren't set up for this workspace yet — we're finishing the connection on our side.",
+    },
+    /** Shown in place of an identity when connected but the provider returned
+     *  no display value (the founder repro shape) — truth stays "Connected". */
+    identityFallback: {
+      email: "Gmail",
+      calendar: "Google Calendar",
+      sms: "Business number",
+      crm: "Jobber",
+    },
+  },
+
+  /** Inline help (UX-001; reference board ADOPT §3). One or two narrator
+   *  sentences per card, approval type, and builder field: what it does and
+   *  what happens when you act. Numbers over adjectives, no vendor names. */
+  help: {
+    settings: {
+      voice:
+        "Answers your calls with your greeting, hours and prices. Any booking it takes waits for your approval.",
+      email:
+        "Reads new emails to your connected inbox and drafts a reply for each one. Nothing sends until you approve it.",
+      sms:
+        "Catches texts to your business number and drafts a reply. You approve before anything goes out.",
+      calendar:
+        "Approved bookings land on this calendar. Connecting email connects the calendar with it.",
+      crm:
+        "Pushes approved leads and bookings into Jobber so it stays your system of record.",
+      services:
+        "Your menu is the one price list. Phone quotes, text drafts and the quote builder all read from it.",
+      hours:
+        "Sets when a day counts as full on the Calendar and what your receptionist says about opening hours.",
+      automations:
+        "Follow-ups that run on a schedule. In approval mode each one stages a draft for you first.",
+      knowledge:
+        "Facts your receptionist can use when answering: policies, FAQs, what makes the shop different.",
+      reviews:
+        "The link customers get when your receptionist asks for a review after a finished job.",
+      usage:
+        "What this month's plan covers and how much of it is used, counted in texts and calls.",
+      developer:
+        "Tokens that let outside tools read this workspace through Gradia. Only create one if you asked for it.",
+      autonomy:
+        "The default for how much your receptionist acts on its own. Bookings and money always wait for you.",
+      shadow:
+        "Reads and drafts as usual but sends nothing. Use it while you set up.",
+      demoData:
+        "Removes the sample records added for demos. Real customers and history are untouched.",
+      carrier:
+        "US carriers verify every business that texts. Until they approve, calls work and texting waits.",
+    },
+    approvals: {
+      create_lead:
+        "Approve saves this person as a lead in Customers. Nothing is sent to them.",
+      add_note:
+        "Approve saves this note on the customer's file. Nothing is sent.",
+      book_appointment:
+        "Approve puts this on your calendar and marks the lead booked.",
+      reschedule_appointment:
+        "Approve moves the booking to the new time on your calendar.",
+      cancel_appointment: "Approve removes the booking from your calendar.",
+      send_sms:
+        "Approve sends this text from your business number, exactly as shown. Tweak it to change the wording first.",
+      send_email:
+        "Approve sends this email from your connected inbox, exactly as shown.",
+      create_quote:
+        "Approve creates a draft quote you can review and send. Nothing goes to the customer yet.",
+    },
+    builder: {
+      greeting:
+        "The first sentence callers hear. Keep it short; your receptionist adds the rest.",
+      voice:
+        "How your receptionist sounds on the phone. Use the test call to hear it.",
+      tone: "How formal the wording is. It changes phrasing, not what it can do.",
+      hours:
+        "Said to callers who ask when you're open, and used to decide when it's after hours.",
+      afterHours:
+        "What happens on calls outside your hours: take a message, or just say when you reopen.",
+      bookings:
+        "Collect the request and stage it for your approval, or text callers a booking link instead.",
+      bookingLink:
+        "The link texted to callers when bookings go through your own scheduler.",
+      escalation:
+        "A number to transfer to when a caller asks for a person. Optional.",
+      goingLive:
+        "Three steps before calls are answered: save it, connect a number, hear it once yourself.",
+      budget:
+        "A monthly cap on answered minutes. At the cap your receptionist takes messages instead.",
+    },
+  },
+
   /** Public quote page (/q/[token]) — P0-009. The expired state is the
    *  MINIMAL honest one; a richer re-quote CTA awaits decision Q-04. */
   quotePublic: {

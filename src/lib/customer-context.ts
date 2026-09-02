@@ -7,7 +7,7 @@
  *
  * Built on the existing `recentChannelActivity` primitive in
  * lib/memory.ts. Caps at the most recent two distinct channels to
- * keep the Slack card readable.
+ * keep the approval card readable.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"

@@ -2,6 +2,7 @@ import { getA2pState } from "@/app/actions/a2p"
 import { GrainOverlay } from "@/components/gradia/grain-overlay"
 import { MeshBackground } from "@/components/gradia/mesh-background"
 import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
+import { integrationAvailability } from "@/lib/data/connections"
 import { deriveWizardStep } from "@/lib/onboarding"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -60,7 +61,7 @@ export default async function OnboardingPage({
   const isResuming = Boolean(shop) && !startFresh
   const a2pState = shop ? await getA2pState() : { status: "none" as const, failureReason: null, business: null }
   const voiceOptions = listVoiceOptions()
-  const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
+  const vapiConfigured = integrationAvailability().voice
 
   return (
     <div className="relative isolate flex min-h-svh flex-col items-center justify-center gap-8 overflow-hidden bg-background px-4 py-12 sm:px-6">

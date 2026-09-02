@@ -50,6 +50,7 @@ import {
   upsertCustomerVehicle,
   vehiclesByCustomerIds,
 } from "@/lib/vehicles"
+import { connectionStatus } from "@/lib/data/connections"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
 import { GRADIA_IDENTITY, GRADIA_VOICE } from "@/lib/persona"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -159,10 +160,11 @@ function toPlan(args: OutreachArgs): FreeformPlan {
 
 /** Channel must be wired before we can draft/stage for it. */
 function channelBlock(shop: ShopRow, channel: "sms" | "email"): string | null {
-  if (channel === "sms" && !shop.twilio_phone_number) {
+  const status = connectionStatus(shop)
+  if (channel === "sms" && !status.sms.connected) {
     return "No business number is connected yet, so we can't text. Connect one in Settings first."
   }
-  if (channel === "email" && !shop.aurinko_access_token_enc) {
+  if (channel === "email" && !status.email.connected) {
     return "Email isn't connected yet (Gmail), so we can't send email. Connect it in Settings first."
   }
   return null
@@ -891,7 +893,7 @@ async function runOwnerTool(
       ...(availability.summary ? { availability: availability.summary } : {}),
     })
     if (!ok) return { content: json({ error: "Couldn't stage that booking." }), isError: true }
-    const calendarHint = ctx.shop.aurinko_access_token_enc
+    const calendarHint = connectionStatus(ctx.shop).calendar.connected
       ? ""
       : " Note: Google Calendar isn't connected yet — connect it in Settings before approving."
     const conflictHint =

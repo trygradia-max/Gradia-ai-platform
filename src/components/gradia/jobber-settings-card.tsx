@@ -6,6 +6,7 @@ import { Briefcase, Check, Loader2, Plug } from "lucide-react"
 import { toast } from "sonner"
 
 import { disconnectJobber } from "@/app/actions/shop"
+import { HelpTip } from "@/components/gradia/help-tip"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { StatusPill } from "@/components/ui/status-pill"
@@ -15,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { STRINGS } from "@/lib/strings"
 
 export type JobberCallbackStatus =
   | "ok"
@@ -102,7 +104,10 @@ export function JobberSettingsCard({
           <Briefcase className="size-5 text-primary" aria-hidden />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-base font-medium">Jobber</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base font-medium">
+            Jobber
+            <HelpTip label="Jobber" text={STRINGS.help.settings.crm} />
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
             Push approved leads and bookings into Jobber so our existing
             CRM stays the system of record. We sit on top, not in place.
@@ -163,14 +168,14 @@ export function JobberSettingsCard({
                 </a>
               ) : (
                 <Button type="button" disabled className="h-11 sm:h-9">
-                  Jobber not configured
+                  {STRINGS.connections.notAvailable}
                 </Button>
               )}
             </div>
             {!jobberConfigured ? (
-              <p className="text-xs text-status-warning-fg">
-                Server is missing <code>JOBBER_CLIENT_ID</code> /{" "}
-                <code>JOBBER_CLIENT_SECRET</code>.
+              // Honest NOT AVAILABLE (UX-001): owner terms, no env var names.
+              <p className="text-xs text-muted-foreground">
+                {STRINGS.connections.notAvailableReason.crm}
               </p>
             ) : null}
           </>

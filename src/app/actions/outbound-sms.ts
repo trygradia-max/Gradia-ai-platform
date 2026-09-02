@@ -6,7 +6,6 @@ import { z } from "zod"
 import { findCustomerByChannel, normalizePhone } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
-import { sendSmsApprovalRequest } from "@/lib/slack"
 import { createClient } from "@/lib/supabase/server"
 import { smsGateForShop } from "@/lib/telephony-provider"
 import {
@@ -83,18 +82,6 @@ export async function proposeOutboundSms(
 
   if (pendingErr || !pending) {
     return { ok: false, error: pendingErr?.message ?? "Couldn't queue SMS." }
-  }
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: parsed.data.to_phone,
-      customerName: parsed.data.customer_name ?? null,
-      body: parsed.data.body,
-      reason: parsed.data.reason ?? null,
-    })
-  } catch (err) {
-    console.error("[outbound-sms] Slack approval send failed:", err)
   }
 
   revalidatePath("/approvals")
