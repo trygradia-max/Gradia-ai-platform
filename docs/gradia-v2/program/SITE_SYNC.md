@@ -16,3 +16,10 @@ Marker (Cursor writes after each run):
 ```
 
 ---
+
+## 2026-09-02 · BATCH 1 (PROD-CONFIG-AUDIT · P0-005A · P0-012 · CLEANUP-001 · UX-001) + PR #34 · commit ff66cc9 (+ cdb0c99)
+_Organizer-written at the batch close — the Builder wrote no per-ticket blocks (autorun rule 4); this one block covers all five tickets and the Gmail fix._
+- Claimable now (per WHAT_GRADIA_DOES §4/§5, D-028 status): **no change.** Email capture stays at its current status (the Gmail connect flow now actually persists — PR #34 — but the claim was never withdrawn); voice still not claimable; Housecall Pro is gone (never claimable).
+- New/changed screens worth showing: `/settings` — connection tiles now show Connected / Connect / NOT AVAILABLE truthfully with a ⓘ "what this does" line on every card; `/approvals` — ⓘ on every approval type; `/receptionist` builder — ⓘ on every field + "Going live" checklist; Housecall Pro tile and all Slack copy removed — Vercel preview: production `main` at `ff66cc9`.
+- Copy that must change on the site: any mention of **Housecall Pro** or **Slack approvals** → remove (D-052); "Coming soon" phrasing for integrations → "Not available yet" only where the site mirrors app copy; otherwise none.
+- Do NOT claim yet: voice receptionist / business numbers (acceptance run pending); ops alerting (founder destination not configured); three-tier pricing (P0-013 not built).

@@ -9,7 +9,7 @@ PROD-CONFIG-AUDIT
 E00 — Stabilization (operational hygiene; feeds P0-012, P0-013, CLEANUP-001, E02-03/04 preconditions)
 
 ## Status
-**ready — autorun Batch 1, queue item 1** (first item on `auto/batch-1`). Risk class **none** (read-only; writes one markdown file). Founder acceptance **no**. No decisions block it. Precondition 4 in autorun.md (founder sets the seven Production vars) may or may not have happened before this runs — the audit records whichever is true.
+**done — 2026-09-02** (Builder `0043401` on `auto/batch-1`; Cursor PASS 2026-09-02 on the five-row spot-check; merged to `main` in PR #33 squash `ff66cc9`). Runbook live at `../runbooks/production-config-audit.md` (53 rows after P0-012; six rows REMOVED by CLEANUP-001). Founder still owes the presence fill (`vercel env ls production`) and the silent-failure-secret confirmation — `../program/backlog.md` Batch-1 residuals; autorun precondition 4 corrected to six vars at this close (`VAPI_DEFAULT_SHOP_ID` removed). _Was:_ **ready — autorun Batch 1, queue item 1** (first item on `auto/batch-1`). Risk class **none** (read-only; writes one markdown file). Founder acceptance **no**. No decisions block it. Precondition 4 in autorun.md (founder sets the seven Production vars) may or may not have happened before this runs — the audit records whichever is true.
 
 ## Priority
 P0 band — Medium. Every "Coming soon" tile in `/settings` is driven by env absence (`settings/page.tsx:129-149` → `connection-tile.tsx:50-52`), so a missing server secret is currently presented to owners as a roadmap message; nobody has one table that says which of the 50 env reads are required, which are optional, and which are present in Production.
