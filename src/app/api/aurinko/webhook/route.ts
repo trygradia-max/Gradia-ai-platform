@@ -9,6 +9,13 @@
  *     payloads: [{ id: string, changeType: "created" | "updated" | "deleted" }]
  *   }
  *
+ * Subscription validation: when a subscription is created, Aurinko first
+ * POSTs to the notificationUrl with `?validationToken=<random>` and expects
+ * that token echoed back as text/plain 200 within 30s ("Notification URL
+ * Verification" — docs.aurinko.io/unified-apis/webhooks-api). Any 4xx/5xx
+ * fails subscription creation, so the echo is answered BEFORE signature
+ * verification. It reads nothing and writes nothing.
+ *
  * Multi-tenancy: shop is resolved by matching `accountId` against
  * `shops.aurinko_account_id`. We use the service-role client to bypass
  * RLS during webhook processing.
@@ -66,6 +73,20 @@ type Notification = {
 }
 
 export async function POST(request: Request) {
+  // Subscription validation ping — echo the token and stop. This is the
+  // only unsigned request the route ever answers, and it has no side
+  // effects: no body parse, no DB, no vendor calls. Real notifications
+  // (no validationToken) fall through to signature verification below.
+  const validationToken = new URL(request.url).searchParams.get(
+    "validationToken"
+  )
+  if (validationToken) {
+    return new Response(validationToken, {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    })
+  }
+
   const rawBody = await request.text()
   const timestamp = request.headers.get("x-aurinko-request-timestamp")
   const signature = request.headers.get("x-aurinko-signature")
