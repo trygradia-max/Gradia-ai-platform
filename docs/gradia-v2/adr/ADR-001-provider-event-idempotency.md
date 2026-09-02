@@ -346,3 +346,7 @@ P0-005 (this ticket) · P0-006 / P0-007 (consumers) · D-023 / D-024
 docs 02 §Webhook flow, 05 §Schema weaknesses #4/#6 · `rate_limits` deny-all
 RLS pattern (`supabase/migrations/20260615120000_rate_limits.sql`) ·
 `call_records` unique (`20260702120000_glass_box_capture.sql`).
+
+## Addendum 2026-09-01 — Retention and pruning (P0-005A, condition C2 follow-through)
+
+The "unbounded growth" consequence above is now bounded. Terminal receipts are pruned by a service-role-only `prune_provider_events` RPC (migration `20260901120000_provider_events_pruning.sql`) run daily from `/api/cron/provider-events-prune`: `completed` after **30 days**, `failed` after **90 days**, with a **7-day floor clamped in SQL** and `processing` rows **never pruned by age** (stale reclaim owns them). The floor sits above every provider's webhook retry horizon (Stripe ≈ 3 days is the longest), so a pruned receipt can no longer be re-delivered by its provider — the accepted tradeoff, test-documented. Deletes are bounded (`LIMIT` batches), oldest-first, and overlap-safe (`FOR UPDATE SKIP LOCKED`); the claim/complete/fail RPCs and the `(provider, event_id)` key are unchanged. Windows are constants (`PROVIDER_EVENT_RETENTION`), not env. Full record: `../tickets/P0-005A-provider-events-retention-pruning.md`.
