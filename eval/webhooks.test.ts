@@ -259,6 +259,120 @@ describe("Aurinko (HMAC-SHA256 over `v0:ts:body`, 5-min window)", () => {
   })
 })
 
+describe("Aurinko webhook route — subscription validation ping vs signed notifications", () => {
+  // Aurinko's "Notification URL Verification": on subscription create it
+  // POSTs `?validationToken=<random>` and requires the token echoed back as
+  // text/plain 200. The route used to run signature verification first and
+  // 401 the ping, so createMessagesSubscription failed and Gmail connections
+  // never persisted (founder repro 2026-09-02: accounts with tokens, zero
+  // subscriptions). The echo must come BEFORE verification and touch
+  // nothing; every real notification must still be signed.
+  const ROUTE_URL = "https://app.test/api/aurinko/webhook"
+  const notification = JSON.stringify({
+    subscription: 1,
+    resource: "/email/messages",
+    accountId: 4242,
+    payloads: [{ id: "msg_1", changeType: "created" }],
+  })
+  const sign = (ts: number, b: string) =>
+    createHmac("sha256", SECRETS.AURINKO_SIGNING_SECRET).update(`v0:${ts}:${b}`).digest("hex")
+
+  let AURINKO_POST: (req: Request) => Promise<Response>
+  beforeAll(async () => {
+    ;({ POST: AURINKO_POST } = await import("@/app/api/aurinko/webhook/route"))
+  })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fakeDb.reset()
+  })
+
+  it("echoes the validation token as text/plain 200 with no signature and no side effects", async () => {
+    const token = "aurinko-validation-7f3a"
+    const res = await AURINKO_POST(
+      new Request(`${ROUTE_URL}?validationToken=${encodeURIComponent(token)}`, {
+        method: "POST",
+        body: "",
+      })
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toMatch(/^text\/plain/)
+    expect(await res.text()).toBe(token)
+    expect(fakeDb.calls).toHaveLength(0)
+  })
+
+  it("echoes the token even when the ping carries no body and unrelated headers", async () => {
+    const res = await AURINKO_POST(
+      new Request(`${ROUTE_URL}?validationToken=abc123`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      })
+    )
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe("abc123")
+    expect(fakeDb.calls).toHaveLength(0)
+  })
+
+  it("a real notification without a signature still 401s — the bypass is the validation ping only", async () => {
+    const res = await AURINKO_POST(
+      new Request(ROUTE_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: notification,
+      })
+    )
+    expect(res.status).toBe(401)
+    expect(fakeDb.calls).toHaveLength(0)
+  })
+
+  it("an empty validationToken is not a ping — unsigned request still 401s", async () => {
+    const res = await AURINKO_POST(
+      new Request(`${ROUTE_URL}?validationToken=`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: notification,
+      })
+    )
+    expect(res.status).toBe(401)
+    expect(fakeDb.calls).toHaveLength(0)
+  })
+
+  it("a forged signature on a real notification still 401s", async () => {
+    const ts = nowSec()
+    const res = await AURINKO_POST(
+      new Request(ROUTE_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-aurinko-request-timestamp": String(ts),
+          "x-aurinko-signature": sign(ts, notification + "x"),
+        },
+        body: notification,
+      })
+    )
+    expect(res.status).toBe(401)
+    expect(fakeDb.calls).toHaveLength(0)
+  })
+
+  it("a correctly signed notification passes verification and reaches the shop lookup", async () => {
+    fakeDb.tables.shops = { data: null, error: null }
+    const ts = nowSec()
+    const res = await AURINKO_POST(
+      new Request(ROUTE_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-aurinko-request-timestamp": String(ts),
+          "x-aurinko-signature": sign(ts, notification),
+        },
+        body: notification,
+      })
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, skipped: "no shop" })
+    expect(fakeDb.calls.some((c) => c.table === "shops" && c.method === "select")).toBe(true)
+  })
+})
+
 describe("Twilio inbound SMS route — claim after verify + replay suppression (P0-006, ADR-001 C3)", () => {
   const ROUTE_URL = "https://app.test/api/twilio/sms"
   const SID = "SM_p0006_test"
