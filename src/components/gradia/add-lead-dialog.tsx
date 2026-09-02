@@ -56,7 +56,7 @@ export function AddLeadDialog() {
     setPending(false)
 
     if (result.ok) {
-      toast.success("Sent for approval — approve in Slack to save")
+      toast.success("Sent for approval — it's waiting in Approvals.")
       setOpen(false)
       form.reset()
       setStatus("new")

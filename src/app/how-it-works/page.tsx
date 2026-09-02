@@ -50,7 +50,7 @@ const CHANNELS: {
   {
     icon: Mail,
     label: "Email",
-    body: "Connected to Gmail. Every inbound inquiry is classified, an on-brand reply is drafted, one tap in Slack sends it.",
+    body: "Connected to Gmail. Every inbound inquiry is classified, an on-brand reply is drafted, one tap in Approvals sends it.",
     tone: "email",
   },
   {
@@ -119,8 +119,8 @@ const FLOW: { title: string; body: string }[] = [
     body: "Classified, recorded in shared memory, and answered on-brand using your shop's voice — not generic AI English.",
   },
   {
-    title: "You approve in Slack",
-    body: "A card lands in your phone. Approve, tweak, or drop it. One tap.",
+    title: "You approve in one tap",
+    body: "A card lands in Approvals — on your phone or desk. Approve, tweak, or drop it. One tap.",
   },
   {
     title: "It goes out",
@@ -138,7 +138,7 @@ const FEATURES: string[] = [
   "Ask Gradia — plain-English BI for your shop",
   "Custom agents — schedule or event-triggered workflows",
   "Shop knowledge RAG — drafters cite your real policies",
-  "Slack-native approvals with Approve / Edit / Reject",
+  "In-app approvals with Approve / Edit & approve / Dismiss",
 ]
 
 export default function HowItWorksPage() {
@@ -171,7 +171,7 @@ export default function HowItWorksPage() {
             <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
               Gradia answers your phone, reads your inbox, replies to your
               DMs, and texts back leads — then puts everything in front of
-              you as a one-tap Slack approval. No more missed calls,
+              you as a one-tap approval. No more missed calls,
               forgotten quotes, or &ldquo;I&apos;ll get back to you tomorrow.&rdquo;
             </p>
 

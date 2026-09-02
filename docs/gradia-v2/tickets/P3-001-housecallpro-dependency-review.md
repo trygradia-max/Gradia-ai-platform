@@ -4,7 +4,7 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment). Specificat
 
 - **Ticket ID:** P3-001
 - **Epic:** E03 — CRM and import completion (phase P3; deliberately **not** ahead of P0 stabilization)
-- **Status:** draft — becomes ready when P0 exits and Q-19 needs its evidence; founder may pull it earlier, it touches no production behavior
+- **Status:** **superseded 2026-09-01 by CLEANUP-001** (D-052 resolved Q-19 as "delete"; the inventory/disposition sweep this ticket specified was executed inside CLEANUP-001 — see its close record). Kept for history.
 - **Priority:** Medium (quarantine already contains the risk; this ticket produces the decision evidence)
 - **Objective:** produce a complete, verified inventory of every Housecall Pro dependency in the platform and a costed recommendation between import-only, dormant-connector, and removal (feeds decision Q-19).
 - **User outcome:** owners are never exposed to an integration whose API shapes are unverified (`housecallpro.ts:22,265,435` `TODO(verify)` — audit docs 08/13); a future paying customer with HCP data gets a deliberate answer (import path or honest "not supported") instead of a guessed one.

@@ -1,8 +1,8 @@
 /**
- * Shared approval engine. Both the Slack interactivity callback and the
+ * Shared approval engine. The dashboard action (and, before CLEANUP-001, the Slack callback) and the
  * /approvals dashboard call into these helpers so the actual claim → execute
  * → finalize flow lives in one place. Helpers take any SupabaseClient — pass
- * a service-role client for Slack callbacks (no user session) or a
+ * a service-role client for server-side callers (no user session) or a
  * user-session client for the dashboard (RLS naturally limits scope).
  *
  * Two action types are supported:
@@ -51,7 +51,6 @@ import { moveLeadToStage, stageFromLegacyStatus } from "@/lib/pipeline"
 import { buildQuoteLineItem, computeQuoteTotals } from "@/lib/quotes"
 import { parseVehicle } from "@/lib/vehicle"
 import { upsertCustomerVehicle, vehiclesByCustomerIds } from "@/lib/vehicles"
-import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
 import { smsGateForShop } from "@/lib/telephony-provider"
 import {
@@ -230,7 +229,7 @@ export type DecisionResult =
 /**
  * P0-011 (audit C-2): the claim is TENANT-BOUND. `shopId` must come from a
  * trusted server-side source (the caller's RLS-resolved session shop, a
- * cron-loaded shop row, or — for Slack — the shop of the card WE posted),
+ * cron-loaded shop row, or — historically, for Slack — the shop of the card WE posted),
  * never from request input. The `.eq("shop_id")` predicate makes a claim
  * against another tenant's action match zero rows, atomically, regardless of
  * which client (session or service-role) runs it.
@@ -380,7 +379,7 @@ async function executeCreateLead(
     .eq("id", claimed.id)
     .eq("shop_id", claimed.shop_id)
 
-  // Best-effort CRM push (Jobber, Housecall Pro, …). Never blocks the
+  // Best-effort CRM push (Jobber, …). Never blocks the
   // approval; the seam pushes to every connected CRM independently.
   try {
     await pushLeadToCrm({
@@ -1580,7 +1579,7 @@ async function executeBookAppointment(
   }
 
   // Best-effort confirmation draft. Always after a successful booking
-  // landing — drafter/Slack failures must not roll back the booking.
+  // landing — drafter failures must not roll back the booking.
   try {
     await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id)
   } catch (err) {
@@ -1696,18 +1695,6 @@ async function queueBookingConfirmationSms(
       pendingErr
     )
     return
-  }
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: proposal.phone,
-      customerName: proposal.customer_name,
-      body: draft,
-      reason,
-    })
-  } catch (err) {
-    console.error("[approvals] booking confirmation Slack send failed:", err)
   }
 }
 
@@ -2119,7 +2106,7 @@ function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
   }
 }
 
-/** Marks the proposal for revision (Slack Edit button). No DB writes besides the claim. */
+/** Marks the proposal for revision (Edit & approve flow). No DB writes besides the claim. */
 export async function markEditRequested(
   supabase: SupabaseClient,
   pendingId: string,

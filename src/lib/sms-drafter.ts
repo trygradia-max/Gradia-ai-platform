@@ -1,7 +1,7 @@
 /**
  * Auto-drafts a short, on-brand SMS reply to an inbound lead. The
  * draft is staged as a `send_sms` pending_action — operators approve
- * (or edit) in Slack before it actually sends.
+ * (or edit) in Approvals before it actually sends.
  *
  * Constraints baked into the prompt:
  *   - We/us voice (HUMAN.md), not "I" or "you and I"

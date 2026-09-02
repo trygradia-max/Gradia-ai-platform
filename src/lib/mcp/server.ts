@@ -35,12 +35,6 @@ import {
   recordInteraction,
   searchCustomerMemory,
 } from "@/lib/memory"
-import {
-  sendBookingApprovalRequest,
-  sendEmailApprovalRequest,
-  sendLeadApprovalRequest,
-  sendSmsApprovalRequest,
-} from "@/lib/slack"
 import type {
   AppointmentRow,
   CustomerRow,
@@ -70,13 +64,13 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
 
   // ---------- propose_lead ----------
   // Stages a create_lead pending_action — operator must Approve in
-  // Slack or /approvals before the lead actually lands.
+  // /approvals before the lead actually lands.
   server.registerTool(
     "propose_lead",
     {
       title: "Propose a new lead",
       description:
-        "Stages a create_lead pending_action for human approval. Use this when an agent has identified a new prospective customer; the lead does NOT exist in the leads table until the operator approves it in Slack or /approvals.",
+        "Stages a create_lead pending_action for human approval. Use this when an agent has identified a new prospective customer; the lead does NOT exist in the leads table until the operator approves it in /approvals.",
       inputSchema: {
         customer_name: z
           .string()
@@ -137,20 +131,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         return errorResult(error?.message ?? "Insert failed.")
       }
       const pendingId = (data as { id: string }).id
-
-      try {
-        await sendLeadApprovalRequest({
-          pendingActionId: pendingId,
-          customerName: args.customer_name,
-          phone: args.phone ?? "",
-          carInfo: args.car_info,
-          pinNotes: args.pin_notes,
-          status: args.status,
-          crossChannelHint: null,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_lead] Slack send failed:", err)
-      }
 
       return jsonResult({
         ok: true,
@@ -450,21 +430,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         .single()
       if (error || !data) return errorResult(error?.message ?? "Insert failed.")
       const pendingId = (data as { id: string }).id
-
-      try {
-        await sendBookingApprovalRequest({
-          pendingActionId: pendingId,
-          customerName: args.customer_name,
-          phone: args.phone ?? "",
-          service: args.service,
-          carInfo: args.car_info,
-          startIso: args.iso_start_time,
-          durationMinutes: args.duration_minutes,
-          timezone: args.timezone,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_booking] Slack send failed:", err)
-      }
       return jsonResult({ ok: true, pending_action_id: pendingId })
     }
   )
@@ -475,7 +440,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
     {
       title: "Propose an outbound SMS",
       description:
-        "Stages a send_sms pending_action. Operator approves in Slack or /approvals before Twilio actually sends. Recipient must be in E.164 format — call normalize_phone first.",
+        "Stages a send_sms pending_action. Operator approves in /approvals before Twilio actually sends. Recipient must be in E.164 format — call normalize_phone first.",
       inputSchema: {
         to_phone: z
           .string()
@@ -512,18 +477,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         .single()
       if (error || !data) return errorResult(error?.message ?? "Insert failed.")
       const pendingId = (data as { id: string }).id
-
-      try {
-        await sendSmsApprovalRequest({
-          pendingActionId: pendingId,
-          toPhone: args.to_phone,
-          customerName: args.customer_name,
-          body: args.body,
-          reason: args.reason,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_sms] Slack send failed:", err)
-      }
       return jsonResult({ ok: true, pending_action_id: pendingId })
     }
   )
@@ -566,19 +519,6 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
         .single()
       if (error || !data) return errorResult(error?.message ?? "Insert failed.")
       const pendingId = (data as { id: string }).id
-
-      try {
-        await sendEmailApprovalRequest({
-          pendingActionId: pendingId,
-          toEmail: args.to_email,
-          customerName: args.customer_name,
-          subject: args.subject,
-          body: args.body,
-          reason: args.reason,
-        })
-      } catch (err) {
-        console.warn("[mcp propose_email] Slack send failed:", err)
-      }
       return jsonResult({ ok: true, pending_action_id: pendingId })
     }
   )
@@ -832,7 +772,7 @@ Workflow:
 
 Hard rules:
   - Never create > 25 pending proposals in one batch unless explicitly told.
-  - Always note "approve in Slack to send" so the operator knows nothing went out.
+  - Always note "approve in /approvals to send" so the operator knows nothing went out.
   - Sign drafts with "— Gradia at ${ctx.shopName}".`,
           },
         },

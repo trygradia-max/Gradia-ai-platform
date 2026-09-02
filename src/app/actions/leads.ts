@@ -3,7 +3,6 @@
 import { z } from "zod"
 
 import { createClient } from "@/lib/supabase/server"
-import { sendLeadApprovalRequest } from "@/lib/slack"
 import { requireShop } from "@/lib/shop"
 
 const submitLeadSchema = z.object({
@@ -20,7 +19,7 @@ export type CreateLeadResult =
 
 /**
  * Submits a proposed lead for human approval. Nothing is written to `leads`
- * until someone clicks Approve in Slack — the interactivity route handles
+ * until someone clicks Approve in /approvals — the dashboard action handles
  * the insert.
  */
 export async function createLead(
@@ -76,19 +75,6 @@ export async function createLead(
       ok: false,
       error: pendingErr?.message ?? "Could not queue lead for approval.",
     }
-  }
-
-  try {
-    await sendLeadApprovalRequest({
-      pendingActionId: pending.id,
-      customerName: parsed.data.customerName,
-      phone: parsed.data.phone,
-      carInfo,
-      pinNotes,
-      status,
-    })
-  } catch (slackErr) {
-    console.error("[slack] sendLeadApprovalRequest:", slackErr)
   }
 
   return { ok: true }

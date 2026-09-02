@@ -61,10 +61,13 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
     voiceAddonPriceId: vi.fn(() => null),
   }
 })
-vi.mock("@/lib/slack", () => ({
-  sendPaymentFailedNotice: vi.fn(async () => undefined),
-  sendPaymentReceivedNotice: vi.fn(async () => undefined),
-  sendPaymentRefundedNotice: vi.fn(async () => undefined),
+// CLEANUP-001: payment notices ride the P0-012 ops alert seam (SEV-3).
+vi.mock("@/lib/alerts", () => ({
+  sendOpsAlert: vi.fn(async () => ({
+    delivered: false,
+    reason: "unconfigured",
+    channels: { webhook: "unconfigured", sms: "unconfigured" },
+  })),
 }))
 vi.mock("@/lib/agent-events", () => ({
   dispatchAgentEvent: vi.fn(async () => undefined),

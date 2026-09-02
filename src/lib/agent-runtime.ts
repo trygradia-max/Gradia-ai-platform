@@ -30,10 +30,6 @@ import { getPricing, priceUsage } from "@/lib/pricing"
 import { findCustomerByChannel } from "@/lib/customers"
 import { draftAppointmentReminderEmail } from "@/lib/email-drafter"
 import { FEATURES } from "@/lib/features"
-import {
-  sendEmailApprovalRequest,
-  sendSmsApprovalRequest,
-} from "@/lib/slack"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
 import {
   draftAppointmentReminderSms,
@@ -276,18 +272,6 @@ async function executeLeadFollowupSms(
         no_inbound_within_days,
       },
     })
-
-    try {
-      await sendSmsApprovalRequest({
-        pendingActionId: pending.id,
-        toPhone: lead.phone,
-        customerName: lead.customer_name,
-        body: draft,
-        reason,
-      })
-    } catch (err) {
-      console.error("[agent-runtime] Slack send failed:", err)
-    }
     stats.proposed_sms += 1
     pendingActionIds.push(pending.id)
   }
@@ -497,19 +481,6 @@ async function executeAppointmentReminderEmail(
         scheduled_at: appt.scheduled_at,
       },
     })
-
-    try {
-      await sendEmailApprovalRequest({
-        pendingActionId: pending.id,
-        toEmail: email,
-        customerName: appt.customer?.name ?? null,
-        subject: draft.subject,
-        body: draft.body,
-        reason,
-      })
-    } catch (err) {
-      console.error("[agent-runtime] Slack send failed:", err)
-    }
     stats.proposed_email += 1
     pendingActionIds.push(pending.id)
   }
@@ -686,18 +657,6 @@ async function executeAppointmentReminderSms(
         scheduled_at: appt.scheduled_at,
       },
     })
-
-    try {
-      await sendSmsApprovalRequest({
-        pendingActionId: pending.id,
-        toPhone: phone,
-        customerName: appt.customer?.name ?? null,
-        body,
-        reason,
-      })
-    } catch (err) {
-      console.error("[agent-runtime] Slack send failed:", err)
-    }
     stats.proposed_sms += 1
     pendingActionIds.push(pending.id)
   }
@@ -863,18 +822,6 @@ async function executeStaleCustomerSms(
         cooldown_days,
       },
     })
-
-    try {
-      await sendSmsApprovalRequest({
-        pendingActionId: pending.id,
-        toPhone: customer.phone,
-        customerName: customer.name,
-        body: draft,
-        reason,
-      })
-    } catch (err) {
-      console.error("[agent-runtime] Slack send failed:", err)
-    }
     stats.proposed_sms += 1
     pendingActionIds.push(pending.id)
   }
@@ -1024,17 +971,6 @@ async function executeFreeformOutreach(
           customer_id: t.customerId ?? null,
         },
       })
-      try {
-        await sendSmsApprovalRequest({
-          pendingActionId: pending.id,
-          toPhone: t.phone,
-          customerName: t.name,
-          body,
-          reason,
-        })
-      } catch (err) {
-        console.error("[agent-runtime] freeform Slack send failed:", err)
-      }
       stats.proposed += 1
       pendingActionIds.push(pending.id)
     } else {
@@ -1100,18 +1036,6 @@ async function executeFreeformOutreach(
           customer_id: t.customerId ?? null,
         },
       })
-      try {
-        await sendEmailApprovalRequest({
-          pendingActionId: pending.id,
-          toEmail: t.email,
-          customerName: t.name,
-          subject: draft.subject,
-          body: draft.body,
-          reason,
-        })
-      } catch (err) {
-        console.error("[agent-runtime] freeform Slack send failed:", err)
-      }
       stats.proposed += 1
       pendingActionIds.push(pending.id)
     }
@@ -1260,17 +1184,6 @@ export async function stageOutreachPlan(
           customer_id: t.customerId ?? null,
         },
       })
-      try {
-        await sendSmsApprovalRequest({
-          pendingActionId: pending.id,
-          toPhone: t.phone,
-          customerName: t.name,
-          body,
-          reason,
-        })
-      } catch (err) {
-        console.error("[agent-runtime] outreach Slack send failed:", err)
-      }
       stats.proposed += 1
       pendingActionIds.push(pending.id)
     } else {
@@ -1333,18 +1246,6 @@ export async function stageOutreachPlan(
           customer_id: t.customerId ?? null,
         },
       })
-      try {
-        await sendEmailApprovalRequest({
-          pendingActionId: pending.id,
-          toEmail: t.email,
-          customerName: t.name,
-          subject: draft.subject,
-          body: draft.body,
-          reason,
-        })
-      } catch (err) {
-        console.error("[agent-runtime] outreach Slack send failed:", err)
-      }
       stats.proposed += 1
       pendingActionIds.push(pending.id)
     }
@@ -1359,7 +1260,6 @@ export async function stageOutreachPlan(
 // drafter unless an event recipe actually runs.
 import type { AgentEvent } from "@/lib/agent-events"
 import { draftCustomEmailForCustomer } from "@/lib/email-drafter"
-import { sendEmailApprovalRequest as _sendEmailApprovalRequest } from "@/lib/slack"
 
 async function executePaymentReceivedThankYouSms(
   supabase: SupabaseClient,
@@ -1461,18 +1361,6 @@ async function executePaymentReceivedThankYouSms(
       amount_cents: event.amountCents,
     },
   })
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: event.customerPhone,
-      customerName: event.customerName,
-      body: draft,
-      reason,
-    })
-  } catch (err) {
-    console.error("[agent-runtime] thank-you Slack send failed:", err)
-  }
 
   return {
     agentId: agent.id,
@@ -1601,19 +1489,6 @@ async function executeBookingApprovedPrepEmail(
     },
   })
 
-  try {
-    await _sendEmailApprovalRequest({
-      pendingActionId: pending.id,
-      toEmail: event.customerEmail,
-      customerName: event.customerName,
-      subject: draft.subject,
-      body: draft.body,
-      reason,
-    })
-  } catch (err) {
-    console.error("[agent-runtime] prep-email Slack send failed:", err)
-  }
-
   return {
     agentId: agent.id,
     agentName: agent.name,
@@ -1701,18 +1576,6 @@ async function executeReviewRequestSms(
     },
   })
 
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: event.customerPhone,
-      customerName: event.customerName,
-      body: draft,
-      reason,
-    })
-  } catch (err) {
-    console.error("[agent-runtime] review-request Slack send failed:", err)
-  }
-
   return {
     agentId: agent.id,
     agentName: agent.name,
@@ -1795,19 +1658,6 @@ async function executeReviewRequestEmail(
       event_kind: event.kind,
     },
   })
-
-  try {
-    await sendEmailApprovalRequest({
-      pendingActionId: pending.id,
-      toEmail: event.customerEmail,
-      customerName: event.customerName,
-      subject: draft.subject,
-      body: draft.body,
-      reason,
-    })
-  } catch (err) {
-    console.error("[agent-runtime] review-request email Slack send failed:", err)
-  }
 
   return {
     agentId: agent.id,
@@ -1945,9 +1795,9 @@ export async function runEventRecipe(
  * executeApproval is dynamic-imported to avoid a static import cycle
  * (agent-runtime → approvals → agent-events → agent-runtime).
  *
- * Note: while this auto-executes, the handler may also have posted a Slack
- * approval card (when FEATURES.slackApprovals is on) — a known limitation until
- * staging is mode-aware. With Slack off (MVP default) there's no stale card.
+ * Note: staging is not yet mode-aware — the handler stages the pending row
+ * first and this executes it. (The former Slack-card side effect was removed
+ * by CLEANUP-001 / D-052; nothing external is posted for it.)
  */
 async function maybeAutoExecute(
   supabase: SupabaseClient,

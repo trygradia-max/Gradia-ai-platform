@@ -16,7 +16,7 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-0
 | Vapi | ai | strategic | No — voice is a Package-2 add-on | Medium (seamed) |
 | Aurinko | transitional | transitional | **Yes today** — booking hard gate (`approvals.ts:686`) until E02 | Medium-high → Medium after E02 |
 | Jobber | customer-integrations | optional | No | Low |
-| Housecall Pro | customer-integrations | quarantined | No | None (nothing depends on it) |
+| Housecall Pro | **removed** (D-052, CLEANUP-001 2026-09-01 — record: `removed/housecall-pro.md`) | removed | No | None — code deleted; dormant columns only |
 | Google Calendar/Gmail (direct) | planned-evaluations | planned | — | — |
 | Microsoft Graph/Outlook (direct) | planned-evaluations | planned | — | — |
 | Product analytics (category) | planned-evaluations | planned | — | — |
@@ -347,6 +347,8 @@ _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-0
 | Last verified | 2026-07-20 (audit); live contract **requires verification** |
 
 ## Housecall Pro
+
+> **REMOVED 2026-09-01 (CLEANUP-001 / D-052).** Connector deleted from the codebase; row kept for history. Removal record: `removed/housecall-pro.md`.
 
 | Field | Value |
 |---|---|

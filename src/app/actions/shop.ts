@@ -548,39 +548,6 @@ export async function disconnectJobber(): Promise<DisconnectJobberResult> {
   return { ok: true, shop: data as ShopRow }
 }
 
-export type DisconnectHousecallProResult =
-  | { ok: true; shop: ShopRow }
-  | { ok: false; error: string }
-
-export async function disconnectHousecallPro(): Promise<DisconnectHousecallProResult> {
-  await requireUser()
-  const existing = await getOptionalShop()
-  if (!existing) {
-    return { ok: false, error: "Finish onboarding first." }
-  }
-
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("shops")
-    .update({
-      housecallpro_account_id: null,
-      housecallpro_account_name: null,
-      housecallpro_access_token_enc: null,
-      housecallpro_refresh_token_enc: null,
-      housecallpro_token_expires_at: null,
-    })
-    .eq("id", existing.id)
-    .select("*")
-    .single()
-
-  if (error || !data) {
-    return { ok: false, error: error?.message ?? "Could not disconnect." }
-  }
-
-  revalidatePath("/settings")
-  return { ok: true, shop: data as ShopRow }
-}
-
 export type DisconnectEmailResult =
   | { ok: true; shop: ShopRow }
   | { ok: false; error: string }

@@ -78,7 +78,7 @@ export function AiLeadSection() {
     setSaving(false)
 
     if (res.ok) {
-      toast.success("Queued — approve it in Slack or Approvals to lock it in.")
+      toast.success("Queued — approve it in Approvals to lock it in.")
       setRaw("")
       setCustomerName("")
       setPhone("")

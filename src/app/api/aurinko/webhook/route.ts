@@ -18,7 +18,7 @@
  *   - skip messages the shop's own connected mailbox sent (outbound copies)
  *   - record the interaction in the shared memory layer (channel=email)
  *   - classify with Claude; if it's a real inquiry, propose a lead
- *     through the HITL approval engine and post the Slack card
+ *     through the HITL approval engine (card lands in /approvals)
  */
 
 import { revalidatePath } from "next/cache"
@@ -32,7 +32,6 @@ import {
 } from "@/lib/aurinko"
 import { recordUsage } from "@/lib/credits"
 import { findOrCreateCustomer } from "@/lib/customers"
-import { getCrossChannelHint } from "@/lib/customer-context"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
 import { draftEmailReply } from "@/lib/email-drafter"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -42,10 +41,6 @@ import {
 } from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
 import { checkRateLimit } from "@/lib/rate-limit"
-import {
-  sendEmailApprovalRequest,
-  sendLeadApprovalRequest,
-} from "@/lib/slack"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -321,19 +316,6 @@ async function proposeDraftEmailReply(
     )
     return
   }
-
-  try {
-    await sendEmailApprovalRequest({
-      pendingActionId: pending.id,
-      toEmail: senderEmail,
-      customerName,
-      subject: draft.subject,
-      body: draft.body,
-      reason,
-    })
-  } catch (err) {
-    console.error("[aurinko webhook] email draft Slack send failed:", err)
-  }
 }
 
 function interactionContent(m: AurinkoMessage): string {
@@ -398,27 +380,6 @@ async function proposeLead(
   if (pendingErr || !pending) {
     console.error("[aurinko webhook] pending_action insert failed:", pendingErr)
     return false
-  }
-
-  const crossChannelHint = await getCrossChannelHint(
-    supabase,
-    shop.id,
-    customerId,
-    "email"
-  )
-
-  try {
-    await sendLeadApprovalRequest({
-      pendingActionId: pending.id,
-      customerName,
-      phone,
-      carInfo: vehicle,
-      pinNotes,
-      status: "new",
-      crossChannelHint,
-    })
-  } catch (err) {
-    console.error("[aurinko webhook] Slack send failed:", err)
   }
 
   return true

@@ -89,7 +89,6 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/app/api/mcp/route.ts",
     "src/app/api/recovery/import/[jobId]/extract/route.ts",
     "src/app/api/recovery/import/route.ts",
-    "src/app/api/slack/interactivity/route.ts",
     "src/app/api/stripe/webhook/route.ts",
     "src/app/api/twilio/a2p/status/route.ts",
     "src/app/api/twilio/sms/route.ts",
@@ -101,7 +100,6 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/lib/credits.ts",
     "src/lib/mcp/auth.ts",
     "src/lib/rate-limit.ts",
-    "src/lib/slack.ts",
     "src/lib/supabase/service.ts",
   ])
 

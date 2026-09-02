@@ -26,7 +26,7 @@ queue (NOW-0 → NOW-4), plus the NEXT-3 Customer Recovery feature (built, but
 - Command bar (⌘K + mobile tap-to-talk), three-page nav, optimistic approvals,
   Home receipt → nudges → live feed stack.
 
-**Plumbing.** Credits + paywall, telephony/voice-builder, CRM (Jobber + Housecall Pro),
+**Plumbing.** Credits + paywall, telephony/voice-builder, CRM (Jobber; Housecall Pro removed 2026-09-01 by CLEANUP-001),
 IG/FB + charge-customer removal (DB kept dormant).
 
 ## NEXT-3 Customer Recovery — included but OFF

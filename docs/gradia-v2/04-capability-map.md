@@ -296,11 +296,11 @@ Each capability records:
 
 ## 22. Integrations
 
-- **Current audit status:** Twilio/Aurinko/Vapi/Stripe clients real, encrypted, signature-verified, reconciled (OPERATIONAL). Jobber push OPERATIONAL one-way. **Housecall Pro endpoint shapes admittedly unverified** (`TODO(verify)`). No Microsoft calendar. Token refresh exists; no owner-facing reconnect alerts (audit 03, 10).
+- **Current audit status:** Twilio/Aurinko/Vapi/Stripe clients real, encrypted, signature-verified, reconciled (OPERATIONAL). Jobber push OPERATIONAL one-way. ~~Housecall Pro endpoint shapes admittedly unverified~~ — **Housecall Pro removed 2026-09-01 (CLEANUP-001, D-052)**. No Microsoft calendar. Token refresh exists; no owner-facing reconnect alerts (audit 03, 10).
 - **Existing foundation:** provider seams (`voice-provider.ts`, `telephony-provider.ts`, `crm-provider.ts`), OAuth flows with CSRF protection, AES-256-GCM credential storage, ConnectionTile UX.
 - **Target state:** all connectors verified live; Microsoft calendar (D-014); reconnect alerts; missing **LLM seam** added (the one unseamed vendor class).
-- **Missing work:** HCP live verification (founder-adjacent); LLM seam (P1); Microsoft sync (P2/E02); reconnect alerting.
-- **Provider classification (D-030, 2026-07-27):** core = Supabase/Vercel/Stripe/Twilio/Sentry; strategic-replaceable = Anthropic/OpenAI/Vapi (behind the D-029 boundaries); transitional = Aurinko; **Jobber = optional** (customer-demand driven, never a core dependency — Q-20); **Housecall Pro = quarantined** (unmarketed, flag disabled, no new investment; import-only-vs-removal review = P3-001, Q-19). Full facts: `vendors/registry.md`.
+- **Missing work:** ~~HCP live verification~~ (moot — removed by CLEANUP-001); LLM seam (P1); Microsoft sync (P2/E02); reconnect alerting.
+- **Provider classification (D-030, 2026-07-27):** core = Supabase/Vercel/Stripe/Twilio/Sentry; strategic-replaceable = Anthropic/OpenAI/Vapi (behind the D-029 boundaries); transitional = Aurinko; **Jobber = optional** (customer-demand driven, never a core dependency — Q-20); **Housecall Pro = removed** (D-052 / CLEANUP-001 2026-09-01; Q-19 resolved "delete"; P3-001 superseded). Full facts: `vendors/registry.md`.
 - **Dependencies:** vendors/* docs; P0-012 (alert delivery) for reconnect alerts.
 - **Priority phase:** P1–P3.
 - **Risks:** two integrations could fail on first real use (audit 10); provider drift with no contract tests.
@@ -323,9 +323,9 @@ Each capability records:
 
 ## 24. Security and privacy
 
-- **Current audit status:** Architecture strong (uniform RLS, signature-verified webhooks, encrypted credentials, CSRF-protected OAuth, no text-to-SQL) but **score capped at 4/10 by C-1: live DB superuser credential committed to pushed git history**. C-2 cross-tenant Slack approval path (dormant). Service-role tenant scoping = pure discipline across ~30 files. No data deletion/export flow; EIN plaintext; MIME validation missing (audit 06, 10).
+- **Current audit status:** Architecture strong (uniform RLS, signature-verified webhooks, encrypted credentials, CSRF-protected OAuth, no text-to-SQL) but **score capped at 4/10 by C-1: live DB superuser credential committed to pushed git history**. C-2 cross-tenant Slack approval path — closed by P0-011 (tenant-bound claims) and the surface itself **deleted by CLEANUP-001 (D-052, 2026-09-01)**. Service-role tenant scoping = pure discipline across ~30 files. No data deletion/export flow; EIN plaintext; MIME validation missing (audit 06, 10).
 - **Existing foundation:** RLS on all 28 tables, `crypto.ts` AES-256-GCM, webhook forgery test suite, rate limiting, consent ledger.
-- **Target state:** credential rotated + history decision recorded (Q-01); scoping as mechanism (P0-011 helper); ledgers SELECT-only; GDPR-shaped deletion/export (P10); Slack path locked (D-026).
+- **Target state:** credential rotated + history decision recorded (Q-01); scoping as mechanism (P0-011 helper); ledgers SELECT-only; GDPR-shaped deletion/export (P10); ~~Slack path locked (D-026)~~ Slack approvals surface removed (D-052).
 - **Missing work:** P0-001 (NOW), P0-011; ~~M-1 auth gate~~ (**closed 2026-08-28 by P0-010** — session auth + fail-closed gates + rate limit on `processRawLeadNote`); quote-token regeneration (deferred E03-era follow-up — the rate-limit half shipped in P0-009); soft delete + data export/deletion (P10); EIN encryption.
 - **Dependencies:** P0-001 precedes everything; runbooks exposed-credential + tenant-data-leak.
 - **Priority phase:** P0, P10.

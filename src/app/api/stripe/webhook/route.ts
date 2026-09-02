@@ -4,8 +4,8 @@
  * One endpoint handles every connected account because Stripe routes
  * Connect events through the platform's webhook with `account` set on
  * the event envelope. We act on:
- *   - invoice.paid             → log + Slack "Paid" notice
- *   - invoice.payment_failed   → log + Slack "Payment failed" notice
+ *   - invoice.paid             → log + founder ops notice (SEV-3, alerts seam)
+ *   - invoice.payment_failed   → log + founder ops notice (SEV-3, alerts seam)
  *   - charge.refunded          → net the refund off our local mirror
  *
  * Other events are ack'd with 200 and ignored. Stripe replays on
@@ -21,11 +21,7 @@
 import { revalidatePath } from "next/cache"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
-import {
-  sendPaymentFailedNotice,
-  sendPaymentReceivedNotice,
-  sendPaymentRefundedNotice,
-} from "@/lib/slack"
+import { sendOpsAlert } from "@/lib/alerts"
 import { creditsSpentThisPeriod } from "@/lib/credits"
 import { PLAN, rolloverCredits } from "@/lib/pricing"
 import {
@@ -366,7 +362,7 @@ export async function POST(request: Request) {
   // P0-011: tenant resolution is MANDATORY before any tenant-row read/write.
   // A platform event (no Connect account envelope) reaching this point is
   // `invoice.payment_failed` on the Gradia subscription — no connected-shop
-  // interaction exists for it, so tenant-row work is skipped (the Slack
+  // interaction exists for it, so tenant-row work is skipped (the ops
   // notice below still fires). A Connect event whose account has no shops
   // row is a wiring anomaly: ack + log, never fall back to an UNSCOPED
   // interactions/payments query (the service client bypasses RLS).
@@ -476,27 +472,24 @@ export async function POST(request: Request) {
     }
   }
 
-  try {
-    if (eventType === "invoice.paid") {
-      await sendPaymentReceivedNotice({
-        customerName: invoice.customer_name ?? null,
-        customerEmail: invoice.customer_email ?? null,
-        amountCents: amount,
-        invoiceNumber: invoice.number ?? null,
-        invoiceUrl: invoice.hosted_invoice_url ?? null,
-      })
-    } else {
-      await sendPaymentFailedNotice({
-        customerName: invoice.customer_name ?? null,
-        customerEmail: invoice.customer_email ?? null,
-        amountCents: amount,
-        invoiceNumber: invoice.number ?? null,
-        invoiceUrl: invoice.hosted_invoice_url ?? null,
-      })
-    }
-  } catch (err) {
-    console.error("[stripe webhook] Slack notice failed:", err)
-  }
+  // Founder ops notice (CLEANUP-001 → P0-012 seam, SEV-3 info). The seam
+  // never throws; identical titles inside the dedupe window collapse, so a
+  // Stripe retry of the same invoice never re-notifies.
+  await sendOpsAlert({
+    severity: "SEV-3",
+    source: "stripe",
+    title:
+      eventType === "invoice.paid"
+        ? `Payment received — invoice ${invoice.number ?? "(no number)"}`
+        : `Payment failed — invoice ${invoice.number ?? "(no number)"}`,
+    detail: `${invoice.customer_name ?? "Customer"} · $${(amount / 100).toFixed(2)}`,
+    refs: {
+      invoice: invoice.number ?? null,
+      amount_cents: amount,
+      action: "ledger updated",
+      retryable: false,
+    },
+  })
 
   // Fan out payment_received to event-driven custom agents (e.g.,
   // the thank-you SMS recipe). Best-effort — failures must not
@@ -661,19 +654,20 @@ async function handleChargeRefunded(event: StripeEvent): Promise<Response> {
     }
   }
 
-  try {
-    await sendPaymentRefundedNotice({
-      customerName: charge?.billing_details?.name ?? null,
-      customerEmail: charge?.billing_details?.email ?? null,
-      refundedAmountCents: clampedRefund,
-      grossAmountCents: payment.amount_cents,
-      fullyRefunded,
-      invoiceNumber: payment.stripe_invoice_number,
-      invoiceUrl: payment.hosted_invoice_url,
-    })
-  } catch (err) {
-    console.error("[stripe webhook] refund Slack notice failed:", err)
-  }
+  // Founder ops notice (CLEANUP-001 → P0-012 seam, SEV-3 info).
+  await sendOpsAlert({
+    severity: "SEV-3",
+    source: "stripe",
+    title: `Payment refunded — invoice ${payment.stripe_invoice_number ?? "(no number)"}`,
+    detail: `${charge?.billing_details?.name ?? "Customer"} · $${(clampedRefund / 100).toFixed(2)}${fullyRefunded ? " (full refund)" : " (partial)"}`,
+    refs: {
+      invoice: payment.stripe_invoice_number ?? null,
+      refunded_cents: clampedRefund,
+      gross_cents: payment.amount_cents,
+      action: "ledger updated",
+      retryable: false,
+    },
+  })
 
   revalidatePath("/dashboard")
   return Response.json({ ok: true })

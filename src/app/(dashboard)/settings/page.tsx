@@ -1,10 +1,9 @@
 import { headers } from "next/headers"
 import Link from "next/link"
-import { Bot, Briefcase, Calendar, ChevronRight, House, Mail, MessageSquare, Phone, Shield } from "lucide-react"
+import { Bot, Briefcase, Calendar, ChevronRight, Mail, MessageSquare, Phone, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
-import { HousecallProSettingsCard } from "@/components/gradia/housecallpro-settings-card"
 import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
@@ -91,16 +90,6 @@ const KNOWN_JOBBER_STATUSES = new Set([
   "save_failed",
 ])
 
-const KNOWN_HOUSECALLPRO_STATUSES = new Set([
-  "ok",
-  "denied",
-  "missing_params",
-  "state_mismatch",
-  "token_exchange_failed",
-  "account_fetch_failed",
-  "save_failed",
-])
-
 export default async function SettingsPage({
   searchParams,
 }: {
@@ -108,7 +97,6 @@ export default async function SettingsPage({
     email?: string
     stripe?: string
     jobber?: string
-    housecallpro?: string
   }>
 }) {
   const shopCtx = await requireShop()
@@ -142,10 +130,6 @@ export default async function SettingsPage({
   const jobberConfigured = Boolean(
     process.env.JOBBER_CLIENT_ID?.trim() &&
       process.env.JOBBER_CLIENT_SECRET?.trim()
-  )
-  const housecallProConfigured = Boolean(
-    process.env.HOUSECALLPRO_CLIENT_ID?.trim() &&
-      process.env.HOUSECALLPRO_CLIENT_SECRET?.trim()
   )
 
   const params = await searchParams
@@ -188,20 +172,6 @@ export default async function SettingsPage({
           | "save_failed")
       : null
 
-  const rawHousecallproStatus = params.housecallpro ?? null
-  const housecallproStatus =
-    rawHousecallproStatus &&
-    KNOWN_HOUSECALLPRO_STATUSES.has(rawHousecallproStatus)
-      ? (rawHousecallproStatus as
-          | "ok"
-          | "denied"
-          | "missing_params"
-          | "state_mismatch"
-          | "token_exchange_failed"
-          | "account_fetch_failed"
-          | "save_failed")
-      : null
-
   const usageState = await getUsageState()
   const a2pState = await getA2pState()
   const voiceOptions = listVoiceOptions()
@@ -217,7 +187,6 @@ export default async function SettingsPage({
     { id: "sms", label: "SMS" },
     { id: "payments", label: "Payments" },
     { id: "jobber", label: "Jobber" },
-    { id: "housecallpro", label: "Housecall Pro" },
     { id: "knowledge", label: "Knowledge" },
     { id: "reviews", label: "Reviews" },
     { id: "usage", label: "Usage" },
@@ -330,18 +299,6 @@ export default async function SettingsPage({
               popup
               manageHref="#jobber"
             />
-            <ConnectionTile
-              icon={House}
-              name="Jobs — Housecall Pro"
-              description="Pushes approved leads and bookings to Housecall Pro."
-              connected={Boolean(shop?.housecallpro_account_name)}
-              available={housecallProConfigured}
-              connectedLabel={shop?.housecallpro_account_name}
-              connectedDetail="Synced to Housecall Pro"
-              connectHref="/api/housecallpro/auth/start"
-              popup
-              manageHref="#housecallpro"
-            />
           </div>
         </div>
       </div>
@@ -425,14 +382,6 @@ export default async function SettingsPage({
             initialAccountName={shop?.jobber_account_name ?? null}
             jobberConfigured={jobberConfigured}
             callbackStatus={jobberStatus}
-          />
-        </section>
-
-        <section id="housecallpro">
-          <HousecallProSettingsCard
-            initialAccountName={shop?.housecallpro_account_name ?? null}
-            housecallProConfigured={housecallProConfigured}
-            callbackStatus={housecallproStatus}
           />
         </section>
 

@@ -22,7 +22,6 @@ import {
   renderTemplate,
   type AutomationConfig,
 } from "@/lib/automations"
-import { sendSmsApprovalRequest } from "@/lib/slack"
 import { draftAppointmentReminderSms } from "@/lib/sms-drafter"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { AppointmentRow, CustomerRow, ShopRow } from "@/lib/types/database"
@@ -184,26 +183,14 @@ async function stageReminder(
     return false
   }
 
-  // Stamp the appointment so subsequent runs skip it. We do this
-  // *before* the Slack send so a Slack hiccup can't cause duplicate
-  // pending_actions on the next cron tick.
+  // Stamp the appointment so subsequent runs skip it — before anything
+  // else can fail, so a hiccup can't cause duplicate pending_actions on
+  // the next cron tick.
   await supabase
     .from("appointments")
     .update({ reminder_pending_action_id: pending.id })
     .eq("id", appt.id)
     .eq("shop_id", appt.shop.id)
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: appt.customer.phone,
-      customerName: appt.customer.name,
-      body: draft,
-      reason,
-    })
-  } catch (err) {
-    console.error("[cron/reminders] Slack send failed:", err)
-  }
 
   // C5: run history + (owner-opted) autopilot. Approval mode = no-op here.
   await afterCatalogStage(supabase, appt.shop, gate, pending.id, {

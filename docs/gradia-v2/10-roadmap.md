@@ -37,10 +37,10 @@ Phases are sequential by default; a later phase may start only when its dependen
 - **Native mobile apps** — delayed behind PWA (D-020).
 - **Instagram/Facebook channels** — remain out (code already removed; WHAT_GRADIA_DOES §3).
 - **Photo-based quoting (Estimator), social posting (Marketer), Gradia Pay/BNPL, Gradia Vision** — historical PROJECT_BRIEF ambitions; not scheduled in P0–P10.
-- **Slack approvals revival** — blocked by D-026 until tenant authorization is rebuilt; not scheduled.
+- **Slack approvals revival** — **removed (D-052, CLEANUP-001 2026-09-01)**: the surface is deleted, not dormant; any future Slack approvals need a new decision + ADR with shop-bound claims.
 - **Text-to-SQL BI** — rejected; fixed query builders stay (audit doc 06 confirms safer path in code).
 - **Direct Google/Microsoft calendar integrations** — delayed until after E02 stabilizes `CalendarProvider` and the native appointment system (Q-21); Aurinko stays transitional meanwhile (D-030).
-- **Housecall Pro bidirectional sync** — rejected without paying-customer demand (Q-19, D-030); import-only vs removal decided after P3-001.
+- **Housecall Pro bidirectional sync** — **removed (D-052, CLEANUP-001 2026-09-01)**; Q-19 resolved "delete", P3-001 superseded. Housecall Pro *export files* remain an E03-02 import source.
 - **Square / POS** — delayed to a post-E05 evaluation (`vendors/planned-evaluations/payment-pos.md`); never a replacement for Stripe Connect (D-019).
 
 ## Cross-references

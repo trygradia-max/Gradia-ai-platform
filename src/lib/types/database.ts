@@ -49,6 +49,7 @@ export type ShopRow = {
   jobber_access_token_enc: string | null
   jobber_refresh_token_enc: string | null
   jobber_token_expires_at: string | null
+  /** dormant — CLEANUP-001 (D-052): Housecall Pro removed; columns kept, drop file in supabase/rollbacks/ */
   housecallpro_account_id: string | null
   housecallpro_account_name: string | null
   housecallpro_access_token_enc: string | null
@@ -263,6 +264,7 @@ export type CustomerRow = {
   /** Owner's manual, immediate, all-channel block. */
   do_not_contact: boolean
   jobber_client_id: string | null
+  /** dormant — CLEANUP-001 (D-052) */
   housecallpro_customer_id: string | null
   created_at: string
   updated_at: string
@@ -504,6 +506,7 @@ export type AppointmentRow = {
   /** No-show ladder rung: 0 none → 1 confirm sent → 2 reminder → 3 owner alert. */
   escalation_level: number
   jobber_request_id: string | null
+  /** dormant — CLEANUP-001 (D-052) */
   housecallpro_job_id: string | null
   /** CRM C1 job columns — present only once the C1 migration is applied;
    *  writers use best-effort updates (tolerance pattern). */
@@ -575,9 +578,11 @@ export type PendingActionRow = {
   status: PendingActionStatus
   requested_by: string
   decided_at: string | null
+  /** dormant — Slack approvals removed (CLEANUP-001 / D-052); kept for historical decisions */
   decided_by_slack: string | null
   decided_by_user: string | null
   result_id: string | null
+  /** dormant — CLEANUP-001 (D-052); historical */
   slack_channel: string | null
   slack_message_ts: string | null
   created_at: string

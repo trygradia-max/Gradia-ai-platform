@@ -88,7 +88,7 @@ export function EmailSettingsCard({
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Pipe inbound Gmail into Gradia&apos;s brain — every inquiry
-            becomes a Slack approval card.
+            becomes a drafted reply waiting in Approvals.
           </p>
         </div>
         {isConnected ? (

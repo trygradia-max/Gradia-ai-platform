@@ -25,7 +25,6 @@ import {
   CONFIRM_LEAD_HOURS,
   buildConfirmSms,
 } from "@/lib/no-show-ladder"
-import { sendSmsApprovalRequest } from "@/lib/slack"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { AppointmentRow, CustomerRow, ShopRow } from "@/lib/types/database"
 
@@ -189,24 +188,12 @@ async function stageConfirm(
     return false
   }
 
-  // Stamp BEFORE the Slack send so a hiccup can't double-stage next tick.
+  // Stamp right after staging so a hiccup can't double-stage next tick.
   await supabase
     .from("appointments")
     .update({ confirm_pending_action_id: pending.id })
     .eq("id", appt.id)
     .eq("shop_id", appt.shop.id)
-
-  try {
-    await sendSmsApprovalRequest({
-      pendingActionId: pending.id,
-      toPhone: appt.customer.phone,
-      customerName: appt.customer.name,
-      body,
-      reason,
-    })
-  } catch (err) {
-    console.error("[cron/no-show-ladder] Slack send failed:", err)
-  }
 
   // C5: run history + (owner-opted) autopilot. Approval mode = no-op here.
   await afterCatalogStage(supabase, appt.shop, gate, pending.id, {
