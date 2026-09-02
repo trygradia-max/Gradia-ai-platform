@@ -4,7 +4,7 @@ _Created 2026-07-25 by the Organizer. Open founder-level decisions. **None below
 
 Format per item: context · options · Organizer recommendation · what it blocks.
 
-_Batch resolution 2026-09-01 (autorun prep, `11-decision-log.md` Batch 5): Q-01/02/03/05/07/08/09/11/12/15/16/17/19/21/23/25 resolved → D-038…D-052; tombstones below. **Still open:** Q-04 (expired-quote re-quote CTA), **Q-06 (eval budget/cadence — autorun Batch 2 ticket E01-05 assumes the "both" recommendation; it needs founder approval before E01-05 enters or the Builder hard-stops per autorun rule 5)**, Q-10 (archival), Q-18 (Connect platform fee, E05), Q-20 (Jobber posture post-parity), Q-24 (membership auto-renewal, E06)._
+_Batch resolution 2026-09-01 (autorun prep, `11-decision-log.md` Batch 5): Q-01/02/03/05/07/08/09/11/12/15/16/17/19/21/23/25 resolved → D-038…D-052; tombstones below. **Still open:** Q-04 (expired-quote re-quote CTA), Q-10 (archival), Q-18 (Connect platform fee, E05), Q-20 (Jobber posture post-parity), Q-24 (membership auto-renewal, E06)._
 
 ---
 
@@ -23,12 +23,7 @@ _Batch resolution 2026-09-01 (autorun prep, `11-decision-log.md` Batch 5): Q-01/
 
 ## Q-05 — RESOLVED 2026-09-01 → D-041 (operator quick-reply to an opted-out customer: warn-but-allow, implemented in the E07 composer). Tombstone preserves numbering.
 
-## Q-06 — Eval budget and cadence (locked principle #6)
-
-- **Context:** live-model evals (Tier 2/3) gate nothing today; a drafter prompt regression ships on green CI (audit doc 07).
-- **Options:** nightly scheduled run; on-prompt-change CI path filter; both.
-- **Recommendation:** both — nightly `npm run eval` with failure notification, plus a CI path filter requiring the live tier when prompt files change.
-- **Blocks:** the eval-gating ticket in E01 scope (P0-002 covers deterministic CI only).
+## Q-06 — RESOLVED 2026-09-01 → D-053 (nightly eval + CI path filter on prompt changes)
 
 ## Q-07 — RESOLVED 2026-09-01 → D-052 (Slack approvals surface deleted in Batch 1, ticket CLEANUP-001; amends D-026). Tombstone preserves numbering.
 
