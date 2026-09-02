@@ -141,6 +141,15 @@ These power surfaces gated off in `src/lib/features.ts`. Skip until you un-hide 
 
 ---
 
+## Founder ops alerts (P0-012 — optional until set, then real)
+
+| Var | Scope | Purpose |
+|---|---|---|
+| `OPS_ALERT_WEBHOOK_URL` | secret | JSON webhook (`{ text }`) — the founder Slack ops channel incoming webhook (D-042). Receives every SEV-0..3 alert from `src/lib/alerts.ts`: usage anomalies, tenant-scope violations, reconciliation drift, cron failures. |
+| `OPS_ALERT_SMS_TO` / `OPS_ALERT_SMS_FROM` | secret | Optional pair (E.164). SEV-0/1 also go by SMS through the env Twilio master account. |
+
+Unset = console + Sentry only (the pre-P0-012 behavior); `GET /api/health` reports the seam as unconfigured. Test the wiring with `POST /api/admin/alert-test` (bearer `CRON_SECRET`).
+
 ## Observability (optional)
 
 | Var | Scope | Purpose |

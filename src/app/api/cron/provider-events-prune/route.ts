@@ -9,6 +9,7 @@
  * Failure direction: rows accumulate until the next run — safe.
  */
 
+import { runCron } from "@/lib/cron-run"
 import {
   formatPruneRunLog,
   pruneRunWarnings,
@@ -24,7 +25,7 @@ function unauthorized() {
   return new Response("Unauthorized", { status: 401 })
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/provider-events-prune] CRON_SECRET not configured")
@@ -57,3 +58,6 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: message }, { status: 500 })
   }
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("provider-events-prune", request, handle)

@@ -18,6 +18,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { sendOpsAlert } from "@/lib/alerts"
 import { tryDecryptSecret } from "@/lib/crypto"
 import { fetchMonthToDateUsageCents } from "@/lib/twilio"
 import type { ShopRow } from "@/lib/types/database"
@@ -73,29 +74,27 @@ function monthStartUtcIso(now: Date): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
 }
 
-/** Ops alert: always in the logs; mirrored to Slack when a webhook is set.
- * Deliberately NOT gated by FEATURES.slackApprovals — that flag governs the
- * HITL approval surface, and this is an operator alert. */
+/** Ops alert: always in the logs, delivered through the P0-012 seam
+ * (`lib/alerts.ts`, D-042) as SEV-1 — money metering vs vendor billing is a
+ * core-promise signal. Not gated by any approvals flag: this is an operator
+ * alert, not the HITL surface. */
 async function alertDrift(drifting: ShopDrift[]): Promise<void> {
   const lines = drifting.map(
     (d) =>
       `${d.shopName} (${d.shopId}): ledger ${(d.ledgerCents / 100).toFixed(2)} vs Twilio ${(d.vendorCents / 100).toFixed(2)} USD — ${d.driftPct.toFixed(1)}% drift`
   )
   console.error(`[reconcile] DRIFT >${DRIFT_ALERT_THRESHOLD_PCT}%:\n${lines.join("\n")}`)
-
-  const webhook = process.env.SLACK_WEBHOOK_URL?.trim()
-  if (!webhook) return
-  try {
-    await fetch(webhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: `:warning: Telephony reconciliation drift (>${DRIFT_ALERT_THRESHOLD_PCT}%) — month to date\n${lines.join("\n")}`,
-      }),
-    })
-  } catch (err) {
-    console.error("[reconcile] Slack alert failed:", err)
-  }
+  await sendOpsAlert({
+    severity: "SEV-1",
+    source: "reconcile",
+    title: `Telephony reconciliation drift >${DRIFT_ALERT_THRESHOLD_PCT}% (month to date)`,
+    detail: lines.join("\n"),
+    refs: {
+      shops: drifting.length,
+      action: "none — ledger untouched; compensating entry by hand",
+      retryable: false,
+    },
+  })
 }
 
 /**

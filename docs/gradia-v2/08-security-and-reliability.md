@@ -79,11 +79,28 @@ All inbound webhooks: signature-verified, constant-time comparison, **fail close
 
 Standards going forward (bind on all new code; retrofits per roadmap):
 1. **No new silent failure paths.** Failures either surface to the user, roll back (the approvals pattern), or emit an actionable structured log + alert. `.catch(() => null)` requires a written justification in the ticket.
-2. **Alert delivery is real** — `monitoring.ts` anomalies, reconciliation drift, and cron failures page the founder (**P0-012**); console-only alerting is non-compliant.
-3. **Structured failure info:** `[module]`-prefixed errors with shop_id and provider refs; Sentry stays wired; structured logger + health endpoint + tracing land in **P10**.
+2. **Alert delivery is real** — `monitoring.ts` anomalies, the `TENANT_SCOPE_VIOLATION` signal, reconciliation drift, and every cron failure emit through the ONE ops alert seam (`src/lib/alerts.ts`, **P0-012**, D-042) to the founder webhook (+ SMS for SEV-0/1); console-only alerting is non-compliant. The seam is fail-open (never breaks the caller), burst-deduped per instance, and self-reporting on `GET /api/health`. Unconfigured destination = console + Sentry only (the rollback position).
+3. **Structured failure info:** every failure log/alert carries the fields in the convention below (P0-012); `[module]`-prefixed errors with shop_id and provider refs remain the floor; Sentry stays wired and cross-referenced by the seam; `GET /api/health` exists (P0-012); structured logger + tracing land in **P10**.
 4. **No queue until P10** — accepted consequence: cron-tick retry granularity, weekly jobs without catch-up. Any ticket whose correctness depends on guaranteed delivery must say so and either use DB-unique idempotency (so replays are safe) or be deferred to the P10 outbox. **Event-processing bar for autonomy expansion (added 2026-07-27, roadmap rule 9):** E09 requires the P0 idempotency chain (P0-005/006/007) + P0-012 alerting complete; the P10 outbox is *not* the bar (founder-approved order runs P9 before P10), but every E09 ticket expanding autonomous execution on a webhook/cron path must state its idempotency basis explicitly.
 5. **Error surfaces:** `error.tsx` at minimum at the `(dashboard)/` level (**P0-010**); loading/empty/error states per `12-definition-of-done.md`.
 6. **Fail-closed remains the rule** for credits, entitlements, webhooks, and crons.
+
+### Structured failure information — the convention (P0-012, 2026-09-01)
+
+Binding for new code; enforced by review, not retrofit. A failure that is logged or alerted carries, in this order, whatever applies:
+
+| Field | Where it goes | Rule |
+|---|---|---|
+| **module** | `[module]` log prefix · alert `source` | Stable, lowercase, path-like for routes (`cron/reminders`, `stripe/webhook`). |
+| **severity** | alert `severity` | SEV-0..3 per `runbooks/incident-severity.md`; tenant isolation / money / consent start one level higher. |
+| **what happened** | alert `title` (short, stable — it is the dedupe key) + `detail` | Numbers over adjectives. Sanitized: no secrets, no raw payloads, no headers, no signatures. |
+| **shop_id** | `refs.shop_id` (or `authorized_shop` / `row_shop` for tenancy signals) | Always when a tenant is known; `ALL` for platform-wide. |
+| **provider refs** | `refs.<provider>_ref` / `event_id` / `row` | Ids only — MessageSid, call id, event id, row id. |
+| **action taken** | `refs.action` | What the code did: `refused — no write`, `sweep aborted`, `staged for approval`, `none`. |
+| **retryability** | `refs.retryable` | `false`, or when/how: `next scheduled tick`, `provider retry`. |
+| **exception** | alert `error` | Attached when one exists → captured in Sentry with the severity tag (cross-reference). |
+
+Living examples: `reportTenantScopeViolation` (SEV-0), `detectUsageAnomalies` (SEV-1/2), `reconciliation.alertDrift` (SEV-1), `cron-run.reportCronFailure` (SEV-2). Fail-open rule: emitting an alert can never change the caller's outcome — the seam swallows its own failures and counts them (`/api/health` → `checks.alerts.failed`).
 
 ## 8. Data deletion & backups (gap, scheduled)
 

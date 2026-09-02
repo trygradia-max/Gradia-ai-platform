@@ -15,6 +15,7 @@
  * the header doesn't match.
  */
 
+import { runCron } from "@/lib/cron-run"
 import {
   afterCatalogStage,
   catalogGateFor,
@@ -45,7 +46,7 @@ function unauthorized() {
   return new Response("Unauthorized", { status: 401 })
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/reminders] CRON_SECRET not configured")
@@ -212,3 +213,6 @@ async function stageReminder(
 
   return true
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("reminders", request, handle)

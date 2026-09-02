@@ -29,14 +29,16 @@ Not applicable.
 Plan/quota REQUIRES VERIFICATION; assumed inside the ~$0.50/shop infra line.
 
 ## Monitoring
+**Update 2026-09-01 (P0-012 built, autorun Batch 1):** the ops alert seam (`src/lib/alerts.ts`) cross-references Sentry — every alert with an attached exception is `captureException`-ed with tags `severity`, `source`, `ops_alert=true`; SEV-0/1 without an exception become `captureMessage`. Recommended alert rules for the founder to click through (not configured by code): (1) issue alert — tag `ops_alert:true` AND severity in {SEV-0, SEV-1} → notify immediately; (2) issue alert — new issue in `production` → daily digest; (3) metric alert — error events > 20 in 5 min → notify; (4) uptime monitor — `GET /api/health` expects 200 every 1–5 min (Sentry Uptime or any pinger); (5) Sentry Crons are optional — `/api/health` already carries per-cron heartbeats.
+
 Sentry *is* monitoring, but note the gap it does NOT cover: `monitoring.ts` anomaly detection (spend spikes, margin floors), reconciliation drift, and cron failures alert via **console only** — P0-012 wires those to a real destination. ~~Zero `error.tsx` boundaries~~ — resolved 2026-08-28 (P0-010, PR #27): root + `(dashboard)`-level `error.tsx`/`global-error.tsx`/`not-found.tsx` all render designed surfaces and report to Sentry via `captureException` (verified at acceptance).
 
 ## Test environment
 None established; REQUIRES VERIFICATION whether a separate Sentry env/DSN exists for preview deploys.
 
 ## Known audit gaps
-- Errors-only posture: no tracing (`tracesSampleRate: 0`), no structured logs, no health endpoint (P0-012/E10).
-- Alert rules → founder delivery unconfigured or unverified (P0-012 decision-queue item picks the destination).
+- Errors-only posture: no tracing (`tracesSampleRate: 0`), no structured logs (E10). ~~no health endpoint~~ — `GET /api/health` shipped with P0-012 (2026-09-01).
+- Alert rules → founder delivery: destination decided (D-042) and the seam built (P0-012, 2026-09-01); Production `OPS_ALERT_WEBHOOK_URL` + the Sentry rules above still REQUIRE the founder to set/verify.
 - Silent-degradation culture means many failures never throw, so Sentry never sees them — the deeper fix is the no-silent-failure standard in `08-security-and-reliability.md`.
 
 ## Backup or exit strategy

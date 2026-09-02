@@ -8,6 +8,7 @@
  * missing or mismatched.
  */
 
+import { runCron } from "@/lib/cron-run"
 import { runScheduledAgents } from "@/lib/agent-runtime"
 import { createServiceClient } from "@/lib/supabase/service"
 
@@ -19,7 +20,7 @@ function unauthorized() {
   return new Response("Unauthorized", { status: 401 })
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/agents] CRON_SECRET not configured")
@@ -49,3 +50,6 @@ export async function GET(request: Request) {
     )
   }
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("agents", request, handle)

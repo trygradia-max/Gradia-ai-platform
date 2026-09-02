@@ -10,6 +10,7 @@
  * Vercel cron auth: `Authorization: Bearer <CRON_SECRET>`. Fails closed.
  */
 
+import { runCron } from "@/lib/cron-run"
 import { planRetention, type RetentionJob } from "@/lib/recovery/retention"
 import { deleteJobBodies } from "@/lib/recovery/storage"
 import { forShop } from "@/lib/supabase/for-shop"
@@ -25,7 +26,7 @@ function unauthorized() {
   return new Response("Unauthorized", { status: 401 })
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/recovery-retention] CRON_SECRET not configured")
@@ -93,3 +94,6 @@ export async function GET(request: Request) {
     purged,
   })
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("recovery-retention", request, handle)

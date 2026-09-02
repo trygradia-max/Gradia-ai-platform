@@ -37,7 +37,7 @@ Every SEV-0 and SEV-1 (and any recurring SEV-2) gets a postmortem within one wee
 
 ## Known global gaps (apply to every incident until fixed)
 
-- **Alerts are console-only** — `monitoring.ts` anomalies, reconciliation drift, and cron failures page nobody until **P0-012** lands. Detection today is founder-initiated inspection or an owner report.
-- **No `/api/health`** endpoint until P0-012 — "is it up" checks are manual.
+- ~~**Alerts are console-only**~~ — **P0-012 built 2026-09-01 (autorun Batch 1):** `monitoring.ts` anomalies (SEV-1/2), `TENANT_SCOPE_VIOLATION` (SEV-0), reconciliation drift (SEV-1) and every cron failure (SEV-2) now emit through `src/lib/alerts.ts` to `OPS_ALERT_WEBHOOK_URL` (+ SMS for SEV-0/1). **Until the founder sets that variable in Production the gap stands** — the seam logs and `/api/health` reports `alerts.webhookConfigured: false`. Verify with `POST /api/admin/alert-test`.
+- ~~**No `/api/health`**~~ — **P0-012:** `GET /api/health` reports db reachability, alert-seam status and per-cron last success/failure + staleness (`degraded` / `down` with 503). Point the uptime pinger at it.
 - **No queue/dead-letter until P10 (E10)** — a failed cron sweep waits for the next tick; weekly jobs have no catch-up. Recovery steps must account for missed windows.
 - **Backups: Supabase platform PITR settings are REQUIRES VERIFICATION** (audit open question #17) — verify tier and retention *before* the first incident needs them (see `data-restore.md`).

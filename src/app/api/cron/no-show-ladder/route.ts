@@ -12,6 +12,7 @@
  * Vercel cron auth: `Authorization: Bearer <CRON_SECRET>`. Fails closed.
  */
 
+import { runCron } from "@/lib/cron-run"
 import {
   afterCatalogStage,
   catalogGateFor,
@@ -61,7 +62,7 @@ function formatWhen(iso: string, timezone: string | null): string {
   }
 }
 
-export async function GET(request: Request) {
+async function handle(request: Request) {
   const expected = process.env.CRON_SECRET?.trim()
   if (!expected) {
     console.error("[cron/no-show-ladder] CRON_SECRET not configured")
@@ -215,3 +216,6 @@ async function stageConfirm(
 
   return true
 }
+
+/** P0-012: every cron runs through one wrapper — heartbeat stamps + one ops alert on failure. */
+export const GET = (request: Request) => runCron("no-show-ladder", request, handle)
