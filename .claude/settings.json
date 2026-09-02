@@ -1,7 +1,6 @@
 {
   "permissions": {
     "deny": [
-      "Bash(git push*)",
       "Bash(git merge*)",
       "Bash(git rebase*)",
       "Bash(git reset --hard*)",
@@ -14,8 +13,6 @@
       "Bash(git checkout main*)",
       "Bash(git switch main*)",
       "Bash(gh pr merge*)",
-      "Bash(gh pr create*)",
-      "Bash(vercel env*)",
       "Bash(vercel --prod*)",
       "Bash(vercel deploy*)",
       "Bash(supabase db push*)",
@@ -24,7 +21,23 @@
       "Read(.playwright-mcp/**)",
       "Edit(.playwright-mcp/**)",
       "Edit(.env*)",
-      "Read(.env.local)"
+      "Read(.env.local)",
+      "Bash(git push origin main*)",
+      "Bash(git push * main*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(vercel env add*)",
+      "Bash(vercel env rm*)",
+      "Bash(vercel env pull*)"
+    ],
+    "allow": [
+      "Bash(vercel logs*)",
+      "Bash(vercel inspect*)",
+      "Bash(vercel ls*)",
+      "Bash(vercel env ls*)",
+      "Bash(gh pr create*)",
+      "Bash(gh pr checks*)",
+      "Bash(gh pr view*)"
     ]
   }
 }
