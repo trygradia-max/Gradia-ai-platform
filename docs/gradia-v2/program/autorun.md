@@ -25,12 +25,16 @@ Stack stays as is: Next.js/React/TypeScript · Supabase · Vercel · Stripe · T
 1. P0-011 founder acceptance (30 items in the handoff §27) → merge PR #29 → `git switch main && git pull`.
 2. Merge `docs/q22-site-v2-planning` (8e1af45) into main via a docs PR so main carries D-034/D-035 and the site-v2 plan. Autorun must not start on a main that lacks the pricing decisions.
 3. Organizer session: P0-011 docs closeout + record D-036…D-049 + cut the Batch-2 tickets (below).
-4. **Production env:** set `VAPI_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `AURINKO_CLIENT_ID`, `AURINKO_CLIENT_SECRET`, `CRON_SECRET`, `VAPI_DEFAULT_SHOP_ID` in Vercel Production. Every "Coming soon" tile in /settings is driven by these being absent (`settings/page.tsx:129-147`). Stripe price vars stay absent until P0-013 lands.
+4. **Production env:** set `VAPI_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `AURINKO_CLIENT_ID`, `AURINKO_CLIENT_SECRET`, `CRON_SECRET` in Vercel Production — **six vars, corrected 2026-09-02 at the Batch-1 close:** `VAPI_DEFAULT_SHOP_ID` was listed here by mistake; it is refused in Production (P0-007), confirmed absent (P0-010), and stays absent (PROD-CONFIG-AUDIT §3.6). Every "NOT AVAILABLE" tile in /settings (UX-001 replaced "Coming soon") is driven by these being absent. Stripe price vars stay absent until P0-013 lands.
 5. Confirm guardrails exist: `.claude/settings.json` deny list + `.git/hooks/pre-push` (founder pushes with `GRADIA_FOUNDER_PUSH=1`).
+6. **Preview access for the Builder (added 2026-09-02, rule 8):** Vercel CLI installed and logged into the Gradia team (`npx vercel login` — the founder's account, so `vercel logs` and `vercel env ls` work), and the browser tools available in the session. Without both, rule 8 cannot be satisfied and user-visible tickets end BUILT, not DONE.
 
 ## The queue (ordered — autorun works top-down, never skips, never reorders)
 
 ### Batch 1 — finish P0 (no new decisions needed) · branch `auto/batch-1`
+
+_Status 2026-09-02 (Organizer close): items **1, 2, 3, 3b, 3c done** — merged in PR #33 (squash `ff66cc9`), plus the out-of-queue Gmail fix PR #34 `cdb0c99` (Aurinko validation ping; see `autorun-log.md` UX-001 for the root-cause correction). Remaining: **3d PERF-001 → 4 P0-013**, on a fresh branch from `main` (suggested `auto/batch-1b`; `auto/batch-1` is merged and must not be reused). PERF-001 measures on the Vercel Preview per rule 8._
+
 | # | Ticket | Risk class | Founder acceptance? |
 |---|---|---|---|
 | 1 | **PROD-CONFIG-AUDIT** (new, docs-only output): enumerate every `process.env.X` read in `src/`, classify required/optional per code path, compare against `vercel env ls production` if the CLI is authenticated (else against `docs/env-setup.md`), and write `docs/gradia-v2/runbooks/production-config-audit.md` with a PRESENT / ABSENT / UNKNOWN table + which UI surfaces each absent var disables. No code changes. | none | no |
@@ -76,6 +80,7 @@ Stack stays as is: Next.js/React/TypeScript · Supabase · Vercel · Stripe · T
 5. **HARD STOP — halt the session and report** when any of these is true: the next ticket is marked "Founder acceptance YES" and the previous acceptance-gated ticket hasn't been merged; a needed decision isn't in the decision log; a migration would be destructive or non-reversible; the change touches `approvals.ts` executor semantics, `send-policy`, autonomy floors, `usage_events`/`credit_grants`/`payments` write paths, webhook signature verification, or `entitlements.ts` outside the ticket's stated scope; a ticket needs > 2× the files its scope lists; any Production/Vercel/Supabase-remote action would be required.
 6. Never: push, merge, rebase, `git add -A`, touch stashes, switch to main, edit `.env*`, read/modify `.playwright-mcp/`, edit `program/*.md` other than `autorun-log.md`, set env vars, create Stripe objects, start Batch N+1 before Batch N is merged.
 7. Session end = a HARD STOP, the batch complete, or context limit. Always end by writing the `- NEXT:` line in the log. Use exactly `- NEXT: HARD STOP — <reason>` or `- NEXT: BATCH COMPLETE — <batch>` when halting; the loop runner greps for those strings.
+8. **Preview + logs before DONE (added 2026-09-02, D-054 — from the Batch-1 Gmail root-cause miss).** No ticket that touches a **user-visible flow** — a page, a tile or card state, a connect/OAuth flow, a webhook that a user-facing state depends on, an approval path, onboarding — is **DONE** until the Builder has **exercised that exact flow on the Vercel Preview deployment with a real browser** and **read `vercel logs` for that deployment while doing it**, and has written what was seen into the ticket's log block (route · action · observed state · the relevant log lines). **Unit and integration tests alone are not acceptance for these tickets.** The Reviewer re-walks the same flow on the Preview before writing PASS. Mechanics: the Builder cannot push (rule 6), so after the commit the Result line reads `BUILT — Preview walk pending`; the Builder continues the queue (rule 5 still governs acceptance-gated ordering); at the start of the next session, after the founder's push, the Builder walks every BUILT ticket on the Preview first and only then rewrites its Result to DONE. If the Preview cannot be reached (no push yet, no CLI login, protected deployment) the ticket stays BUILT and the session's `- NEXT:` line says so — never DONE on tests alone. Tickets with no user-visible flow (docs, pure lib, cron internals, migrations with no UI) are exempt and say so explicitly in the log block.
 
 ## Reviewer (Cursor) in batch mode
 
@@ -83,7 +88,7 @@ One review session per batch branch, ticket by ticket in commit order. May add O
 
 ## Founder daily loop (~45 min)
 
-Morning: read `autorun-log.md` since yesterday. Push the batch branch (`GRADIA_FOUNDER_PUSH=1`), open/refresh the batch PR, watch CI. Run acceptance only for tickets flagged YES. Merge when green + reviewed + accepted. `git switch main && git pull`. Then an Organizer session does docs closeout for merged tickets and cuts the next batch's tickets if not yet cut. Evening: start the next autorun session.
+Morning: read `autorun-log.md` since yesterday. Push the batch branch (`GRADIA_FOUNDER_PUSH=1`), open/refresh the batch PR, watch CI. Hand the Preview URL to the next Builder session so rule-8 walks can happen (any ticket still `BUILT` is not done). Run acceptance only for tickets flagged YES. Merge when green + reviewed + accepted. `git switch main && git pull`. Then an Organizer session does docs closeout for merged tickets and cuts the next batch's tickets if not yet cut. Evening: start the next autorun session.
 
 ## Parallelism (two agents, two repos — never the same repo)
 

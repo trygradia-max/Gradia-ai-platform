@@ -23,7 +23,7 @@ Inbound email content (→ classify → staged lead/reply), outbound approved em
 OAuth via `/api/aurinko/auth/start` → callback: CSRF nonce cookie, open-redirect-guarded, state check, token exchange, webhook subscribe. Webhook: HMAC-SHA256 + 300s replay window, fail-closed.
 
 ## Webhooks
-`/api/aurinko/webhook` — inbound email notifications; shop resolved by `accountId`; own-mailbox copies skipped.
+`/api/aurinko/webhook` — inbound email notifications; shop resolved by `accountId`; own-mailbox copies skipped. **Subscription validation ping (fixed 2026-09-02, PR #34 `cdb0c99`):** when a subscription is created Aurinko POSTs `?validationToken=<random>` to the `notificationUrl` and requires the token echoed back as `text/plain` 200 within 30 s; the route answers that ping *before* signature verification (no body read, no DB) — until the fix it returned 401, `createMessagesSubscription` threw `subscription_failed` in the OAuth callback, and **no Gmail connection ever persisted**. Real notifications (no token) still require a valid `X-Aurinko-Signature`; an empty token is not a ping. Locked in `eval/webhooks.test.ts`.
 
 ## Rate limits
 REQUIRES VERIFICATION (Aurinko docs/dashboard).

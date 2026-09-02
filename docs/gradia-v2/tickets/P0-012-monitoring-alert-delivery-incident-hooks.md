@@ -7,7 +7,7 @@ P0-012
 E00 — Stabilization
 
 ## Status
-**ready-after-P0-002** (reconciled with the index 2026-07-27) — no technical dependencies; enters review only after P0-002 per the global review gate. One open decision noted: the founder's alert destination (Q-08). The delivery **seam** is built destination-agnostic so this does not block; wiring the real destination is the final step and needs the answer.
+**done — steps 1–5 — 2026-09-02** (Builder `12fe1b0` on `auto/batch-1`; Cursor PASS 2026-09-02 — fail-open on destination 500, 100× dedupe → 1 delivered, `/api/health` disclosure, wrong bearer on all nine crons; merged to `main` in PR #33 squash `ff66cc9`; one additive migration `20260901130000_cron_heartbeats.sql`, DB-sensitive slot released at close). **Step 6 is outstanding as a founder action** (`../program/backlog.md` Batch-1 residuals): `OPS_ALERT_WEBHOOK_URL` in Production + `POST /api/admin/alert-test` + written receipt; until then the seam is fail-open (console + Sentry) and says so on `/api/health`. _Was:_ **ready-after-P0-002** (reconciled with the index 2026-07-27) — no technical dependencies; enters review only after P0-002 per the global review gate. One open decision noted: the founder's alert destination (Q-08). The delivery **seam** is built destination-agnostic so this does not block; wiring the real destination is the final step and needs the answer.
 
 ## Priority
 P0 — Medium-high. Audit doc 00 names "quiet-degradation culture without alerting" a top-5 weakness: anomalies, reconciliation drift, and cron failures alert to console only — "failures are silent by design and nobody is paged."
