@@ -7,7 +7,7 @@ P0-013
 E00 — Stabilization (launch gate; cut 2026-08-28 at the P0-010 close)
 
 ## Status
-**draft — decision-gated.** May not enter implementation until the founder resolves the Q-22 commercial decisions (tier split, allowances, voice/pack disposition, timing, existing-shop treatment) — WIP rule 5 applies. **Launch-blocking before live paid billing activation:** the `STRIPE_PRICE_*` Production env vars stay unset (checkout fail-closed, proven at the P0-010 acceptance) until this ticket is implemented, reviewed, accepted, and ready for Production. Proceeds independently of — and does not block — P0-011/P0-012.
+**ready** (2026-09-01 — decision gate lifted by **D-034** (tier split + allowances) and **D-035** (trial); existing pilot shops grandfathered to `core`; interim trial = Stripe `trial_period_days: 14` with card required until the D-035 activation-gate machinery ships). Autorun Batch 1 item 4; Cursor review + founder acceptance required before merge; founder creates live Stripe products/prices. **Launch-blocking before live paid billing activation:** the `STRIPE_PRICE_*` Production env vars stay unset (checkout fail-closed, proven at the P0-010 acceptance) until this ticket is implemented, reviewed, accepted, and ready for Production. Proceeds independently of — and does not block — P0-011/P0-012.
 
 ## Priority
 P0 band, High. The code, Stripe products, entitlements, credits, margin report, UI copy, and tests all still encode the superseded Core $20 + Voice $29 model (C-14); the approved public lineup is Core $99 / Pro $149 / Operator $249 (D-031). Incorrect live customer charging is a launch-blocking concern; today it is prevented only by the deliberate absence of the price env vars.

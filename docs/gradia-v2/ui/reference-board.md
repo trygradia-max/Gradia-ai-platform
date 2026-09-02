@@ -53,3 +53,32 @@ Six reference systems recorded from the founder master product definition. Per t
 1. Organizer records it here with source, date, and the surface it informs.
 2. Write the adopt/reject lists BEFORE any build uses it.
 3. If adoption would require a token or type-scale change, that is a design-system amendment — it goes through the decision queue, not this board.
+
+## Stripe Dashboard — founder-designated reference for UX-001 (2026-09-01)
+
+_Source: founder screenshots of dashboard.stripe.com (Home, Customers empty state, Reports index, Payments analytics), saved in `ui/references/stripe-*.png`. Surface informed: every dashboard route in UX-001; the pattern list is the acceptance checklist. Founder's words: "same kind of layout and look, obviously with Gradia branding, tools and capabilities — super easy and clean." Not the wording, not the components, not the colors._
+
+### ADOPT (concrete patterns, mapped to Gradia)
+
+1. **Page = title + one-line purpose + sections with a heading and a one-sentence explanation.** Stripe's Reports page: "Track money movement — Understand the activity in your account…" then cards. Gradia: every route gets an H1, and every section a heading + one plain sentence saying what it does. Narrator voice from `copy-guidelines.md`.
+2. **Dismissable "lightbulb" tip bar under the title** — one sentence + one link + ✕. Gradia: one tip per route, shop-dismissable, fed from a small `tips.ts` map keyed by route; never more than one visible. This is the "tips around each feature" the founder asked for.
+3. **ⓘ tooltip next to every metric and card title** ("Gross volume ⓘ"). Gradia: every KPI on Home, every Approvals card type, every Settings card, every Receptionist builder field gets an ⓘ with ≤ 2 sentences. Use the existing tooltip primitive.
+4. **Designed empty states, centered, with icon + headline + one sentence + primary action** (Stripe Customers: "Add your first customer — Bill customers… [Learn more] [+ Add customer]"). Gradia: every list/table route (Customers, Conversations, Approvals, Activity, Calendar) uses this exact shape when empty; dashed-border containers for empty chart/metric areas ("No data"). Ties to `state-matrix.md`.
+5. **Filter chip row above lists** (All · Top customers · First-time · …). Gradia Customers: All · Needs follow-up · Quoted, not booked · Lapsed · Fleet; Conversations: All · Needs reply · Calls · Texts · Email.
+6. **Search at the top of the page, keyboard-first** — Stripe's global search + "N" shortcut on primary action. Gradia already has ⌘K/Whisper as the primary composer (locked); make sure the visible search field on Customers/Conversations is present and fast, and the primary action button shows its shortcut key.
+7. **Calm sidebar: short flat list, grouped by a small uppercase label, one active state, no icons competing with text.** Gradia keeps the shipped seven destinations; the grouped-label pattern is how the 9-item IA lands later (Q-23a) without clutter.
+8. **"Updated 4 seconds ago · More details" footer on every metric card.** Gradia Home analytics cards get a freshness line and a "More details" link — cheap trust.
+9. **Compare-to-previous-period controls on analytics** (Date range · Daily · Compare). Gradia Home: last 7 days / previous period only; no new chart types.
+10. **Lots of white space, hairline borders, one accent used for links/active state only.** Already the design-system rule; UX-001 enforces it where the current UI is denser than this.
+
+### DO NOT COPY
+
+- Stripe's product-family sidebar depth (Treasury / Payments / Billing sub-trees) — that is enterprise nav; Gradia stays at seven destinations.
+- Stripe's purple as Gradia's accent hue — Gradia keeps its own violet token; no hue changes.
+- Any Stripe wording, icons, or component code. Patterns only.
+- Metric-heavy Home. Gradia Home leads with "what needs attention" (approvals, today's jobs, open quotes), and the ROI receipt — not a wall of $0.00 cards.
+- Bottom developer bar / "Developers" mode.
+
+### Acceptance for UX-001 against this board
+
+Each dashboard route is checked against items 1–10 on the Vercel Preview by the founder. A route passes when: title + purpose line present · ≤ 1 tip bar · ⓘ on every metric/card title · empty state in the four-part shape · filter chips where a list exists · no stale copy · no "Connect" shown for a connected integration.
