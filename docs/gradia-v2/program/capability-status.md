@@ -33,4 +33,6 @@ _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capabi
 | 27 | Responsive PWA | P8 | planned | Responsive today; installable/offline PWA in E08 (D-020) |
 | 28 | Marketing website | P0–P8 | building | Claims discipline (D-028); category/headline decided (D-033); pricing page waits on Q-22 |
 
+_PROD-CONFIG-AUDIT (2026-09-01, autorun Batch 1 item 1, docs-only): production configuration inventory written to `../runbooks/production-config-audit.md` — 50 env reads classified; presence UNKNOWN for all but the recorded facts (Vercel CLI not available to the Builder); feeds P0-012, P0-013, CLEANUP-001, UX-001, E02-03/04 and recommends an ENV-VALIDATOR follow-up. No capability status changes._
+
 _Update rule: the Organizer edits this file when a capability's status transitions in 04 (with the acceptance evidence 04 requires), at sprint boundaries, and at every release. **This board is regenerated from 04's summary table whenever 04 changes — any phase/status drift between the two files is a defect** (reconciled 2026-07-27: 11 drifted rows corrected to match 04)._

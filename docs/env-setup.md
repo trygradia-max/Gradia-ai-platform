@@ -18,6 +18,8 @@ the code reads (verified 2026-06-01). Pairs with the per-provider runbooks:
   need a stable HTTPS origin. Set `GRADIA_DASHBOARD_URL` to your real domain —
   several absolute URLs (Slack links, Stripe redirects, `/billing`) derive from it.
 
+> 📋 **Production presence audit (2026-09-01, PROD-CONFIG-AUDIT):** `docs/gradia-v2/runbooks/production-config-audit.md` — every `process.env` read in `src/` classified required / required-for-feature / optional / deprecated, with the PRESENT · ABSENT · UNKNOWN table and exactly which UI surfaces each absent var disables. It also lists what is stale in this file (§3.3).
+
 > ⚠️ `.env.example` is currently **missing** four keys the code reads — add them:
 > `STRIPE_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `META_APP_ID`,
 > `VAPI_API_KEY`. (Ask me to sync the template.)

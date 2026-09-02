@@ -35,3 +35,9 @@ Per BUILD_REFERENCE §7 — a builder who does any of these has broken the syste
 3. An unwritten empty state.
 4. A percentage confidence score.
 5. Cinematic motion on a dashboard surface.
+
+## ICP amendment (2026-09-01 — D-036)
+
+**Who the panel is for, restated.** Under **D-036** the primary audience is the *established* automotive-appearance shop — multi-bay, two or more people, detailing / ceramic / PPF / tint — not the solo mobile detailer the original north star pictured glancing at a phone between jobs. The instrument-panel identity holds unchanged (dark, calm, one accent, real numbers in mono, a human yes before anything leaves the shop), but the owner is now often *not* the person at the car: an admin at the front desk and a tech in the bay read the same panel with different questions. Truthful state, inline "what this does" explanations, and designed empty/loading/error states (the Stripe-grade clarity bar enforced by UX-001 and PERF-001) are what make one panel serve three roles.
+
+**What does not change.** No new tokens, no new typeface, no new accent, no new design language — the shipped system (BUILD_REFERENCE + glass-box redesign) stays binding. Role-aware navigation (**D-048**: owner / admin / tech; E01-03) and the per-phase convergence toward the 9-item IA (**D-049**; see `navigation-model.md`) are the direction; each is a BUILD_REFERENCE amendment through the decision queue, never a silent addition.
