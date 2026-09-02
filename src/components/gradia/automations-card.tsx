@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { Loader2, Zap } from "lucide-react"
 import { toast } from "sonner"
 
@@ -36,9 +39,10 @@ export function AutomationsCard({ initial }: { initial: AutomationSettingsEntry[
   return (
     <Card className="border-border/60">
       <CardHeader>
-        <CardTitle className="font-display text-lg tracking-tight">
-          Automations
-        </CardTitle>
+        <CardTitle className="flex items-center gap-1.5 font-display text-lg tracking-tight">
+            Automations
+            <HelpTip label="Automations" text={STRINGS.help.settings.automations} />
+          </CardTitle>
         <p className="text-sm text-muted-foreground">
           Eight follow-ups that run themselves. Approval mode stages every
           message in Approvals; autopilot sends within your usual guardrails

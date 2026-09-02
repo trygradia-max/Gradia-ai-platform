@@ -21,6 +21,7 @@ import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
 import { listVoiceOptions } from "@/lib/voice-provider"
 import { ConnectionTile } from "@/components/gradia/connection-tile"
+import { HelpTip } from "@/components/gradia/help-tip"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { AutonomyDefaultCard } from "@/components/gradia/autonomy-default-card"
 import { SimulationModeCard } from "@/components/gradia/simulation-mode-card"
@@ -30,6 +31,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  connectionStatus,
+  integrationAvailability,
+} from "@/lib/data/connections"
 import { listServicesForCurrentShop } from "@/lib/data/services"
 import { listShopKnowledge } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
@@ -39,6 +44,7 @@ import { integrationEnabled } from "@/lib/features"
 import { getReviewLink } from "@/lib/review-link"
 import { readWorkingHours } from "@/lib/working-hours"
 import { requireShop } from "@/lib/shop"
+import { STRINGS } from "@/lib/strings"
 import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -114,22 +120,13 @@ export default async function SettingsPage({
   const mcpTokens = await listMcpTokensForCurrentShop()
   const baseUrl = await resolveWebhookBaseUrl()
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`
-  const vapiConfigured = Boolean(process.env.VAPI_API_KEY?.trim())
-  const aurinkoConfigured = Boolean(
-    process.env.AURINKO_CLIENT_ID?.trim() &&
-      process.env.AURINKO_CLIENT_SECRET?.trim()
-  )
-  const twilioConfigured = Boolean(
-    process.env.TWILIO_ACCOUNT_SID?.trim() &&
-      process.env.TWILIO_AUTH_TOKEN?.trim()
-  )
+  // One connection truth + one availability source (UX-001): the tiles, the
+  // cards below them, Home, and onboarding all read these same predicates.
+  const connection = connectionStatus(shop)
+  const availability = integrationAvailability()
   const stripeConfigured = Boolean(
     process.env.STRIPE_SECRET_KEY?.trim() &&
       process.env.STRIPE_CONNECT_CLIENT_ID?.trim()
-  )
-  const jobberConfigured = Boolean(
-    process.env.JOBBER_CLIENT_ID?.trim() &&
-      process.env.JOBBER_CLIENT_SECRET?.trim()
   )
 
   const params = await searchParams
@@ -235,8 +232,10 @@ export default async function SettingsPage({
               icon={Phone}
               name="Voice"
               description="Answers calls, quotes, and books — in our voice."
-              connected={Boolean(shop?.vapi_assistant_id)}
-              available={vapiConfigured}
+              connected={connection.voice.connected}
+              available={availability.voice}
+              unavailableReason={STRINGS.connections.notAvailableReason.voice}
+              help={STRINGS.help.settings.voice}
               connectedLabel="Assistant linked"
               connectedDetail="Answering calls"
               connectHref="#voice"
@@ -246,9 +245,14 @@ export default async function SettingsPage({
               icon={Mail}
               name="Email"
               description="Reads leads and drafts replies for our approval."
-              connected={Boolean(shop?.aurinko_account_email)}
-              available={aurinkoConfigured}
-              connectedLabel={shop?.aurinko_account_email}
+              connected={connection.email.connected}
+              available={availability.email}
+              unavailableReason={STRINGS.connections.notAvailableReason.email}
+              help={STRINGS.help.settings.email}
+              connectedLabel={
+                connection.email.identity ??
+                STRINGS.connections.identityFallback.email
+              }
               connectedDetail="Reading + drafting"
               connectHref="/api/aurinko/auth/start"
               popup
@@ -258,9 +262,11 @@ export default async function SettingsPage({
               icon={MessageSquare}
               name="SMS"
               description="Catches every text and drafts a reply in a minute."
-              connected={Boolean(shop?.twilio_phone_number)}
-              available={twilioConfigured}
-              connectedLabel={shop?.twilio_phone_number}
+              connected={connection.sms.connected}
+              available={availability.sms}
+              unavailableReason={STRINGS.connections.notAvailableReason.sms}
+              help={STRINGS.help.settings.sms}
+              connectedLabel={connection.sms.identity}
               connectedDetail="Texting back"
               connectHref="#sms"
               manageHref="#sms"
@@ -277,11 +283,11 @@ export default async function SettingsPage({
               icon={Calendar}
               name="Calendar"
               description="Puts approved bookings on our calendar."
-              connected={Boolean(shop?.aurinko_account_email)}
-              available={aurinkoConfigured}
-              connectedLabel={
-                shop?.aurinko_account_email ? "Google Calendar" : null
-              }
+              connected={connection.calendar.connected}
+              available={availability.calendar}
+              unavailableReason={STRINGS.connections.notAvailableReason.calendar}
+              help={STRINGS.help.settings.calendar}
+              connectedLabel={connection.calendar.identity}
               connectedDetail="On the books"
               connectHref="/api/aurinko/auth/start"
               popup
@@ -291,9 +297,14 @@ export default async function SettingsPage({
               icon={Briefcase}
               name="Jobs — Jobber"
               description="Pushes approved leads and bookings to Jobber."
-              connected={Boolean(shop?.jobber_account_name)}
-              available={jobberConfigured}
-              connectedLabel={shop?.jobber_account_name}
+              connected={connection.crm.connected}
+              available={availability.crm}
+              unavailableReason={STRINGS.connections.notAvailableReason.crm}
+              help={STRINGS.help.settings.crm}
+              connectedLabel={
+                connection.crm.identity ??
+                STRINGS.connections.identityFallback.crm
+              }
               connectedDetail="Synced to Jobber"
               connectHref="/api/jobber/auth/start"
               popup
@@ -336,24 +347,25 @@ export default async function SettingsPage({
             <VoiceBuilderCard
               shop={shop}
               voiceOptions={voiceOptions}
-              vapiConfigured={vapiConfigured}
+              vapiConfigured={availability.voice}
             />
           ) : null}
         </section>
 
         <section id="email">
           <EmailSettingsCard
-            initialAccountEmail={shop?.aurinko_account_email ?? null}
-            aurinkoConfigured={aurinkoConfigured}
+            initialConnected={connection.email.connected}
+            initialAccountEmail={connection.email.identity}
+            available={availability.email}
             callbackStatus={emailStatus}
           />
         </section>
 
         <section id="sms" className="space-y-4">
           <SmsSettingsCard
-            initialPhoneNumber={shop?.twilio_phone_number ?? null}
+            initialPhoneNumber={connection.sms.identity}
             webhookUrl={smsWebhookUrl}
-            twilioConfigured={twilioConfigured}
+            twilioConfigured={availability.sms}
             byoConnected={Boolean(
               shop?.twilio_account_sid_enc && shop?.twilio_auth_token_enc
             )}
@@ -379,8 +391,13 @@ export default async function SettingsPage({
 
         <section id="jobber">
           <JobberSettingsCard
-            initialAccountName={shop?.jobber_account_name ?? null}
-            jobberConfigured={jobberConfigured}
+            initialAccountName={
+              connection.crm.connected
+                ? (connection.crm.identity ??
+                  STRINGS.connections.identityFallback.crm)
+                : null
+            }
+            jobberConfigured={availability.crm}
             callbackStatus={jobberStatus}
           />
         </section>
@@ -399,8 +416,9 @@ export default async function SettingsPage({
         <section id="usage">
           <Card className="border-border/60">
             <CardHeader>
-              <CardTitle className="font-display text-lg tracking-tight">
+              <CardTitle className="flex items-center gap-1.5 font-display text-lg tracking-tight">
                 Plan &amp; usage
+                <HelpTip label="Plan and usage" text={STRINGS.help.settings.usage} />
               </CardTitle>
             </CardHeader>
             <CardContent>

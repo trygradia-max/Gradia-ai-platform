@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { useRouter } from "next/navigation"
 import { Loader2, Star } from "lucide-react"
 import { toast } from "sonner"
@@ -43,7 +46,10 @@ export function ReviewLinkCard({ initial }: { initial: string | null }) {
           <Star className="size-4" aria-hidden />
         </div>
         <div className="space-y-1">
-          <p className="font-medium text-foreground">Review link</p>
+          <p className="flex items-center gap-1.5 font-medium text-foreground">
+            Review link
+            <HelpTip label="Review link" text={STRINGS.help.settings.reviews} />
+          </p>
           <p className="max-w-prose text-sm text-muted-foreground">
             Paste your Google or Yelp review URL. When you ask a customer for a
             review, we&apos;ll include this link — sent the same way to everyone.

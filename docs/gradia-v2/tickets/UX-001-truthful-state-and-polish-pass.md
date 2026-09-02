@@ -105,3 +105,61 @@ Revert the commit; no data.
 
 ## Definition of done
 `../12-definition-of-done.md` (F in full) plus: root-cause statement in the close record with the regression test name; the stale-copy grep list with dispositions; state-matrix gaps table closed; founder visual review PASS recorded.
+
+---
+
+## Builder record — 2026-09-02 (autorun Batch 1, branch `auto/batch-1`)
+
+**Status line is the Organizer's to flip; this is the implementation record. Founder visual review on Preview (manual acceptance step 4) is still open and holds the ticket out of done.**
+
+### Root-cause statement (scope item 1)
+
+Four surfaces keyed "email connected" off `shops.aurinko_account_email`, a **display** attribute: the Settings Email and Calendar tiles (`settings/page.tsx`), the Email card (`email-settings-card.tsx`), the onboarding InboxStep (`onboarding-wizard.tsx` → `onboarding-launch-steps.tsx`) and the wizard resume predicate (`lib/onboarding.ts`). The Aurinko account fetch returns `email` as **optional** (`lib/aurinko.ts` `getAccount`: `email: obj.email ?? null`) and the OAuth callback stores it verbatim, so a fully successful connection can persist the credential pair (`aurinko_access_token_enc` + `aurinko_account_id` + `aurinko_subscription_id`) with `aurinko_account_email = null`. Home (`channels.ts`), Ask Gradia (`bi-tools.ts`) and the Receptionist prerequisites (`data/agents.ts`) keyed off the credential pair; the agent runtime and Gradia Agent keyed off the token alone. That is exactly the split the founder saw: Home "Live", Settings "Connect Gmail" — and onboarding resuming at step 3 forever. **Shop resolution was ruled out as the cause:** every surface resolves the shop through `requireShop()` (cookie-pinned shop if owned, else oldest owned), so a second shop row renders consistently *disconnected* on every surface and cannot produce a split; the Builder had no access to the founder's production row, so the founder's Preview check on their own shop is the confirming step. Fix at the root: `src/lib/data/connections.ts` — `connectionStatus(shop)` returns `{ email, calendar, sms, voice, crm }` as `{ connected, identity }` from **one** predicate set (credentials decide; identity is display-only and may be null), and `integrationAvailability()` is the one env-presence source. Regression tests: `eval/connection-truth.test.ts` ("founder repro: credentials on file + null display email → connected, identity null"; "inverse: a stale display email with no credentials is NOT connected"; the Home/Settings parity block; "founder repro renders Connected on the Settings tile AND Live on Home") and `eval/onboarding.test.ts` ("UX-001 founder repro: … inbox counts as done").
+
+### Stale-copy grep list with dispositions (scope item 2)
+
+| Hit | Disposition |
+|---|---|
+| `connection-tile.tsx` "Coming soon" badge + "We'll let you know the moment it's ready." | Replaced by the NOT AVAILABLE state: `STRINGS.connections.notAvailable` + per-integration `notAvailableReason`, no Connect control |
+| `email-settings-card.tsx` "Gmail coming soon" / "We're finishing email setup on our side — check back soon." | → `notAvailable` + `notAvailableReason.email`; card now takes `initialConnected` (truth) + `initialAccountEmail` (identity) + `available` |
+| `sms-settings-card.tsx` "Numbers coming soon" / "finishing texting setup" | → `notAvailable` + `notAvailableReason.sms` |
+| `voice-builder-card.tsx` "We're finishing voice setup on our side — check back soon." | → `notAvailableReason.voice` (Settings + onboarding step 5) |
+| `jobber-settings-card.tsx` "Jobber not configured" + `<code>JOBBER_CLIENT_ID</code> / <code>JOBBER_CLIENT_SECRET</code>` | → `notAvailable` + `notAvailableReason.crm`; env-var names removed from owner copy |
+| `stripe-settings-card.tsx` "Stripe not configured" + three env-var names | → `notAvailable` + `notAvailableReason.payments` (surface is flag-hidden; fixed for hygiene, scan-locked) |
+| `channels.ts` "Vapi-powered phone agent", "piped through Aurinko", "through Twilio", "via Aurinko" hints | Rewritten in product language (Home is owner-visible) |
+| `data/agents.ts` prerequisite labels "Vapi assistant connected…", "Gmail connected via Aurinko", "Twilio number…" ×2, "Google Calendar (via Aurinko)"; capability "Confirms deliveries via Twilio callbacks" | Rewritten (Receptionist page) |
+| `bi-tools.ts` setup-status reasons "Vapi voice receptionist…", "Gmail (via Aurinko)…", "Twilio number is wired up…" | Rewritten; predicates now from `connectionStatus()` |
+| `interaction-timeline.tsx` "Twilio error {code}" | → "Carrier error {code}" |
+| Slack (owner-visible) | 0 hits remain — CLEANUP-001 verified; broad scan locked |
+| **Not touched, recorded:** `approvals.ts` executor error strings ("Connect Gmail via Aurinko (in /settings)…" ×2, `Aurinko: ${err.message}`) | Executor module — HARD-STOP class for edits outside a ticket's stated scope; copy-only residual for the Organizer (owner sees these as approval failure toasts) |
+| **Not touched:** `mcp/server.ts` tool descriptions, `agent-planner.ts` prereq menu | Model-facing text — prompt-adjacent, eval-gated (D-009/#6), not owner-visible |
+| **Not touched:** `api/aurinko|jobber/auth/start` "X is not configured on this server yet." | HTTP 500 body on a hidden route (the Connect control is not rendered when unavailable) |
+
+### Inline help (scope item 3)
+
+`HelpTip` (`components/gradia/help-tip.tsx`) is a composition of the existing Tooltip primitive — real `<button aria-label="About …">`, keyboard-reachable, Escape closes, ≤ 2 sentences from `STRINGS.help` (recorded in `ui/component-inventory.md`). Placed on: every Settings ConnectionTile (5) and card title (Service menu, Working hours, Automations, Voice receptionist, Email, SMS, Jobber, Shop knowledge, Review link, Plan & usage, Internal MCP tokens, Clear demo data, How should we act?, Shadow Mode); every approval card type (8 — `STRINGS.help.approvals[action_type]`, rendered beside the card eyebrow); every voice-builder field (greeting, voice, tone, hours, after-hours, bookings, booking link, transfer number, minute budget) plus the "Going live" checklist. Reference-board ADOPT honored: ⓘ on every card title (§3), NOT-copy respected (patterns only). Not done in this ticket (recorded): the per-route dismissable tip bar (§2), KPI-tile ⓘ on Home (§3 second half), filter-chip rows on Customers/Conversations (§5), metric freshness footers (§8) — each is a small follow-up; the ticket's scope named Settings cards, approval types and the builder.
+
+**Discrepancy recorded:** the ticket cites an "11-type" `pending_actions` enum (`03-domain-model.md` §11); `PendingActionType` in code has **8** members. Help copy covers all 8 and the scan test derives the set from the type, so a 9th type fails the test until it has a help line.
+
+### Required states (scope item 4) — see `ui/state-matrix.md` "UX-001 required-states pass"
+
+`loading.tsx` added for `approvals/[id]`, `customers/[id]`, `customers/quotes/new`, `customers/recovery`, `receptionist/build` (flag-gated). Redirect stubs documented and test-locked: `agent`, `agents`, `agents/build`, `chat`, `leads`, `recovery`, `schedule`. Error coverage: `(dashboard)/error.tsx` + `not-found.tsx` (P0-010). Empty states: written on every real route (table in the state matrix); several remain inline rather than in `strings.ts` (LOW residual).
+
+### Parity test (scope item 5)
+
+`eval/connection-truth.test.ts` → "Home / Settings parity": for six seeded rows (empty, founder repro, fully wired, stale-email-only, sms-only, voice-only) `summarizeChannels(row)` statuses equal `connectionStatus(row)` for email/calendar/sms/voice, and the founder-repro row renders `data-connection-state="connected"` on the tile while Home reports `connected`.
+
+### Files
+
+New: `src/lib/data/connections.ts` · `src/components/gradia/help-tip.tsx` · 5 × `loading.tsx` · `eval/connection-truth.test.ts` · `eval/ux-001-truthful-state.test.ts`. Modified (src): `lib/data/channels.ts` (pure `summarizeChannels`) · `lib/onboarding.ts` · `lib/bi-tools.ts` · `lib/data/agents.ts` · `lib/owner-agent.ts` (channel checks only) · `lib/strings.ts` (`connections`, `help`) · `app/(dashboard)/settings/page.tsx` · `app/(dashboard)/customers/[id]/page.tsx` · `app/(dashboard)/approvals/[id]/page.tsx` · `app/onboarding/page.tsx` · components: `connection-tile`, `email-settings-card`, `sms-settings-card`, `jobber-settings-card`, `stripe-settings-card`, `voice-builder-card`, `onboarding-launch-steps`, `onboarding-wizard`, `approvals-list`, `interaction-timeline`, `service-menu-card`, `working-hours-card`, `automations-card`, `knowledge-settings-card`, `review-link-card`, `mcp-tokens-card`, `clear-demo-data-card`, `autonomy-default-card`, `simulation-mode-card`. Tests amended: `eval/onboarding.test.ts` (fixture carries the credential pair; +2 cases). Docs: `ui/state-matrix.md`, `ui/component-inventory.md`, `program/capability-status.md`, `runbooks/production-config-audit.md`, `tickets/P0-013-…md` (price-list check), this file. No schema, no migration, no price strings, no persona text.
+
+### Manual acceptance (DoD G)
+
+1. **Executed (Builder, locally via tests):** founder repro row (credentials present, display email null) → Settings tile `connected`, Home channel `connected`, Email card "Connected as Gmail" (identity fallback), onboarding resumes past step 3; disconnect shape (all null) → every surface `off`/Connect. Test names above.
+2. **Executed (Builder):** `integrationAvailability()` with env absent → tiles render NOT AVAILABLE with the honest line and no Connect (tile render test); env present + not connected → Connect.
+3. **Executed (Builder, source-level):** every real route has a skeleton (test-locked); empty states walked per the state-matrix table; error boundary present. **Not executed:** a browser walk with a seeded empty shop under a throttled network — assigned to the **founder** as part of step 4 (Preview), where the Preview deploy is the first real render.
+4. **Assigned — founder (visual review on Preview):** compare each dashboard route against the reference-board acceptance list; confirm the connection truth on the founder's own shop (Email tile + Home card + Email card all read Connected); record PASS/FAIL in `program/autorun-log.md`.
+
+### Residuals
+
+MEDIUM — `approvals.ts` executor toasts still say "Connect Gmail via Aurinko (in /settings)" (copy-only; Organizer to schedule with E02-03/E02-06 or a tiny copy ticket). LOW — reference-board ADOPT items §2 (tip bar), §5 (filter chips), §8 (freshness footers) and Home KPI ⓘ not in this ticket. LOW — empty-state copy on Customers/Calendar/Quotes/Pipeline is written but inline, not in `strings.ts`. LOW — Activity has no distinct "no results + Clear filters" state (chips reuse first-use copy). LOW — `agent-runtime.ts` gating still keys email off the token alone (execution path; fails honestly at token refresh) — align with `connectionStatus()` when the runtime is next touched. LOW — a2p-wizard has no ⓘ (four state-specific headers; `STRINGS.help.settings.carrier` is authored and ready).

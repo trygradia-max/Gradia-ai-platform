@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { useRouter } from "next/navigation"
 import { Check, Loader2, Mail, Plug } from "lucide-react"
 import { toast } from "sonner"
@@ -37,15 +40,22 @@ const CALLBACK_MESSAGES: Record<CallbackStatus, { kind: "success" | "error"; tex
 }
 
 export function EmailSettingsCard({
+  initialConnected,
   initialAccountEmail,
-  aurinkoConfigured,
+  available,
   callbackStatus,
 }: {
+  /** Connection truth from `connectionStatus()` — never the display email
+   *  (UX-001: a mailbox connected with no display email is still connected). */
+  initialConnected: boolean
+  /** Display identity; may be null while connected. */
   initialAccountEmail: string | null
-  aurinkoConfigured: boolean
+  /** Server-side availability (`integrationAvailability().email`). */
+  available: boolean
   callbackStatus: CallbackStatus | null
 }) {
   const router = useRouter()
+  const [connected, setConnected] = React.useState(initialConnected)
   const [accountEmail, setAccountEmail] = React.useState(initialAccountEmail)
   const [pending, setPending] = React.useState(false)
   const toastedRef = React.useRef(false)
@@ -62,7 +72,7 @@ export function EmailSettingsCard({
     router.replace("/settings#email", { scroll: false })
   }, [callbackStatus, router])
 
-  const isConnected = Boolean(accountEmail)
+  const isConnected = connected
 
   async function handleDisconnect() {
     setPending(true)
@@ -72,6 +82,7 @@ export function EmailSettingsCard({
       toast.error(result.error)
       return
     }
+    setConnected(false)
     setAccountEmail(null)
     toast.success("Email disconnected.")
   }
@@ -83,8 +94,9 @@ export function EmailSettingsCard({
           <Mail className="size-5 text-primary" aria-hidden />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-base font-medium">
+          <CardTitle className="flex items-center gap-1.5 text-base font-medium">
             Email receptionist
+            <HelpTip label="Email receptionist" text={STRINGS.help.settings.email} />
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Pipe inbound Gmail into Gradia&apos;s brain — every inquiry
@@ -106,7 +118,9 @@ export function EmailSettingsCard({
           <>
             <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm">
               <span className="text-muted-foreground">Connected as </span>
-              <span className="font-medium text-foreground">{accountEmail}</span>
+              <span className="font-medium text-foreground">
+                {accountEmail ?? STRINGS.connections.identityFallback.email}
+              </span>
             </div>
             <div className="flex items-center justify-end">
               <Button
@@ -133,7 +147,7 @@ export function EmailSettingsCard({
               read inbound messages and never send without your approval.
             </p>
             <div className="flex items-center justify-end">
-              {aurinkoConfigured ? (
+              {available ? (
                 <a
                   href="/api/aurinko/auth/start"
                   className={buttonVariants({ variant: "default" })}
@@ -143,13 +157,14 @@ export function EmailSettingsCard({
                 </a>
               ) : (
                 <Button type="button" disabled>
-                  Gmail coming soon
+                  {STRINGS.connections.notAvailable}
                 </Button>
               )}
             </div>
-            {!aurinkoConfigured ? (
-              <p className="text-xs text-status-warning-fg">
-                We&apos;re finishing email setup on our side — check back soon.
+            {!available ? (
+              // Honest NOT AVAILABLE (UX-001): a server setting, not a roadmap item.
+              <p className="text-xs text-muted-foreground">
+                {STRINGS.connections.notAvailableReason.email}
               </p>
             ) : null}
           </>

@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { useRouter } from "next/navigation"
 import { BookOpen, Loader2, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -132,8 +135,9 @@ export function KnowledgeSettingsCard({
           <BookOpen className="size-5 text-primary" aria-hidden />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-base font-medium">
+          <CardTitle className="flex items-center gap-1.5 text-base font-medium">
             Shop knowledge
+            <HelpTip label="Shop knowledge" text={STRINGS.help.settings.knowledge} />
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             FAQs, policies, brand voice — whatever we paste here gets

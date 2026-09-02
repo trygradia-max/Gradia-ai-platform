@@ -75,7 +75,8 @@ function pickStatusBadge(it: InteractionRow): StatusBadge | null {
       return {
         label: "Failed",
         tone: "bad",
-        hint: errorCode ? `Twilio error ${errorCode}` : null,
+        // Owner-facing: the carrier's code, not the vendor's name (UX-001).
+        hint: errorCode ? `Carrier error ${errorCode}` : null,
       }
     }
     if (status === "sent") return { label: "Sent", tone: "muted" }

@@ -6,6 +6,7 @@ import { PendingProposalEditor } from "@/components/gradia/pending-proposal-edit
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
 import { buttonVariants } from "@/components/ui/button"
 import { normalizePhone } from "@/lib/customers"
+import { connectionStatus } from "@/lib/data/connections"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { LeadStatus, PendingActionRow, ShopRow } from "@/lib/types/database"
@@ -201,7 +202,8 @@ async function resolveQuickReplyTarget(
     .eq("id", shopId)
     .single()
   const shop = shopRow as Pick<ShopRow, "twilio_phone_number"> | null
-  if (!shop?.twilio_phone_number) return null
+  // One connection truth (UX-001): same predicate as Home/Settings.
+  if (!connectionStatus(shop).sms.connected) return null
 
   return { toPhone: normalized, customerName }
 }

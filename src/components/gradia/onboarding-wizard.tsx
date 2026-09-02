@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
+import { connectionStatus } from "@/lib/data/connections"
 import { cn } from "@/lib/utils"
 import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
@@ -143,7 +144,8 @@ export function OnboardingWizard({
             ) : null}
             {step === 3 ? (
               <InboxStep
-                connectedEmail={liveShop?.aurinko_account_email ?? null}
+                connected={connectionStatus(liveShop).email.connected}
+                connectedEmail={connectionStatus(liveShop).email.identity}
                 onBack={() => goTo(2)}
                 onContinue={() => goTo(4)}
               />

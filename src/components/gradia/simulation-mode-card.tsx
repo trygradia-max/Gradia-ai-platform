@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { Check, FlaskConical, Radio } from "lucide-react"
 import { toast } from "sonner"
 
@@ -58,9 +61,10 @@ export function SimulationModeCard({
   return (
     <Card className="border-border/60">
       <CardHeader className="space-y-1">
-        <CardTitle className="font-display text-lg tracking-tight">
-          Shadow Mode
-        </CardTitle>
+        <CardTitle className="flex items-center gap-1.5 font-display text-lg tracking-tight">
+            Shadow Mode
+            <HelpTip label="Shadow Mode" text={STRINGS.help.settings.shadow} />
+          </CardTitle>
         <p className="text-sm text-muted-foreground">
           A safe switch for setup. In Shadow Mode we still read and draft, but we
           never queue anything for real send.

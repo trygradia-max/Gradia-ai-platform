@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -55,9 +58,10 @@ export function WorkingHoursCard({ initial }: { initial: WorkingHours }) {
   return (
     <Card className="border-border/60">
       <CardHeader>
-        <CardTitle className="font-display text-lg tracking-tight">
-          Working hours
-        </CardTitle>
+        <CardTitle className="flex items-center gap-1.5 font-display text-lg tracking-tight">
+            Working hours
+            <HelpTip label="Working hours" text={STRINGS.help.settings.hours} />
+          </CardTitle>
         <p className="text-sm text-muted-foreground">
           Sets when a day counts as overbooked on the Calendar, and what the
           receptionist tells callers about your hours.

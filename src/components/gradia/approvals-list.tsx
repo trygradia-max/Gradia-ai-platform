@@ -25,6 +25,7 @@ import {
   undoRejectFromDashboard,
 } from "@/app/actions/approvals"
 import type { AvailabilitySummary } from "@/lib/availability"
+import { HelpTip } from "@/components/gradia/help-tip"
 import { STRINGS } from "@/lib/strings"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
@@ -391,8 +392,12 @@ function ApprovalCard({
             <Icon className="size-[18px]" aria-hidden />
           </div>
           <div className="min-w-0 space-y-0.5">
-            <p className="label-eyebrow text-muted-foreground/70">
+            <p className="label-eyebrow flex items-center gap-1.5 text-muted-foreground/70">
               {meta.label}
+              <HelpTip
+                label={meta.label}
+                text={STRINGS.help.approvals[item.action_type]}
+              />
             </p>
             <div className="font-display text-lg leading-tight tracking-tight text-foreground">
               <ActionHeader item={item} />

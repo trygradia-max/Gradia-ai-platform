@@ -1,3 +1,4 @@
+import { connectionStatus, type ConnectionShopFields } from "@/lib/data/connections"
 import { FEATURES } from "@/lib/features"
 import { getOptionalShop, requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -69,12 +70,25 @@ export async function getChannelStatusForCurrentShop(): Promise<
     .eq("id", shopCtx.id)
     .single()
   const shop = (data as ShopRow | null) ?? null
+  return summarizeChannels(shop)
+}
 
+/**
+ * Pure derivation from a shop row — exported so the Home/Settings parity test
+ * can prove both surfaces read the same truth (UX-001). Every "connected"
+ * here comes from `connectionStatus()`; nothing in this module keeps its own
+ * predicate. Copy is owner-facing (Home): product names owners know (Gmail,
+ * Google Calendar), no vendor plumbing.
+ */
+export function summarizeChannels(
+  shop: (ConnectionShopFields & Partial<Pick<ShopRow, "stripe_account_id" | "stripe_charges_enabled">>) | null
+): ChannelSummary[] {
+  const status = connectionStatus(shop)
   const summaries = [
-    voiceSummary(shop),
-    emailSummary(shop),
-    smsSummary(shop),
-    calendarSummary(shop),
+    voiceSummary(status.voice.connected),
+    emailSummary(status.email.connected),
+    smsSummary(status.sms.connected),
+    calendarSummary(status.calendar.connected),
   ]
   // Payments (Stripe Connect customer billing) is hidden for the MVP; don't
   // count it toward setup progress or the setup pill would never reach "all live".
@@ -82,74 +96,62 @@ export async function getChannelStatusForCurrentShop(): Promise<
   return summaries
 }
 
-function voiceSummary(shop: ShopRow | null): ChannelSummary {
-  const connected = Boolean(shop?.vapi_assistant_id)
+function voiceSummary(connected: boolean): ChannelSummary {
   return {
     id: "voice",
     label: "Voice receptionist",
-    description: "Vapi-powered phone agent that captures leads, quotes services, and books appointments.",
+    description: "Answers calls, quotes from your menu, and proposes bookings.",
     status: connected ? "connected" : "off",
-    hint: connected
-      ? null
-      : "Paste your Vapi assistant ID + provision a phone number.",
+    hint: connected ? null : "Build your receptionist and connect a number in Settings.",
     href: "/settings#voice",
   }
 }
 
-function emailSummary(shop: ShopRow | null): ChannelSummary {
-  const connected = Boolean(
-    shop?.aurinko_access_token_enc && shop?.aurinko_account_id
-  )
+function emailSummary(connected: boolean): ChannelSummary {
   return {
     id: "email",
     label: "Email receptionist",
-    description: "Gmail inbox piped through Aurinko — every inquiry becomes a drafted reply waiting in your Approvals.",
+    description: "Reads your inbox — every inquiry becomes a drafted reply waiting in Approvals.",
     status: connected ? "connected" : "off",
-    hint: connected ? null : "Connect Gmail via OAuth in Settings.",
+    hint: connected ? null : "Connect Gmail in Settings.",
     href: "/settings#email",
   }
 }
 
-function smsSummary(shop: ShopRow | null): ChannelSummary {
-  const connected = Boolean(shop?.twilio_phone_number)
+function smsSummary(connected: boolean): ChannelSummary {
   return {
     id: "sms",
     label: "SMS receptionist",
-    description: "Inbound + outbound SMS through Twilio, with delivery-status callbacks.",
+    description: "Catches texts to your business number and drafts replies.",
     status: connected ? "connected" : "off",
-    hint: connected
-      ? null
-      : "Add your Twilio number + point its webhook at Gradia.",
+    hint: connected ? null : "Pick a business number in Settings.",
     href: "/settings#sms",
   }
 }
 
-function calendarSummary(shop: ShopRow | null): ChannelSummary {
-  // Calendar piggybacks on the Aurinko OAuth — same scope grant, so
-  // the deep-link points at the email card.
-  const connected = Boolean(
-    shop?.aurinko_access_token_enc && shop?.aurinko_account_id
-  )
+function calendarSummary(connected: boolean): ChannelSummary {
+  // Calendar shares the Gmail grant — same scope, one connection — so the
+  // deep-link points at the email card.
   return {
     id: "calendar",
     label: "Calendar",
-    description: "Google Calendar via Aurinko — bookings land here automatically.",
+    description: "Google Calendar — approved bookings land here automatically.",
     status: connected ? "connected" : "off",
-    hint: connected
-      ? null
-      : "Connects automatically when you connect Gmail above.",
+    hint: connected ? null : "Connects automatically when you connect Gmail.",
     href: "/settings#email",
   }
 }
 
-function paymentsSummary(shop: ShopRow | null): ChannelSummary {
+function paymentsSummary(
+  shop: Partial<Pick<ShopRow, "stripe_account_id" | "stripe_charges_enabled">> | null
+): ChannelSummary {
   if (!shop?.stripe_account_id) {
     return {
       id: "payments",
       label: "Payments",
-      description: "Stripe Connect — invoice customers from inside Gradia.",
+      description: "Invoice customers from inside Gradia.",
       status: "off",
-      hint: "Finish Stripe Connect onboarding.",
+      hint: "Finish payments onboarding.",
       href: "/settings#payments",
     }
   }
@@ -157,19 +159,18 @@ function paymentsSummary(shop: ShopRow | null): ChannelSummary {
     return {
       id: "payments",
       label: "Payments",
-      description: "Stripe Connect — invoice customers from inside Gradia.",
+      description: "Invoice customers from inside Gradia.",
       status: "partial",
-      hint: "Stripe needs more info before charges can run.",
+      hint: "A few more details are needed before charges can run.",
       href: "/settings#payments",
     }
   }
   return {
     id: "payments",
     label: "Payments",
-    description: "Stripe Connect — invoice customers from inside Gradia.",
+    description: "Invoice customers from inside Gradia.",
     status: "connected",
     hint: null,
     href: "/settings#payments",
   }
 }
-

@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/card"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { StatusPill } from "@/components/ui/status-pill"
+import { STRINGS } from "@/lib/strings"
 
 type CallbackStatus =
   | "ok"
@@ -306,15 +307,14 @@ export function StripeSettingsCard({
                       </Button>
                     ) : (
                       <Button type="button" disabled>
-                        Stripe not configured
+                        {STRINGS.connections.notAvailable}
                       </Button>
                     )}
                   </div>
                   {!stripeConfigured ? (
-                    <p className="text-xs text-status-warning-fg">
-                      Server is missing <code>STRIPE_SECRET_KEY</code> /{" "}
-                      <code>STRIPE_CONNECT_CLIENT_ID</code> /{" "}
-                      <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code>.
+                    // Honest NOT AVAILABLE (UX-001): owner terms, no env var names.
+                    <p className="text-xs text-muted-foreground">
+                      {STRINGS.connections.notAvailableReason.payments}
                     </p>
                   ) : null}
                 </>

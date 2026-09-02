@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
+import { connectionStatus } from "@/lib/data/connections"
 import { buildLookupOutcome, findPeopleInCrm } from "@/lib/find-person"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { searchCustomerMemory } from "@/lib/memory"
@@ -508,33 +509,34 @@ async function checkSetupStatus(
         .eq("shop_id", shopId),
     ])
 
+  // One connection truth (UX-001): the same predicates Home and Settings use,
+  // so "Ask Gradia" can never contradict the tiles. Owner-facing reasons name
+  // products the owner knows, not vendors.
+  const connection = connectionStatus(shop)
   const channels: ChannelStatus[] = [
     {
       channel: "voice",
-      connected: Boolean(shop?.vapi_assistant_id),
-      detail: shop?.vapi_assistant_id ?? null,
-      reason: shop?.vapi_assistant_id
-        ? "Vapi voice receptionist is provisioned."
-        : "No Vapi assistant on file yet — build one in Settings → Voice.",
+      connected: connection.voice.connected,
+      detail: null,
+      reason: connection.voice.connected
+        ? "The voice receptionist is set up and linked to this shop."
+        : "No voice receptionist yet — build one in Settings → Voice.",
     },
     {
       channel: "email",
-      connected: Boolean(
-        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
-      ),
-      detail: shop?.aurinko_account_email ?? null,
-      reason:
-        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
-          ? "Gmail (via Aurinko) is connected."
-          : "Gmail isn't connected yet — connect via Settings → Email.",
+      connected: connection.email.connected,
+      detail: connection.email.identity,
+      reason: connection.email.connected
+        ? "Gmail is connected."
+        : "Gmail isn't connected yet — connect via Settings → Email.",
     },
     {
       channel: "sms",
-      connected: Boolean(shop?.twilio_phone_number),
-      detail: shop?.twilio_phone_number ?? null,
-      reason: shop?.twilio_phone_number
-        ? "Twilio number is wired up for inbound + outbound SMS."
-        : "No SMS number yet — pick one in Settings → SMS.",
+      connected: connection.sms.connected,
+      detail: connection.sms.identity,
+      reason: connection.sms.connected
+        ? "A business number is connected for inbound + outbound texting."
+        : "No business number yet — pick one in Settings → SMS.",
     },
     {
       channel: "payments",
@@ -548,14 +550,11 @@ async function checkSetupStatus(
     },
     {
       channel: "calendar",
-      connected: Boolean(
-        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
-      ),
+      connected: connection.calendar.connected,
       detail: null,
-      reason:
-        shop?.aurinko_access_token_enc && shop?.aurinko_account_id
-          ? "Google Calendar inherits from the Gmail connection."
-          : "Calendar lights up automatically when Gmail is connected.",
+      reason: connection.calendar.connected
+        ? "Google Calendar inherits from the Gmail connection."
+        : "Calendar lights up automatically when Gmail is connected.",
     },
   ]
   const connectedCount = channels.filter((c) => c.connected).length

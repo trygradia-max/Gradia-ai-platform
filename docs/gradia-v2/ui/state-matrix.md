@@ -35,3 +35,28 @@ Additional invariants:
 ## Reviewer usage
 
 The Cursor Reviewer runs this matrix against every diff that touches a user-facing surface: identify the surface type, walk the column, demand evidence (screenshot, storybook-less manual check, or test) for each ● the diff introduces or modifies. A missing state is a review block, not a follow-up ticket.
+
+## UX-001 required-states pass — closed 2026-09-02 (autorun Batch 1, item 3c)
+
+Every real `(dashboard)` route walked against the matrix; redirect stubs get nothing. Locked by `eval/ux-001-truthful-state.test.ts` (every real page has its own `loading.tsx`; the stub set is exactly the seven below; skeletons never spin).
+
+**Redirect stubs (no states by design):** `agent`, `agents`, `agents/build`, `chat`, `leads`, `recovery`, `schedule`.
+
+| Route | Loading | Empty (written) | Error | Notes |
+|---|---|---|---|---|
+| `/dashboard` | ● existing | ● per module — booked-today (`STRINGS`), live-lead feed, channel card, home feed hides when nothing is pending | ● `(dashboard)/error.tsx` | Channel card now reads `connectionStatus()` — same truth as Settings |
+| `/approvals` | ● existing | ● all-done (`STRINGS.empty.approvalsEmpty`) | ● | Every card type carries an ⓘ help line (`STRINGS.help.approvals`) |
+| `/approvals/[id]` | ● **new** | n/a (not-found on a missing row) | ● | |
+| `/activity` | ● existing | ● first-use (`STRINGS.empty.activityFirstUse`); filter chips | ● | No-results reuses the first-use copy; a dedicated "Clear filters" state is a LOW residual |
+| `/conversations` | ● existing | ● first-use (`STRINGS.empty.conversationsFirstUse`) | ● | |
+| `/customers` | ● existing | ● table first-use + no-results (Customers), board + quotes list first-use | ● | Copy is written but still inline in `customers-table.tsx` / `pipeline-board.tsx` / `quotes-list.tsx` — migration to `strings.ts` is a LOW residual |
+| `/customers/[id]` | ● **new** | ● per section (channels / leads / appointments) inline | ● | |
+| `/customers/quotes/new` | ● **new** | ● builder handles no-services / no-size-class inline | ● | |
+| `/customers/recovery` | ● **new** | ● flow states (dropzone → review → done) | ● | Flag-gated (`customerRecovery`) |
+| `/calendar` | ● existing | ● week empty (inline in `calendar-week.tsx`) | ● | |
+| `/calls/[callId]` | ● existing | ● no-summary (`STRINGS.pages.call.noSummary`) | ● | |
+| `/receptionist` | ● existing | ● catalog always renders the four capability groups | ● | Prerequisite labels name products, not vendors |
+| `/receptionist/build` | ● **new** | ● builder empty ("No sample drafts…") | ● | Flag-gated (`workflowBuilder`, off) |
+| `/settings` | ● existing | ● tiles: CONNECTED / CONNECT / **NOT AVAILABLE** (honest reason, no dead control); knowledge + services empties | ● | Every card title carries an ⓘ (`STRINGS.help.settings`) |
+
+**Integration-unavailable (ConnectionTile pattern) — amended:** the third state is now NOT AVAILABLE, rendered from `integrationAvailability()` + `STRINGS.connections.notAvailableReason`; it names what is missing in owner terms and never shows "Coming soon" (a server setting is not a roadmap item — D-025/D-028).

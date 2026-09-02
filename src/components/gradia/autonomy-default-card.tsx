@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+
+import { HelpTip } from "@/components/gradia/help-tip"
+import { STRINGS } from "@/lib/strings"
 import { Check, ShieldCheck, Zap } from "lucide-react"
 import { toast } from "sonner"
 
@@ -59,9 +62,10 @@ export function AutonomyDefaultCard({
   return (
     <Card className="border-border/60">
       <CardHeader className="space-y-1">
-        <CardTitle className="font-display text-lg tracking-tight">
-          How should we act?
-        </CardTitle>
+        <CardTitle className="flex items-center gap-1.5 font-display text-lg tracking-tight">
+            How should we act?
+            <HelpTip label="How should we act?" text={STRINGS.help.settings.autonomy} />
+          </CardTitle>
         <p className="text-sm text-muted-foreground">
           The default new agents inherit. You can still set any single agent
           differently on the Agents page.
