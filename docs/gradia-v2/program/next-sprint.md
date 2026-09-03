@@ -1,5 +1,8 @@
 # Program — Next Sprint
 
+> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+
+
 _Created 2026-07-25 by the Organizer. Sprint 2 candidate scope — contingent on Sprint 1 completing (P0-001 + P0-002 done and reviewed). Not started; the Organizer promotes this to `current-sprint.md` when Sprint 1 closes._
 
 _Updated 2026-07-30: **P0-002 is done** (merged PR #9, reviewed APPROVE — evidence in the ticket's completion record). The P0-003 entry condition below is therefore satisfied: P0-003 is the **next active implementation ticket** and may be slotted as soon as WIP limits allow. Implementation has not started. P0-001 remains in-review, so Sprint 1 is not yet closed._

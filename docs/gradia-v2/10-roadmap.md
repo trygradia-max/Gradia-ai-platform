@@ -1,5 +1,8 @@
 # 10 — Roadmap (P0–P10)
 
+> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+
+
 _The one ordered roadmap. Supersedes, as the ordering authority: audit doc 12's time-boxed plan, `GRADIA_MVP_PLAN.md` §4 phases (complete), `IMPLEMENTATION_PLAN.md`, and the P0–P9 queue in the sharpening/telephony/recovery/CRM specs (those remain the feature-content sources). Epics live in `epics/`; tickets in `tickets/`; live sprint state in `program/`._
 
 Phases are sequential by default; a later phase may start only when its dependencies (not the whole prior phase) are done. The 2026-08-07 alpha sits inside P0.

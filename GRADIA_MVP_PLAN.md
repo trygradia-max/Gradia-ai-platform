@@ -1,5 +1,8 @@
 # Gradia — MVP Rethink & Build Spec
 
+> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+
+
 _Authored 2026-06-01. This is the working source of truth for the refreshed MVP._
 _Where this doc conflicts with `PROJECT_BRIEF.md`, **this doc wins** — the brief describes the original 7-agent vision and is kept for history._
 

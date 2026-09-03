@@ -1,5 +1,8 @@
 # Program — Current Sprint
 
+> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+
+
 _Created 2026-07-25 by the Organizer. Sprint 1 (P0 Stabilization). Started 2026-07-25 · target: alpha 2026-08-07 (**date-vs-gate policy open — Q-25 in `decision-queue.md`**; do not silently relax the P0 exit gate). Governs live sprint state; tickets in `../tickets/`, limits also mirrored in `work-in-progress.md`._
 
 ## Sprint goal

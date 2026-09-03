@@ -1,5 +1,8 @@
 # Program — AUTORUN (batch build mode)
 
+> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+
+
 _Created 2026-09-01 by the founder's Cowork session. This file is the control layer for running Claude Code in auto mode across MANY tickets in one session. It sits on top of the lane model (Builder/Reviewer/Organizer/Founder) — it does not replace it; it batches it. When this file and a ticket disagree, the ticket wins on scope; this file wins on process._
 
 ## Why this exists

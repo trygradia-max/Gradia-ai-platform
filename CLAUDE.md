@@ -1,3 +1,5 @@
+> **READ FIRST: `CONTEXT.md` in this directory.** It is the single source of truth for what Gradia is, what is in scope, and what gets built next. It outranks every other plan or roadmap in this repo. Read it before anything else and pick work only from its build list.
+
 @AGENTS.md
 @PROJECT_BRIEF.md
 @GRADIA_MVP_PLAN.md
