@@ -1,3 +1,5 @@
+import { cache } from "react"
+
 import { connectionStatus, type ConnectionShopFields } from "@/lib/data/connections"
 import { FEATURES } from "@/lib/features"
 import { getOptionalShop, requireShop } from "@/lib/shop"
@@ -57,21 +59,22 @@ export async function getChannelProgressForCurrentShop(): Promise<ChannelProgres
 /**
  * Snapshot of every integration's wiring state for the current shop.
  * Drives the dashboard "Connect your channels" widget and is cheap
- * to compute — one SELECT, then derivations.
+ * to compute — one SELECT, then derivations. Memoized per request
+ * (PERF-001): Home, the setup pill and the welcome card all ask.
  */
-export async function getChannelStatusForCurrentShop(): Promise<
-  ChannelSummary[]
-> {
-  const shopCtx = await requireShop()
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("shops")
-    .select("*")
-    .eq("id", shopCtx.id)
-    .single()
-  const shop = (data as ShopRow | null) ?? null
-  return summarizeChannels(shop)
-}
+export const getChannelStatusForCurrentShop = cache(
+  async (): Promise<ChannelSummary[]> => {
+    const shopCtx = await requireShop()
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("shops")
+      .select("*")
+      .eq("id", shopCtx.id)
+      .single()
+    const shop = (data as ShopRow | null) ?? null
+    return summarizeChannels(shop)
+  }
+)
 
 /**
  * Pure derivation from a shop row — exported so the Home/Settings parity test

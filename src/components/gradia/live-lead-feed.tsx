@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { ScoredLead } from "@/lib/data/leads"
+import { STRINGS } from "@/lib/strings"
 import type { LeadRow, LeadStatus } from "@/lib/types/database"
 
 const STATUS_LABEL: Record<LeadStatus, string> = {
@@ -56,10 +57,15 @@ const row: Variants = {
 
 export function LiveLeadFeed({
   leads,
+  total,
 }: {
   leads: (LeadRow | ScoredLead)[]
+  /** Exact count of the shop's leads; when it exceeds the rows shown the
+   *  feed links to the full list instead of rendering it (PERF-001). */
+  total?: number
 }) {
   const reduce = useReducedMotion()
+  const hidden = Math.max(0, (total ?? leads.length) - leads.length)
   const hasHeat = leads.some(
     (l): l is ScoredLead =>
       "heat" in (l as ScoredLead) && Boolean((l as ScoredLead).heat)
@@ -168,6 +174,14 @@ export function LiveLeadFeed({
           </div>
         )}
       </MotionCard>
+      {hidden > 0 ? (
+        <Link
+          href="/customers"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          {STRINGS.pages.home.leadFeedSeeAll(total ?? leads.length)}
+        </Link>
+      ) : null}
     </section>
   )
 }

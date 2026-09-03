@@ -68,7 +68,11 @@ export async function loadTodayMoney(): Promise<TodayMoneyData> {
   const dayStart = new Date(new Date(now).setHours(0, 0, 0, 0)).toISOString()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-  const [bookedRes, completedRes, leadsRes, quotesRes, lostRes, reviewRes, runsRes] =
+  // PERF-001: one parallel block for every independent read (the all-leads
+  // select used to run as a separate sequential stage), then ONE parallel
+  // block for the three follow-ups that depend on it — three stages instead
+  // of five on the Home critical path.
+  const [bookedRes, completedRes, leadsRes, quotesRes, lostRes, reviewRes, runsRes, allLeadsRes] =
     await Promise.all([
       // Booked this week: jobs created this week, with a quoted amount.
       supabase
@@ -115,6 +119,12 @@ export async function loadTodayMoney(): Promise<TodayMoneyData> {
         .eq("shop_id", shop.id)
         .gte("created_at", monthStart)
         .limit(2000),
+      // Pipeline value input: live-stage cards' linked quote totals (or est value).
+      supabase
+        .from("leads")
+        .select("id, status, stage, quote_id, est_value_cents")
+        .eq("shop_id", shop.id)
+        .limit(1000),
     ])
 
   // Money row — every leg tolerates pre-C1 (missing tables → zeros).
@@ -129,23 +139,7 @@ export async function loadTodayMoney(): Promise<TodayMoneyData> {
   )
     .map((r) => String(r.metadata?.appointment_id ?? ""))
     .filter(Boolean)
-  let completedThisWeekCents = 0
-  if (completedIds.length > 0) {
-    const { data: completedJobs } = await supabase
-      .from("appointments")
-      .select("quoted_amount_cents")
-      .in("id", completedIds)
-    completedThisWeekCents = (
-      (completedJobs as { quoted_amount_cents: number | null }[] | null) ?? []
-    ).reduce((s, j) => s + (j.quoted_amount_cents ?? 0), 0)
-  }
 
-  // Pipeline value: live-stage cards' linked quote totals (or est value).
-  const { data: allLeads } = await supabase
-    .from("leads")
-    .select("id, status, stage, quote_id, est_value_cents")
-    .eq("shop_id", shop.id)
-    .limit(1000)
   type LeadLite = {
     id: string
     status: string
@@ -153,21 +147,38 @@ export async function loadTodayMoney(): Promise<TodayMoneyData> {
     quote_id?: string | null
     est_value_cents?: number | null
   }
-  const leads = (allLeads as LeadLite[] | null) ?? []
+  const leads = (allLeadsRes.data as LeadLite[] | null) ?? []
   const live: CrmStage[] = ["new", "needs_quote", "quote_sent", "follow_up"]
   const liveLeads = leads.filter((l) =>
     live.includes(l.stage ?? stageFromLegacyStatus(l.status))
   )
   const quoteIds = liveLeads.map((l) => l.quote_id).filter((x): x is string => Boolean(x))
+
+  const runs = (runsRes.data as { lead_id: string | null }[] | null) ?? []
+  const runLeadIds = [
+    ...new Set(runs.map((r) => r.lead_id).filter((x): x is string => Boolean(x))),
+  ]
+
+  // Second stage — the three follow-ups are independent of each other.
+  const [completedJobsRes, liveQuotesRes, touchedLeadsRes] = await Promise.all([
+    completedIds.length > 0
+      ? supabase.from("appointments").select("quoted_amount_cents").in("id", completedIds)
+      : Promise.resolve({ data: null }),
+    quoteIds.length > 0
+      ? supabase.from("quotes").select("id, total_cents").in("id", quoteIds)
+      : Promise.resolve({ data: null }),
+    runLeadIds.length > 0
+      ? supabase.from("leads").select("id, status, stage, quote_id").in("id", runLeadIds)
+      : Promise.resolve({ data: null }),
+  ])
+
+  const completedThisWeekCents = (
+    (completedJobsRes.data as { quoted_amount_cents: number | null }[] | null) ?? []
+  ).reduce((s, j) => s + (j.quoted_amount_cents ?? 0), 0)
+
   const quoteCents = new Map<string, number>()
-  if (quoteIds.length > 0) {
-    const { data: q } = await supabase
-      .from("quotes")
-      .select("id, total_cents")
-      .in("id", quoteIds)
-    for (const row of (q as Pick<QuoteRow, "id" | "total_cents">[] | null) ?? []) {
-      quoteCents.set(row.id, row.total_cents)
-    }
+  for (const row of (liveQuotesRes.data as Pick<QuoteRow, "id" | "total_cents">[] | null) ?? []) {
+    quoteCents.set(row.id, row.total_cents)
   }
   const pipelineValueCents = liveLeads.reduce(
     (s, l) => s + (l.quote_id ? (quoteCents.get(l.quote_id) ?? 0) : (l.est_value_cents ?? 0)),
@@ -190,18 +201,10 @@ export async function loadTodayMoney(): Promise<TodayMoneyData> {
     [...reasonCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
 
   // Attribution (this month) — the retention line, under-claimed.
-  const runs = (runsRes.data as { lead_id: string | null }[] | null) ?? []
-  const runLeadIds = [
-    ...new Set(runs.map((r) => r.lead_id).filter((x): x is string => Boolean(x))),
-  ]
   const stageById = new Map<string, CrmStage>()
   const quoteCentsByLead = new Map<string, number>()
   if (runLeadIds.length > 0) {
-    const { data: touchedLeads } = await supabase
-      .from("leads")
-      .select("id, status, stage, quote_id")
-      .in("id", runLeadIds)
-    const touched = (touchedLeads as LeadLite[] | null) ?? []
+    const touched = (touchedLeadsRes.data as LeadLite[] | null) ?? []
     const touchedQuoteIds = touched
       .map((l) => l.quote_id)
       .filter((x): x is string => Boolean(x))

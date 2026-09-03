@@ -156,6 +156,9 @@ const TONE_STYLE: Record<
   },
 }
 
+/** Cards drawn per page of the queue (PERF-001); "Show N more" adds a page. */
+const APPROVALS_PAGE = 12
+
 export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[] }) {
   const router = useRouter()
   const reduce = useReducedMotion()
@@ -166,19 +169,31 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
   const [removed, setRemoved] = React.useState<Set<string>>(new Set())
   // Guards a double-tap in the window before the card animates away.
   const inFlight = React.useRef<Set<string>>(new Set())
+  // PERF-001: handlers read the latest server list through a ref so they stay
+  // referentially stable — that lets ApprovalCard be memoized, so tapping one
+  // card re-renders one card, not all sixty (baseline: 216 ms to next paint
+  // on a 4× throttled CPU — PERF-001 ticket §Measurements).
+  const serverItemsRef = React.useRef(serverItems)
+  React.useEffect(() => {
+    serverItemsRef.current = serverItems
+  }, [serverItems])
 
-  const visible = serverItems.filter((i) => !removed.has(i.id))
+  // PERF-001: draw the queue a page at a time. Every card is a memoized
+  // ApprovalCard, but a 60-card list still costs React a reconcile and the
+  // browser a layout on every decision (179 ms to next paint on a 4× throttled
+  // CPU with all 59 cards mounted). The page header already says the true
+  // pending count; the rest is one tap away and never silently hidden.
+  const [pageSize, setPageSize] = React.useState(APPROVALS_PAGE)
+  const open = serverItems.filter((i) => !removed.has(i.id))
+  const visible = open.slice(0, pageSize)
+  const remaining = open.length - visible.length
 
-  if (visible.length === 0) {
-    return <EmptyState />
-  }
-
-  async function handleDecision(
+  const handleDecision = React.useCallback(async function handleDecision(
     id: string,
     decision: "approve" | "reject"
   ): Promise<void> {
     if (inFlight.current.has(id)) return
-    if (!serverItems.some((i) => i.id === id)) return
+    if (!serverItemsRef.current.some((i) => i.id === id)) return
     inFlight.current.add(id)
 
     // Optimistic: hide the card now; "Sent ✓" is implied by the toast.
@@ -257,13 +272,16 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     // card is already gone, so this never blocks the interaction.
     inFlight.current.delete(id)
     router.refresh()
-  }
+  }, [router])
 
   // P0-004 / D-016: "Book it anyway" — approve through a known conflict with
   // a recorded reason. Same optimistic pattern as a normal approve.
-  async function handleOverride(id: string, reason: string): Promise<void> {
+  const handleOverride = React.useCallback(async function handleOverride(
+    id: string,
+    reason: string
+  ): Promise<void> {
     if (inFlight.current.has(id)) return
-    if (!serverItems.some((i) => i.id === id)) return
+    if (!serverItemsRef.current.some((i) => i.id === id)) return
     inFlight.current.add(id)
     setRemoved((prev) => new Set(prev).add(id))
     const rollback = () => {
@@ -296,46 +314,66 @@ export function ApprovalsList({ items: serverItems }: { items: PendingActionRow[
     }
     inFlight.current.delete(id)
     router.refresh()
+  }, [router])
+
+  if (open.length === 0) {
+    return <EmptyState />
   }
 
   return (
-    <PageStagger className="grid gap-3">
-      <AnimatePresence initial={false}>
-        {visible.map((item) => {
-          const meta = ACTION_META[item.action_type]
-          const isEditRequested = item.status === "edit_requested"
+    <div className="space-y-4">
+      <PageStagger className="grid gap-3">
+        <AnimatePresence initial={false}>
+          {visible.map((item) => {
+            const meta = ACTION_META[item.action_type]
+            const isEditRequested = item.status === "edit_requested"
 
-          return (
-            <motion.div
-              key={item.id}
-              layout={!reduce}
-              exit={
-                reduce
-                  ? { opacity: 0 }
-                  : { opacity: 0, x: 24, transition: { duration: 0.15 } }
-              }
-            >
-              <StaggerItem>
-                <ApprovalCard
-                  item={item}
-                  meta={meta}
-                  isEditRequested={isEditRequested}
-                  approveBusy={false}
-                  rejectBusy={false}
-                  anyBusy={false}
-                  onDecision={handleDecision}
-                  onOverride={handleOverride}
-                />
-              </StaggerItem>
-            </motion.div>
-          )
-        })}
-      </AnimatePresence>
-    </PageStagger>
+            return (
+              <motion.div
+                key={item.id}
+                // PERF-001: position-only layout animation — siblings slide up
+                // without framer re-measuring every card's size on each change.
+                layout={reduce ? false : "position"}
+                exit={
+                  reduce
+                    ? { opacity: 0 }
+                    : { opacity: 0, x: 24, transition: { duration: 0.15 } }
+                }
+              >
+                <StaggerItem>
+                  <ApprovalCard
+                    item={item}
+                    meta={meta}
+                    isEditRequested={isEditRequested}
+                    approveBusy={false}
+                    rejectBusy={false}
+                    anyBusy={false}
+                    onDecision={handleDecision}
+                    onOverride={handleOverride}
+                  />
+                </StaggerItem>
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </PageStagger>
+      {remaining > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full sm:w-auto"
+          onClick={() => setPageSize((n) => n + APPROVALS_PAGE)}
+        >
+          {STRINGS.pages.approvals.showMore(remaining)}
+        </Button>
+      ) : null}
+    </div>
   )
 }
 
-function ApprovalCard({
+/** Memoized (PERF-001): props are the row + stable callbacks, so a decision
+ *  on one card leaves the other cards' render output untouched. */
+const ApprovalCard = React.memo(function ApprovalCard({
   item,
   meta,
   isEditRequested,
@@ -529,7 +567,7 @@ function ApprovalCard({
       ) : null}
     </MotionCard>
   )
-}
+})
 
 /** P0-004 conflict rendering — icon + text (never color alone). Blocking
  *  conflicts warn; advisory findings note; a failed check says "unverified"

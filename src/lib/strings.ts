@@ -136,6 +136,13 @@ export const STRINGS = {
       activityEyebrow: "Recent activity",
       activityTitle: "What just happened",
       activityViewAll: "See all activity",
+      /** PERF-001: Home shows the newest few leads and links to the rest. */
+      leadFeedSeeAll: (total: number) => `See all ${total} in Customers`,
+    },
+    customers: {
+      /** PERF-001: a pipeline column past its cap says how many older cards
+       *  it is not drawing — the count is real, the rows are one search away. */
+      pipelineOlder: (n: number) => `${n} older — search in Customers`,
     },
     approvals: {
       eyebrow: "Approvals",
@@ -147,6 +154,8 @@ export const STRINGS = {
         `A quick yes or no before anything leaves the shop — ${pending} pending${
           edits > 0 ? ` · ${edits} need a tweak` : ""
         }.`,
+      /** PERF-001: the queue draws a page at a time; the count is exact. */
+      showMore: (n: number) => `Show ${n} more`,
     },
     welcome: {
       title: "Welcome to Gradia",

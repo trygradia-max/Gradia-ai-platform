@@ -31,9 +31,20 @@ export type PipelineCard = {
 }
 
 export type PipelineData = {
+  /** Newest cards per stage, capped at PIPELINE_STAGE_CAP (PERF-001). */
   cards: PipelineCard[]
+  /** Totals over ALL cards, capped or not — the numbers stay true (D-025). */
   totals: Record<CrmStage, { count: number; valueCents: number }>
+  /** What the cap left out per stage, so the column can say so honestly. */
+  hidden: Record<CrmStage, { count: number; valueCents: number }>
 }
+
+/**
+ * PERF-001: the board rendered every one of the 500 newest leads as a card
+ * (2.3 MB of HTML on Customers). A column now draws its newest cards up to
+ * this cap and prints "N older" for the rest; stage totals still count them.
+ */
+export const PIPELINE_STAGE_CAP = 30
 
 type LeadWithC1 = LeadRow & {
   stage?: CrmStage | null
@@ -126,14 +137,37 @@ export async function listPipelineForCurrentShop(): Promise<PipelineData> {
     }
   })
 
-  const totals = Object.fromEntries(
-    PIPELINE_STAGES.map((s) => [s.key, { count: 0, valueCents: 0 }])
-  ) as PipelineData["totals"]
-  for (const card of cards) {
-    const bucket = totals[card.stage]
-    bucket.count += 1
-    bucket.valueCents += card.quoteTotalCents ?? card.estValueCents ?? 0
-  }
+  return capPipelineCards(cards)
+}
 
-  return { cards, totals }
+/** Pure: totals over every card, then the newest PIPELINE_STAGE_CAP per stage
+ *  survive; the remainder is reported per stage. Exported for the unit lock. */
+export function capPipelineCards(
+  cards: PipelineCard[],
+  cap: number = PIPELINE_STAGE_CAP
+): PipelineData {
+  const empty = () =>
+    Object.fromEntries(
+      PIPELINE_STAGES.map((s) => [s.key, { count: 0, valueCents: 0 }])
+    ) as PipelineData["totals"]
+  const totals = empty()
+  const hidden = empty()
+  const kept: PipelineCard[] = []
+  const seen: Partial<Record<CrmStage, number>> = {}
+  // `cards` arrive newest-first from the query, so the first `cap` per stage
+  // are the newest.
+  for (const card of cards) {
+    const value = card.quoteTotalCents ?? card.estValueCents ?? 0
+    totals[card.stage].count += 1
+    totals[card.stage].valueCents += value
+    const n = (seen[card.stage] ?? 0) + 1
+    seen[card.stage] = n
+    if (n <= cap) {
+      kept.push(card)
+    } else {
+      hidden[card.stage].count += 1
+      hidden[card.stage].valueCents += value
+    }
+  }
+  return { cards: kept, totals, hidden }
 }

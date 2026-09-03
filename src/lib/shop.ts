@@ -1,3 +1,4 @@
+import { cache } from "react"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
@@ -11,11 +12,26 @@ export type ShopContext = {
 /** Cookie that remembers which shop the operator most recently picked. */
 export const ACTIVE_SHOP_COOKIE = "gradia_active_shop"
 
-export async function requireUser() {
+/**
+ * PERF-001: the current user and the active shop are resolved ONCE per
+ * server request. Before this, every loader called `auth.getUser()` (a
+ * round trip to Supabase Auth) and re-read the shop row — the Home render
+ * did it ~21 times (baseline in the PERF-001 ticket). React `cache()` is
+ * request-scoped inside a Server Components render (layout + page + every
+ * server component share it) and never crosses requests, so there is no
+ * cross-tenant cache key to get wrong: a different request is a different
+ * cache.
+ */
+const getCurrentUser = cache(async () => {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  return user
+})
+
+export async function requireUser() {
+  const user = await getCurrentUser()
   if (!user) {
     redirect("/login")
   }
@@ -30,16 +46,14 @@ export async function requireUser() {
  *   2. The oldest shop the user owns (stable across sessions).
  *
  * Returns null when the user has zero shops — callers redirect to
- * /onboarding from there.
+ * /onboarding from there. Memoized per request (see above).
  */
-export async function getOptionalShop(): Promise<ShopContext | null> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+export const getOptionalShop = cache(async (): Promise<ShopContext | null> => {
+  const user = await getCurrentUser()
   if (!user) {
     return null
   }
+  const supabase = await createClient()
 
   // Cookie-pinned shop, if still owned.
   const cookieStore = await cookies()
@@ -67,7 +81,7 @@ export async function getOptionalShop(): Promise<ShopContext | null> {
   }
 
   return shop as ShopContext
-}
+})
 
 export async function requireShop(): Promise<ShopContext> {
   const shop = await getOptionalShop()
@@ -77,13 +91,12 @@ export async function requireShop(): Promise<ShopContext> {
   return shop
 }
 
-/** All shops the current user owns, oldest first. Used by the shop switcher. */
-export async function listShopsForCurrentUser(): Promise<ShopContext[]> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+/** All shops the current user owns, oldest first. Used by the shop switcher.
+ *  Memoized per request. */
+export const listShopsForCurrentUser = cache(async (): Promise<ShopContext[]> => {
+  const user = await getCurrentUser()
   if (!user) return []
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from("shops")
@@ -92,4 +105,4 @@ export async function listShopsForCurrentUser(): Promise<ShopContext[]> {
     .order("created_at", { ascending: true })
   if (error || !data) return []
   return data as ShopContext[]
-}
+})
