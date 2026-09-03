@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/sheet"
 import { LOST_REASONS, PIPELINE_STAGES, type LostReason } from "@/lib/pipeline"
 import { formatPriceUsd } from "@/lib/service-pricing"
+import { STRINGS } from "@/lib/strings"
 import type { PipelineCard, PipelineData } from "@/lib/data/pipeline"
 import type { CrmStage } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
@@ -127,21 +128,38 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
   const [detailId, setDetailId] = React.useState<string | null>(null)
 
   const byStage = (stage: CrmStage) => cards.filter((c) => c.stage === stage)
+  // Totals = the cards on the board (they move optimistically) + the older
+  // cards the server capped off (PERF-001) — so the column count stays the
+  // real count even when the column does not draw every card.
+  const hidden = initial.hidden
   const totals = Object.fromEntries(
     PIPELINE_STAGES.map((s) => {
       const items = byStage(s.key)
+      const off = hidden?.[s.key] ?? { count: 0, valueCents: 0 }
       return [
         s.key,
         {
-          count: items.length,
-          valueCents: items.reduce(
-            (sum, c) => sum + (c.quoteTotalCents ?? c.estValueCents ?? 0),
-            0
-          ),
+          count: items.length + off.count,
+          valueCents:
+            items.reduce(
+              (sum, c) => sum + (c.quoteTotalCents ?? c.estValueCents ?? 0),
+              0
+            ) + off.valueCents,
         },
       ]
     })
   ) as PipelineData["totals"]
+  const olderNote = (stage: CrmStage) => {
+    const n = hidden?.[stage]?.count ?? 0
+    return n > 0 ? (
+      <Link
+        href="/customers?tab=customers"
+        className="block px-2 pt-1 text-center text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {STRINGS.pages.customers.pipelineOlder(n)}
+      </Link>
+    ) : null
+  }
 
   async function move(leadId: string, stage: CrmStage, lostReason?: LostReason) {
     const prev = cards
@@ -272,6 +290,7 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
                       onOpen={() => setDetailId(c.id)}
                     />
                   ))}
+                  {olderNote(s.key)}
                 </div>
               </div>
             ))}
@@ -322,6 +341,7 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
                         }
                       />
                     ))}
+                    {olderNote(s.key)}
                   </div>
                 </section>
               )

@@ -4,7 +4,10 @@ import { getCrmCleanupState } from "@/app/actions/crm-cleanup"
 import { dashboardEyebrow } from "@/lib/eyebrow"
 import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
 import { getHomeKpis } from "@/lib/data/kpis"
-import { listScoredLeadsForCurrentShop } from "@/lib/data/leads"
+import {
+  countLeadsForCurrentShop,
+  listScoredLeadsForCurrentShop,
+} from "@/lib/data/leads"
 import { AiLeadSection } from "@/components/gradia/ai-lead-section"
 import { BookedToday } from "@/components/gradia/booked-today"
 import { CrmCleanupCard } from "@/components/gradia/crm-cleanup-card"
@@ -27,10 +30,16 @@ import { listWhisperSuggestions } from "@/app/actions/whisper-queue"
 import { WhisperButton } from "@/components/gradia/whisper-button"
 import { requireShop } from "@/lib/shop"
 
+/** Newest leads shown on Home. PERF-001: the feed used to render every one of
+ *  the 500 newest rows (2 MB of HTML on a phone); Home shows the latest few
+ *  and links to the full list in Customers. */
+const HOME_LEAD_FEED_CAP = 8
+
 export default async function DashboardPage() {
   const shop = await requireShop()
-  const [leads, channels, kpis, cleanup, cookieStore, suggestions, todayMoney] = await Promise.all([
-    listScoredLeadsForCurrentShop(),
+  const [leads, leadTotal, channels, kpis, cleanup, cookieStore, suggestions, todayMoney] = await Promise.all([
+    listScoredLeadsForCurrentShop(HOME_LEAD_FEED_CAP),
+    countLeadsForCurrentShop(),
     getChannelStatusForCurrentShop(),
     getHomeKpis(),
     getCrmCleanupState(),
@@ -104,7 +113,7 @@ export default async function DashboardPage() {
 
       <AiLeadSection />
 
-      <LiveLeadFeed leads={leads} />
+      <LiveLeadFeed leads={leads} total={leadTotal} />
 
       <ChannelConnectionCard channels={channels} />
     </div>

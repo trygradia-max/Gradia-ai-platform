@@ -71,3 +71,14 @@ Statuses per `04-capability-map.md`: not planned → planned → designed → bu
 | any → **deprecated** | Flag off + written migration/comms note in `releases/` |
 
 The audit's `CANNOT_VERIFY*` markers (A2P TrustHub SIDs, Housecall Pro endpoint shapes, Vapi/Aurinko live behavior) are standing pilot-gate blockers tracked in `vendors/*` and `program/blocked.md`.
+
+## 7. Manual performance tools (PERF-001, 2026-09-02)
+
+Not a CI gate — a repeatable way to put numbers on the five dashboard routes before and after a change.
+
+- **Seed** (local stack only; refuses any non-loopback Supabase URL): `eval "$(supabase status -o env)"; SUPABASE_TEST_URL="$API_URL" SUPABASE_TEST_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" node scripts/perf-seed.mjs` → an owner + shop at the ticket's shape (≥ 500 customers, ≥ 200 appointments, ≥ 50 pending). `--clean` removes every perf-seed shop.
+- **Server query log**: run the production build with `PERF_TIMING=1` (`next start`); every Supabase call through `lib/supabase/server.ts` logs `[perf] req=<id> n=<k> <METHOD> <table> <ms>ms` — method + table + duration only, never a query string. Off by default; never set in Production.
+- **Sampler**: `PERF_COOKIE='<signed-in document.cookie>' node scripts/perf-timing.mjs --base http://localhost:3100 --samples 20 --server-log /tmp/next-perf.log` → p50/p75/p95 TTFB and full-response time per route, HTML size, and (from the log) queries per request, DB ms per request, and the query span. On a Vercel Preview drop `--server-log` and read TTFB only.
+- **Interaction**: Approve is recorded with the DevTools performance trace (INP / interaction-to-next-paint) — a manual devtools recording, noted as such in the ticket.
+
+Baselines and before/after tables live in the ticket that produced them (`tickets/PERF-001-…md` §Measurements). Any later ticket that touches a dashboard loader re-runs the sampler and records the delta in its close record.
