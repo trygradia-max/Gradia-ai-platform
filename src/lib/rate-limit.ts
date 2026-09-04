@@ -41,6 +41,10 @@ export const RATE_LIMITS = {
   /** P0-010 (M-1): the AI Lead "Process" action — owner-initiated LLM
    *  extraction. Same burst posture as the other owner LLM surfaces. */
   ai_lead: { limit: 20, windowSeconds: 60 },
+  /** B-01: CSV/JSON data export. No LLM cost, but a bounded 10k-row query per
+   *  request — generous per-hour ceiling guards against a scripted loop
+   *  hammering the DB, not normal owner usage (a handful of downloads/day). */
+  data_export: { limit: 10, windowSeconds: 3_600 },
 } as const
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS

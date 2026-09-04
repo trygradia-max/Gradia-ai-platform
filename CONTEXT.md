@@ -62,7 +62,7 @@ Gradia is **not** a payment processor and never will be (licensing, underwriting
 
 A session picks the **first unchecked item**, builds it, opens a PR, and stops. It does not start the next one.
 
-- [ ] **B-01 — Data export.** Customers, vehicles, leads, appointments, conversations → CSV + JSON. Tenant-scoped, rate-limited. _Loop proof ticket: small, no money, no schema._
+- [x] **B-01 — Data export.** Customers, vehicles, leads, appointments, conversations → CSV + JSON. Tenant-scoped, rate-limited. _Loop proof ticket: small, no money, no schema._
 - [ ] **B-02 — Finish three-tier billing.** Complete the work on `wip/p0-013`. Founder acceptance required; Stripe live prices founder-only.
 - [ ] **B-03 — Chief of Staff screen — REPLACES today's Home, does not add to it.** One hero line, one needs-you queue, one activity stream, one small KPI row. **Deletes the stacked legacy tail** (see §4d U-01) and **absorbs `/activity` and `/approvals`** as sections rather than separate destinations. Reads existing approvals/trust/conversation data. No new schema.
 - [ ] **B-04 — Agent command bar. Smaller than it looks — it already exists.** `command-bar.tsx` is mounted app-wide in `(dashboard)/layout.tsx` as a lazy-loaded dialog around `BiChat`. The work is: surface it persistently on Chief of Staff, **bind ⌘K globally** (§4e U-09), give it write tools through the existing approval executor, and delete the duplicate `BiChat` mount on `/conversations` (§4d U-04). Plain-language asks over the shop's own data. Every write goes through the existing approval executor — no second execution path. Bulk/marketing sends are refused with an honest "not yet" (consent + marketing 10DLC required first).
