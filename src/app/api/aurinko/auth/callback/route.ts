@@ -24,6 +24,11 @@ export const dynamic = "force-dynamic"
 
 const STATE_COOKIE = "aurinko_oauth_state"
 
+// Deliberately NOT resolveInteractiveOrigin (src/lib/request-origin.ts):
+// this builds the Aurinko *webhook* subscription target, a durable
+// server-to-server callback Aurinko will POST to long after this request
+// ends. It must stay on the stable configured host even when the OAuth
+// round trip itself started on a Preview deployment that will disappear.
 async function resolveOrigin(): Promise<string> {
   const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
   if (configured) {
