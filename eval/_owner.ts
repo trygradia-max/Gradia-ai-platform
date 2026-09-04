@@ -23,6 +23,8 @@ export const SHOP = {
   id: "shop_test",
   name: "Pristine Detailing",
   plan: "active",
+  tier: "core",
+  trial_ends_at: null,
   voice_addon: false,
   settings: {},
   credit_period_start: daysAgo(10),

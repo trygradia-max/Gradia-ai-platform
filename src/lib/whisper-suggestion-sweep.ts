@@ -29,7 +29,7 @@ import type { CrmStage, QuoteRow, ShopRow } from "@/lib/types/database"
 
 type SweepShop = Pick<
   ShopRow,
-  "id" | "owner_id" | "name" | "plan" | "credit_period_start"
+  "id" | "owner_id" | "name" | "plan" | "tier" | "trial_ends_at" | "credit_period_start"
 >
 
 export type WhisperSweepResult = {

@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { PLAN } from "@/lib/pricing"
+import { tierSpec } from "@/lib/pricing"
 import type { UsageEventKind } from "@/lib/types/database"
 
 export type MarginRow = {
@@ -48,7 +48,7 @@ export type ShopMargin = {
   marginCents: number
   /** null when the shop has no priced usage (margin of nothing isn't 100%). */
   marginPct: number | null
-  /** What the shop pays monthly (Core $20, +$29 with voice). 0 = free plan. */
+  /** What the shop pays monthly — the tier price while active (P0-013). 0 = free/past_due. */
   planRevenueCents: number
   /** wholesale COGS / plan revenue — the number the flag watches. */
   cogsOfPlanPct: number | null
@@ -77,7 +77,7 @@ function pct(retail: number, wholesale: number): number | null {
 
 export type ShopMeta = {
   name: string
-  /** Monthly plan revenue in cents (Core 2000, +2900 with voice; 0 = free). */
+  /** Monthly plan revenue in cents — tierSpec(tier).priceCents while active; 0 = free. */
   planRevenueCents: number
 }
 
@@ -186,23 +186,20 @@ export async function buildMarginReport(
       .from("usage_events")
       .select("shop_id, kind, quantity, wholesale_cost, retail_cost")
       .gte("created_at", since),
-    supabase.from("shops").select("id, name, plan, voice_addon"),
+    supabase.from("shops").select("id, name, plan, tier"),
   ])
   if (error) throw new Error(`usage query failed: ${error.message}`)
 
   const meta = new Map<string, ShopMeta>(
     (
       (shopRows as
-        | { id: string; name: string; plan: string; voice_addon: boolean }[]
+        | { id: string; name: string; plan: string; tier: string }[]
         | null) ?? []
     ).map((s) => [
       s.id,
       {
         name: s.name,
-        planRevenueCents:
-          s.plan === "active"
-            ? PLAN.CORE_PRICE_CENTS + (s.voice_addon ? PLAN.VOICE_PRICE_CENTS : 0)
-            : 0,
+        planRevenueCents: s.plan === "active" ? tierSpec(s.tier).priceCents : 0,
       },
     ])
   )

@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { startPackCheckout, type UsageState } from "@/app/actions/billing"
 import { Button } from "@/components/ui/button"
+import { formatUsd, PLAN } from "@/lib/pricing"
 import { cn } from "@/lib/utils"
 
 function Bar({ used, total, warn }: { used: number; total: number; warn: boolean }) {
@@ -82,14 +83,14 @@ export function UsageMeters({ usage }: { usage: UsageState }) {
               {buying === "credit" ? (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden />
               ) : null}
-              Add 950 credits — $10
+              {`Add ${PLAN.CREDIT_PACK.credits.toLocaleString("en-US")} credits — ${formatUsd(PLAN.CREDIT_PACK.priceCents)}`}
             </Button>
           </div>
         ) : null}
       </div>
 
-      {/* Minutes meter — only with the voice add-on */}
-      {usage.voiceAddon ? (
+      {/* Minutes meter — only with a voice entitlement (Pro/Operator) */}
+      {usage.voice ? (
         <div className="space-y-2">
           <div className="flex items-baseline justify-between gap-3">
             <p className="flex items-center gap-2 text-sm font-medium">
@@ -126,7 +127,7 @@ export function UsageMeters({ usage }: { usage: UsageState }) {
                 {buying === "minute" ? (
                   <Loader2 className="size-3.5 animate-spin" aria-hidden />
                 ) : null}
-                Add 40 minutes — $10
+                {`Add ${PLAN.MINUTE_PACK.minutes} minutes — ${formatUsd(PLAN.MINUTE_PACK.priceCents)}`}
               </Button>
             </div>
           ) : null}

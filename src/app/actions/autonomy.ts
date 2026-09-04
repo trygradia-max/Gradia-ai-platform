@@ -80,10 +80,10 @@ export async function getAutonomyRecommendationsForCurrentShop(): Promise<
   const supabase = await createClient()
   const { data } = await supabase
     .from("shops")
-    .select("settings, plan, voice_addon")
+    .select("settings, plan, tier, voice_addon")
     .eq("id", shop.id)
     .single()
-  const row = data as Pick<ShopRow, "settings" | "plan" | "voice_addon"> | null
+  const row = data as Pick<ShopRow, "settings" | "plan" | "tier" | "voice_addon"> | null
   if (!row) return []
   const stats = await getTrustStats(supabase, shop.id)
   return getAutonomyRecommendations(row, stats)

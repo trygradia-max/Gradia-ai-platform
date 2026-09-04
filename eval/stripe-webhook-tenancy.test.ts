@@ -38,6 +38,21 @@ function builder(table: string, op: string, values?: Record<string, unknown>) {
     },
     async maybeSingle() {
       calls.push({ table, op, filters })
+      // The shop-lookup-by-id path (checkout.session.completed) resolves a
+      // real, not-yet-upgraded shop row so the tier transition can proceed.
+      if (table === "shops" && op === "select" && typeof filters.id === "string") {
+        return {
+          data: {
+            id: filters.id,
+            plan: "free",
+            tier: "core",
+            voice_addon: false,
+            voice_live: false,
+            stripe_subscription_id: null,
+          },
+          error: null,
+        }
+      }
       return { data: null, error: null }
     },
     then(resolve: (v: { data: null; error: null }) => void) {
@@ -57,8 +72,13 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
   return {
     ...original,
     verifyStripeSignature: vi.fn(() => true),
-    getSubscriptionItems: vi.fn(async () => []),
-    voiceAddonPriceId: vi.fn(() => null),
+    getSubscription: vi.fn(async (subscriptionId: string) => ({
+      id: subscriptionId,
+      status: "active",
+      trialEnd: null,
+      items: [{ itemId: "si_test", priceId: "price_core_test" }],
+    })),
+    tierFromPriceId: vi.fn(() => "core"),
   }
 })
 // CLEANUP-001: payment notices ride the P0-012 ops alert seam (SEV-3).

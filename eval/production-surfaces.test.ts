@@ -21,8 +21,11 @@ const ENV_EXAMPLE = readFileSync(".env.example", "utf8")
 
 describe("env documentation (.env.example)", () => {
   const REQUIRED_NAMES = [
-    // The five audit-flagged vars (P0-010 scope item 1):
-    "STRIPE_PRICE_VOICE_ADDON",
+    // P0-013: one Price per tier (D-031/D-034) — the rollout switch.
+    "STRIPE_PRICE_CORE",
+    "STRIPE_PRICE_PRO",
+    "STRIPE_PRICE_OPERATOR",
+    // The audit-flagged vars (P0-010 scope item 1) that survive P0-013:
     "STRIPE_PRICE_CREDIT_PACK",
     "STRIPE_PRICE_MINUTE_PACK",
     "STRIPE_API_BASE",
@@ -40,6 +43,15 @@ describe("env documentation (.env.example)", () => {
         new RegExp(`^${name}=`, "m").test(ENV_EXAMPLE),
         `missing ${name}= line in .env.example`
       ).toBe(true)
+    }
+  })
+
+  it("no longer documents the retired two-SKU price vars (P0-013)", () => {
+    for (const name of ["STRIPE_PRICE_ID", "STRIPE_PRICE_VOICE_ADDON"]) {
+      expect(
+        new RegExp(`^${name}=`, "m").test(ENV_EXAMPLE),
+        `${name}= must not be documented — retired by P0-013`
+      ).toBe(false)
     }
   })
 

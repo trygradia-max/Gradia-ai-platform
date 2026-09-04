@@ -160,6 +160,8 @@ describe.skipIf(!INTEGRATION)("ledger idempotency [integration]", () => {
       owner_id: seed.ownerId,
       name: "Integration Test Shop",
       plan: "active" as const,
+      tier: "core" as const,
+      trial_ends_at: null,
       voice_addon: false,
       credit_period_start: new Date().toISOString(),
     }

@@ -142,36 +142,45 @@ describe("minute allowance — 60 included + packs; warn 80%, fail closed 100%",
 
   const budgetShop = (
     voice_minutes_budget: number | null,
-    voice_addon = true
+    tier: "core" | "pro" | "operator" = "pro",
+    voice_addon = false
   ) => ({
     id: "shop-1",
+    plan: "active" as const,
+    tier,
     voice_addon,
+    trial_ends_at: null,
     voice_minutes_budget,
   })
 
-  it("the add-on includes 60 minutes; under 80%: quiet", async () => {
+  it("Pro includes 100 minutes (D-034); under 80%: quiet", async () => {
     const state = await voiceBudgetState(ledgerWith(40), budgetShop(null))
     expect(state).toMatchObject({
-      budget: 60,
+      budget: 100,
       warn: false,
       over: false,
       usedMinutes: 40,
     })
   })
 
+  it("Operator includes 180; Core has no voice so 0 (over — fail closed)", async () => {
+    expect(await voiceBudgetState(ledgerWith(40), budgetShop(null, "operator"))).toMatchObject({ budget: 180 })
+    expect(await voiceBudgetState(ledgerWith(0), budgetShop(null, "core"))).toMatchObject({ budget: 0, over: true })
+  })
+
   it("exactly 80% of the allowance: warn, not over", async () => {
-    const state = await voiceBudgetState(ledgerWith(48), budgetShop(null))
+    const state = await voiceBudgetState(ledgerWith(80), budgetShop(null))
     expect(state).toMatchObject({ warn: true, over: false })
   })
 
   it("at/over 100%: fail closed (take-a-message fallback on the NEXT call)", async () => {
-    expect(await voiceBudgetState(ledgerWith(60), budgetShop(null))).toMatchObject({ over: true })
-    expect(await voiceBudgetState(ledgerWith(75), budgetShop(null))).toMatchObject({ over: true })
+    expect(await voiceBudgetState(ledgerWith(100), budgetShop(null))).toMatchObject({ over: true })
+    expect(await voiceBudgetState(ledgerWith(125), budgetShop(null))).toMatchObject({ over: true })
   })
 
   it("a $10 minute pack extends the allowance by 40", async () => {
     const state = await voiceBudgetState(ledgerWith(70, 40), budgetShop(null))
-    expect(state).toMatchObject({ budget: 100, over: false })
+    expect(state).toMatchObject({ budget: 140, over: false })
   })
 
   it("an owner cap below the allowance wins", async () => {
@@ -180,7 +189,7 @@ describe("minute allowance — 60 included + packs; warn 80%, fail closed 100%",
   })
 
   it("no voice add-on: zero allowance — voice is volume-gated off", async () => {
-    const state = await voiceBudgetState(ledgerWith(0), budgetShop(null, false))
+    const state = await voiceBudgetState(ledgerWith(0), budgetShop(null, "core"))
     expect(state).toMatchObject({ budget: 0, over: true })
   })
 })

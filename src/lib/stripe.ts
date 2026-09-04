@@ -14,6 +14,9 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 
+import { PLAN, TIER_ORDER } from "@/lib/pricing"
+import type { ShopTier } from "@/lib/types/database"
+
 // Env-overridable so tests can point the executor at a mock server.
 const STRIPE_API_BASE =
   process.env.STRIPE_API_BASE?.trim() || "https://api.stripe.com/v1"
@@ -265,24 +268,47 @@ export async function* iteratePaidInvoices(
 
 // ---------- Subscription (platform-side: the Gradia plan) ----------
 
-function subscriptionPriceId(): string {
-  const p = process.env.STRIPE_PRICE_ID?.trim()
+/**
+ * One recurring Stripe Price per tier (P0-013 — D-031/D-034). The env vars
+ * are the rollout switch: absent = every checkout path fails closed BEFORE
+ * any Stripe call (the P0-010 acceptance property, kept under the new
+ * names); present = live. Legacy `STRIPE_PRICE_ID` / `STRIPE_PRICE_VOICE_ADDON`
+ * are retired and never read.
+ */
+export const TIER_PRICE_ENV: Record<ShopTier, string> = {
+  core: "STRIPE_PRICE_CORE",
+  pro: "STRIPE_PRICE_PRO",
+  operator: "STRIPE_PRICE_OPERATOR",
+}
+
+/** The Price id for a tier — throws (500) before any network call when the
+ *  env var is absent. */
+export function tierPriceId(tier: ShopTier): string {
+  const envName = TIER_PRICE_ENV[tier]
+  const p = process.env[envName]?.trim()
   if (!p) {
-    throw new StripeError(500, "STRIPE_PRICE_ID is not configured")
+    throw new StripeError(500, `${envName} is not configured`)
   }
   return p
+}
+
+/**
+ * Reverse map for the webhook: which tier a Stripe Price id sells. `null`
+ * for anything not configured — the caller must treat that as "unknown
+ * price id → log + no-op", never guess a tier.
+ */
+export function tierFromPriceId(priceId: string | null | undefined): ShopTier | null {
+  if (!priceId) return null
+  for (const tier of TIER_ORDER) {
+    const configured = process.env[TIER_PRICE_ENV[tier]]?.trim()
+    if (configured && configured === priceId) return tier
+  }
+  return null
 }
 
 export type StripeCheckoutSession = {
   id: string
   url: string | null
-}
-
-/** Voice Receptionist add-on price (+$29/mo, second item on the same
- *  subscription). Null when not configured — voice purchase paths
- *  surface a clear error instead of a broken checkout. */
-export function voiceAddonPriceId(): string | null {
-  return process.env.STRIPE_PRICE_VOICE_ADDON?.trim() || null
 }
 
 function packPriceId(pack: "credit" | "minute"): string {
@@ -300,48 +326,46 @@ function packPriceId(pack: "credit" | "minute"): string {
 }
 
 /**
- * Creates a Checkout Session for the Gradia subscription on the PLATFORM
- * account (no Stripe-Account header) — distinct from the Connect flow that
- * charges the detailer's own customers. Core $20/mo always; the Voice
- * Receptionist add-on rides as a SECOND line item on the same subscription
- * when requested (GRADIA_PRICING.md SKU model). shop_id rides along as
- * client_reference_id + metadata so the webhook can mark the shop active.
+ * Creates a Checkout Session for a Gradia tier on the PLATFORM account (no
+ * Stripe-Account header) — distinct from the Connect flow that charges the
+ * detailer's own customers. One line item = the tier's Price. shop_id rides
+ * along as client_reference_id + metadata so the webhook can resolve the
+ * shop; the tier is NOT trusted from metadata — the webhook re-derives it
+ * from the subscription's Price id (Stripe truth).
+ *
+ * D-035 interim: a 14-day Stripe trial with the card collected up front
+ * (`payment_method_collection` defaults to `always` for subscription mode).
  */
 export async function createSubscriptionCheckoutSession(input: {
   shopId: string
+  tier: ShopTier
   customerEmail?: string | null
   successUrl: string
   cancelUrl: string
-  includeVoiceAddon?: boolean
 }): Promise<StripeCheckoutSession> {
-  const body: Record<string, string | number | undefined> = {
-    mode: "subscription",
-    "line_items[0][price]": subscriptionPriceId(),
-    "line_items[0][quantity]": 1,
-    client_reference_id: input.shopId,
-    "metadata[shop_id]": input.shopId,
-    "subscription_data[metadata][shop_id]": input.shopId,
-    customer_email: input.customerEmail ?? undefined,
-    success_url: input.successUrl,
-    cancel_url: input.cancelUrl,
-  }
-  if (input.includeVoiceAddon) {
-    const voicePrice = voiceAddonPriceId()
-    if (!voicePrice) {
-      throw new StripeError(500, "STRIPE_PRICE_VOICE_ADDON is not configured")
-    }
-    body["line_items[1][price]"] = voicePrice
-    body["line_items[1][quantity]"] = 1
-  }
+  const price = tierPriceId(input.tier) // fail closed before any call
   return stripeFetch<StripeCheckoutSession>({
     method: "POST",
     path: "/checkout/sessions",
-    body,
+    body: {
+      mode: "subscription",
+      "line_items[0][price]": price,
+      "line_items[0][quantity]": 1,
+      client_reference_id: input.shopId,
+      "metadata[shop_id]": input.shopId,
+      "metadata[tier]": input.tier,
+      "subscription_data[metadata][shop_id]": input.shopId,
+      "subscription_data[metadata][tier]": input.tier,
+      "subscription_data[trial_period_days]": PLAN.TRIAL.days,
+      customer_email: input.customerEmail ?? undefined,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+    },
   })
 }
 
 /**
- * One-time top-up packs ($10 credit pack / $10 minute pack). mode=payment;
+ * One-time top-up packs ($10 credit pack / $10 minute pack — PLAN). mode=payment;
  * metadata carries shop_id + pack so the webhook can insert the
  * credit_grant idempotently (session id = stripe_ref).
  */
@@ -369,60 +393,71 @@ export async function createPackCheckoutSession(input: {
   })
 }
 
-type StripeSubscriptionItems = {
+type StripeSubscriptionRaw = {
+  id?: string
+  status?: string
+  trial_end?: number | null
   items?: {
     data?: Array<{ id?: string; price?: { id?: string } }>
   }
 }
 
-/** Reads a subscription's line items (price ids) — used to detect the
- *  voice add-on and to find the item id for removal. */
-export async function getSubscriptionItems(
+export type StripeSubscriptionSummary = {
+  id: string
+  status: string | null
+  /** Unix seconds, or null when not trialing. */
+  trialEnd: number | null
+  items: Array<{ itemId: string; priceId: string }>
+}
+
+/** Reads a subscription's status, trial end and line items (price ids) —
+ *  the webhook derives the tier from these, never from metadata. */
+export async function getSubscription(
   subscriptionId: string
-): Promise<Array<{ itemId: string; priceId: string }>> {
-  const sub = await stripeFetch<StripeSubscriptionItems>({
+): Promise<StripeSubscriptionSummary> {
+  const sub = await stripeFetch<StripeSubscriptionRaw>({
     method: "GET",
     path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
   })
-  return (sub.items?.data ?? [])
-    .filter((i): i is { id: string; price: { id: string } } =>
-      Boolean(i.id && i.price?.id)
-    )
-    .map((i) => ({ itemId: i.id, priceId: i.price.id }))
+  return {
+    id: sub.id ?? subscriptionId,
+    status: sub.status ?? null,
+    trialEnd: typeof sub.trial_end === "number" ? sub.trial_end : null,
+    items: (sub.items?.data ?? [])
+      .filter((i): i is { id: string; price: { id: string } } =>
+        Boolean(i.id && i.price?.id)
+      )
+      .map((i) => ({ itemId: i.id, priceId: i.price.id })),
+  }
 }
 
-/** Adds the voice add-on as a second item on an existing subscription. */
-export async function addVoiceAddonItem(subscriptionId: string): Promise<void> {
-  const voicePrice = voiceAddonPriceId()
-  if (!voicePrice) {
-    throw new StripeError(500, "STRIPE_PRICE_VOICE_ADDON is not configured")
+/**
+ * Upgrade / downgrade: swap the subscription's single item to the new tier's
+ * Price with prorations. Stripe answers with customer.subscription.updated,
+ * which is where the shop's tier actually changes (last-truth-from-Stripe;
+ * this call persists nothing locally). Fails closed before any call when the
+ * target tier's Price is not configured.
+ */
+export async function changeSubscriptionTier(
+  subscriptionId: string,
+  tier: ShopTier
+): Promise<void> {
+  const price = tierPriceId(tier)
+  const sub = await getSubscription(subscriptionId)
+  const item = sub.items[0]
+  if (!item) {
+    throw new StripeError(500, "Subscription has no line item to change")
   }
   await stripeFetch<unknown>({
     method: "POST",
-    path: "/subscription_items",
+    path: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     body: {
-      subscription: subscriptionId,
-      price: voicePrice,
-      quantity: 1,
+      "items[0][id]": item.itemId,
+      "items[0][price]": price,
+      "items[0][quantity]": 1,
       proration_behavior: "create_prorations",
+      "metadata[tier]": tier,
     },
-  })
-}
-
-/** Removes the voice add-on item (the receptionist disables next-call;
- *  the number stays reserved 30 days — handled app-side). */
-export async function removeVoiceAddonItem(
-  subscriptionId: string
-): Promise<void> {
-  const voicePrice = voiceAddonPriceId()
-  if (!voicePrice) return
-  const items = await getSubscriptionItems(subscriptionId)
-  const voiceItem = items.find((i) => i.priceId === voicePrice)
-  if (!voiceItem) return
-  await stripeFetch<unknown>({
-    method: "DELETE",
-    path: `/subscription_items/${encodeURIComponent(voiceItem.itemId)}`,
-    body: { proration_behavior: "create_prorations" },
   })
 }
 

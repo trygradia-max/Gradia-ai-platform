@@ -10,11 +10,29 @@ import { completeOnboarding } from "@/app/actions/onboarding"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
 import { TwilioNumberPicker } from "@/components/gradia/twilio-number-picker"
 import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
+import { hasVoice } from "@/lib/entitlements"
+import { TIER_ORDER, TIERS } from "@/lib/pricing"
 import { Button, buttonVariants } from "@/components/ui/button"
 import type { A2pState } from "@/app/actions/a2p"
 import { STRINGS } from "@/lib/strings"
 import type { ShopRow } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
+
+/** Tier names that include voice, from PLAN (P0-013) — never a price literal here. */
+function voiceTierLabels(): string {
+  return TIER_ORDER.filter((t) => TIERS[t].voice)
+    .map((t) => TIERS[t].label)
+    .join(" and ")
+}
+
+/** "100–180 answered minutes a month" from the voice tiers' allowances. */
+function voiceMinutesLine(): string {
+  const mins = TIER_ORDER.filter((t) => TIERS[t].voice).map((t) => TIERS[t].includedMinutes)
+  const lo = Math.min(...mins)
+  const hi = Math.max(...mins)
+  return lo === hi ? `${lo} minutes a month` : `${lo}–${hi} minutes a month`
+}
+
 
 /**
  * Wizard steps 3–5 (GRADIA_UX_ONBOARDING_SPEC Part 1): inbox, number +
@@ -247,7 +265,7 @@ export function ReceptionistStep({
         </>
       }
     >
-      {shop.voice_addon ? (
+      {hasVoice(shop) ? (
         <VoiceBuilderCard
           shop={shop}
           voiceOptions={voiceOptions}
@@ -256,15 +274,15 @@ export function ReceptionistStep({
       ) : (
         <div className="space-y-3 rounded-md border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center">
           <p className="font-display text-lg text-foreground">
-            The receptionist is part of the <span className="italic">voice</span>{" "}add-on.
+            The receptionist comes with{" "}
+            <span className="italic">{voiceTierLabels()}</span>.
           </p>
           <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-            +$29/month: it answers your calls, quotes from your menu, and
-            proposes bookings — business number and ~20 answered calls
-            included.
+            It answers your calls, quotes from your menu, and proposes
+            bookings — business number and {voiceMinutesLine()} included.
           </p>
           <Link href="/billing" className={cn(buttonVariants(), "mt-1")}>
-            Add it in Billing
+            Change plan in Billing
           </Link>
         </div>
       )}

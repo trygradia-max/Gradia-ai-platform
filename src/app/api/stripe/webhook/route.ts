@@ -23,14 +23,15 @@ import { revalidatePath } from "next/cache"
 import { dispatchAgentEvent } from "@/lib/agent-events"
 import { sendOpsAlert } from "@/lib/alerts"
 import { creditsSpentThisPeriod } from "@/lib/credits"
-import { PLAN, rolloverCredits } from "@/lib/pricing"
+import { includedCreditsThisPeriod } from "@/lib/entitlements"
+import { PLAN, rolloverCredits, tierSpec } from "@/lib/pricing"
 import {
-  getSubscriptionItems,
+  getSubscription,
+  tierFromPriceId,
   verifyStripeSignature,
-  voiceAddonPriceId,
 } from "@/lib/stripe"
 import { createServiceClient } from "@/lib/supabase/service"
-import type { ShopPlan, ShopRow } from "@/lib/types/database"
+import type { ShopPlan, ShopRow, ShopTier } from "@/lib/types/database"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export const runtime = "nodejs"
@@ -81,6 +82,7 @@ type StripeCheckoutSessionObj = {
 type StripeSubscriptionObj = {
   id?: string
   status?: string
+  trial_end?: number | null
   metadata?: { shop_id?: string } | null
   items?: { data?: Array<{ price?: { id?: string } }> } | null
 }
@@ -111,11 +113,89 @@ function planFromSubStatus(status: string | undefined | null): ShopPlan {
   }
 }
 
+type TierShopRow = Pick<
+  ShopRow,
+  "id" | "plan" | "tier" | "voice_addon" | "voice_live" | "stripe_subscription_id"
+>
+
+/** Unix seconds → ISO, or null. */
+function trialEndsAtIso(trialEnd: number | null | undefined): string | null {
+  return typeof trialEnd === "number" && trialEnd > 0
+    ? new Date(trialEnd * 1000).toISOString()
+    : null
+}
+
 /**
- * Subscription lifecycle for the $20/mo Gradia plan. These are PLATFORM
- * events (no `account` envelope), distinct from the Connect invoice/charge
- * events below. The shop is resolved by client_reference_id (checkout) or
- * stripe_subscription_id (updates).
+ * Unknown Price id on a platform subscription event: log + alert + no-op.
+ * We never guess a tier (ticket failure case #1) — a shop that paid for a
+ * Price we do not recognise is a wiring error the founder must see.
+ */
+async function unknownPriceNoop(
+  eventType: string,
+  priceIds: string[],
+  ref: string
+): Promise<Response> {
+  console.error(
+    `[stripe webhook] unknown price id on ${eventType} (${ref}): ${priceIds.join(",") || "(none)"} — no tier written`
+  )
+  await sendOpsAlert({
+    severity: "SEV-2",
+    source: "stripe",
+    title: "Stripe subscription with an unknown Price id",
+    detail: `${eventType} · ${ref} · prices ${priceIds.join(", ") || "(none)"} — no tier written; check STRIPE_PRICE_CORE/PRO/OPERATOR`,
+    refs: { event: eventType, ref, prices: priceIds.join(","), action: "no-op", retryable: false },
+  })
+  return Response.json({ ok: true, ignored: "unknown price id" })
+}
+
+/**
+ * The shop-row patch for a tier transition. Voice keeps its existing
+ * semantics: gaining voice marks the assistant stale (the next sync PATCHes
+ * the full receptionist in); losing voice takes the receptionist offline on
+ * the NEXT call and marks stale (the take-a-message fallback goes in). The
+ * retired `voice_addon` flag is never written here.
+ */
+function tierTransitionPatch(
+  current: Pick<ShopRow, "tier" | "voice_addon" | "voice_live"> | null,
+  next: { tier: ShopTier; plan: ShopPlan }
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = { plan: next.plan, tier: next.tier }
+  const hadVoice =
+    current != null &&
+    (current.voice_addon === true || tierSpec(current.tier).voice)
+  const willHaveVoice =
+    next.plan === "active" &&
+    ((current?.voice_addon ?? false) === true || tierSpec(next.tier).voice)
+  if (willHaveVoice && !hadVoice) {
+    patch.vapi_stale = true
+  } else if (!willHaveVoice && hadVoice) {
+    patch.voice_live = false
+    patch.vapi_stale = true
+  }
+  return patch
+}
+
+function logTierTransition(
+  shopId: string,
+  from: { plan: string; tier: string } | null,
+  to: { plan: string; tier: string },
+  subscriptionId: string | null,
+  eventType: string
+): void {
+  if (from && from.plan === to.plan && from.tier === to.tier) return
+  console.info(
+    `[stripe webhook] tier transition shop=${shopId} ${from ? `${from.plan}/${from.tier}` : "(new)"} → ${to.plan}/${to.tier} sub=${subscriptionId ?? "-"} via ${eventType}`
+  )
+}
+
+/**
+ * Subscription lifecycle for the Gradia tiers (P0-013 — D-031/D-034/D-035).
+ * These are PLATFORM events (no `account` envelope), distinct from the
+ * Connect invoice/charge events below. The shop is resolved by
+ * client_reference_id (checkout) or stripe_subscription_id (updates); the
+ * TIER is resolved from the subscription's Price id — Stripe truth, never
+ * metadata. Writes are last-truth-from-Stripe and replay-safe: the same
+ * event twice produces the same row.
  */
 async function handleSubscriptionEvent(
   eventType: string,
@@ -143,82 +223,106 @@ async function handleSubscriptionEvent(
     const shopId =
       session.client_reference_id ?? session.metadata?.shop_id ?? null
     if (!shopId) return Response.json({ ok: true, ignored: "no shop ref" })
-
-    // Did this checkout include the voice add-on as the second item?
-    let voiceAddon = false
-    const voicePrice = voiceAddonPriceId()
-    if (session.subscription && voicePrice) {
-      try {
-        const items = await getSubscriptionItems(session.subscription)
-        voiceAddon = items.some((i) => i.priceId === voicePrice)
-      } catch (err) {
-        console.error("[stripe webhook] items lookup failed:", err)
-      }
+    if (!session.subscription) {
+      return Response.json({ ok: true, ignored: "no subscription on session" })
     }
 
-    const { error } = await supabase
+    // The tier comes from the subscription's Price id (Stripe truth).
+    let summary: Awaited<ReturnType<typeof getSubscription>>
+    try {
+      summary = await getSubscription(session.subscription)
+    } catch (err) {
+      console.error("[stripe webhook] subscription lookup failed:", err)
+      // 500 → Stripe retries; nothing was written.
+      return Response.json({ ok: false }, { status: 500 })
+    }
+    const priceIds = summary.items.map((i) => i.priceId)
+    const tier = priceIds.map(tierFromPriceId).find((t): t is ShopTier => t !== null) ?? null
+    if (!tier) {
+      return unknownPriceNoop(eventType, priceIds, `session shop=${shopId}`)
+    }
+
+    const { data: currentRow } = await supabase
       .from("shops")
-      .update({
-        plan: "active",
-        stripe_subscription_id: session.subscription ?? null,
-        ...(voiceAddon ? { voice_addon: true, voice_addon_ended_at: null } : {}),
-      })
+      .select("id, plan, tier, voice_addon, voice_live, stripe_subscription_id")
       .eq("id", shopId)
-    if (error) console.error("[stripe webhook] sub activate failed:", error)
+      .maybeSingle()
+    const current = (currentRow as TierShopRow | null) ?? null
+    if (!current) return Response.json({ ok: true, ignored: "no shop for ref" })
+
+    const plan: ShopPlan = planFromSubStatus(summary.status) === "free" ? "active" : planFromSubStatus(summary.status)
+    const patch = {
+      ...tierTransitionPatch(current, { tier, plan }),
+      stripe_subscription_id: summary.id,
+      trial_ends_at: trialEndsAtIso(summary.trialEnd),
+    }
+    const { error } = await supabase.from("shops").update(patch).eq("id", shopId)
+    if (error) {
+      console.error("[stripe webhook] sub activate failed:", error)
+      return Response.json({ ok: false }, { status: 500 })
+    }
+    logTierTransition(shopId, current, { plan, tier }, summary.id, eventType)
     revalidatePath("/billing")
-    return Response.json({ ok: true })
+    return Response.json({ ok: true, tier })
   }
 
   const sub = event.data?.object as StripeSubscriptionObj | undefined
   if (!sub?.id) return Response.json({ ok: true, ignored: "no subscription id" })
   const deleted = eventType === "customer.subscription.deleted"
-  const plan: ShopPlan = deleted ? "free" : planFromSubStatus(sub.status)
 
-  // Voice add-on tracking: the add-on is a second item on the same
-  // subscription (GRADIA_PRICING.md). Toggling it off disables the
-  // receptionist on the NEXT call (vapi_stale → sync PATCHes the
-  // fallback in); the number stays reserved — the 30-day release warning
-  // keys off voice_addon_ended_at.
-  const voicePrice = voiceAddonPriceId()
-  const itemPrices = (sub.items?.data ?? [])
-    .map((i) => i.price?.id)
-    .filter(Boolean)
-  const hasVoice =
-    !deleted && Boolean(voicePrice) && itemPrices.includes(voicePrice as string)
-
+  // Resolve the shop by the subscription id — the only tenant binding we
+  // trust for an update event (never metadata.shop_id).
   const { data: shopRow } = await supabase
     .from("shops")
-    .select("id, voice_addon")
+    .select("id, plan, tier, voice_addon, voice_live, stripe_subscription_id")
     .eq("stripe_subscription_id", sub.id)
     .maybeSingle()
-  const shop = (shopRow as { id: string; voice_addon: boolean } | null) ?? null
+  const shop = (shopRow as TierShopRow | null) ?? null
+  if (!shop) return Response.json({ ok: true, ignored: "no shop for sub" })
 
-  const update: Record<string, unknown> = { plan }
-  if (shop && itemPrices.length > 0 && voicePrice) {
-    if (hasVoice && !shop.voice_addon) {
-      update.voice_addon = true
-      update.voice_addon_ended_at = null
-      update.vapi_stale = true
-    } else if (!hasVoice && shop.voice_addon) {
-      update.voice_addon = false
-      update.voice_addon_ended_at = new Date().toISOString()
-      update.voice_live = false
-      update.vapi_stale = true
+  if (deleted) {
+    const patch = {
+      ...tierTransitionPatch(shop, { tier: shop.tier, plan: "free" }),
+      trial_ends_at: null,
     }
-  } else if (deleted && shop?.voice_addon) {
-    update.voice_addon = false
-    update.voice_addon_ended_at = new Date().toISOString()
-    update.voice_live = false
-    update.vapi_stale = true
+    const { error } = await supabase
+      .from("shops")
+      .update(patch)
+      .eq("id", shop.id)
+      .eq("stripe_subscription_id", sub.id)
+    if (error) {
+      console.error("[stripe webhook] sub delete failed:", error)
+      return Response.json({ ok: false }, { status: 500 })
+    }
+    logTierTransition(shop.id, shop, { plan: "free", tier: shop.tier }, sub.id, eventType)
+    revalidatePath("/billing")
+    return Response.json({ ok: true })
   }
 
+  const priceIds = (sub.items?.data ?? [])
+    .map((i) => i.price?.id)
+    .filter((id): id is string => Boolean(id))
+  const tier = priceIds.map(tierFromPriceId).find((t): t is ShopTier => t !== null) ?? null
+  if (!tier) {
+    return unknownPriceNoop(eventType, priceIds, `sub=${sub.id}`)
+  }
+  const plan = planFromSubStatus(sub.status)
+  const patch = {
+    ...tierTransitionPatch(shop, { tier, plan }),
+    trial_ends_at: plan === "active" ? trialEndsAtIso(sub.trial_end) : null,
+  }
   const { error } = await supabase
     .from("shops")
-    .update(update)
+    .update(patch)
+    .eq("id", shop.id)
     .eq("stripe_subscription_id", sub.id)
-  if (error) console.error("[stripe webhook] sub update failed:", error)
+  if (error) {
+    console.error("[stripe webhook] sub update failed:", error)
+    return Response.json({ ok: false }, { status: 500 })
+  }
+  logTierTransition(shop.id, shop, { plan, tier }, sub.id, eventType)
   revalidatePath("/billing")
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, tier, plan })
 }
 
 /**
@@ -260,8 +364,8 @@ async function handlePackPurchase(
 /**
  * Platform subscription renewal (invoice.paid, no Connect account
  * envelope): advance the credit period and apply rollover — up to 25% of
- * unused INCLUDED credits carry one month (as a grant in the NEW period).
- * Idempotent via the invoice id on the grant's stripe_ref.
+ * unused INCLUDED credits (per tier, P0-013) carry one month (as a grant in
+ * the NEW period). Idempotent via the invoice id on the grant's stripe_ref.
  */
 async function handlePlatformRenewal(
   supabase: SupabaseClient,
@@ -273,17 +377,21 @@ async function handlePlatformRenewal(
   }
   const { data } = await supabase
     .from("shops")
-    .select("id, plan, credit_period_start")
+    .select("id, plan, tier, trial_ends_at, credit_period_start")
     .eq("stripe_subscription_id", subId)
     .maybeSingle()
   const shop =
-    (data as Pick<ShopRow, "id" | "plan" | "credit_period_start"> | null) ??
-    null
+    (data as Pick<
+      ShopRow,
+      "id" | "plan" | "tier" | "trial_ends_at" | "credit_period_start"
+    > | null) ?? null
   if (!shop) return Response.json({ ok: true, ignored: "no shop for sub" })
 
+  // Rollover is a fraction of what the PERIOD THAT JUST ENDED included —
+  // the tier's credits, or the trial allowance if that period was the trial.
   const spent = await creditsSpentThisPeriod(supabase, shop)
   const rollover = rolloverCredits({
-    includedCredits: PLAN.CORE_INCLUDED_CREDITS,
+    includedCredits: includedCreditsThisPeriod(shop),
     spentCredits: spent,
   })
 

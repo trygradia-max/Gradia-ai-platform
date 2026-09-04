@@ -132,12 +132,14 @@ describe("pricing config load — DB rows win, failure falls back safely", () =>
 describe("pre-check before vendor call — the allowance prevents the spend", () => {
   const shop = {
     id: "shop-1",
-    plan: "active" as const, // 1,200 included
+    plan: "active" as const,
+    tier: "core" as const, // 7,000 included (D-034)
+    trial_ends_at: null,
     credit_period_start: "2026-06-01T00:00:00Z",
   }
 
   it("blocks when the priced cost exceeds remaining credits", async () => {
-    const supabase = mockLedger([{ credits: 1100 }])
+    const supabase = mockLedger([{ credits: 6900 }])
     const cost = priceUsage(FIXTURE, "number_monthly").credits // 300
     const check = await precheckCredits(supabase, shop, cost)
     expect(check.ok).toBe(false)
@@ -150,7 +152,7 @@ describe("pre-check before vendor call — the allowance prevents the spend", ()
   it("allows when the cost fits, reporting what remains", async () => {
     const supabase = mockLedger([{ credits: 300 }])
     const check = await precheckCredits(supabase, shop, 300)
-    expect(check).toEqual({ ok: true, remaining: 900 })
+    expect(check).toEqual({ ok: true, remaining: 6700 })
   })
 
   it("a free (pre-subscription) shop has zero allowance — explore, can't send", async () => {
@@ -191,9 +193,32 @@ describe("plan structure helpers", () => {
     expect(rolloverCredits({ includedCredits: 1200, spentCredits: 5000 })).toBe(0)
   })
 
-  it("locked SKU numbers match the pricing doc", () => {
-    expect(PLAN.CORE_INCLUDED_CREDITS).toBe(1200)
-    expect(PLAN.VOICE_INCLUDED_MINUTES).toBe(60)
+  it("locked SKU numbers match the pricing doc (D-031 / D-034)", () => {
+    expect(PLAN.TIERS.core).toMatchObject({
+      priceCents: 9900,
+      includedCredits: 7000,
+      includedMinutes: 0,
+      voice: false,
+      autonomy: false,
+      teamSeats: false,
+    })
+    expect(PLAN.TIERS.pro).toMatchObject({
+      priceCents: 14900,
+      includedCredits: 6000,
+      includedMinutes: 100,
+      voice: true,
+      autonomy: true,
+      teamSeats: false,
+    })
+    expect(PLAN.TIERS.operator).toMatchObject({
+      priceCents: 24900,
+      includedCredits: 10000,
+      includedMinutes: 180,
+      voice: true,
+      autonomy: true,
+      teamSeats: true,
+    })
+    expect(PLAN.TRIAL).toEqual({ days: 14, credits: 500, minutes: 15 })
     expect(PLAN.CREDIT_PACK).toEqual({ credits: 950, priceCents: 1000 })
     expect(PLAN.MINUTE_PACK).toEqual({ minutes: 40, priceCents: 1000 })
     expect(DEFAULT_PRICING.sms_segment.retail_cents).toBe(4)

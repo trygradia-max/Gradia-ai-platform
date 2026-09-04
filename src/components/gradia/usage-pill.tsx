@@ -21,7 +21,7 @@ export async function UsagePill() {
 
   const warn = usage.credits.warn || usage.minutes.warn
   const parts = [`~${usage.human.texts} texts`]
-  if (usage.voiceAddon && usage.human.calls !== null) {
+  if (usage.voice && usage.human.calls !== null) {
     parts.push(`~${usage.human.calls} calls`)
   }
 

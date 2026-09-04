@@ -83,6 +83,8 @@ type ShopTelephonyFields = Pick<
   | "gradia_number_sid"
   | "a2p_status"
   | "plan"
+  | "tier"
+  | "trial_ends_at"
   | "credit_period_start"
 >
 

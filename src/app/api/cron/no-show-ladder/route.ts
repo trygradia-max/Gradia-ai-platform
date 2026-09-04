@@ -37,7 +37,15 @@ const HOUR_MS = 60 * 60 * 1000
 type JoinedAppointment = AppointmentRow & {
   shop: Pick<
     ShopRow,
-    "id" | "name" | "owner_id" | "twilio_phone_number" | "plan" | "voice_addon" | "credit_period_start"
+    | "id"
+    | "name"
+    | "owner_id"
+    | "twilio_phone_number"
+    | "plan"
+    | "tier"
+    | "voice_addon"
+    | "trial_ends_at"
+    | "credit_period_start"
   > | null
   customer: Pick<CustomerRow, "id" | "name" | "phone"> | null
 }
@@ -86,7 +94,7 @@ async function handle(request: Request) {
     .select(
       `
         *,
-        shop:shops!inner(id, name, owner_id, twilio_phone_number, plan, voice_addon, credit_period_start),
+        shop:shops!inner(id, name, owner_id, twilio_phone_number, plan, tier, voice_addon, trial_ends_at, credit_period_start),
         customer:customers(id, name, phone)
       `
     )

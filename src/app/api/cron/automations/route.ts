@@ -36,7 +36,7 @@ async function handle(request: Request) {
   // Only shops that can actually text; everything else has nothing to run.
   const { data, error } = await supabase
     .from("shops")
-    .select("id, owner_id, name, plan, voice_addon, credit_period_start, settings")
+    .select("id, owner_id, name, plan, tier, voice_addon, trial_ends_at, credit_period_start, settings")
     .not("twilio_phone_number", "is", null)
     .limit(500)
   if (error) {
@@ -45,7 +45,15 @@ async function handle(request: Request) {
   const shops =
     (data as Pick<
       ShopRow,
-      "id" | "owner_id" | "name" | "plan" | "voice_addon" | "credit_period_start" | "settings"
+      | "id"
+      | "owner_id"
+      | "name"
+      | "plan"
+      | "tier"
+      | "voice_addon"
+      | "trial_ends_at"
+      | "credit_period_start"
+      | "settings"
     >[] | null) ?? []
 
   const perShop: Record<string, SweepStats> = {}

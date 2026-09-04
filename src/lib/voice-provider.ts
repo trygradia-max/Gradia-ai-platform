@@ -19,6 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
 import { listShopKnowledge } from "@/lib/knowledge"
+import { hasVoice, includedMinutesThisPeriod } from "@/lib/entitlements"
 import { PLAN } from "@/lib/pricing"
 import {
   createAssistant,
@@ -164,7 +165,8 @@ function composeBudgetFallback(
 
 export async function syncVoiceAssistant(input: {
   supabase: SupabaseClient
-  shop: VoiceShopFields & Pick<ShopRow, "voice_addon" | "voice_minutes_budget">
+  shop: VoiceShopFields &
+    Pick<ShopRow, "plan" | "tier" | "voice_addon" | "trial_ends_at" | "voice_minutes_budget">
   origin: string
 }): Promise<SyncAssistantResult> {
   const { supabase, shop, origin } = input
@@ -200,13 +202,13 @@ export async function syncVoiceAssistant(input: {
     fallbackHoursText: formatWorkingHours(readWorkingHours(shop.settings)),
   })
 
-  // Fail closed at the minute allowance, and when the voice add-on is
-  // off (volume-gated, never mid-call): such shops get the take-a-message
-  // fallback PATCHed in; the next sync after the month rolls, a pack is
-  // bought, or the add-on returns restores the full receptionist.
+  // Fail closed at the minute allowance, and when the shop has no voice
+  // entitlement (Core; volume-gated, never mid-call): such shops get the
+  // take-a-message fallback PATCHed in; the next sync after the month
+  // rolls, a pack is bought, or the tier changes restores the receptionist.
   const budget = await voiceBudgetState(supabase, shop)
   const effective =
-    budget.over || !shop.voice_addon
+    budget.over || !hasVoice(shop)
       ? { ...composed, ...composeBudgetFallback(shop) }
       : composed
 
@@ -408,14 +410,18 @@ export type VoiceBudgetState = {
 
 /**
  * Calendar-month voice minutes vs the shop's minute allowance
- * (GRADIA_PRICING.md): 60 included with the voice add-on + 40 per minute
- * pack this month. The owner's voice_minutes_budget, when set lower, is
- * an additional cap. No add-on → allowance 0 → over (fail closed).
+ * (GRADIA_PRICING.md, P0-013): the tier's included minutes (Pro 100,
+ * Operator 180; the trial's 15 while a trial runs) + 40 per minute pack
+ * this month. The owner's voice_minutes_budget, when set lower, is an
+ * additional cap. No voice entitlement → allowance 0 → over (fail closed).
  * Warn at 80%, refuse the NEXT call at 100%.
  */
 export async function voiceBudgetState(
   supabase: SupabaseClient,
-  shop: Pick<ShopRow, "id" | "voice_addon" | "voice_minutes_budget">,
+  shop: Pick<
+    ShopRow,
+    "id" | "plan" | "tier" | "voice_addon" | "trial_ends_at" | "voice_minutes_budget"
+  >,
   now: Date = new Date()
 ): Promise<VoiceBudgetState> {
   const monthStart = new Date(
@@ -448,8 +454,7 @@ export async function voiceBudgetState(
         (sum, r) => sum + (r.minutes ?? 0),
         0
       )
-  const allowance =
-    (shop.voice_addon ? PLAN.VOICE_INCLUDED_MINUTES : 0) + grantedMinutes
+  const allowance = includedMinutesThisPeriod(shop, now) + grantedMinutes
   const ownerCap = shop.voice_minutes_budget
   const budget =
     ownerCap != null && ownerCap > 0 ? Math.min(allowance, ownerCap) : allowance

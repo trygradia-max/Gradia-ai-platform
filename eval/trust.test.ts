@@ -33,9 +33,9 @@ const stat = (
 }
 
 const pkg2 = (settings: Record<string, unknown> = {}) =>
-  ({ settings, plan: "active", voice_addon: true }) as Pick<
+  ({ settings, plan: "active", tier: "pro", voice_addon: false }) as Pick<
     ShopRow,
-    "settings" | "plan" | "voice_addon"
+    "settings" | "plan" | "tier" | "voice_addon"
   >
 
 describe("getAutonomyRecommendations", () => {
@@ -51,10 +51,10 @@ describe("getAutonomyRecommendations", () => {
     expect(recs).toEqual([])
   })
 
-  it("requires Package 2 (no offers for a Core shop)", () => {
-    const core = { settings: {}, plan: "active", voice_addon: false } as Pick<
+  it("requires an autonomy tier (no offers for a Core shop)", () => {
+    const core = { settings: {}, plan: "active", tier: "core", voice_addon: false } as Pick<
       ShopRow,
-      "settings" | "plan" | "voice_addon"
+      "settings" | "plan" | "tier" | "voice_addon"
     >
     expect(getAutonomyRecommendations(core, [stat("send_sms", 40, 0, 0)])).toEqual([])
   })
