@@ -12,7 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
-import { hasPackage2 } from "@/lib/entitlements"
+import { hasAutonomy } from "@/lib/entitlements"
 import type { PendingActionType, ShopRow } from "@/lib/types/database"
 
 export type ApprovalResolution =
@@ -106,13 +106,13 @@ export type AutonomyRecommendation = {
 /**
  * Which action types have earned an autopilot offer: not a HITL-floor type,
  * enough volume, a high unedited rate, not already autonomous — and only when
- * the shop has Package 2 (autonomy is a paid capability).
+ * the shop's tier includes autonomy (Pro/Operator — D-034).
  */
 export function getAutonomyRecommendations(
-  shop: Pick<ShopRow, "settings" | "plan" | "voice_addon">,
+  shop: Pick<ShopRow, "settings" | "plan" | "tier" | "voice_addon">,
   stats: ActionTrust[]
 ): AutonomyRecommendation[] {
-  if (!hasPackage2(shop)) return []
+  if (!hasAutonomy(shop)) return []
   return stats
     .filter((s) => isAutonomyAllowed(s.actionType))
     .filter((s) => s.decisions >= MIN_DECISIONS)

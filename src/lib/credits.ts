@@ -13,9 +13,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { isPaid } from "@/lib/entitlements"
+import { includedCreditsThisPeriod, isPaid } from "@/lib/entitlements"
 import { FEATURES } from "@/lib/features"
-import { PLAN } from "@/lib/pricing"
+import { formatUsd, PLAN } from "@/lib/pricing"
 import { isUniqueViolation } from "@/lib/provider-events"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow, UsageEventKind } from "@/lib/types/database"
@@ -35,7 +35,10 @@ export function creditsFor(kind: UsageEventKind, quantity = 1): number {
   return (CREDIT_COST[kind] ?? 0) * Math.max(0, Math.round(quantity))
 }
 
-export type ShopCreditFields = Pick<ShopRow, "id" | "plan" | "credit_period_start">
+export type ShopCreditFields = Pick<
+  ShopRow,
+  "id" | "plan" | "tier" | "trial_ends_at" | "credit_period_start"
+>
 
 /**
  * The ledger write goes through the service role: usage_events RLS is
@@ -157,17 +160,22 @@ export async function creditsGrantedThisPeriod(
 }
 
 /**
- * The shop's credit allowance this period (GRADIA_PRICING.md):
- * plan-included credits (Core = 1,200 while the subscription is active)
- * plus pack purchases and rollover grants since credit_period_start.
- * The cap IS the allowance; fail closed past it.
+ * The shop's credit allowance this period (GRADIA_PRICING.md, P0-013):
+ * the tier's included credits while the subscription is active (the D-035
+ * trial numbers while a trial runs) plus pack purchases and rollover grants
+ * since credit_period_start. The cap IS the allowance; fail closed past it.
  */
 export async function creditAllowanceThisPeriod(
   supabase: SupabaseClient,
   shop: ShopCreditFields
 ): Promise<number> {
-  const included = shop.plan === "active" ? PLAN.CORE_INCLUDED_CREDITS : 0
+  const included = includedCreditsThisPeriod(shop)
   return included + (await creditsGrantedThisPeriod(supabase, shop))
+}
+
+/** The pack offer, worded once (copy rule: numbers come from PLAN). */
+function creditPackOffer(): string {
+  return `Add a credit pack (${formatUsd(PLAN.CREDIT_PACK.priceCents)} / ${PLAN.CREDIT_PACK.credits.toLocaleString("en-US")} credits) in Billing`
 }
 
 export async function remainingCredits(
@@ -218,7 +226,7 @@ export async function precheckCredits(
     return {
       ok: false,
       remaining,
-      reason: `This needs ${cost} credits but only ${remaining} remain this period. Add a credit pack ($10 / 950 credits) in Billing to keep going.`,
+      reason: `This needs ${cost} credits but only ${remaining} remain this period. ${creditPackOffer()} to keep going.`,
     }
   }
   return { ok: true, remaining }
@@ -235,7 +243,7 @@ export async function loadShopCreditFields(
 ): Promise<ShopCreditFields | null> {
   const { data, error } = await supabase
     .from("shops")
-    .select("id, plan, credit_period_start")
+    .select("id, plan, tier, trial_ends_at, credit_period_start")
     .eq("id", shopId)
     .maybeSingle()
   if (error || !data) return null
@@ -306,8 +314,7 @@ export async function checkFeatureAccess(
     return {
       ok: false,
       status: 402,
-      reason:
-        "You're out of credits for this period. Add a credit pack ($10 / 950 credits) in Billing to switch everything back on.",
+      reason: `You're out of credits for this period. ${creditPackOffer()} to switch everything back on.`,
     }
   }
   return { ok: true }

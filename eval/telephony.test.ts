@@ -44,7 +44,9 @@ const shop = {
   gradia_number_e164: null,
   gradia_number_sid: null,
   a2p_status: "unregistered" as const,
-  plan: "active" as const, // 1,200-credit allowance
+  plan: "active" as const,
+  tier: "core" as const, // 7,000-credit allowance (D-034)
+  trial_ends_at: null,
   credit_period_start: "2026-06-01T00:00:00Z",
 }
 
@@ -104,7 +106,7 @@ describe("purchase — credit pre-check runs before any vendor call", () => {
     })
     vi.stubGlobal("fetch", fetchSpy)
 
-    const supabase = mockSupabase([{ credits: 1200 }]) // allowance fully spent
+    const supabase = mockSupabase([{ credits: 7000 }]) // allowance fully spent
     const result = await purchaseNumber({
       supabase,
       shop,

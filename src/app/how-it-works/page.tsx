@@ -25,12 +25,13 @@ import {
   RevealOnScroll,
 } from "@/components/gradia/motion/reveal-on-scroll"
 import { buttonVariants } from "@/components/ui/button"
+import { formatUsd, TIERS } from "@/lib/pricing"
 import { cn } from "@/lib/utils"
 
 export const metadata: Metadata = {
   title: "How Gradia works",
   description:
-    "The AI office for auto detailers — every call, email, text, and DM becomes a one-tap approval card. $20/month, no missed leads.",
+    `The AI office for auto detailers — every call, email, text, and DM becomes a one-tap approval card. From ${formatUsd(TIERS.core.priceCents)}/month, no missed leads.`,
 }
 
 type ChannelTone = "voice" | "email" | "sms" | "social" | "calendar" | "money"
@@ -375,11 +376,11 @@ export default function HowItWorksPage() {
                       <div className="flex items-center gap-2">
                         <Inbox className="size-3.5 text-primary" aria-hidden />
                         <p className="label-eyebrow text-muted-foreground/80">
-                          Pilot pricing
+                          Pricing
                         </p>
                       </div>
                       <h2 className="font-display text-[clamp(2rem,5.5vw,3.25rem)] leading-[1.02] tracking-[-0.025em] text-foreground">
-                        <span className="italic">$20</span>/month. No catch.
+                        From <span className="italic">{formatUsd(TIERS.core.priceCents)}</span>/month.
                       </h2>
                       <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
                         Bring your own voice line, Gmail, texting number,

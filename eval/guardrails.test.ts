@@ -50,13 +50,14 @@ describe("HITL floor — money & calendar actions are always human-approved", ()
   it("the floor holds even when the agent's mode is fully autonomous", () => {
     // resolveAgentMode can say "autonomous", but isAutonomyAllowed is the
     // per-action gate the runtime ANDs against — so book/charge still stage.
-    // Autonomy resolves only for Package 2 (active plan + voice add-on) —
-    // see the entitlement-gating suite below.
+    // Autonomy resolves only for a tier with earned autonomy (Pro/Operator,
+    // D-034) — see the entitlement-gating suite below.
     const autonomousShop = {
       settings: { autonomy: { default: "autonomous", overrides: {} } },
       plan: "active",
-      voice_addon: true,
-    } as unknown as Pick<ShopRow, "settings" | "plan" | "voice_addon">
+      tier: "pro",
+      voice_addon: false,
+    } as unknown as Pick<ShopRow, "settings" | "plan" | "tier" | "voice_addon">
 
     expect(resolveAgentMode(autonomousShop, "any-agent")).toBe("autonomous")
     for (const t of ["book_appointment", "reschedule_appointment", "cancel_appointment"] as PendingActionType[]) {
@@ -69,12 +70,12 @@ describe("HITL floor — money & calendar actions are always human-approved", ()
 })
 
 describe("autonomy resolution — safe defaults & override precedence", () => {
-  // All cases here are Package 2 shops (active + voice add-on); the
-  // entitlement gate itself is locked in the suite below.
+  // All cases here are Pro shops (active, autonomy tier); the entitlement
+  // gate itself is locked in the suite below.
   const pkg2 = (settings: unknown) =>
-    ({ settings, plan: "active", voice_addon: true }) as unknown as Pick<
+    ({ settings, plan: "active", tier: "pro", voice_addon: false }) as unknown as Pick<
       ShopRow,
-      "settings" | "plan" | "voice_addon"
+      "settings" | "plan" | "tier" | "voice_addon"
     >
 
   it("defaults to suggest (HITL) when nothing is configured", () => {
@@ -91,28 +92,30 @@ describe("autonomy resolution — safe defaults & override precedence", () => {
   })
 })
 
-describe("autonomy is gated by Package 2 (active plan + voice add-on)", () => {
-  // The trust dial is a code guardrail: autonomous mode is a Package 2
+describe("autonomy is gated by the tier (Pro/Operator — D-034 earned autonomy)", () => {
+  // The trust dial is a code guardrail: autonomous mode is a Pro/Operator
   // capability, so the runtime forces "suggest" without the entitlement no
   // matter what the shop stored. Free/past_due get nothing (no free packages).
   const autonomousSettings = { autonomy: { default: "autonomous", overrides: {} } }
-  const mk = (plan: ShopRow["plan"], voice_addon: boolean) =>
-    ({ settings: autonomousSettings, plan, voice_addon }) as unknown as Pick<
+  const mk = (plan: ShopRow["plan"], tier: ShopRow["tier"], voice_addon = false) =>
+    ({ settings: autonomousSettings, plan, tier, voice_addon }) as unknown as Pick<
       ShopRow,
-      "settings" | "plan" | "voice_addon"
+      "settings" | "plan" | "tier" | "voice_addon"
     >
 
-  it("Core (active, no add-on) is forced to suggest even when set autonomous", () => {
-    expect(resolveAgentMode(mk("active", false), "any")).toBe("suggest")
+  it("Core (active) is forced to suggest even when set autonomous", () => {
+    expect(resolveAgentMode(mk("active", "core"), "any")).toBe("suggest")
   })
 
-  it("free or past_due with the add-on flag is still suggest (fail-closed)", () => {
-    expect(resolveAgentMode(mk("free", true), "any")).toBe("suggest")
-    expect(resolveAgentMode(mk("past_due", true), "any")).toBe("suggest")
+  it("Pro and Operator resolve the stored mode; the retired add-on flag still counts on a paid shop", () => {
+    expect(resolveAgentMode(mk("active", "pro"), "any")).toBe("autonomous")
+    expect(resolveAgentMode(mk("active", "operator"), "any")).toBe("autonomous")
+    expect(resolveAgentMode(mk("active", "core", true), "any")).toBe("autonomous")
   })
 
-  it("Package 2 (active + voice add-on) unlocks autonomous", () => {
-    expect(resolveAgentMode(mk("active", true), "any")).toBe("autonomous")
+  it("free or past_due on an autonomy tier is still suggest (fail-closed)", () => {
+    expect(resolveAgentMode(mk("free", "pro"), "any")).toBe("suggest")
+    expect(resolveAgentMode(mk("past_due", "operator"), "any")).toBe("suggest")
   })
 })
 

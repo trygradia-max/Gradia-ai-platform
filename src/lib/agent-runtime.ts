@@ -19,7 +19,7 @@ import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { recordActionDecision } from "@/lib/decision-log"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
-import { hasPackage2, isPaid } from "@/lib/entitlements"
+import { hasAutonomy, isPaid } from "@/lib/entitlements"
 import { getReviewLink } from "@/lib/review-link"
 import {
   draftReviewRequestEmail,
@@ -1808,8 +1808,8 @@ async function maybeAutoExecute(
   if (!outcome.fired) return outcome
   const ids = outcome.pendingActionIds ?? []
   if (ids.length === 0) return outcome
-  // Autonomy is a Package 2 capability; nothing auto-executes without it.
-  if (!hasPackage2(shop)) return outcome
+  // Autonomy is a Pro/Operator capability (D-034); nothing auto-executes without it.
+  if (!hasAutonomy(shop)) return outcome
   const agentAuto = resolveAgentMode(shop, agent.id) === "autonomous"
 
   // P0-011: ids come from this run's own shop-scoped inserts, but the

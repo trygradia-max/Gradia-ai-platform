@@ -5,6 +5,10 @@ export type LeadLifecycle = "unresponsive_stale" | "revival_contacted" | "recove
 
 export type ShopPlan = "free" | "active" | "past_due"
 
+/** Which Gradia plan the shop bought (P0-013 / D-034). Orthogonal to
+ *  ShopPlan, which is subscription STATUS. */
+export type ShopTier = "core" | "pro" | "operator"
+
 export type ShopRow = {
   id: string
   name: string
@@ -41,6 +45,10 @@ export type ShopRow = {
   stripe_account_id: string | null
   stripe_charges_enabled: boolean
   plan: ShopPlan
+  /** P0-013: core | pro | operator — written only from Stripe truth. */
+  tier: ShopTier
+  /** P0-013 (D-035 interim): Stripe trial_end mirrored; null = not trialing. */
+  trial_ends_at: string | null
   stripe_subscription_id: string | null
   credit_limit: number
   credit_period_start: string

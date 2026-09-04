@@ -135,7 +135,14 @@ type VapiPayload = { message?: VapiMessage }
 
 type WebhookShop = Pick<
   ShopRow,
-  "id" | "name" | "vapi_server_secret_enc" | "voice_addon" | "voice_minutes_budget"
+  | "id"
+  | "name"
+  | "vapi_server_secret_enc"
+  | "plan"
+  | "tier"
+  | "voice_addon"
+  | "trial_ends_at"
+  | "voice_minutes_budget"
 >
 
 function secretMatches(provided: string | null, expected: string | null): boolean {
@@ -177,7 +184,7 @@ async function resolveShop(
   message: VapiMessage
 ): Promise<WebhookShop | null> {
   const select =
-    "id, name, vapi_server_secret_enc, voice_addon, voice_minutes_budget"
+    "id, name, vapi_server_secret_enc, plan, tier, voice_addon, trial_ends_at, voice_minutes_budget"
   const assistantId = asString(message.call?.assistantId).trim()
   if (assistantId) {
     const { data, error } = await supabase

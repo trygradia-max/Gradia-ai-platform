@@ -13,7 +13,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import type { PricingConfigRow, PricingKey } from "@/lib/types/database"
+import type { PricingConfigRow, PricingKey, ShopTier } from "@/lib/types/database"
 
 export type Pricing = Record<
   PricingKey,
@@ -46,26 +46,109 @@ export const DEFAULT_PRICING: Pricing = {
 }
 
 /**
- * SKU structure (GRADIA_PRICING.md). Unit PRICES live in pricing_config;
- * plan STRUCTURE lives here because changing it requires matching Stripe
- * price changes (a deploy) regardless. Two SKUs, volume-gated never
- * feature-gated; the credit and minute meters never cross.
+ * Plan STRUCTURE (P0-013 — D-031 prices, D-034 contents + allowances, D-035
+ * trial). Unit PRICES live in pricing_config; the tier lineup lives here
+ * because changing it requires matching Stripe Price changes (a deploy)
+ * regardless. Three tiers, split by how much Gradia does and through which
+ * channels — never by walling off the owner's data. Nothing outside this
+ * module may hardcode a plan price, allowance or pack size (D-031 central-
+ * configuration clause; source-scan locked in eval/billing-tiers.test.ts).
  */
+export type TierSpec = {
+  key: ShopTier
+  label: string
+  /** One-line positioning (owner-facing, narrator voice). */
+  tagline: string
+  priceCents: number
+  /** Message credits included per month (1 credit = 1¢ retail). */
+  includedCredits: number
+  /** Voice minutes included per month — the minutes meter, never credits. */
+  includedMinutes: number
+  /** Voice receptionist + business number. */
+  voice: boolean
+  /** Earned autonomy (suggest → act, per agent, reversible; money + calendar always ask). */
+  autonomy: boolean
+  /** Team seats / multi-user operations (E01). */
+  teamSeats: boolean
+  prioritySupport: boolean
+}
+
+export const TIERS: Record<ShopTier, TierSpec> = {
+  core: {
+    key: "core",
+    label: "Core",
+    tagline: "For solo and smaller shops.",
+    priceCents: 9900,
+    includedCredits: 7000,
+    includedMinutes: 0,
+    voice: false,
+    autonomy: false,
+    teamSeats: false,
+    prioritySupport: false,
+  },
+  pro: {
+    key: "pro",
+    label: "Pro",
+    tagline: "For growing shops that want the phone answered and trusted work running itself.",
+    priceCents: 14900,
+    includedCredits: 6000,
+    includedMinutes: 100,
+    voice: true,
+    autonomy: true,
+    teamSeats: false,
+    prioritySupport: false,
+  },
+  operator: {
+    key: "operator",
+    label: "Operator",
+    tagline: "For established shops and teams running volume.",
+    priceCents: 24900,
+    includedCredits: 10000,
+    includedMinutes: 180,
+    voice: true,
+    autonomy: true,
+    teamSeats: true,
+    prioritySupport: true,
+  },
+}
+
+/** Cheapest → dearest; the order the chooser draws and upgrades follow. */
+export const TIER_ORDER: readonly ShopTier[] = ["core", "pro", "operator"]
+
+export function isShopTier(value: unknown): value is ShopTier {
+  return value === "core" || value === "pro" || value === "operator"
+}
+
+/** The tier's spec; anything unknown reads as Core (the smallest allowance —
+ *  fail closed, never a guessed upgrade). */
+export function tierSpec(tier: ShopTier | string | null | undefined): TierSpec {
+  return isShopTier(tier) ? TIERS[tier] : TIERS.core
+}
+
 export const PLAN = {
-  /** Gradia Core — $20/mo. */
-  CORE_PRICE_CENTS: 2000,
-  CORE_INCLUDED_CREDITS: 1200,
-  /** Voice Receptionist add-on — +$29/mo, number folded in. */
-  VOICE_PRICE_CENTS: 2900,
-  VOICE_INCLUDED_MINUTES: 60,
-  /** Top-up packs — same margin as base. */
+  TIERS,
+  TIER_ORDER,
+  /** Top-up packs — carried forward unchanged (D-034). */
   CREDIT_PACK: { credits: 950, priceCents: 1000 },
   MINUTE_PACK: { minutes: 40, priceCents: 1000 },
   /** Up to 25% of unused INCLUDED credits roll one month. */
   ROLLOVER_MAX_FRACTION: 0.25,
   /** Offer packs + warn at 80% usage. */
   WARN_FRACTION: 0.8,
+  /** D-035 trial: 14 days, 500 credits + 15 minutes. Interim mechanics =
+   *  Stripe trial_period_days with the card collected up front; the
+   *  activation-gate clock ships with the trial system (Q-13 follow-up). */
+  TRIAL: { days: 14, credits: 500, minutes: 15 },
 } as const
+
+/** "$99" for whole dollars, "$12.50" otherwise — the one formatter for plan
+ *  and pack prices so copy can never drift from the numbers above. */
+export function formatUsd(cents: number): string {
+  const dollars = cents / 100
+  return Number.isInteger(dollars)
+    ? `$${dollars.toLocaleString("en-US")}`
+    : `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 /** Human-units framing (copy rule: never bare credits as the headline). */
 export function humanUnits(input: {
@@ -77,7 +160,7 @@ export function humanUnits(input: {
   return {
     texts: Math.max(0, Math.floor(input.creditsRemaining / sms)),
     emails: Math.max(0, Math.floor(input.creditsRemaining / email)),
-    // 60 min ≈ 20 answered calls → ~3 min per call.
+    // ~3 min per answered call (100 min ≈ 33 calls).
     calls:
       input.minutesRemaining == null
         ? null

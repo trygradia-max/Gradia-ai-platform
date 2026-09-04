@@ -4,7 +4,9 @@ import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import { hasVoice } from "@/lib/entitlements"
 import { listShopKnowledge } from "@/lib/knowledge"
+import { TIER_ORDER, TIERS } from "@/lib/pricing"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -69,6 +71,12 @@ const voiceConfigSchema = z.object({
 
 export type VoiceConfigInput = z.input<typeof voiceConfigSchema>
 
+/** Owner-facing copy for a tier without voice — tier names from PLAN (P0-013). */
+function voiceNotIncludedError(): string {
+  const withVoice = TIER_ORDER.filter((t) => TIERS[t].voice).map((t) => TIERS[t].label)
+  return `The voice receptionist is included in ${withVoice.join(" and ")} — change plans in Billing first.`
+}
+
 export type SaveVoiceConfigResult =
   | { ok: true; assistantId: string }
   | { ok: false; error: string }
@@ -80,11 +88,8 @@ export async function saveVoiceConfig(
   await requireUser()
   const shop = await loadShop()
   if (!shop) return { ok: false, error: "Finish onboarding first." }
-  if (!shop.voice_addon) {
-    return {
-      ok: false,
-      error: "The Voice Receptionist is part of the +$29/mo add-on — add it in Billing first.",
-    }
+  if (!hasVoice(shop)) {
+    return { ok: false, error: voiceNotIncludedError() }
   }
 
   const parsed = voiceConfigSchema.safeParse(input)
@@ -204,11 +209,8 @@ export async function setVoiceLive(live: boolean): Promise<SetVoiceLiveResult> {
   if (!shop) return { ok: false, error: "Finish onboarding first." }
 
   if (live) {
-    if (!shop.voice_addon) {
-      return {
-        ok: false,
-        error: "The Voice Receptionist is part of the +$29/mo add-on — add it in Billing first.",
-      }
+    if (!hasVoice(shop)) {
+      return { ok: false, error: voiceNotIncludedError() }
     }
     const gate = voiceLaunchGate(shop)
     if (!gate.ready) {

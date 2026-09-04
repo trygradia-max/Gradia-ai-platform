@@ -20,7 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { isAutomationAutopilotAllowed } from "@/lib/autonomy"
-import { hasPackage2 } from "@/lib/entitlements"
+import { hasAutonomy } from "@/lib/entitlements"
 import { precheckCredits, type ShopCreditFields } from "@/lib/credits"
 import { recordInteraction } from "@/lib/memory"
 import { isUniqueViolation } from "@/lib/provider-events"
@@ -274,7 +274,10 @@ export async function catalogGateFor(
  */
 export async function afterCatalogStage(
   supabase: SupabaseClient,
-  shop: Pick<ShopRow, "id" | "owner_id" | "plan" | "voice_addon" | "credit_period_start">,
+  shop: Pick<
+    ShopRow,
+    "id" | "owner_id" | "plan" | "tier" | "voice_addon" | "trial_ends_at" | "credit_period_start"
+  >,
   config: AutomationConfig,
   pendingId: string,
   ref: { customerId: string | null; triggerRef: string }
@@ -315,7 +318,7 @@ export async function afterCatalogStage(
   }
 
   let autopilot = config.mode === "autopilot" && isAutomationAutopilotAllowed(config.key)
-  if (autopilot && !hasPackage2(shop)) autopilot = false
+  if (autopilot && !hasAutonomy(shop)) autopilot = false
   if (autopilot) {
     const credit = await precheckCredits(supabase, shop as ShopCreditFields, 1)
     if (!credit.ok) autopilot = false
@@ -362,12 +365,15 @@ export type AutomationRunOutcome =
 /**
  * Stage-or-send for one target. Approval stages; autopilot executes through
  * the ONE send path (executeApproval → A2P/quiet-hours/opt-out/metering).
- * Fail-closed: credit pre-check before autopilot; missing Package 2
- * degrades autopilot to staging. Every attempt lands in automation_runs.
+ * Fail-closed: credit pre-check before autopilot; a tier without autonomy
+ * (Core) degrades autopilot to staging. Every attempt lands in automation_runs.
  */
 export async function runAutomationForTarget(
   supabase: SupabaseClient,
-  shop: Pick<ShopRow, "id" | "owner_id" | "name" | "plan" | "voice_addon" | "credit_period_start">,
+  shop: Pick<
+    ShopRow,
+    "id" | "owner_id" | "name" | "plan" | "tier" | "voice_addon" | "trial_ends_at" | "credit_period_start"
+  >,
   config: AutomationConfig,
   target: AutomationTarget
 ): Promise<AutomationRunOutcome> {
@@ -468,7 +474,7 @@ export async function runAutomationForTarget(
 
   // The floor + entitlement + credit gates decide whether autopilot may fire.
   let autopilot = config.mode === "autopilot" && isAutomationAutopilotAllowed(config.key)
-  if (autopilot && !hasPackage2(shop)) {
+  if (autopilot && !hasAutonomy(shop)) {
     autopilot = false // Core shops stay approve-first — degrade, don't drop.
   }
   if (autopilot) {

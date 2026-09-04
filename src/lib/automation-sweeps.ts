@@ -26,7 +26,15 @@ import type { QuoteRow, ShopRow } from "@/lib/types/database"
 
 type SweepShop = Pick<
   ShopRow,
-  "id" | "owner_id" | "name" | "plan" | "voice_addon" | "credit_period_start" | "settings"
+  | "id"
+  | "owner_id"
+  | "name"
+  | "plan"
+  | "tier"
+  | "voice_addon"
+  | "trial_ends_at"
+  | "credit_period_start"
+  | "settings"
 >
 
 export type SweepStats = Record<string, { considered: number; acted: number }>
