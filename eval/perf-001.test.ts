@@ -118,14 +118,34 @@ describe("PERF-001 §1 — Home loader query shapes", () => {
     expect(calls.find((c) => c.table === "leads")?.limit).toBe(500)
   })
 
-  it("Home passes a small cap to the lead feed and links to the full list", () => {
+  it("B-03: Chief of Staff (Home) is one hero, one KPI row, one needs-you queue, one activity stream — the legacy stacked tail is gone", () => {
     const page = read("src/app/(dashboard)/dashboard/page.tsx")
-    expect(page).toMatch(/const HOME_LEAD_FEED_CAP = (\d+)/)
-    const cap = Number(page.match(/const HOME_LEAD_FEED_CAP = (\d+)/)![1])
-    expect(cap).toBeLessThanOrEqual(12)
-    expect(page).toContain("listScoredLeadsForCurrentShop(HOME_LEAD_FEED_CAP)")
-    expect(page).toContain("total={leadTotal}")
-    expect(read("src/components/gradia/live-lead-feed.tsx")).toContain("STRINGS.pages.home.leadFeedSeeAll")
+    // The four kept surfaces.
+    expect(page).toContain("DashboardHero")
+    expect(page).toContain("KpiRow")
+    expect(page).toContain("ApprovalsList")
+    expect(page).toContain("ActivityFeed")
+    // The duplicate money/feed surfaces named in U-01 are gone from Home —
+    // deleted outright, not just unmounted (git rm, not a dead import).
+    for (const rel of [
+      "src/components/gradia/home-feed.tsx",
+      "src/components/gradia/roi-receipt.tsx",
+      "src/components/gradia/today-money-rows.tsx",
+      "src/components/gradia/revenue-tiles.tsx",
+      "src/components/gradia/revenue-tiles-client.tsx",
+      "src/components/gradia/live-lead-feed.tsx",
+    ]) {
+      expect(existsSync(join(ROOT, rel)), `${rel} should be deleted`).toBe(false)
+    }
+    for (const banned of [
+      "RoiReceipt",
+      "TodayMoneyRows",
+      "RevenueTiles",
+      "LiveLeadFeed",
+      "HomeFeed",
+    ]) {
+      expect(page, `page.tsx should not import ${banned}`).not.toContain(banned)
+    }
   })
 })
 
