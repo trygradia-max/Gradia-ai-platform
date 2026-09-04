@@ -4,15 +4,19 @@
  */
 
 import { connectionStatus, type ConnectionShopFields } from "@/lib/data/connections"
+import { hasCustomWorkingHours } from "@/lib/working-hours"
+import type { ShopRow } from "@/lib/types/database"
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6
 
-type WizardShopFields = ConnectionShopFields
+type WizardShopFields = ConnectionShopFields & Pick<ShopRow, "settings">
 
-/** The wizard resumes at the first incomplete step. Steps 3–5 are
+/** The wizard resumes at the first incomplete step. Steps 4–6 are
  *  skippable, so "incomplete" is only a starting point — never a wall.
+ *  Step 3 (hours) always has a sensible default, so it gates on whether
+ *  the owner has ever saved it (B-16), not on any particular value.
  *  Connection truth comes from `connectionStatus()` (UX-001): a mailbox
- *  connected with no display email used to bounce the owner back to step 3
+ *  connected with no display email used to bounce the owner back to step 4
  *  forever. */
 export function deriveWizardStep(
   shop: WizardShopFields | null,
@@ -20,10 +24,11 @@ export function deriveWizardStep(
 ): WizardStep {
   if (!shop) return 1
   if (serviceCount === 0) return 2
+  if (!hasCustomWorkingHours(shop.settings)) return 3
   const status = connectionStatus(shop)
-  if (!status.email.connected) return 3
-  if (!status.sms.connected) return 4
-  return 5
+  if (!status.email.connected) return 4
+  if (!status.sms.connected) return 5
+  return 6
 }
 
 /**

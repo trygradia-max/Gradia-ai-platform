@@ -54,5 +54,6 @@ export async function saveWorkingHours(
   await markVoiceStale(supabase, shop.id) // the agent's hours line changed
   revalidatePath("/settings")
   revalidatePath("/calendar")
+  revalidatePath("/onboarding") // B-16: the wizard's hours step saves here too
   return { ok: true }
 }

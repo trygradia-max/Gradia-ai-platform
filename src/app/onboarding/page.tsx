@@ -11,7 +11,7 @@ import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
-type Step = 1 | 2 | 3 | 4 | 5
+type Step = 1 | 2 | 3 | 4 | 5 | 6
 
 export default async function OnboardingPage({
   searchParams,
@@ -48,11 +48,11 @@ export default async function OnboardingPage({
     services = (data as ServiceRow[] | null) ?? []
   }
 
-  // ?step= override (the OAuth return lands on step 4); otherwise resume
+  // ?step= override (the OAuth return lands on step 5); otherwise resume
   // at the first incomplete step.
   const requested = Number.parseInt(stepParam ?? "", 10)
   const initialStep: Step =
-    requested >= 1 && requested <= 5 && shop && !startFresh
+    requested >= 1 && requested <= 6 && shop && !startFresh
       ? (requested as Step)
       : startFresh
         ? 1
@@ -88,9 +88,9 @@ export default async function OnboardingPage({
           )}
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Five short steps — your shop, your menu, then the inbox, number,
-          and receptionist. Skip anything; we&apos;ll nudge you later.
-          Everything&apos;s editable in Settings.
+          Six short steps — your shop, your menu, your hours, then the
+          inbox, number, and receptionist. Skip anything; we&apos;ll nudge
+          you later. Everything&apos;s editable in Settings.
         </p>
       </header>
 

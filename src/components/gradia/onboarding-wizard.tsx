@@ -12,54 +12,38 @@ import {
   ArrowRight,
   Check,
   Loader2,
-  Plus,
   Sparkles,
-  Trash2,
 } from "lucide-react"
-import { toast } from "sonner"
 
-import { addService, deleteService } from "@/app/actions/services"
 import { saveShop } from "@/app/actions/shop"
 import type { A2pState } from "@/app/actions/a2p"
 import {
+  HoursStep,
   InboxStep,
   NumberStep,
   ReceptionistStep,
 } from "@/components/gradia/onboarding-launch-steps"
+import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Textarea } from "@/components/ui/textarea"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { connectionStatus } from "@/lib/data/connections"
+import { readWorkingHours } from "@/lib/working-hours"
 import { cn } from "@/lib/utils"
 import type { ServiceRow, ShopRow } from "@/lib/types/database"
 
-type Step = 1 | 2 | 3 | 4 | 5
+type Step = 1 | 2 | 3 | 4 | 5 | 6
 
 const STEP_LABELS: Record<Step, string> = {
   1: "Our shop",
   2: "What we offer",
-  3: "Your inbox",
-  4: "Your number",
-  5: "Your receptionist",
-}
-
-function formatPrice(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
-  }).format(cents / 100)
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`
-  const hours = minutes / 60
-  if (Number.isInteger(hours)) return `${hours} hr`
-  return `${hours.toFixed(1)} hr`
+  3: "Our hours",
+  4: "Your inbox",
+  5: "Your number",
+  6: "Your receptionist",
 }
 
 export function OnboardingWizard({
@@ -134,36 +118,40 @@ export function OnboardingWizard({
             {step === 2 ? (
               <ServicesStep
                 services={services}
-                onAdded={(svc) => setServices((prev) => [...prev, svc])}
-                onDeleted={(id) =>
-                  setServices((prev) => prev.filter((s) => s.id !== id))
-                }
+                onServicesChange={setServices}
                 onBack={() => setStep(1)}
                 onContinue={() => goTo(3)}
               />
             ) : null}
             {step === 3 ? (
-              <InboxStep
-                connected={connectionStatus(liveShop).email.connected}
-                connectedEmail={connectionStatus(liveShop).email.identity}
+              <HoursStep
+                initialHours={readWorkingHours(liveShop?.settings)}
                 onBack={() => goTo(2)}
                 onContinue={() => goTo(4)}
               />
             ) : null}
-            {step === 4 && liveShop ? (
-              <NumberStep
-                shop={liveShop}
-                a2pState={a2pState}
+            {step === 4 ? (
+              <InboxStep
+                connected={connectionStatus(liveShop).email.connected}
+                connectedEmail={connectionStatus(liveShop).email.identity}
                 onBack={() => goTo(3)}
                 onContinue={() => goTo(5)}
               />
             ) : null}
             {step === 5 && liveShop ? (
+              <NumberStep
+                shop={liveShop}
+                a2pState={a2pState}
+                onBack={() => goTo(4)}
+                onContinue={() => goTo(6)}
+              />
+            ) : null}
+            {step === 6 && liveShop ? (
               <ReceptionistStep
                 shop={liveShop}
                 voiceOptions={voiceOptions}
                 vapiConfigured={vapiConfigured}
-                onBack={() => goTo(4)}
+                onBack={() => goTo(5)}
               />
             ) : null}
           </motion.div>
@@ -182,12 +170,12 @@ function StepIndicator({
   current: Step
   reduce: boolean
 }) {
-  const steps: Step[] = [1, 2, 3, 4, 5]
+  const steps: Step[] = [1, 2, 3, 4, 5, 6]
   return (
     <div className="space-y-3.5">
       <div className="flex items-center justify-between gap-3">
         <p className="label-eyebrow text-muted-foreground/70">
-          Step {current} of 5
+          Step {current} of 6
         </p>
         <p className="text-xs font-medium tracking-tight text-foreground">
           {STEP_LABELS[current]}
@@ -410,65 +398,34 @@ function ShopStep({
   )
 }
 
-// --- Step 2: Services -----------------------------------------------------
+// --- Step 2: Services -------------------------------------------------------
 
 function ServicesStep({
   services,
-  onAdded,
-  onDeleted,
+  onServicesChange,
   onBack,
   onContinue,
 }: {
   services: ServiceRow[]
-  onAdded: (svc: ServiceRow) => void
-  onDeleted: (id: string) => void
+  onServicesChange: (services: ServiceRow[]) => void
   onBack: () => void
   onContinue: () => void
 }) {
-  const [showForm, setShowForm] = React.useState(services.length === 0)
-
   return (
     <div className="grid gap-5">
       <div className="space-y-1">
         <h2 className="font-display text-2xl tracking-tight text-foreground">What we offer</h2>
         <p className="text-sm text-muted-foreground">
-          Our service menu — the AI uses this to quote and book accurately.
-          We can edit anytime.
+          Our service menu — prices by vehicle size, durations, and condition
+          bumps. The AI uses this to quote and book accurately. We can edit
+          anytime.
         </p>
       </div>
 
-      {services.length > 0 ? (
-        <ul className="grid gap-3">
-          {services.map((s) => (
-            <li key={s.id}>
-              <ServiceRowCard
-                service={s}
-                onDelete={() => onDeleted(s.id)}
-              />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      {showForm ? (
-        <AddServiceForm
-          onAdded={(svc) => {
-            onAdded(svc)
-            setShowForm(false)
-          }}
-          onCancel={services.length > 0 ? () => setShowForm(false) : undefined}
-        />
-      ) : (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setShowForm(true)}
-          className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
-        >
-          <Plus className="size-4" aria-hidden />
-          Add another service
-        </Button>
-      )}
+      <ServiceMenuCard
+        initialServices={services}
+        onServicesChange={onServicesChange}
+      />
 
       {services.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
@@ -498,200 +455,5 @@ function ServicesStep({
         </Button>
       </div>
     </div>
-  )
-}
-
-function ServiceRowCard({
-  service,
-  onDelete,
-}: {
-  service: ServiceRow
-  onDelete: () => void
-}) {
-  const [deleting, setDeleting] = React.useState(false)
-
-  async function handleDelete() {
-    setDeleting(true)
-    const result = await deleteService(service.id)
-    setDeleting(false)
-    if (!result.ok) {
-      toast.error(result.error)
-      return
-    }
-    onDelete()
-  }
-
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border/80 bg-card p-3">
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm font-medium">{service.name}</p>
-        <p className="text-xs tabular-nums text-muted-foreground">
-          {formatPrice(service.price_cents)} ·{" "}
-          {formatDuration(service.duration_minutes)}
-        </p>
-        {service.description ? (
-          <p className="line-clamp-2 text-xs text-muted-foreground">
-            {service.description}
-          </p>
-        ) : null}
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={handleDelete}
-        disabled={deleting}
-        aria-label={`Remove ${service.name}`}
-      >
-        {deleting ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-        ) : (
-          <Trash2 className="size-4" aria-hidden />
-        )}
-      </Button>
-    </div>
-  )
-}
-
-function AddServiceForm({
-  onAdded,
-  onCancel,
-}: {
-  onAdded: (svc: ServiceRow) => void
-  onCancel?: () => void
-}) {
-  const [pending, setPending] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const formRef = React.useRef<HTMLFormElement>(null)
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setError(null)
-    const fd = new FormData(e.currentTarget)
-    const name = String(fd.get("svc-name") ?? "").trim()
-    const description = String(fd.get("svc-description") ?? "").trim() || null
-    const priceDollars = Number(fd.get("svc-price"))
-    const durationHours = Number(fd.get("svc-duration"))
-
-    if (!name) {
-      setError("Service name is required.")
-      return
-    }
-    if (!Number.isFinite(priceDollars) || priceDollars < 0) {
-      setError("Price must be 0 or more.")
-      return
-    }
-    if (!Number.isFinite(durationHours) || durationHours <= 0) {
-      setError("Duration must be greater than zero.")
-      return
-    }
-
-    setPending(true)
-    const result = await addService({
-      name,
-      description,
-      priceDollars,
-      durationHours,
-    })
-    setPending(false)
-
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-
-    formRef.current?.reset()
-    onAdded(result.service)
-  }
-
-  return (
-    <form
-      ref={formRef}
-      className="grid gap-4 rounded-lg border border-border/80 bg-muted/20 p-4"
-      onSubmit={handleSubmit}
-    >
-      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-        Add a service
-      </p>
-      <div className="grid gap-2">
-        <Label htmlFor="svc-name">Name</Label>
-        <Input
-          id="svc-name"
-          name="svc-name"
-          required
-          maxLength={200}
-          placeholder="Standard wash & wax"
-          autoComplete="off"
-        />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="svc-description">Description (optional)</Label>
-        <Textarea
-          id="svc-description"
-          name="svc-description"
-          rows={2}
-          maxLength={2000}
-          placeholder="Foam bath, hand dry, tire shine, sealant"
-          className="resize-none"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-2">
-          <Label htmlFor="svc-price">Price ($)</Label>
-          <Input
-            id="svc-price"
-            name="svc-price"
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            required
-            placeholder="80"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="svc-duration">Duration (hours)</Label>
-          <Input
-            id="svc-duration"
-            name="svc-duration"
-            type="number"
-            min={0.25}
-            step="0.25"
-            inputMode="decimal"
-            required
-            placeholder="1"
-          />
-        </div>
-      </div>
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="submit"
-          disabled={pending}
-          className="h-10 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
-        >
-          {pending ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : (
-            <Plus className="size-4" aria-hidden />
-          )}
-          Add to menu
-        </Button>
-        {onCancel ? (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onCancel}
-            className="h-10"
-          >
-            Cancel
-          </Button>
-        ) : null}
-      </div>
-    </form>
   )
 }

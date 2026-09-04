@@ -4,6 +4,7 @@ import {
   capacityMinutesFor,
   DEFAULT_WORKING_HOURS,
   formatWorkingHours,
+  hasCustomWorkingHours,
   readWorkingHours,
   weekdayOf,
 } from "@/lib/working-hours"
@@ -53,6 +54,27 @@ describe("readWorkingHours", () => {
       },
     })
     expect(capacityMinutesFor(hours, MON)).toBe(480)
+  })
+})
+
+describe("hasCustomWorkingHours — the onboarding gate (B-16)", () => {
+  it("an untouched shop has never saved hours", () => {
+    expect(hasCustomWorkingHours(null)).toBe(false)
+    expect(hasCustomWorkingHours({})).toBe(false)
+    expect(hasCustomWorkingHours({ calendar: {} })).toBe(false)
+  })
+
+  it("saving the structured hours (even the default) counts as reviewed", () => {
+    expect(
+      hasCustomWorkingHours({ calendar: { working_hours: DEFAULT_WORKING_HOURS } })
+    ).toBe(true)
+    expect(
+      hasCustomWorkingHours({ calendar: { working_hours: { mon: null } } })
+    ).toBe(true)
+  })
+
+  it("the interim numeric setting (C4 run) also counts", () => {
+    expect(hasCustomWorkingHours({ calendar: { working_hours_per_day: 8 } })).toBe(true)
   })
 })
 
