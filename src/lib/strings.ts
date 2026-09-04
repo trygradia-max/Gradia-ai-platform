@@ -297,6 +297,8 @@ export const STRINGS = {
         "Reads and drafts as usual but sends nothing. Use it while you set up.",
       demoData:
         "Removes the sample records added for demos. Real customers and history are untouched.",
+      dataExport:
+        "Downloads this shop's customers, vehicles, leads, appointments or conversations as CSV or JSON. Only this shop's rows — never another shop's.",
       carrier:
         "US carriers verify every business that texts. Until they approve, calls work and texting waits.",
     },

@@ -10,6 +10,7 @@ import { ReviewLinkCard } from "@/components/gradia/review-link-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { AutomationsCard } from "@/components/gradia/automations-card"
 import { ClearDemoDataCard } from "@/components/gradia/clear-demo-data-card"
+import { DataExportCard } from "@/components/gradia/data-export-card"
 import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
 import { getAutomationSettings } from "@/app/actions/automations"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
@@ -437,6 +438,7 @@ export default async function SettingsPage({
             </summary>
             <div className="space-y-4 pb-4 pt-2">
               <McpTokensCard initialTokens={mcpTokens} />
+              <DataExportCard />
               <ClearDemoDataCard />
             </div>
           </details>
