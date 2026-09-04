@@ -17,6 +17,7 @@ import {
 } from "@/lib/jobber"
 import { markCrmJustConnected } from "@/lib/crm-health"
 import { finishOauth } from "@/lib/oauth-popup"
+import { resolveInteractiveOrigin } from "@/lib/request-origin"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -30,18 +31,12 @@ function settingsRedirect(status: string): string {
   return `/settings?${params.toString()}`
 }
 
-async function buildRedirectUri(request: Request): Promise<string> {
-  const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
-  if (configured) {
-    try {
-      const u = new URL(configured)
-      return `${u.origin}/api/jobber/auth/callback`
-    } catch {
-      // fall through
-    }
-  }
-  const here = new URL(request.url)
-  return `${here.origin}/api/jobber/auth/callback`
+// Must resolve identically to /api/jobber/auth/start's redirectUri — Jobber's
+// token exchange rejects a mismatch. Both routes go through
+// resolveInteractiveOrigin so a Preview round trip matches itself instead of
+// silently falling back to the production host.
+function buildRedirectUri(request: Request): string {
+  return `${resolveInteractiveOrigin(request)}/api/jobber/auth/callback`
 }
 
 export async function GET(request: Request) {
@@ -69,7 +64,7 @@ export async function GET(request: Request) {
     return finishOauth(settingsRedirect("state_mismatch"))
   }
 
-  const redirectUri = await buildRedirectUri(request)
+  const redirectUri = buildRedirectUri(request)
 
   let tokens
   try {

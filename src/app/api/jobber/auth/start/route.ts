@@ -9,9 +9,10 @@
 
 import { randomBytes } from "node:crypto"
 import { redirect } from "next/navigation"
-import { cookies, headers } from "next/headers"
+import { cookies } from "next/headers"
 
 import { buildAuthorizeUrl } from "@/lib/jobber"
+import { resolveInteractiveOrigin } from "@/lib/request-origin"
 import { requireShop } from "@/lib/shop"
 
 export const runtime = "nodejs"
@@ -20,24 +21,7 @@ export const dynamic = "force-dynamic"
 const STATE_COOKIE = "jobber_oauth_state"
 const STATE_COOKIE_MAX_AGE_SECONDS = 60 * 10 // 10 minutes
 
-async function resolveOrigin(): Promise<string> {
-  const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
-  if (configured) {
-    try {
-      return new URL(configured).origin
-    } catch {
-      // fall through
-    }
-  }
-  const h = await headers()
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"
-  const proto =
-    h.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
-}
-
-export async function GET() {
+export async function GET(request: Request) {
   await requireShop()
 
   if (!process.env.JOBBER_CLIENT_ID?.trim()) {
@@ -58,7 +42,7 @@ export async function GET() {
     maxAge: STATE_COOKIE_MAX_AGE_SECONDS,
   })
 
-  const origin = await resolveOrigin()
+  const origin = resolveInteractiveOrigin(request)
   const authorizeUrl = buildAuthorizeUrl({
     redirectUri: `${origin}/api/jobber/auth/callback`,
     state: nonce,

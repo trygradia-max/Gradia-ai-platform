@@ -10,9 +10,10 @@
 
 import { randomBytes } from "node:crypto"
 import { redirect } from "next/navigation"
-import { cookies, headers } from "next/headers"
+import { cookies } from "next/headers"
 
 import { buildAuthorizeUrl } from "@/lib/aurinko"
+import { resolveInteractiveOrigin } from "@/lib/request-origin"
 import { requireShop } from "@/lib/shop"
 
 export const runtime = "nodejs"
@@ -26,23 +27,6 @@ const STATE_COOKIE_MAX_AGE_SECONDS = 60 * 10 // 10 minutes
 function safeNextPath(raw: string | null): string | null {
   if (!raw) return null
   return raw.startsWith("/") && !raw.startsWith("//") ? raw : null
-}
-
-async function resolveOrigin(): Promise<string> {
-  const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
-  if (configured) {
-    try {
-      return new URL(configured).origin
-    } catch {
-      // fall through to header-based detection
-    }
-  }
-  const h = await headers()
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"
-  const proto =
-    h.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
 }
 
 export async function GET(request: Request) {
@@ -83,7 +67,7 @@ export async function GET(request: Request) {
     })
   }
 
-  const origin = await resolveOrigin()
+  const origin = resolveInteractiveOrigin(request)
   const authorizeUrl = buildAuthorizeUrl({
     returnUrl: `${origin}/api/aurinko/auth/callback`,
     state: nonce,
