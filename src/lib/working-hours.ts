@@ -102,6 +102,23 @@ export function readWorkingHours(
   return out
 }
 
+/** Has the owner explicitly saved working hours (onboarding gate, B-16)?
+ *  Distinct from `readWorkingHours`, which always returns a value (falling
+ *  back to the 9–5 default) — an untouched shop has no key here, so the
+ *  wizard can tell "never reviewed" from "reviewed and kept the default". */
+export function hasCustomWorkingHours(
+  settings: ShopRow["settings"] | null | undefined
+): boolean {
+  const calendar = ((settings ?? {}) as Record<string, unknown>).calendar as
+    | Record<string, unknown>
+    | undefined
+  if (!calendar) return false
+  return (
+    calendar.working_hours != null ||
+    typeof calendar.working_hours_per_day === "number"
+  )
+}
+
 /** JS Date.getDay() (0=Sun) → our weekday key. */
 export function weekdayOf(date: Date): Weekday {
   return (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const)[date.getDay()]

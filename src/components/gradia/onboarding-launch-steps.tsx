@@ -7,21 +7,30 @@ import { BadgeCheck, Loader2, Mail, Phone } from "lucide-react"
 import { toast } from "sonner"
 
 import { completeOnboarding } from "@/app/actions/onboarding"
+import { saveWorkingHours } from "@/app/actions/working-hours"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
 import { TwilioNumberPicker } from "@/components/gradia/twilio-number-picker"
 import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import type { A2pState } from "@/app/actions/a2p"
 import { STRINGS } from "@/lib/strings"
 import type { ShopRow } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
+import {
+  WEEKDAY_LABELS,
+  WEEKDAYS,
+  type WorkingHours,
+} from "@/lib/working-hours"
 
 /**
- * Wizard steps 3–5 (GRADIA_UX_ONBOARDING_SPEC Part 1): inbox, number +
- * carrier verification, receptionist + test call. Each embeds the
- * existing owner card for that job — the wizard is sequencing, not new
- * machinery. Every step is skippable ("Do this later" advances; the
- * Today page nudges what was skipped).
+ * Wizard steps 3–6 (B-16 / GRADIA_UX_ONBOARDING_SPEC Part 1): hours,
+ * inbox, number + carrier verification, receptionist + test call. Each
+ * embeds the existing owner card for that job — the wizard is sequencing,
+ * not new machinery. Inbox/number/receptionist are skippable ("Do this
+ * later" advances; the Today page nudges what was skipped). Hours always
+ * has a sensible default (readWorkingHours), so its "Continue" saves and
+ * moves on rather than offering a skip.
  */
 
 function StepShell({
@@ -64,7 +73,114 @@ function LaterButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-// ---------- Step 3: Your inbox ----------
+// ---------- Step 3: Our hours ----------
+
+export function HoursStep({
+  initialHours,
+  onBack,
+  onContinue,
+}: {
+  initialHours: WorkingHours
+  onBack: () => void
+  onContinue: () => void
+}) {
+  const [hours, setHours] = React.useState<WorkingHours>(initialHours)
+  const [saving, setSaving] = React.useState(false)
+
+  function setDay(
+    day: (typeof WEEKDAYS)[number],
+    patch: Partial<{ open: string; close: string; closed: boolean }>
+  ) {
+    setHours((prev) => {
+      const current = prev[day]
+      if (patch.closed !== undefined) {
+        return {
+          ...prev,
+          [day]: patch.closed ? null : { open: "09:00", close: "17:00" },
+        }
+      }
+      if (!current) return prev
+      return { ...prev, [day]: { ...current, ...patch } }
+    })
+  }
+
+  async function saveAndContinue() {
+    setSaving(true)
+    const result = await saveWorkingHours(hours)
+    setSaving(false)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    onContinue()
+  }
+
+  return (
+    <StepShell
+      title="Our hours"
+      blurb="When we're open — the calendar warns about overbooking on these days, and the receptionist only proposes times inside these hours."
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onBack}>
+            Back
+          </Button>
+          <Button
+            type="button"
+            onClick={saveAndContinue}
+            disabled={saving}
+            className="gap-2"
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+            Continue
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        {WEEKDAYS.map((day) => {
+          const h = hours[day]
+          return (
+            <div key={day} className="flex items-center gap-3">
+              <span className="w-24 shrink-0 text-sm text-muted-foreground">
+                {WEEKDAY_LABELS[day]}
+              </span>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={h === null}
+                  onChange={(e) => setDay(day, { closed: e.target.checked })}
+                  className="size-4 accent-primary"
+                />
+                Closed
+              </label>
+              {h ? (
+                <>
+                  <Input
+                    type="time"
+                    value={h.open}
+                    onChange={(e) => setDay(day, { open: e.target.value })}
+                    className="h-8 w-28"
+                    aria-label={`${WEEKDAY_LABELS[day]} opening time`}
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input
+                    type="time"
+                    value={h.close}
+                    onChange={(e) => setDay(day, { close: e.target.value })}
+                    className="h-8 w-28"
+                    aria-label={`${WEEKDAY_LABELS[day]} closing time`}
+                  />
+                </>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </StepShell>
+  )
+}
+
+// ---------- Step 4: Your inbox ----------
 
 export function InboxStep({
   connected,
@@ -114,7 +230,7 @@ export function InboxStep({
       ) : (
         <div className="flex items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 px-6 py-10">
           <a
-            href="/api/aurinko/auth/start?next=/onboarding?step=4"
+            href="/api/aurinko/auth/start?next=/onboarding?step=5"
             className={cn(buttonVariants({ size: "lg" }), "gap-2")}
           >
             <Mail className="size-4" aria-hidden />
@@ -126,7 +242,7 @@ export function InboxStep({
   )
 }
 
-// ---------- Step 4: Your number ----------
+// ---------- Step 5: Your number ----------
 
 export function NumberStep({
   shop,
@@ -194,7 +310,7 @@ export function NumberStep({
   )
 }
 
-// ---------- Step 5: Your receptionist ----------
+// ---------- Step 6: Your receptionist ----------
 
 export function ReceptionistStep({
   shop,

@@ -52,7 +52,7 @@ export async function GET(request: Request) {
   })
 
   // Where to land after the callback (the onboarding wizard passes
-  // ?next=/onboarding?step=4 so the owner returns mid-flow). Same-app
+  // ?next=/onboarding?step=5 so the owner returns mid-flow). Same-app
   // paths only; the callback consumes + clears the cookie.
   const next = safeNextPath(new URL(request.url).searchParams.get("next"))
   if (next) {

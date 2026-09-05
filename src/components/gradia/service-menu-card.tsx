@@ -32,10 +32,23 @@ import { cn } from "@/lib/utils"
  * quotes, the phone receptionist, and Whisper drafts through ONE resolution
  * module, so this is the only place a price ever changes.
  */
-export function ServiceMenuCard({ initialServices }: { initialServices: ServiceRow[] }) {
+export function ServiceMenuCard({
+  initialServices,
+  onServicesChange,
+}: {
+  initialServices: ServiceRow[]
+  /** Onboarding (B-16) lifts the list up to gate "Continue" on having at
+   *  least one service; Settings leaves this unset. */
+  onServicesChange?: (services: ServiceRow[]) => void
+}) {
   const [services, setServices] = React.useState(initialServices)
   const [openId, setOpenId] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+
+  React.useEffect(() => {
+    onServicesChange?.(services)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services])
 
   async function seedTemplate() {
     setBusy(true)
