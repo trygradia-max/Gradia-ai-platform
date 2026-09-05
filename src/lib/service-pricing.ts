@@ -93,6 +93,49 @@ export function resolveDurationMinutes(
 }
 
 /**
+ * Duration spread across configured size classes — the DURATION twin of
+ * `priceSpread`, for surfaces that must say how long a job takes before the
+ * vehicle is known. Null when the service has no valid size-class durations
+ * (flat duration); low === high when they don't vary.
+ *
+ * Why this exists: `resolveDurationMinutes(service)` called with NO size
+ * class silently returns the flat `duration_minutes`, so a shop that
+ * configured "sedan 4h, truck/SUV 6h" had every voice and drafting surface
+ * confidently state the sedan number to a truck owner. Price never had this
+ * bug because `describePrice` already fell back to a spread. Callers that
+ * cannot know the size must render a range, never a single number.
+ */
+export function durationSpread(
+  service: ServiceDurationFields
+): { low: number; high: number } | null {
+  const values = validSizeValues(service.duration_by_size)
+  if (values.length === 0) return null
+  return { low: Math.min(...values), high: Math.max(...values) }
+}
+
+/**
+ * One compact duration phrase for text surfaces (drafter grounding, menus):
+ * exact ("90 min") when the size class is known or the duration is flat, a
+ * range ("90–150 min depending on vehicle size") when size-class durations
+ * vary and the vehicle is unknown. Voice surfaces use `durationSpread` with
+ * their own TTS formatter instead — same rule, spoken phrasing.
+ */
+export function describeDuration(
+  service: ServiceDurationFields,
+  sizeClass?: VehicleSizeClass | null
+): string {
+  if (sizeClass && readSizeMap(service.duration_by_size, sizeClass) != null) {
+    return `${resolveDurationMinutes(service, sizeClass)} min`
+  }
+  const spread = durationSpread(service)
+  if (spread && spread.low !== spread.high) {
+    return `${spread.low}–${spread.high} min depending on vehicle size`
+  }
+  if (spread) return `${spread.low} min`
+  return `${service.duration_minutes} min`
+}
+
+/**
  * Price spread across configured size classes — what to quote when the
  * vehicle's size isn't known yet. Null when the service has no valid
  * size-class prices (flat pricing); low === high when they don't vary.
