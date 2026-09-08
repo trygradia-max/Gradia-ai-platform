@@ -26,11 +26,16 @@ import { findCustomerByChannel } from "@/lib/customers"
 import { recordActionDecision } from "@/lib/decision-log"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
-import { describePrice, resolveDurationMinutes } from "@/lib/service-pricing"
+import {
+  describePrice,
+  durationSpread,
+  resolveDurationMinutes,
+} from "@/lib/service-pricing"
 import type {
   InteractionChannel,
   LeadStatus,
   ServiceRow,
+  VehicleSizeClass,
 } from "@/lib/types/database"
 
 export type VapiCallContext = {
@@ -49,6 +54,25 @@ function speakDuration(minutes: number): string {
   if (hours === 1) return "about an hour"
   if (Number.isInteger(hours)) return `about ${hours} hours`
   return `about ${hours.toFixed(1).replace(".0", "")} hours`
+}
+
+/**
+ * Spoken duration for one service. Exact when the size class is known or the
+ * duration is flat; a spoken range when size-class durations vary and the
+ * caller's vehicle is still unknown — the same rule `describePrice` applies
+ * to money. Never state a single number the shop did not configure for this
+ * vehicle.
+ */
+function speakServiceDuration(
+  service: ServiceRow,
+  sizeClass?: VehicleSizeClass | null
+): string {
+  if (sizeClass) return speakDuration(resolveDurationMinutes(service, sizeClass))
+  const spread = durationSpread(service)
+  if (spread && spread.low !== spread.high) {
+    return `${speakDuration(spread.low)} to ${speakDuration(spread.high)} depending on the vehicle`
+  }
+  return speakDuration(resolveDurationMinutes(service))
 }
 
 function speakRelative(iso: string): string {
@@ -491,7 +515,7 @@ export async function quoteService(
   if (matches.length === 1) {
     const s = matches[0]
     const desc = s.description ? ` ${s.description}.` : ""
-    return `${s.name} is ${describePrice(s)} and runs ${speakDuration(resolveDurationMinutes(s))}.${desc} Want us to get that booked?`
+    return `${s.name} is ${describePrice(s)} and runs ${speakServiceDuration(s)}.${desc} Want us to get that booked?`
   }
 
   if (matches.length > 1) {
@@ -499,7 +523,7 @@ export async function quoteService(
     const list = top
       .map(
         (s) =>
-          `${s.name} at ${describePrice(s)} (${speakDuration(resolveDurationMinutes(s))})`
+          `${s.name} at ${describePrice(s)} (${speakServiceDuration(s)})`
       )
       .join(", ")
     return `We have a few options — ${list}. Which sounds right?`

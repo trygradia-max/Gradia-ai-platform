@@ -15,6 +15,7 @@ import { GRADIA_VOICE } from "@/lib/persona"
 import {
   describePrice,
   priceSpread,
+  durationSpread,
   resolveDurationMinutes,
 } from "@/lib/service-pricing"
 import type {
@@ -117,8 +118,16 @@ export function synthesizeSystemPrompt(input: SynthesisInput): string {
     for (const s of input.services.slice(0, 24)) {
       const spread = priceSpread(s)
       if (spread && spread.low !== spread.high) anySized = true
+      // Duration follows the same rule as price: a size-class range is a
+      // range until the vehicle is known. Stating the flat number here made
+      // the receptionist quote the sedan time to a truck owner.
+      const durs = durationSpread(s)
+      if (durs && durs.low !== durs.high) anySized = true
       const price = describePrice(s)
-      const dur = formatDuration(resolveDurationMinutes(s))
+      const dur =
+        durs && durs.low !== durs.high
+          ? `${formatDuration(durs.low)} to ${formatDuration(durs.high)} depending on size`
+          : formatDuration(resolveDurationMinutes(s))
       const desc = s.description?.trim()
       lines.push(
         `- ${s.name}: ${price}, ${dur}${desc ? ` — ${desc}` : ""}`
@@ -130,7 +139,7 @@ export function synthesizeSystemPrompt(input: SynthesisInput): string {
     )
     if (anySized) {
       lines.push(
-        "For services priced by vehicle size, ask what they drive first; if the size is still unclear, give the range and say we'll confirm the exact price."
+        "For services priced or timed by vehicle size, ask what they drive first; if the size is still unclear, give the range and say we'll confirm the exact price and how long it takes."
       )
     }
   } else {

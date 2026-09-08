@@ -12,7 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { listShopKnowledge } from "@/lib/knowledge"
 import { getReviewLink } from "@/lib/review-link"
-import { describePrice, resolveDurationMinutes } from "@/lib/service-pricing"
+import { describeDuration, describePrice } from "@/lib/service-pricing"
 import type { ServiceRow } from "@/lib/types/database"
 
 const MAX_CHARS = 2_500
@@ -46,7 +46,7 @@ export async function buildDrafterGrounding(
       if (!rows.length) return ""
       const lines = rows.map(
         (s) =>
-          `- ${s.name}: ${describePrice(s)} (${resolveDurationMinutes(s)} min)`
+          `- ${s.name}: ${describePrice(s)} (${describeDuration(s)})`
       )
       return `Service menu:\n${lines.join("\n")}`
     })(),
