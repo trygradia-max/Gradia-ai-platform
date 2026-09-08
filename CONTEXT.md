@@ -16,6 +16,28 @@ Every channel flows in: phone calls, SMS, email, website forms, and Meta lead ad
 
 **The commercial claim:** Jobber and Urable are systems of record you operate. Gradia does the work and reports it.
 
+## 1b. The sellable MVP — D-069 (founder decision 2026-09-08)
+
+§1 describes the product. This section describes **the first thing we sell**, and the line that says when we can sell it. It exists because §4 was a 16-ticket list with nothing marking "this is the release."
+
+**Gradia v1 — "Never miss another call."** A detailing shop's phone gets answered every time by an agent that knows their services and prices, books into their calendar, and files everything into a CRM the owner never types into.
+
+**In v1:** voice receptionist · CRM · pipeline · calendar · quotes · Chief of Staff · email (staged-and-approved send). **Not in v1: SMS, and Meta lead ads.**
+
+**Why the cut:** SMS is blocked behind the shop's own A2P registration and Meta lead ads behind Meta App Review. Both are *calendar time we do not control*. Voice needs no registration — it is sellable the day it is verified. A v1 that requires SMS cannot be sold this quarter; a v1 built on voice can. This is A-02a made concrete.
+
+**Ship gate — v1 is sellable only when all six are true:**
+1. Voice acceptance run passes on a real inbound call (§7)
+2. **B-19** — an established shop keeps its own number (call forwarding)
+3. **B-20** — the owner is told when an approval is waiting
+4. **B-16** — onboarding leaves a shop able to quote (services + pricing + hours). First half merged 2026-09-08
+5. **B-09** — conflict enforcement ON; double-booking impossible
+6. A shop completes setup and takes a real call with **zero founder involvement**
+
+Everything else in §4 is v2 or later. This dates those tickets; it does not delete them.
+
+**Stated plainly in every sales conversation, never hidden:** no SMS until that shop's own A2P clears · no payments, ever (§2) · no jobs or work orders (§2) · one owner login until A-08.
+
 ## 2. What Gradia is NOT (D-067 — do not build, do not plan, do not claim)
 
 Removed from scope entirely. Not "later" — out. Revisit only on a recorded founder decision after a paying customer asks.
@@ -54,7 +76,7 @@ Gradia is **not** a payment processor and never will be (licensing, underwriting
 
 **Missing for the definition in §1:**
 - Meta lead ads intake
-- Email sending / in-thread reply (read-only today)
+- In-thread email reply from the inbox (**correction 2026-09-08:** outbound email *does* exist — `aurinko.ts::sendEmailMessage`, staged as a `send_email` pending_action and sent via the shop's connected Gmail on approval. What is missing is replying inside a thread from the inbox, per B-12/U-07 — not sending as such. Gradia still has **no transactional sender of its own**; see B-20.)
 - The new-lead → qualify → book flow wired as one automatic path
 - CRM holes: no direct "add customer" form, no data export, no VIN field, dual-truth `leads.status` vs `stage`
 
@@ -64,6 +86,8 @@ A session picks the **first unchecked item**, builds it, opens a PR, and stops. 
 
 - [x] **B-01 — Data export.** Customers, vehicles, leads, appointments, conversations → CSV + JSON. Tenant-scoped, rate-limited. _Loop proof ticket: small, no money, no schema._
 - [x] **B-00 — Fix Preview auth redirect. BLOCKS THE ACCEPTANCE RULE — do before any further review.** Logging in on a Vercel Preview bounces the user to production because the auth callback uses the hardcoded `GRADIA_DASHBOARD_URL` env var (`https://gradia-ai-platform.vercel.app`) instead of the request's own origin. Consequence: **no ticket can actually be verified on a Preview**, so §6's acceptance rule and autorun rule 8 are unenforceable, and anything previously "verified on Preview" was in fact viewed on production. Fix: derive the redirect origin from the incoming request (or `VERCEL_URL`) and fall back to the env var only when neither is available. Small — auth callback + config read. Add a test that a Preview-host request never redirects to the production host.
+- [ ] **B-19 — Phone number continuity (promoted from A-01 on 2026-09-08). v1 ship gate.** Verified 2026-09-08: `grep -riE "call.?forward|hosted.?number" src/` returns **0 matches** — none of this exists. An established shop will not change the number on its listing, trucks and signage, so today the voice receptionist cannot be sold to the ICP at all. CONTEXT.md has called this "the highest-value missing item in the product" since 2026-09-03 and it was never in the build queue. **Build the fast path only:** conditional call forwarding — the shop keeps its number and forwards on no-answer/busy to its Gradia number, with per-carrier setup instructions in-app and a verification step that confirms a forwarded call actually lands. Twilio **porting** (LOA, days-to-weeks) is a separate later ticket, not this one. Split if over 12 files.
+- [ ] **B-20 — Owner notification on a pending approval (promoted from A-03 on 2026-09-08). v1 ship gate.** Verified 2026-09-08: `grep -riE "web.?push|notifyOwner|owner.?notif|daily.?digest" src/` returns **0 matches**. The HITL approval engine is the strongest subsystem in the codebase and it is **invisible** — nothing tells the owner something is waiting, so the queue only works if they happen to look. **Bigger than A-03 assumed:** the only outbound email today is `aurinko.ts::sendEmailMessage`, which sends *as the shop* through its connected Gmail and only on approval — using it to announce a pending approval is circular and needs Gmail connected. So this ticket needs a **transactional sender owned by Gradia** (none exists) plus: notify on new pending approval, one daily digest, per-shop on/off, quiet hours respected. **Not SMS** — A2P-gated, and this has to work before SMS exists.
 - [ ] **B-02 — Finish three-tier billing.** Complete the work on `wip/p0-013`. Founder acceptance required; Stripe live prices founder-only.
 - [ ] **B-03 — Chief of Staff screen — REPLACES today's Home, does not add to it.** One hero line, one needs-you queue, one activity stream, one small KPI row. **Deletes the stacked legacy tail** (see §4d U-01) and **absorbs `/activity` and `/approvals`** as sections rather than separate destinations. Reads existing approvals/trust/conversation data. No new schema.
 - [ ] **B-04 — Agent command bar. Smaller than it looks — it already exists.** `command-bar.tsx` is mounted app-wide in `(dashboard)/layout.tsx` as a lazy-loaded dialog around `BiChat`. The work is: surface it persistently on Chief of Staff, **bind ⌘K globally** (§4e U-09), give it write tools through the existing approval executor, and delete the duplicate `BiChat` mount on `/conversations` (§4d U-04). Plain-language asks over the shop's own data. Every write goes through the existing approval executor — no second execution path. Bulk/marketing sends are refused with an honest "not yet" (consent + marketing 10DLC required first).
