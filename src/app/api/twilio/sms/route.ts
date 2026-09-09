@@ -457,6 +457,7 @@ async function proposeDraftReply(
       shop_id: shop.id,
       action_type: "send_sms",
       payload: {
+        category: "transactional",
         to_phone: fromPhone,
         body: draft,
         customer_name: customerName,

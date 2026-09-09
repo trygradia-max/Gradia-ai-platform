@@ -1,9 +1,9 @@
 "use server"
 
+import { evaluateSmsSendPolicy } from "@/lib/send-policy"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { findCustomerByChannel, normalizePhone } from "@/lib/customers"
 import { recordInteraction } from "@/lib/memory"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -18,6 +18,7 @@ import type { ShopRow } from "@/lib/types/database"
 const PHONE_PATTERN = /^\+\d{8,15}$/
 
 const proposeSchema = z.object({
+  category: z.enum(["transactional", "marketing"]).default("marketing"),
   to_phone: z
     .string()
     .trim()
@@ -61,6 +62,7 @@ export async function proposeOutboundSms(
   if (!ownerId) return { ok: false, error: "Shop owner not found." }
 
   const payload = {
+    category: parsed.data.category,
     to_phone: parsed.data.to_phone,
     body: parsed.data.body,
     customer_name: parsed.data.customer_name ?? null,
@@ -140,11 +142,16 @@ export async function sendOperatorSms(
     return { ok: false, error: smsGate.reason }
   }
 
+  const policy = await evaluateSmsSendPolicy(supabase, shop, {
+    toPhone: parsed.data.to_phone, customerId: null, category: "transactional",
+  })
+  if (!policy.allowed) return { ok: false, error: policy.reason }
+
   let sendResult
   try {
     sendResult = await sendOutboundSms({
       from: shop.twilio_phone_number,
-      to: parsed.data.to_phone,
+      to: policy.destination,
       body: parsed.data.body,
       statusCallback: defaultStatusCallbackUrl(shop.id),
       creds: resolveTwilioCredentials(shop),
@@ -159,14 +166,9 @@ export async function sendOperatorSms(
     }
   }
 
-  const normalizedTo = normalizePhone(parsed.data.to_phone) ?? parsed.data.to_phone
-  const customer = await findCustomerByChannel(supabase, shop.id, {
-    phone: normalizedTo,
-  })
-
   await recordInteraction(supabase, {
     shopId: shop.id,
-    customerId: customer?.id ?? null,
+    customerId: policy.customerId,
     channel: "sms",
     role: "gradia",
     content: parsed.data.body,
@@ -175,7 +177,7 @@ export async function sendOperatorSms(
       sent_by: "operator",
       twilio_message_sid: sendResult.messageSid,
       twilio_status: sendResult.status,
-      to_phone: normalizedTo,
+      to_phone: policy.destination,
       from_phone: shop.twilio_phone_number,
     },
   })

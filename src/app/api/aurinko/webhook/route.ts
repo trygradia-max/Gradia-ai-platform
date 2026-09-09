@@ -316,6 +316,7 @@ async function proposeDraftEmailReply(
       shop_id: shop.id,
       action_type: "send_email",
       payload: {
+        category: "transactional",
         to_email: senderEmail,
         subject: draft.subject,
         body: draft.body,

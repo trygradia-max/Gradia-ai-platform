@@ -6,8 +6,7 @@
  *   1. Quiet hours — never text into the recipient's overnight window. Uses the
  *      shop's timezone as the local-time proxy (customers are local to the shop).
  *   2. Opt-out — never text someone who said STOP (explicit timestamp).
- *   3. Marketing consent — a marketing/campaign text needs affirmative consent
- *      OR an established business relationship (a prior inbound from them). A
+ *   3. Marketing consent — a marketing/campaign text needs affirmative channel- and destination-bound consent. A
  *      transactional message (reply, reminder, confirmation) is exempt.
  *
  * All three FAIL CLOSED: when we can't establish it's safe, we hold the send.
@@ -62,112 +61,97 @@ export function isQuietHours(
     : hour >= startHour || hour < endHour
 }
 
-type ConsentRow = Pick<CustomerConsentFields, "marketing_consent_at" | "sms_opted_out_at">
-type CustomerConsentFields = {
-  marketing_consent_at: string | null
+export type CustomerSendInput = {
+  channel: "sms" | "email"
+  destination: string
+  customerId: string | null
+  category: SendCategory | undefined
+  nowMs?: number
+}
+
+type Recipient = {
+  id: string
+  shop_id: string
+  phone: string | null
+  email: string | null
+  do_not_contact: boolean
   sms_opted_out_at: string | null
 }
 
-/** Loads a customer's consent state by id, else by phone. */
-async function loadConsent(
-  supabase: SupabaseClient,
-  shopId: string,
-  customerId: string | null,
-  phone: string | null
-): Promise<{ row: ConsentRow | null; customerId: string | null }> {
-  if (customerId) {
-    const { data } = await supabase
-      .from("customers")
-      .select("id, marketing_consent_at, sms_opted_out_at")
-      .eq("id", customerId)
-      .maybeSingle()
-    const row = data as (ConsentRow & { id: string }) | null
-    return { row, customerId: row?.id ?? customerId }
-  }
-  if (phone) {
-    const { data } = await supabase
-      .from("customers")
-      .select("id, marketing_consent_at, sms_opted_out_at")
-      .eq("shop_id", shopId)
-      .eq("phone", phone)
-      .maybeSingle()
-    const row = data as (ConsentRow & { id: string }) | null
-    return { row, customerId: row?.id ?? null }
-  }
-  return { row: null, customerId: null }
+export type CustomerSendDecision =
+  | { allowed: true; customerId: string; destination: string }
+  | { allowed: false; held: boolean; reason: string }
+
+function denied(reason: string): CustomerSendDecision {
+  return { allowed: false, held: false, reason }
 }
 
-/** True if the customer has ever sent us an inbound message (EBR proxy). */
-async function hasInboundRelationship(
-  supabase: SupabaseClient,
-  shopId: string,
-  customerId: string
-): Promise<boolean> {
-  const { data } = await supabase
-    .from("interactions")
-    .select("id")
-    .eq("shop_id", shopId)
-    .eq("customer_id", customerId)
-    .eq("role", "customer")
-    .limit(1)
-  return Boolean((data as { id: string }[] | null)?.length)
+/** Exact normalization only: never guess country codes or email aliases. */
+export function normalizeDestination(channel: "sms" | "email", raw: string): string | null {
+  if (typeof raw !== "string") return null
+  if (channel === "email") {
+    const email = raw.trim().toLowerCase()
+    return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email) ? email : null
+  }
+  if (!/^\+[\d ().-]+$/.test(raw.trim())) return null
+  const phone = raw.trim().replace(/[ ().-]/g, "")
+  return /^\+[1-9]\d{6,14}$/.test(phone) ? phone : null
 }
 
-/**
- * The send-time SMS gate. `nowMs` is injectable for tests.
+/** Shared send-time boundary. A failed/ambiguous read never grants permission.
+ * Channel permissions are bound to the current destination; old generic consent
+ * and unrelated inbound interactions cannot grant marketing permission.
  */
+export async function evaluateCustomerSendPolicy(
+  supabase: SupabaseClient,
+  shop: QuietConfig & { id: string },
+  input: CustomerSendInput
+): Promise<CustomerSendDecision> {
+  const destination = normalizeDestination(input.channel, input.destination)
+  if (!destination) return denied("Invalid recipient destination.")
+  if (input.category !== "transactional" && input.category !== "marketing") {
+    return denied("Message category must be explicitly classified before sending.")
+  }
+  try {
+    let query = supabase.from("customers")
+      .select("id, shop_id, phone, email, do_not_contact, sms_opted_out_at")
+      .eq("shop_id", shop.id)
+    query = input.customerId ? query.eq("id", input.customerId) : query.eq(input.channel === "sms" ? "phone" : "email", destination)
+    const { data, error } = await query.maybeSingle()
+    const customer = data as Recipient | null
+    if (error || !customer || customer.shop_id !== shop.id ||
+        (input.customerId && customer.id !== input.customerId)) return denied("Recipient could not be verified for this shop.")
+    if (normalizeDestination(input.channel, (input.channel === "sms" ? customer.phone : customer.email) ?? "") !== destination) {
+      return denied("Destination does not belong to the referenced customer.")
+    }
+    if (customer.do_not_contact !== false) return denied("Customer is marked do not contact, or contact permission is unknown.")
+    if (input.channel === "sms" && customer.sms_opted_out_at !== null) return denied("This person texted STOP, or SMS opt-out state is unknown.")
+    const { data: permission, error: permissionError } = await supabase.from("customer_channel_permissions")
+      .select("shop_id, customer_id, channel, destination, suppressed_at, marketing_consent_at")
+      .eq("shop_id", shop.id).eq("customer_id", customer.id)
+      .eq("channel", input.channel).eq("destination", destination).maybeSingle()
+    if (permissionError) return denied("Channel permission lookup failed.")
+    const row = permission as { shop_id: string; customer_id: string; channel: string; destination: string; suppressed_at: string | null; marketing_consent_at: string | null } | null
+    if (row && (row.shop_id !== shop.id || row.customer_id !== customer.id || row.channel !== input.channel || row.destination !== destination)) return denied("Channel permission does not match recipient.")
+    if (row && row.suppressed_at !== null) return denied("This destination is suppressed for this channel.")
+    if (input.category === "marketing" && !row?.marketing_consent_at) return denied("No affirmative consent for marketing on this channel and destination.")
+    if (input.channel === "sms") {
+      if (!shop.timezone || !Number.isInteger(shop.quiet_hours_start) || !Number.isInteger(shop.quiet_hours_end) || shop.quiet_hours_start < 0 || shop.quiet_hours_start > 23 || shop.quiet_hours_end < 0 || shop.quiet_hours_end > 23) return denied("Texting hours could not be verified.")
+      try { new Intl.DateTimeFormat("en", { timeZone: shop.timezone }).format() } catch { return denied("Texting timezone could not be verified.") }
+      if (isQuietHours(input.nowMs ?? Date.now(), shop.timezone, shop.quiet_hours_start, shop.quiet_hours_end)) {
+        return { allowed: false, held: true, reason: "Held — outside permitted texting hours." }
+      }
+    }
+    return { allowed: true, customerId: customer.id, destination }
+  } catch {
+    return denied("Recipient or channel permission lookup failed.")
+  }
+}
+
 export async function evaluateSmsSendPolicy(
   supabase: SupabaseClient,
   shop: QuietConfig & { id: string },
-  input: {
-    toPhone: string
-    customerId: string | null
-    category: SendCategory
-    nowMs?: number
-  }
-): Promise<SendDecision> {
-  const now = input.nowMs ?? Date.now()
-
-  // 1. Quiet hours — held (retry in-window), applies to every SMS.
-  if (isQuietHours(now, shop.timezone, shop.quiet_hours_start, shop.quiet_hours_end)) {
-    return {
-      allowed: false,
-      held: true,
-      reason: `Held — it's outside texting hours (${shop.quiet_hours_end}:00–${shop.quiet_hours_start}:00 local). It'll send when you approve during the day.`,
-    }
-  }
-
-  const { row, customerId } = await loadConsent(
-    supabase,
-    shop.id,
-    input.customerId,
-    input.toPhone
-  )
-
-  // 2. Opt-out — hard block, every category.
-  if (row?.sms_opted_out_at) {
-    return {
-      allowed: false,
-      held: false,
-      reason: "This person texted STOP — we can't message them.",
-    }
-  }
-
-  // 3. Marketing needs consent OR an established relationship.
-  if (input.category === "marketing") {
-    const consented = Boolean(row?.marketing_consent_at)
-    const ebr = customerId
-      ? await hasInboundRelationship(supabase, shop.id, customerId)
-      : false
-    if (!consented && !ebr) {
-      return {
-        allowed: false,
-        held: false,
-        reason:
-          "Held — no marketing consent on file and no prior contact from them. Reach customers who opted in or who've messaged us.",
-      }
-    }
-  }
-
-  return { allowed: true }
+  input: { toPhone: string; customerId: string | null; category: SendCategory | undefined; nowMs?: number }
+): Promise<CustomerSendDecision> {
+  return evaluateCustomerSendPolicy(supabase, shop, { ...input, channel: "sms", destination: input.toPhone })
 }

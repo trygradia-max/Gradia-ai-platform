@@ -233,6 +233,7 @@ async function executeLeadFollowupSms(
         shop_id: shop.id,
         action_type: "send_sms",
         payload: {
+          category: "marketing",
           to_phone: lead.phone,
           body: draft,
           customer_name: lead.customer_name,
@@ -442,6 +443,7 @@ async function executeAppointmentReminderEmail(
         shop_id: shop.id,
         action_type: "send_email",
         payload: {
+          category: "transactional",
           to_email: email,
           subject: draft.subject,
           body: draft.body,
@@ -620,6 +622,7 @@ async function executeAppointmentReminderSms(
         shop_id: shop.id,
         action_type: "send_sms",
         payload: {
+          category: "transactional",
           to_phone: phone,
           body,
           customer_name: appt.customer?.name ?? null,
@@ -785,6 +788,7 @@ async function executeStaleCustomerSms(
         shop_id: shop.id,
         action_type: "send_sms",
         payload: {
+          category: "marketing",
           to_phone: customer.phone,
           body: draft,
           customer_name: customer.name,
@@ -994,6 +998,7 @@ async function executeFreeformOutreach(
           shop_id: shop.id,
           action_type: "send_email",
           payload: {
+          category: "marketing",
             to_email: t.email,
             subject: draft.subject,
             body: draft.body,
@@ -1206,6 +1211,7 @@ export async function stageOutreachPlan(
           shop_id: shop.id,
           action_type: "send_email",
           payload: {
+          category: "marketing",
             to_email: t.email,
             subject: draft.subject,
             body: draft.body,
@@ -1319,6 +1325,7 @@ async function executePaymentReceivedThankYouSms(
       shop_id: shop.id,
       action_type: "send_sms",
       payload: {
+          category: "transactional",
         to_phone: event.customerPhone,
         body: draft,
         customer_name: event.customerName,
@@ -1444,6 +1451,7 @@ async function executeBookingApprovedPrepEmail(
       shop_id: shop.id,
       action_type: "send_email",
       payload: {
+          category: "transactional",
         to_email: event.customerEmail,
         subject: draft.subject,
         body: draft.body,

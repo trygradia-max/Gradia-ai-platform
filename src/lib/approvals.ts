@@ -10,6 +10,7 @@
  *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
+import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
@@ -46,7 +47,7 @@ import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
-import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
+import { evaluateSmsSendPolicy, evaluateCustomerSendPolicy, type SendCategory } from "@/lib/send-policy"
 import { moveLeadToStage, stageFromLegacyStatus } from "@/lib/pipeline"
 import { buildQuoteLineItem, computeQuoteTotals } from "@/lib/quotes"
 import { parseVehicle } from "@/lib/vehicle"
@@ -112,11 +113,12 @@ export type SmsProposal = {
   customer_id: string | null
   /** Source-side context — what prompted this draft (e.g. inbound message ID, agent name). */
   reason: string | null
-  /** Safe-send classification (B2). Marketing needs consent/EBR; defaults transactional. */
+  /** Safe-send classification (B2). Marketing needs explicit channel consent; unknown categories are held. */
   category?: SendCategory
 }
 
 export type EmailProposal = {
+  category?: SendCategory
   to_email: string
   subject: string
   body: string
@@ -277,6 +279,7 @@ async function claimPendingAction(
     if (row && row.shop_id !== shopId) {
       reportTenantScopeViolation({
         surface: "approvals.claimPendingAction",
+        notifyExternally: false,
         authorizedShopId: shopId,
         rowShopId: row.shop_id,
         rowId: pendingId,
@@ -498,6 +501,11 @@ export async function executeApproval(
 
   if (!claimed) {
     return { ok: true, status: "already_decided" }
+  }
+
+  if (!await validTenantReferences(supabase, shopId, claimed.payload)) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: "Action reference not found in this shop." }
   }
 
   switch (claimed.action_type) {
@@ -1676,6 +1684,7 @@ async function queueBookingConfirmationSms(
       shop_id: shop.id,
       action_type: "send_sms",
       payload: {
+        category: "transactional",
         to_phone: proposal.phone,
         body: draft,
         customer_name: proposal.customer_name,
@@ -1857,7 +1866,7 @@ async function executeSendSms(
   const policy = await evaluateSmsSendPolicy(supabase, shop, {
     toPhone: proposal.to_phone,
     customerId: proposal.customer_id ?? null,
-    category: proposal.category ?? "transactional",
+    category: proposal.category,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
@@ -1868,7 +1877,7 @@ async function executeSendSms(
   try {
     sendResult = await sendOutboundSms({
       from: shop.twilio_phone_number,
-      to: proposal.to_phone,
+      to: policy.destination,
       body: proposal.body,
       statusCallback: defaultStatusCallbackUrl(claimed.shop_id),
       creds: resolveTwilioCredentials(shop),
@@ -1884,13 +1893,7 @@ async function executeSendSms(
   }
 
   // Best-effort attachment — proposal may already carry customer_id.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      phone: proposal.to_phone,
-    })
-    if (customer) customerId = customer.id
-  }
+  const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -1960,6 +1963,18 @@ async function executeSendEmail(
   }
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
+  if (!shop) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: "Shop not found." }
+  }
+  const policy = await evaluateCustomerSendPolicy(supabase, shop, {
+    channel: "email", destination: proposal.to_email,
+    customerId: proposal.customer_id ?? null, category: proposal.category,
+  })
+  if (!policy.allowed) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: policy.reason }
+  }
   let accessToken: string | null = null
   if (shop) {
     try {
@@ -1981,7 +1996,7 @@ async function executeSendEmail(
     const sent = await sendEmailMessage(accessToken, {
       subject: proposal.subject,
       body: proposal.body,
-      to: proposal.to_email,
+      to: policy.destination,
     })
     sentId = sent.id
   } catch (err) {
@@ -1995,13 +2010,7 @@ async function executeSendEmail(
     }
   }
 
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      email: proposal.to_email,
-    })
-    if (customer) customerId = customer.id
-  }
+  const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
     shopId: claimed.shop_id,

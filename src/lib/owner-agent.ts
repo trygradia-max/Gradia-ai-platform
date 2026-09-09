@@ -633,6 +633,7 @@ async function runOwnerTool(
       }).catch(() => null)
       if (!body) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
       const ok = await stageSingle(ctx, "send_sms", {
+        category: "marketing",
         to_phone: to,
         body,
         customer_name: c.name,
@@ -660,6 +661,7 @@ async function runOwnerTool(
     }).catch(() => null)
     if (!draft) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
     const ok = await stageSingle(ctx, "send_email", {
+      category: "marketing",
       to_email: to,
       subject: draft.subject,
       body: draft.body,
