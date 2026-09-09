@@ -1,5 +1,6 @@
 "use server"
 
+import { isOwnedJobPhotoPath } from "@/lib/job-photo-paths"
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -388,6 +389,7 @@ export async function rescheduleJob(
       shop_id: shop.id,
       action_type: "send_sms",
       payload: {
+        category: "transactional",
         to_phone: job.customer.phone,
         body: `Hi ${first || "there"}, it's ${shop.name} — we've moved your${job.service_name ? ` ${job.service_name}` : ""} appointment to ${when}. Reply if that doesn't work and we'll find a better slot. — ${shop.name}`,
         customer_name: job.customer.name,
@@ -496,6 +498,7 @@ export async function uploadJobPhoto(
 
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase().slice(0, 5)
   const path = `${shop.id}/${jobId}/${phase}-${randomUUID()}.${ext}`
+  if (!isOwnedJobPhotoPath(path, shop.id, jobId, phase)) return { ok: false, error: "Unsupported photo path or file extension." }
   const service = createServiceClient()
   const { error: uploadErr } = await service.storage
     .from(PHOTO_BUCKET)
@@ -537,11 +540,14 @@ export async function getJobPhotoUrls(
     .maybeSingle()
   const job = data as Pick<AppointmentRow, "photos_before" | "photos_after"> | null
   if (!job) return { before: [], after: [] }
+  if (!(job.photos_before ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "before")) ||
+      !(job.photos_after ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "after"))) return { before: [], after: [] }
 
   const service = createServiceClient()
-  const sign = async (paths: string[] | undefined): Promise<string[]> => {
+  const sign = async (paths: string[] | undefined, phase: "before" | "after"): Promise<string[]> => {
     const out: string[] = []
     for (const p of paths ?? []) {
+      if (!isOwnedJobPhotoPath(p, shop.id, jobId, phase)) continue
       const { data: s } = await service.storage
         .from(PHOTO_BUCKET)
         .createSignedUrl(p, 60 * 60)
@@ -549,5 +555,5 @@ export async function getJobPhotoUrls(
     }
     return out
   }
-  return { before: await sign(job.photos_before), after: await sign(job.photos_after) }
+  return { before: await sign(job.photos_before, "before"), after: await sign(job.photos_after, "after") }
 }
