@@ -1,5 +1,5 @@
 import { afterEach, it, expect, vi } from "vitest"
-import { getJobPhotoUrls } from "@/app/actions/jobs"
+import { getJobPhotoUrls, uploadJobPhoto } from "@/app/actions/jobs"
 import { createServiceClient } from "@/lib/supabase/service"
 import { readDb } from "./_tenant-fixtures"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -23,4 +23,13 @@ it("signs a valid owned appointment path",async()=>{
   db=readDb({appointments:[{id:"job",shop_id:"shop",photos_before:[path],photos_after:[]}]}).db
   expect(await getJobPhotoUrls("job")).toEqual({before:["synthetic-signed-url"],after:[]})
   expect(signed).toHaveBeenCalledExactlyOnceWith(path,3600)
+})
+
+it.each(["BEFORE", "After", "before|after", ".*", "", null])("invalid upload phase %s has no effects", async phase => {
+  const from = vi.fn(() => { throw new Error("Database must not be reached") })
+  db = {from} as unknown as SupabaseClient
+  expect(await uploadJobPhoto("job", phase as "before", new FormData())).toEqual({ok:false,error:"Photo phase must be before or after."})
+  expect(from).not.toHaveBeenCalled()
+  expect(createServiceClient).not.toHaveBeenCalled()
+  expect(signed).not.toHaveBeenCalled()
 })

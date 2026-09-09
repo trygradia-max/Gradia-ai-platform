@@ -268,7 +268,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
   it("rejects before side effects: quote resolves but its lead was deleted", async () => {
     const writes: Write[] = []
     const db = mockDb({
-      tables: { quotes: { id: "q-1", lead_id: "lead-gone" }, leads: null },
+      tables: { quotes: { id: "q-1", shop_id: "shop-1", lead_id: "lead-gone" }, leads: null },
       writes,
     })
     const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })

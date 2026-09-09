@@ -477,6 +477,7 @@ export async function uploadJobPhoto(
   phase: "before" | "after",
   formData: FormData
 ): Promise<PhotoUploadResult> {
+  if (phase !== "before" && phase !== "after") return { ok: false, error: "Photo phase must be before or after." }
   const shop = await requireShop()
   const supabase = await createClient()
   const file = formData.get("photo")
