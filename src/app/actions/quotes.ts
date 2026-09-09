@@ -1,5 +1,6 @@
 "use server"
 
+import { validQuoteReferences } from "@/lib/tenant-references"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -83,6 +84,10 @@ export async function createOwnerQuote(
   const shop = await requireShop()
   const supabase = await createClient()
 
+  if (!await validQuoteReferences(supabase, shop.id, {
+    customer_id: parsed.data.customerId, vehicle_id: parsed.data.vehicleId, lead_id: parsed.data.leadId,
+  })) return { ok: false, error: "Quote references could not be verified for this customer and shop." }
+
   const { data: svcData } = await supabase
     .from("services")
     .select("*")
@@ -92,7 +97,7 @@ export async function createOwnerQuote(
       parsed.data.selections.map((s) => s.serviceId)
     )
   const services = (svcData as ServiceRow[] | null) ?? []
-  if (services.length === 0) return { ok: false, error: "Those services weren't found." }
+  if (services.length === 0 || parsed.data.selections.some(sel => !services.some(svc => svc.id === sel.serviceId))) return { ok: false, error: "Those services weren't found." }
 
   let sizeClass: VehicleSizeClass | null = null
   if (parsed.data.vehicleId) {
@@ -195,7 +200,7 @@ export async function sendQuote(
     .eq("shop_id", shop.id)
     .maybeSingle()
   const quote = quoteData as QuoteRow | null
-  if (!quote) return { ok: false, held: false, error: "Quote not found." }
+  if (!quote || !await validQuoteReferences(supabase, shop.id, quote)) return { ok: false, held: false, error: "Quote references not found for this customer and shop." }
   if (!quote.public_token) {
     return { ok: false, held: false, error: "Quote has no public link yet." }
   }
@@ -204,6 +209,7 @@ export async function sendQuote(
     .from("customers")
     .select("id, name, phone, email")
     .eq("id", quote.customer_id)
+    .eq("shop_id", shop.id)
     .maybeSingle()
   const customer = custData as Pick<CustomerRow, "id" | "name" | "phone" | "email"> | null
   if (!customer) return { ok: false, held: false, error: "Customer not found." }
@@ -250,6 +256,7 @@ export async function sendQuote(
       customer_name: customer.name,
       customer_id: customer.id,
       reason: `Quote ${quoteId}`,
+      category: "transactional",
       quote_id: quoteId,
     }
   }

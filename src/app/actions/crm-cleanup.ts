@@ -1,5 +1,6 @@
 "use server"
 
+import { ownedReference } from "@/lib/tenant-references"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -152,6 +153,7 @@ export async function updateCustomerDetails(
   }
 
   const supabase = await createClient()
+  if (!await ownedReference(supabase, shop.id, "customers", customerId)) return { ok: false, error: "Customer not found." }
   if (Object.keys(patch).length > 0) {
     const { error } = await supabase
       .from("customers")

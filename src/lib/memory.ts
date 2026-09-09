@@ -13,6 +13,7 @@
  * backends (no user session) or a user-session client from server actions.
  */
 
+import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { EMBEDDING_MODEL, embedText } from "@/lib/embeddings"
@@ -51,6 +52,10 @@ export async function recordInteraction(
   if (!content) {
     return { ok: false, error: "Cannot record empty interaction" }
   }
+
+  if (!await validTenantReferences(supabase, input.shopId, {
+    ...input.metadata, customer_id: input.customerId,
+  })) return { ok: false, error: "Interaction reference not found in this shop." }
 
   let embedding: number[] | null = null
   let embeddingModel: string | null = null
