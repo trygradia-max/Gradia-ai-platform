@@ -65,6 +65,8 @@ jobs:
             echo "$json" | jq -r 'keys'
             exit 1
           fi
+          [ "$url" = "http://127.0.0.1:55431" ] || { echo "Unexpected disposable endpoint"; exit 1; }
+          echo "GRADIA_DISPOSABLE_TEST=gradia-p0-tenant-policy-safety" >> "$GITHUB_ENV"
           echo "SUPABASE_TEST_URL=$url" >> "$GITHUB_ENV"
           echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$key" >> "$GITHUB_ENV"
           # Anon key: P0-005's ledger RLS permission tests sign in as a real
