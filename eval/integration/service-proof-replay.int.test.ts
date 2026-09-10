@@ -91,8 +91,26 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable service proof execution",()=
  it("a proof bound at issue time refuses a different action before claiming",async()=>{
   const f=await fixture("sms"),first=await f.stage()
   const proof=await issueServiceProof(db,{...f.message,actionId:first},{kind:"appointment",id:appointment})
-  expect(await claimServiceExecution(db,{...f.message,actionId:await f.stage()},proof)).toMatchObject({ok:false,reason:expect.stringContaining("invalid")})
+  expect(await claimServiceExecution(db,{...f.message,actionId:await f.stage()},proof)).toMatchObject({ok:false,reason:expect.stringContaining("context_mismatch")})
   expect(await events(proof!)).toEqual([])
+ })
+ it("invalid, expired and changed-context denials retain distinct audit reasons for both channels",async()=>{
+  for(const channel of ["sms","email"] as const)for(const kind of ["invalid_proof","expired_proof","context_mismatch"] as const){
+   const f=await fixture(channel),id=await f.stage()
+   const row=await db.from("pending_actions").select("payload").eq("id",id).single();expect(row.error).toBeNull()
+   const payload={...row.data!.payload}
+   if(kind==="invalid_proof")payload.service_proof="forged"
+   if(kind==="context_mismatch")payload.body+=" edited"
+   if(kind==="expired_proof"){
+    const clock=vi.spyOn(Date,"now").mockReturnValue(Date.now()-25*60*60*1000)
+    try {payload.service_proof=await issueServiceProof(db,f.message,{kind:"appointment",id:appointment})}finally{clock.mockRestore()}
+   }
+   expect((await db.from("pending_actions").update({payload}).eq("id",id)).error).toBeNull()
+   expect(await execute(id)).toMatchObject({ok:false})
+   const audit=await owner.from("service_proof_audit").select("event").eq("shop_id",shop.shopId).eq("action_id",id)
+   expect(audit.error).toBeNull();expect(audit.data).toEqual([{event:kind}])
+  }
+  expect(sendOutboundSms).not.toHaveBeenCalled();expect(sendEmailMessage).not.toHaveBeenCalled();expect(getAccessTokenForShop).not.toHaveBeenCalled()
  })
  it("owners cannot edit or delete durable consumption and audit records",async()=>{
   const f=await fixture("sms");expect(await execute(await f.stage())).toMatchObject({ok:true})

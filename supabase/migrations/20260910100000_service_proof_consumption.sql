@@ -13,9 +13,9 @@ CREATE TABLE public.service_proof_consumptions (
 CREATE TABLE public.service_proof_audit (
  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  shop_id uuid NOT NULL REFERENCES public.shops(id) ON DELETE CASCADE,
- proof_id uuid NOT NULL,
+ proof_id uuid,
  action_id uuid NOT NULL,
- event text NOT NULL CHECK(event IN ('execution_claimed','execution_completed','same_action_retry','cross_action_replay_denied')),
+ event text NOT NULL CHECK(event IN ('execution_claimed','execution_completed','same_action_retry','cross_action_replay_denied','invalid_proof','expired_proof','context_mismatch','proof_lookup_failed')),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 ALTER TABLE public.service_proof_consumptions ENABLE ROW LEVEL SECURITY;
@@ -77,6 +77,15 @@ BEGIN
  INSERT INTO public.service_proof_audit(shop_id,proof_id,action_id,event)
  SELECT shop_id,proof_id,action_id,'same_action_retry' FROM public.service_proof_consumptions WHERE shop_id=p_shop AND action_id=p_action;
 END $$;
+CREATE FUNCTION public.audit_service_proof_denial(p_shop uuid,p_action uuid,p_event text) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ IF auth.role() IS DISTINCT FROM 'service_role' AND NOT EXISTS(SELECT 1 FROM public.shops WHERE id=p_shop AND owner_id=auth.uid()) THEN RAISE EXCEPTION 'Proof audit not authorized' USING ERRCODE='42501'; END IF;
+ IF p_action IS NULL OR p_event NOT IN ('invalid_proof','expired_proof','context_mismatch','proof_lookup_failed') THEN RAISE EXCEPTION 'Invalid audit event'; END IF;
+ INSERT INTO public.service_proof_audit(shop_id,action_id,event) VALUES(p_shop,p_action,p_event);
+END $$;
+REVOKE ALL ON FUNCTION public.audit_service_proof_denial(uuid,uuid,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.audit_service_proof_denial(uuid,uuid,text) TO authenticated,service_role;
 REVOKE ALL ON FUNCTION public.claim_service_execution(uuid,uuid,boolean,jsonb),public.complete_service_execution(uuid,uuid,uuid),public.audit_service_action_retry(uuid,uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.claim_service_execution(uuid,uuid,boolean,jsonb),public.complete_service_execution(uuid,uuid,uuid),public.audit_service_action_retry(uuid,uuid) TO authenticated,service_role;
 COMMIT;

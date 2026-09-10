@@ -21,7 +21,7 @@ it("forged, mismatched, edited and expired proofs never reach the claim RPC",asy
  }
  vi.spyOn(Date,"now").mockReturnValue(Date.now()+25*60*60*1000)
  expect(await claimServiceExecution(db,message,proof)).toMatchObject({ok:false})
- expect(rpc).not.toHaveBeenCalled()
+ expect(rpc.mock.calls.every(call=>(call as unknown[])[0]==="audit_service_proof_denial")).toBe(true)
 })
 it("thrown claim errors and missing success cannot authorize execution",async()=>{
  const {db,rpc,proof}=await fixture()

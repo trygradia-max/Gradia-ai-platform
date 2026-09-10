@@ -1872,7 +1872,7 @@ async function executeSendSms(
   const policy = await evaluateSmsSendPolicy(supabase, shop, {
     toPhone: proposal.to_phone,
     customerId: proposal.customer_id ?? null,
-    category: proposal.category, body: proposal.body, serviceProof: proposal.service_proof,
+    category: proposal.category, body: proposal.body, serviceProof: proposal.service_proof, actionId:claimed.id,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
@@ -1981,7 +1981,7 @@ async function executeSendEmail(
   }
   const policy = await evaluateCustomerSendPolicy(supabase, shop, {
     channel: "email", destination: proposal.to_email,
-    customerId: proposal.customer_id ?? null, category: proposal.category, body: proposal.body, subject: proposal.subject, serviceProof: proposal.service_proof,
+    customerId: proposal.customer_id ?? null, category: proposal.category, body: proposal.body, subject: proposal.subject, serviceProof: proposal.service_proof, actionId:claimed.id,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)

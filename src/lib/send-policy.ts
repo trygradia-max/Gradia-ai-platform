@@ -16,7 +16,7 @@
 
 import { normalizeDestination } from "@/lib/contact-destination"
 export { normalizeDestination } from "@/lib/contact-destination"
-import { verifyServiceProof } from "@/lib/service-purpose"
+import { serviceProofDenial } from "@/lib/service-purpose"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { ShopRow } from "@/lib/types/database"
@@ -73,6 +73,7 @@ export type CustomerSendInput = {
   body?: string
   subject?: string
   serviceProof?: string | null
+  actionId?: string
 }
 
 type Recipient = {
@@ -129,7 +130,10 @@ export async function evaluateCustomerSendPolicy(
     if (row && (row.shop_id !== shop.id || row.customer_id !== customer.id || row.channel !== input.channel || row.destination !== destination)) return denied("Channel permission does not match recipient.")
     if (row && row.suppressed_at !== null) return denied("This destination is suppressed for this channel.")
     if (input.category === "marketing" && !row?.marketing_consent_at) return denied("No affirmative consent for marketing on this channel and destination.")
-    if (input.category === "transactional" && !await verifyServiceProof(supabase,{shopId:shop.id,customerId:customer.id,channel:input.channel,destination,body:input.body??"",subject:input.subject},input.serviceProof)) return denied("Service purpose could not be verified. Reclassify this message or open its verified conversation.")
+    if (input.category === "transactional") {
+      const reason = await serviceProofDenial(supabase,{shopId:shop.id,customerId:customer.id,channel:input.channel,destination,body:input.body??"",subject:input.subject,actionId:input.actionId},input.serviceProof)
+      if (reason) return denied(reason)
+    }
     if (input.channel === "sms") {
       if (!shop.timezone || !Number.isInteger(shop.quiet_hours_start) || !Number.isInteger(shop.quiet_hours_end) || shop.quiet_hours_start < 0 || shop.quiet_hours_start > 23 || shop.quiet_hours_end < 0 || shop.quiet_hours_end > 23) return denied("Texting hours could not be verified.")
       try { new Intl.DateTimeFormat("en", { timeZone: shop.timezone }).format() } catch { return denied("Texting timezone could not be verified.") }
@@ -146,7 +150,7 @@ export async function evaluateCustomerSendPolicy(
 export async function evaluateSmsSendPolicy(
   supabase: SupabaseClient,
   shop: QuietConfig & { id: string },
-  input: { toPhone: string; customerId: string | null; category: SendCategory | undefined; nowMs?: number; body?: string; serviceProof?: string | null }
+  input: { toPhone: string; customerId: string | null; category: SendCategory | undefined; nowMs?: number; body?: string; serviceProof?: string | null; actionId?: string }
 ): Promise<CustomerSendDecision> {
   return evaluateCustomerSendPolicy(supabase, shop, { ...input, channel: "sms", destination: input.toPhone })
 }
