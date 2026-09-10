@@ -41,6 +41,7 @@ BEGIN
    ON CONFLICT(shop_id,customer_id,channel,destination) DO UPDATE SET
     suppression_source=CASE WHEN customer_channel_permissions.suppressed_at IS NULL THEN EXCLUDED.suppression_source WHEN EXCLUDED.suppressed_at IS NOT NULL AND customer_channel_permissions.suppression_source IS DISTINCT FROM EXCLUDED.suppression_source THEN NULL ELSE customer_channel_permissions.suppression_source END,
     suppressed_at=greatest(customer_channel_permissions.suppressed_at,EXCLUDED.suppressed_at),
+    consent_source=CASE WHEN customer_channel_permissions.marketing_consent_at IS NULL OR EXCLUDED.marketing_consent_at IS NULL THEN NULL WHEN customer_channel_permissions.marketing_consent_at<=EXCLUDED.marketing_consent_at THEN customer_channel_permissions.consent_source ELSE EXCLUDED.consent_source END,
     marketing_consent_at=CASE WHEN customer_channel_permissions.marketing_consent_at IS NOT NULL AND EXCLUDED.marketing_consent_at IS NOT NULL THEN least(customer_channel_permissions.marketing_consent_at,EXCLUDED.marketing_consent_at) ELSE NULL END;
  END LOOP;
  FOREACH t IN ARRAY ARRAY['leads','interactions','appointments','vehicles','quotes','payments','call_records','automation_runs'] LOOP
@@ -54,6 +55,9 @@ BEGIN
  -- Free unique identifiers inside the same transaction; failures roll back all steps.
  UPDATE public.customers SET phone=NULL,email=NULL WHERE id=p_loser AND shop_id=p_shop;
  UPDATE public.customers SET name=coalesce(w.name,l.name), phone=coalesce(w.phone,l.phone),email=coalesce(w.email,l.email),
+  vehicle_make=coalesce(w.vehicle_make,l.vehicle_make),vehicle_model=coalesce(w.vehicle_model,l.vehicle_model),vehicle_year=coalesce(w.vehicle_year,l.vehicle_year),vehicle_color=coalesce(w.vehicle_color,l.vehicle_color),last_visit_at=coalesce(w.last_visit_at,l.last_visit_at),
+  marketing_consent_at=CASE WHEN w.marketing_consent_at IS NOT NULL AND l.marketing_consent_at IS NOT NULL THEN least(w.marketing_consent_at,l.marketing_consent_at) ELSE NULL END,
+  marketing_consent_source=CASE WHEN w.marketing_consent_at IS NULL OR l.marketing_consent_at IS NULL THEN NULL WHEN w.marketing_consent_at<=l.marketing_consent_at THEN w.marketing_consent_source ELSE l.marketing_consent_source END,
   do_not_contact=coalesce(w.do_not_contact,true) OR coalesce(l.do_not_contact,true),
   sms_opted_out_at=greatest(w.sms_opted_out_at,l.sms_opted_out_at)
  WHERE id=p_winner AND shop_id=p_shop;

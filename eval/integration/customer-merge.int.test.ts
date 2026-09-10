@@ -34,13 +34,14 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("atomic consent-preserving customer m
   })
  }
  it("retains multiple channel destinations and never substitutes the winner destination",async()=>{
-  const w=await customer({email:"winner@example.test"}),l=await customer({email:"loser@example.test"})
+  const w=await customer({email:"winner@example.test"}),l=await customer({email:"loser@example.test",vehicle_make:"Ford",vehicle_model:"F150",vehicle_year:2020})
   await permission(w.id,{destination:"winner@example.test",marketing_consent_at:null})
   await permission(l.id,{destination:"loser@example.test",suppressed_at:"2026-01-01T00:00:00Z"})
   await permission(l.id,{destination:"historical@example.test"})
   expect((await merge(w.id,l.id)).error).toBeNull()
   const {data}=await db.from("customer_channel_permissions").select("*").eq("customer_id",w.id)
   expect(data).toHaveLength(3)
+  expect((await db.from("customers").select("vehicle_make,vehicle_model,vehicle_year").eq("id",w.id).single()).data).toEqual({vehicle_make:"Ford",vehicle_model:"F150",vehicle_year:2020})
   expect(data!.find(p=>p.destination==="winner@example.test").marketing_consent_at).toBeNull()
   expect(data!.find(p=>p.destination==="loser@example.test").suppressed_at).not.toBeNull()
  })

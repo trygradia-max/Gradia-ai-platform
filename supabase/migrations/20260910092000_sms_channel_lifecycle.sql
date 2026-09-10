@@ -4,8 +4,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE dest text=public.canonical_contact_destination('sms',p_destination);
 BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'Verified webhook required' USING ERRCODE='42501'; END IF;
- IF dest IS NULL OR NOT EXISTS(SELECT 1 FROM public.customers WHERE shop_id=p_shop AND id=p_customer AND public.canonical_contact_destination('sms',phone)=dest) THEN RAISE EXCEPTION 'SMS destination does not belong to customer'; END IF;
  PERFORM id FROM public.customers WHERE shop_id=p_shop AND id=p_customer FOR UPDATE;
+ IF dest IS NULL OR NOT EXISTS(SELECT 1 FROM public.customers WHERE shop_id=p_shop AND id=p_customer AND public.canonical_contact_destination('sms',phone)=dest) THEN RAISE EXCEPTION 'SMS destination does not belong to customer'; END IF;
  UPDATE public.customers SET sms_opted_out_at=CASE WHEN p_opted_in THEN NULL ELSE now() END WHERE shop_id=p_shop AND id=p_customer;
  INSERT INTO public.customer_channel_permissions(shop_id,customer_id,channel,destination,suppressed_at,suppression_source,marketing_consent_at,consent_source)
  VALUES(p_shop,p_customer,'sms',dest,CASE WHEN p_opted_in THEN NULL ELSE now() END,CASE WHEN p_opted_in THEN NULL ELSE 'sms_keyword' END,CASE WHEN p_opted_in THEN now() ELSE NULL END,'sms_keyword')
