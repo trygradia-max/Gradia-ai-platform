@@ -76,7 +76,7 @@ it("a service proof cannot be replayed through a second pending action",async()=
   expect(proof).toBeTruthy()
   const payload={customer_id:safeCustomer.id,to_phone:safeCustomer.phone,body:"Appointment confirmed",category:"transactional",service_proof:proof}
   vi.mocked(sendOutboundSms).mockResolvedValue({messageSid:"synthetic-message",status:"queued"})
-  vi.mocked(recordInteraction).mockResolvedValue({ok:true,id:"synthetic-interaction"})
+  vi.mocked(recordInteraction).mockResolvedValue({ok:true,id:"synthetic-interaction",embedded:false})
   function actionDb(id:string) {
    const pending={update:()=>pending,eq:()=>pending,in:()=>pending,select:()=>pending,maybeSingle:async()=>({data:{id,shop_id:safeShop.id,action_type:"send_sms",payload},error:null})}
    return {from:(table:string)=>table==="pending_actions"?pending:db.from(table)} as unknown as SupabaseClient
