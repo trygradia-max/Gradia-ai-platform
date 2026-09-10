@@ -10,6 +10,7 @@
  *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
+import { servicePayload } from "@/lib/service-purpose"
 import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -114,10 +115,12 @@ export type SmsProposal = {
   /** Source-side context — what prompted this draft (e.g. inbound message ID, agent name). */
   reason: string | null
   /** Safe-send classification (B2). Marketing needs explicit channel consent; unknown categories are held. */
+  service_proof?: string | null
   category?: SendCategory
 }
 
 export type EmailProposal = {
+  service_proof?: string | null
   category?: SendCategory
   to_email: string
   subject: string
@@ -1589,7 +1592,7 @@ async function executeBookAppointment(
   // Best-effort confirmation draft. Always after a successful booking
   // landing — drafter failures must not roll back the booking.
   try {
-    await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id)
+    await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id, appointmentId)
   } catch (err) {
     console.warn(
       "[approvals] booking confirmation draft failed (booking still succeeded):",
@@ -1656,7 +1659,8 @@ async function queueBookingConfirmationSms(
   supabase: SupabaseClient,
   shop: ShopRow,
   proposal: BookingProposal,
-  customerId: string
+  customerId: string,
+  appointmentId: string
 ): Promise<void> {
   // Skip if the shop hasn't connected SMS — without a Twilio number
   // there's nothing for the operator to eventually approve & send.
@@ -1683,7 +1687,7 @@ async function queueBookingConfirmationSms(
     .insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
         category: "transactional",
         to_phone: proposal.phone,
         body: draft,
@@ -1691,8 +1695,9 @@ async function queueBookingConfirmationSms(
         customer_id: customerId,
         reason,
         source: "booking_confirmation",
+        appointment_id: appointmentId,
         iso_start_time: proposal.iso_start_time,
-      },
+      }),
       requested_by: shop.owner_id,
     })
     .select("id")
@@ -1866,7 +1871,7 @@ async function executeSendSms(
   const policy = await evaluateSmsSendPolicy(supabase, shop, {
     toPhone: proposal.to_phone,
     customerId: proposal.customer_id ?? null,
-    category: proposal.category,
+    category: proposal.category, body: proposal.body, serviceProof: proposal.service_proof,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
@@ -1969,7 +1974,7 @@ async function executeSendEmail(
   }
   const policy = await evaluateCustomerSendPolicy(supabase, shop, {
     channel: "email", destination: proposal.to_email,
-    customerId: proposal.customer_id ?? null, category: proposal.category,
+    customerId: proposal.customer_id ?? null, category: proposal.category, body: proposal.body, subject: proposal.subject, serviceProof: proposal.service_proof,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)

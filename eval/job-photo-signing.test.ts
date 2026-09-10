@@ -33,3 +33,9 @@ it.each(["BEFORE", "After", "before|after", ".*", "", null])("invalid upload pha
   expect(createServiceClient).not.toHaveBeenCalled()
   expect(signed).not.toHaveBeenCalled()
 })
+
+it("rejects noncanonical appointment identity before storage or database access",async()=>{
+ const from=vi.fn(()=>{throw new Error("Database must not be reached")});db={from} as unknown as SupabaseClient
+ expect(await uploadJobPhoto("AAAAAAAA-1234-4234-9234-123456789abc","before",new FormData())).toEqual({ok:false,error:"Appointment ID must be canonical."})
+ expect(from).not.toHaveBeenCalled();expect(createServiceClient).not.toHaveBeenCalled();expect(signed).not.toHaveBeenCalled()
+})

@@ -14,6 +14,9 @@
  * during the day, or the next in-window autonomous run picks it up.
  */
 
+import { normalizeDestination } from "@/lib/contact-destination"
+export { normalizeDestination } from "@/lib/contact-destination"
+import { verifyServiceProof } from "@/lib/service-purpose"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { ShopRow } from "@/lib/types/database"
@@ -67,6 +70,9 @@ export type CustomerSendInput = {
   customerId: string | null
   category: SendCategory | undefined
   nowMs?: number
+  body?: string
+  subject?: string
+  serviceProof?: string | null
 }
 
 type Recipient = {
@@ -83,19 +89,7 @@ export type CustomerSendDecision =
   | { allowed: false; held: boolean; reason: string }
 
 function denied(reason: string): CustomerSendDecision {
-  return { allowed: false, held: false, reason }
-}
-
-/** Exact normalization only: never guess country codes or email aliases. */
-export function normalizeDestination(channel: "sms" | "email", raw: string): string | null {
-  if (typeof raw !== "string") return null
-  if (channel === "email") {
-    const email = raw.trim().toLowerCase()
-    return /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email) ? email : null
-  }
-  if (!/^\+[\d ().-]+$/.test(raw.trim())) return null
-  const phone = raw.trim().replace(/[ ().-]/g, "")
-  return /^\+[1-9]\d{6,14}$/.test(phone) ? phone : null
+  return { allowed: false, held: true, reason: `Held for review — ${reason}` }
 }
 
 /** Shared send-time boundary. A failed/ambiguous read never grants permission.
@@ -116,7 +110,7 @@ export async function evaluateCustomerSendPolicy(
     let query = supabase.from("customers")
       .select("id, shop_id, phone, email, do_not_contact, sms_opted_out_at")
       .eq("shop_id", shop.id)
-    query = input.customerId ? query.eq("id", input.customerId) : query.eq(input.channel === "sms" ? "phone" : "email", destination)
+    query = input.customerId ? query.eq("id", input.customerId) : query.eq(input.channel === "sms" ? "phone_canonical" : "email_canonical", destination)
     const { data, error } = await query.maybeSingle()
     const customer = data as Recipient | null
     if (error || !customer || customer.shop_id !== shop.id ||
@@ -135,6 +129,7 @@ export async function evaluateCustomerSendPolicy(
     if (row && (row.shop_id !== shop.id || row.customer_id !== customer.id || row.channel !== input.channel || row.destination !== destination)) return denied("Channel permission does not match recipient.")
     if (row && row.suppressed_at !== null) return denied("This destination is suppressed for this channel.")
     if (input.category === "marketing" && !row?.marketing_consent_at) return denied("No affirmative consent for marketing on this channel and destination.")
+    if (input.category === "transactional" && !await verifyServiceProof(supabase,{shopId:shop.id,customerId:customer.id,channel:input.channel,destination,body:input.body??"",subject:input.subject},input.serviceProof)) return denied("Service purpose could not be verified. Reclassify this message or open its verified conversation.")
     if (input.channel === "sms") {
       if (!shop.timezone || !Number.isInteger(shop.quiet_hours_start) || !Number.isInteger(shop.quiet_hours_end) || shop.quiet_hours_start < 0 || shop.quiet_hours_start > 23 || shop.quiet_hours_end < 0 || shop.quiet_hours_end > 23) return denied("Texting hours could not be verified.")
       try { new Intl.DateTimeFormat("en", { timeZone: shop.timezone }).format() } catch { return denied("Texting timezone could not be verified.") }
@@ -151,7 +146,7 @@ export async function evaluateCustomerSendPolicy(
 export async function evaluateSmsSendPolicy(
   supabase: SupabaseClient,
   shop: QuietConfig & { id: string },
-  input: { toPhone: string; customerId: string | null; category: SendCategory | undefined; nowMs?: number }
+  input: { toPhone: string; customerId: string | null; category: SendCategory | undefined; nowMs?: number; body?: string; serviceProof?: string | null }
 ): Promise<CustomerSendDecision> {
   return evaluateCustomerSendPolicy(supabase, shop, { ...input, channel: "sms", destination: input.toPhone })
 }

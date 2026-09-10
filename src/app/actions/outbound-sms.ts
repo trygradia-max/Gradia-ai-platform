@@ -1,5 +1,6 @@
 "use server"
 
+import { servicePayload } from "@/lib/service-purpose"
 import { evaluateSmsSendPolicy } from "@/lib/send-policy"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -62,7 +63,7 @@ export async function proposeOutboundSms(
   if (!ownerId) return { ok: false, error: "Shop owner not found." }
 
   const payload = {
-    category: parsed.data.category,
+    category: "marketing",
     to_phone: parsed.data.to_phone,
     body: parsed.data.body,
     customer_name: parsed.data.customer_name ?? null,
@@ -142,8 +143,9 @@ export async function sendOperatorSms(
     return { ok: false, error: smsGate.reason }
   }
 
+  const context = await servicePayload(supabase,shop.id,{to_phone:parsed.data.to_phone,body:parsed.data.body,source:"verified_reply"})
   const policy = await evaluateSmsSendPolicy(supabase, shop, {
-    toPhone: parsed.data.to_phone, customerId: null, category: "transactional",
+    toPhone: parsed.data.to_phone, customerId: context.customer_id as string ?? null, category: context.service_proof ? "transactional" : "marketing", body:parsed.data.body, serviceProof:context.service_proof as string|null,
   })
   if (!policy.allowed) return { ok: false, error: policy.reason }
 

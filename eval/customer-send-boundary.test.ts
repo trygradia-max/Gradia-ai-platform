@@ -28,7 +28,7 @@ describe("denied sends have zero external effects", () => {
   it.each(["send_sms","send_email"] as const)("%s: mismatched destination cannot reach transport or token refresh", async action => {
     const customer = {...safeCustomer,phone:"+15559998888",email:"other@example.test"}
     const result = await executeApproval(dbFor(action,customer),"pending",safeShop.id,{userId:"owner"})
-    expect(result).toMatchObject({ok:false,error:"Destination does not belong to the referenced customer."})
+    expect(result).toMatchObject({ok:false,error:"Held for review — Destination does not belong to the referenced customer."})
     expect(sendOutboundSms).not.toHaveBeenCalled()
     expect(sendEmailMessage).not.toHaveBeenCalled()
     expect(getAccessTokenForShop).not.toHaveBeenCalled()
@@ -52,4 +52,16 @@ it("foreign pending-action denial logs locally without provider alerts", async (
   const db = {from:()=>pending} as unknown as SupabaseClient
   expect(await executeApproval(db,"foreign","shop-1",{userId:"owner"})).toMatchObject({status:"already_decided"})
   expect(sendOpsAlert).not.toHaveBeenCalled()
+})
+
+it.each(["send_sms","send_email"] as const)("%s cannot use an unproven transactional category",async action=>{
+ const result=await executeApproval(dbFor(action),"pending",safeShop.id,{userId:"owner"})
+ expect(result).toMatchObject({ok:false,error:expect.stringContaining("Service purpose could not be verified")})
+ expect(sendOutboundSms).not.toHaveBeenCalled();expect(sendEmailMessage).not.toHaveBeenCalled()
+ expect(getAccessTokenForShop).not.toHaveBeenCalled();expect(recordInteraction).not.toHaveBeenCalled()
+})
+it("manual arbitrary promotion requires affirmative marketing consent",async()=>{
+ dbFor("send_sms")
+ expect(await sendOperatorSms({to_phone:safeCustomer.phone,body:"Buy our promotion"})).toMatchObject({ok:false,error:expect.stringContaining("No affirmative consent")})
+ expect(sendOutboundSms).not.toHaveBeenCalled();expect(recordInteraction).not.toHaveBeenCalled()
 })

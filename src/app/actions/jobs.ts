@@ -1,5 +1,6 @@
 "use server"
 
+import { servicePayload } from "@/lib/service-purpose"
 import { isOwnedJobPhotoPath } from "@/lib/job-photo-paths"
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
@@ -388,7 +389,7 @@ export async function rescheduleJob(
     const { error: stageErr } = await supabase.from("pending_actions").insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
         category: "transactional",
         to_phone: job.customer.phone,
         body: `Hi ${first || "there"}, it's ${shop.name} — we've moved your${job.service_name ? ` ${job.service_name}` : ""} appointment to ${when}. Reply if that doesn't work and we'll find a better slot. — ${shop.name}`,
@@ -397,7 +398,7 @@ export async function rescheduleJob(
         reason: "Reschedule heads-up",
         source: "job_reschedule",
         appointment_id: jobId,
-      },
+      }),
       requested_by: user.id,
     })
     notificationStaged = !stageErr
@@ -478,6 +479,7 @@ export async function uploadJobPhoto(
   formData: FormData
 ): Promise<PhotoUploadResult> {
   if (phase !== "before" && phase !== "after") return { ok: false, error: "Photo phase must be before or after." }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(jobId)) return {ok:false,error:"Appointment ID must be canonical."}
   const shop = await requireShop()
   const supabase = await createClient()
   const file = formData.get("photo")

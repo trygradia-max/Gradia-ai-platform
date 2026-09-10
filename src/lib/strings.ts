@@ -23,6 +23,12 @@
  */
 
 export const STRINGS = {
+  communicationPurpose: {
+    guidance: "Held or edited message? Save and review its purpose before approving. Replies require a verified customer message within 48 hours.",
+    marketing: "Review as marketing",
+    reply: "Verify recent reply",
+    reviewed: "Purpose reviewed. Consent checks still apply when you approve.",
+  },
   /** Buttons: verb + object, 1–3 words. Declines get equal weight —
    *  never confirmshame. */
   actions: {

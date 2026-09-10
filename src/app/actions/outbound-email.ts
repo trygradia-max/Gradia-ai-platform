@@ -53,7 +53,7 @@ export async function proposeOutboundEmail(
   if (!ownerId) return { ok: false, error: "Shop owner not found." }
 
   const payload = {
-    category: parsed.data.category,
+    category: "marketing",
     to_email: parsed.data.to_email,
     subject: parsed.data.subject,
     body: parsed.data.body,

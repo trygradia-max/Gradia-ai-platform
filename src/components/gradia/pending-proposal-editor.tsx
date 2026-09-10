@@ -18,6 +18,7 @@ import { toast } from "sonner"
 
 import {
   approveWithEdits,
+  reviewCommunicationPurpose,
   rejectFromDashboard,
   updatePendingProposal,
   type ProposalPatch,
@@ -36,6 +37,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type { LeadStatus } from "@/lib/types/database"
+import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 
 type LeadInitial = {
@@ -313,6 +315,18 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
     }
     toast.success("Changes saved.")
     router.refresh()
+  }
+
+  async function handlePurpose(purpose: "marketing" | "reply") {
+    setPending("save")
+    try {
+      const saved = await updatePendingProposal(props.pendingId, buildPatch())
+      if (!saved.ok) { toast.error(saved.error); return }
+      const result = await reviewCommunicationPurpose(props.pendingId, purpose)
+      if (!result.ok) { toast.error(result.error); return }
+      toast.success(STRINGS.communicationPurpose.reviewed)
+      router.refresh()
+    } finally { setPending(null) }
   }
 
   async function handleApprove() {
@@ -690,6 +704,16 @@ export function PendingProposalEditor(props: PendingProposalEditorProps) {
               </div>
             </div>
           </>
+        )}
+
+        {(kind === "send_sms" || kind === "send_email") && (
+          <div className="space-y-2 rounded-lg border p-3 text-sm">
+            <p>{STRINGS.communicationPurpose.guidance}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" disabled={anyPending} onClick={() => handlePurpose("marketing")}>{STRINGS.communicationPurpose.marketing}</Button>
+              <Button type="button" variant="outline" disabled={anyPending} onClick={() => handlePurpose("reply")}>{STRINGS.communicationPurpose.reply}</Button>
+            </div>
+          </div>
         )}
 
         <div className="mt-2 flex flex-col gap-2 border-t border-border/40 pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">

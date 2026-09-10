@@ -1,3 +1,4 @@
+import { issueServiceProof } from "@/lib/service-purpose"
 import { beforeAll, afterAll, describe, it, expect } from "vitest"
 import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -48,14 +49,15 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("tenant relationships under actual Po
     expect((await owner.from("appointments").update({photos_before:[`${a.shopId}/${appt}/before-${randomUUID()}.jpg`]}).eq("id",appt)).error).toBeNull()
   })
   it("real recipient lookups reject cross-shop IDs and destination mismatches",async()=> {
+    const serviceProof=await issueServiceProof(db,{shopId:a.shopId,customerId:ca,channel:"email",destination:"a@example.test",body:""},{kind:"quote",id:qa})
     const shop={id:a.shopId,timezone:"UTC",quiet_hours_start:0,quiet_hours_end:0}
-    for(const [customerId,destination] of [[cb,"b@example.test"],[ca,"b@example.test"]]) expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId,destination,category:"transactional"})).allowed).toBe(false)
-    expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId:ca,destination:"A@example.test",category:"transactional"})).allowed).toBe(true)
+    for(const [customerId,destination] of [[cb,"b@example.test"],[ca,"b@example.test"]]) expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId,destination,category:"transactional",serviceProof})).allowed).toBe(false)
+    expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId:ca,destination:"A@example.test",category:"transactional",serviceProof})).allowed).toBe(true)
     expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId:ca,destination:"a@example.test",category:"marketing"})).allowed).toBe(false)
     await insert("customer_channel_permissions",{shop_id:a.shopId,customer_id:ca,channel:"email",destination:"a@example.test",marketing_consent_at:new Date().toISOString(),consent_source:"synthetic test"})
     expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId:ca,destination:"a@example.test",category:"marketing"})).allowed).toBe(true)
     expect((await db.from("customer_channel_permissions").update({suppressed_at:new Date().toISOString()}).eq("customer_id",ca)).error).toBeNull()
-    expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId:ca,destination:"a@example.test",category:"transactional"})).allowed).toBe(false)
+    expect((await evaluateCustomerSendPolicy(db,shop,{channel:"email",customerId:ca,destination:"a@example.test",category:"transactional",serviceProof})).allowed).toBe(false)
   })
   it("preserves nullable references and SET NULL without clearing shop_id",async()=> {
     const lead=await insert("leads",{shop_id:a.shopId,customer_name:"Nullable",phone:"+15550003333"})

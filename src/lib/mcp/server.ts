@@ -465,7 +465,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           shop_id: ctx.shopId,
           action_type: "send_sms",
           payload: {
-            category: args.category,
+            category: "marketing",
             to_phone: args.to_phone,
             body: args.body,
             customer_name: args.customer_name,
@@ -508,7 +508,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           shop_id: ctx.shopId,
           action_type: "send_email",
           payload: {
-            category: args.category,
+            category: "marketing",
             to_email: args.to_email,
             subject: args.subject,
             body: args.body,

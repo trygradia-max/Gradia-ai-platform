@@ -1,5 +1,6 @@
 "use server"
 
+import { servicePayload } from "@/lib/service-purpose"
 import { validQuoteReferences } from "@/lib/tenant-references"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
@@ -266,7 +267,7 @@ export async function sendQuote(
     .insert({
       shop_id: shop.id,
       action_type: actionType,
-      payload: pendingPayload,
+      payload: await servicePayload(supabase, shop.id, pendingPayload),
       requested_by: user.id,
     })
     .select("id")
