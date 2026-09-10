@@ -10,7 +10,7 @@
  *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
-import { servicePayload } from "@/lib/service-purpose"
+import { servicePayload, claimServiceExecution, completeServiceExecution, auditServiceActionRetry } from "@/lib/service-purpose"
 import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -503,6 +503,7 @@ export async function executeApproval(
   }
 
   if (!claimed) {
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 
@@ -1878,6 +1879,11 @@ async function executeSendSms(
     return { ok: false, error: policy.reason }
   }
 
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"sms" as const,destination:policy.destination,body:proposal.body,actionId:claimed.id},proposal.service_proof) : null
+  if (execution && !execution.ok) {
+    await rollbackClaim(supabase, claimed)
+    return {ok:false,error:execution.reason}
+  }
   let sendResult
   try {
     sendResult = await sendOutboundSms({
@@ -1898,6 +1904,7 @@ async function executeSendSms(
   }
 
   // Best-effort attachment — proposal may already carry customer_id.
+  await completeServiceExecution(supabase, claimed.shop_id, execution)
   const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
@@ -1980,6 +1987,11 @@ async function executeSendEmail(
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
   }
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email" as const,destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id},proposal.service_proof) : null
+  if (execution && !execution.ok) {
+    await rollbackClaim(supabase, claimed)
+    return {ok:false,error:execution.reason}
+  }
   let accessToken: string | null = null
   if (shop) {
     try {
@@ -2015,6 +2027,7 @@ async function executeSendEmail(
     }
   }
 
+  await completeServiceExecution(supabase, claimed.shop_id, execution)
   const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
@@ -2144,6 +2157,7 @@ export async function markEditRequested(
   }
 
   if (!claimed) {
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 
@@ -2174,6 +2188,7 @@ export async function executeRejection(
   }
 
   if (!claimed) {
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 

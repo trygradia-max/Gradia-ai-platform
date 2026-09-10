@@ -77,12 +77,13 @@ it("a service proof cannot be replayed through a second pending action",async()=
   const payload={customer_id:safeCustomer.id,to_phone:safeCustomer.phone,body:"Appointment confirmed",category:"transactional",service_proof:proof}
   vi.mocked(sendOutboundSms).mockResolvedValue({messageSid:"synthetic-message",status:"queued"})
   vi.mocked(recordInteraction).mockResolvedValue({ok:true,id:"synthetic-interaction",embedded:false})
+  const spent = new Set<string>() // RPC fake only; durable concurrency is tested against Postgres.
   function actionDb(id:string) {
    const pending={update:()=>pending,eq:()=>pending,in:()=>pending,select:()=>pending,maybeSingle:async()=>({data:{id,shop_id:safeShop.id,action_type:"send_sms",payload},error:null})}
-   return {from:(table:string)=>table==="pending_actions"?pending:db.from(table)} as unknown as SupabaseClient
+   return {rpc:async(name:string,args:{p_claims:{nonce:string}})=>{if(name!=="claim_service_execution")return {data:null,error:null};const nonce=args.p_claims.nonce;if(spent.has(nonce))return {data:"cross_action_replay_denied",error:null};spent.add(nonce);return {data:"claimed",error:null}},from:(table:string)=>table==="pending_actions"?pending:db.from(table)} as unknown as SupabaseClient
   }
-  expect(await executeApproval(actionDb("first-action"),"first-action",safeShop.id,{userId:"owner"})).toMatchObject({ok:true})
-  const replay=await executeApproval(actionDb("second-action"),"second-action",safeShop.id,{userId:"owner"})
+  expect(await executeApproval(actionDb("aaaaaaaa-1234-4234-9234-123456789abc"),"aaaaaaaa-1234-4234-9234-123456789abc",safeShop.id,{userId:"owner"})).toMatchObject({ok:true})
+  const replay=await executeApproval(actionDb("bbbbbbbb-1234-4234-9234-123456789abc"),"bbbbbbbb-1234-4234-9234-123456789abc",safeShop.id,{userId:"owner"})
   expect.soft(replay).toMatchObject({ok:false})
   expect(sendOutboundSms).toHaveBeenCalledTimes(1)
  } finally {vi.unstubAllEnvs()}

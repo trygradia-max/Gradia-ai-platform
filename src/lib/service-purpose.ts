@@ -1,63 +1,87 @@
 import { normalizeDestination } from "@/lib/contact-destination";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-// Server-internal capability: signed over exact content and recipient. Never
-// export an issuer through a Server Action or MCP tool. Approval edits invalidate it.
+
+// Server internal only. Old unsigned/v1 authority fails closed and needs review.
 export type ServiceMessage = {
-    shopId: string;
-    customerId: string;
-    channel: "sms" | "email";
-    destination: string;
-    body: string;
-    subject?: string;
+    shopId: string; customerId: string; channel: "sms" | "email";
+    destination: string; body: string; subject?: string; actionId?: string;
 };
-export type ServiceContext = {
-    kind: "quote" | "appointment" | "payment" | "reply";
-    id: string;
+export type ServiceContext = { kind: "quote" | "appointment" | "payment" | "reply"; id: string };
+type Proof = {
+    version: 2; nonce: string; actionId: string | null; shopId: string;
+    customerId: string; channel: "sms" | "email"; destination: string;
+    contentHash: string; context: ServiceContext; purpose: string;
+    expires: number; signature: string;
 };
-function key(): string | null {
-    return process.env.SUPABASE_SERVICE_ROLE_KEY || null;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function key() { return process.env.SUPABASE_SERVICE_ROLE_KEY || null; }
+// Only Unicode composition and line endings normalize; whitespace/content edits do not.
+function contentHash(message: ServiceMessage) {
+    const normalize = (s: string) => s.normalize("NFC").replace(/\r\n?/g, "\n");
+    return createHash("sha256").update(JSON.stringify([normalize(message.body), normalize(message.subject ?? "")])).digest("hex");
 }
-function encoded(message: ServiceMessage, context: ServiceContext, expires: number) { return JSON.stringify(["gradia.service-purpose.v1", message.shopId, message.customerId, message.channel, message.destination, message.body, message.subject ?? "", context, expires]); }
-export async function issueServiceProof(db: SupabaseClient, message: ServiceMessage, context: ServiceContext): Promise<string | null> {
-    const secret = key();
-    if (!secret)
-        return null;
-    const table = { quote: "quotes", appointment: "appointments", payment: "payments", reply: "interactions" }[context.kind];
-    const { data, error } = await db.from(table).select("*").eq("shop_id", message.shopId).eq("id", context.id).maybeSingle();
-    if (error || !data || data.shop_id !== message.shopId || data.customer_id !== message.customerId)
-        return null;
+function encoded(p: Omit<Proof, "signature">) {
+    return JSON.stringify(["gradia.service-purpose.v2",p.nonce,p.actionId,p.shopId,p.customerId,p.channel,p.destination,p.contentHash,p.context.kind,p.context.id,p.purpose,p.expires]);
+}
+async function validContext(db: SupabaseClient, message: ServiceMessage, context: ServiceContext) {
+    const table = {quote:"quotes",appointment:"appointments",payment:"payments",reply:"interactions"}[context.kind];
+    const {data,error} = await db.from(table).select("*").eq("shop_id",message.shopId).eq("id",context.id).maybeSingle();
+    if (error || !data || data.shop_id !== message.shopId || data.customer_id !== message.customerId) return false;
     if (context.kind === "reply") {
         const age = Date.now() - Date.parse(data.created_at);
         const address = message.channel === "sms" ? data.metadata?.from_phone : data.metadata?.from_email;
-        if (data.channel !== message.channel || data.role !== "customer" || data.metadata?.direction !== "inbound" || address !== message.destination || !Number.isFinite(age) || age < 0 || age > 48 * 60 * 60 * 1000)
-            return null;
+        if (data.channel !== message.channel || data.role !== "customer" || data.metadata?.direction !== "inbound" || address !== message.destination || !Number.isFinite(age) || age < 0 || age > 48*60*60*1000) return false;
     }
-    const expires = Date.now() + 24 * 60 * 60 * 1000;
-    const content = encoded(message, context, expires);
-    return Buffer.from(JSON.stringify({ context, expires, signature: createHmac("sha256", secret).update(content).digest("hex") })).toString("base64url");
+    return true;
+}
+export async function issueServiceProof(db: SupabaseClient, message: ServiceMessage, context: ServiceContext): Promise<string | null> {
+    const secret = key();
+    if (!secret || (message.actionId && !uuid.test(message.actionId)) || !await validContext(db,message,context)) return null;
+    const p: Omit<Proof,"signature"> = {version:2,nonce:randomUUID(),actionId:message.actionId ?? null,shopId:message.shopId,customerId:message.customerId,channel:message.channel,destination:message.destination,contentHash:contentHash(message),context,purpose:`service:${context.kind}`,expires:Date.now()+24*60*60*1000};
+    return Buffer.from(JSON.stringify({...p,signature:createHmac("sha256",secret).update(encoded(p)).digest("hex")})).toString("base64url");
+}
+async function verifiedProof(db: SupabaseClient, message: ServiceMessage, proof: unknown): Promise<Proof | null> {
+    const secret = key();
+    if (!secret || typeof proof !== "string") return null;
+    try {
+        const p = JSON.parse(Buffer.from(proof,"base64url").toString()) as Proof;
+        if (p.version !== 2 || !uuid.test(p.nonce) || (p.actionId !== null && !uuid.test(p.actionId)) || !p.context || !["quote","appointment","payment","reply"].includes(p.context.kind) || typeof p.context.id !== "string" || !Number.isFinite(p.expires) || p.expires <= Date.now()) return null;
+        if (p.shopId !== message.shopId || p.customerId !== message.customerId || p.channel !== message.channel || p.destination !== message.destination || p.contentHash !== contentHash(message) || p.purpose !== `service:${p.context.kind}` || (message.actionId && p.actionId && message.actionId !== p.actionId)) return null;
+        const expected = createHmac("sha256",secret).update(encoded(p)).digest();
+        const actual = Buffer.from(p.signature,"hex");
+        if (actual.length !== expected.length || !timingSafeEqual(actual,expected) || !await validContext(db,message,p.context)) return null;
+        return p;
+    } catch { return null; }
 }
 export async function verifyServiceProof(db: SupabaseClient, message: ServiceMessage, proof: unknown): Promise<boolean> {
-    const secret = key();
-    if (!secret || typeof proof !== "string")
-        return false;
+    return await verifiedProof(db,message,proof) !== null;
+}
+export type ServiceExecution = {ok:true; nonce:string; actionId:string} | {ok:false; reason:string};
+/** Must run after consent checks and before ANY provider operation, including token refresh.
+ * A consumed proof is never released: uncertain delivery requires explicit reconciliation. */
+export async function claimServiceExecution(db: SupabaseClient, message: ServiceMessage, proof: unknown, pending = true): Promise<ServiceExecution> {
     try {
-        const { context, expires, signature } = JSON.parse(Buffer.from(proof, "base64url").toString());
-        if (!context || !["quote", "appointment", "payment", "reply"].includes(context.kind) || typeof context.id !== "string" || !Number.isFinite(expires) || expires < Date.now())
-            return false;
-        const expected = createHmac("sha256", secret).update(encoded(message, context, expires)).digest();
-        const actual = Buffer.from(signature, "hex");
-        if (actual.length !== expected.length || !timingSafeEqual(actual, expected))
-            return false;
-        // Recheck the parent at send time; deletion/reassignment cannot retain authority.
-        return await issueServiceProof(db, message, context) !== null;
-    }
-    catch {
-        return false;
-    }
+        const p = await verifiedProof(db,message,proof);
+        if (!p) return {ok:false,reason:"Held for review — Service proof is invalid or expired."};
+        const actionId = message.actionId ?? p.actionId ?? p.nonce;
+        const {signature: _signature, ...claims} = p;
+        void _signature;
+        const {data,error} = await db.rpc("claim_service_execution",{p_shop:message.shopId,p_action:actionId,p_pending:pending,p_claims:claims});
+        if (error || data !== "claimed") return {ok:false,reason:"Held for review — Service proof was already used or could not be claimed. Review execution history before retrying."};
+        return {ok:true,nonce:p.nonce,actionId};
+    } catch { return {ok:false,reason:"Held for review — Service proof claim failed. No message was sent."}; }
+}
+export async function completeServiceExecution(db: SupabaseClient, shopId: string, claim: ServiceExecution | null): Promise<void> {
+    if (!claim?.ok) return;
+    // A failed completion write never releases the durable pre-send claim.
+    try { await db.rpc("complete_service_execution",{p_shop:shopId,p_action:claim.actionId,p_nonce:claim.nonce}); } catch { /* retained claim prevents resend */ }
+}
+export async function auditServiceActionRetry(db: SupabaseClient, shopId: string, actionId: string): Promise<void> {
+    try { await db.rpc("audit_service_action_retry",{p_shop:shopId,p_action:actionId}); } catch { /* already-decided action never executes */ }
 }
 /** Used only at deterministic service producers, never for arbitrary proposals. */
-export async function servicePayload(db: SupabaseClient, shopId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function servicePayload(db: SupabaseClient, shopId: string, payload: Record<string, unknown>, actionId?: string): Promise<Record<string, unknown>> {
     try {
         const channel = payload.to_phone ? "sms" : "email";
         const destination = normalizeDestination(channel, String(payload.to_phone ?? payload.to_email ?? ""));
@@ -80,7 +104,7 @@ export async function servicePayload(db: SupabaseClient, shopId: string, payload
             if (!error && data)
                 context = { kind: "reply", id: data.id };
         }
-        const service_proof = customerId && context ? await issueServiceProof(db, { shopId, customerId, channel, destination, body: String(payload.body ?? ""), subject: payload.subject as string | undefined }, context) : null;
+        const service_proof = customerId && context ? await issueServiceProof(db, { shopId, customerId, channel, destination, body: String(payload.body ?? ""), subject: payload.subject as string | undefined, actionId }, context) : null;
         return { ...payload, [channel === "sms" ? "to_phone" : "to_email"]: destination, customer_id: customerId ?? null, service_proof };
     }
     catch {

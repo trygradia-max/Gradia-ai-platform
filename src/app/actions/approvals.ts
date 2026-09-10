@@ -437,7 +437,7 @@ export async function reviewCommunicationPurpose(pendingId:string, purpose:"mark
   let reviewed:Record<string,unknown>={...original,category:"marketing",service_proof:null}
   if(purpose==="reply") {
     // Do not pass caller-editable quote/appointment IDs to the service issuer.
-    const reply=await servicePayload(db,shop.id,{to_phone:original.to_phone,to_email:original.to_email,body:original.body,subject:original.subject,customer_id:original.customer_id,source:"verified_reply"})
+    const reply=await servicePayload(db,shop.id,{to_phone:original.to_phone,to_email:original.to_email,body:original.body,subject:original.subject,customer_id:original.customer_id,source:"verified_reply"},pendingId)
     if(!reply.service_proof) return {ok:false,error:"Held for review — no verified inbound conversation for this recipient within 48 hours."}
     reviewed={...reviewed,...reply,category:"transactional"}
   }

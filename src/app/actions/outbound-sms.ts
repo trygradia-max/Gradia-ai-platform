@@ -1,6 +1,6 @@
 "use server"
 
-import { servicePayload } from "@/lib/service-purpose"
+import { servicePayload, claimServiceExecution, completeServiceExecution } from "@/lib/service-purpose"
 import { evaluateSmsSendPolicy } from "@/lib/send-policy"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -149,6 +149,9 @@ export async function sendOperatorSms(
   })
   if (!policy.allowed) return { ok: false, error: policy.reason }
 
+  const execution = context.service_proof ? await claimServiceExecution(supabase,{shopId:shop.id,customerId:policy.customerId,channel:"sms",destination:policy.destination,body:parsed.data.body},context.service_proof,false) : null
+  if (execution && !execution.ok) return {ok:false,error:execution.reason}
+
   let sendResult
   try {
     sendResult = await sendOutboundSms({
@@ -168,6 +171,7 @@ export async function sendOperatorSms(
     }
   }
 
+  await completeServiceExecution(supabase, shop.id, execution)
   await recordInteraction(supabase, {
     shopId: shop.id,
     customerId: policy.customerId,
