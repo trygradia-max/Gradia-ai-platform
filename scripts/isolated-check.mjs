@@ -18,9 +18,9 @@ if (mode === "build") env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = resolve("scripts/o
 let allow = ""
 if (mode === "integration") {
   const db = JSON.parse(readFileSync(".local-tools/test-db.json", "utf8"))
-  if (db.API_URL !== "http://127.0.0.1:55431" || !db.SERVICE_ROLE_KEY || !db.ANON_KEY) throw new Error("Invalid isolated DB configuration")
-  Object.assign(env, { INTEGRATION: "1", GRADIA_DISPOSABLE_TEST: "gradia-p0-tenant-policy-safety", SUPABASE_TEST_URL: db.API_URL, SUPABASE_TEST_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY: db.ANON_KEY })
-  allow = '(allow network-outbound (remote ip "localhost:55431"))'
+  if (db.API_URL !== "http://127.0.0.1:56531" || !db.SERVICE_ROLE_KEY || !db.ANON_KEY) throw new Error("Invalid isolated DB configuration")
+  Object.assign(env, { INTEGRATION: "1", GRADIA_DISPOSABLE_TEST: "gradia-isolated-tests", SUPABASE_TEST_URL: db.API_URL, SUPABASE_TEST_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY: db.ANON_KEY })
+  allow = '(allow network-outbound (remote ip "localhost:56531"))'
 }
 if (mode === "integration" && process.argv.slice(3).some(arg => arg.endsWith(".test.ts"))) commands.integration.pop()
 const policy = `(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote unix-socket))${allow}`
