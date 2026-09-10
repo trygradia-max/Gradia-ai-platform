@@ -39,3 +39,16 @@ it("rejects noncanonical appointment identity before storage or database access"
  expect(await uploadJobPhoto("AAAAAAAA-1234-4234-9234-123456789abc","before",new FormData())).toEqual({ok:false,error:"Appointment ID must be canonical."})
  expect(from).not.toHaveBeenCalled();expect(createServiceClient).not.toHaveBeenCalled();expect(signed).not.toHaveBeenCalled()
 })
+it("signs nothing when a stored photo has a mismatched phase",async()=>{
+ db=readDb({appointments:[{id:"job",shop_id:"shop",photos_before:[path.replace("before-","after-")],photos_after:[]}]}).db
+ expect(await getJobPhotoUrls("job")).toEqual({before:[],after:[]})
+ expect(createServiceClient).not.toHaveBeenCalled();expect(signed).not.toHaveBeenCalled()
+})
+it("rejects uppercase UUIDs in stored photo filenames before signing",async()=>{
+ const uppercase=path.replace("123456789abc","123456789ABC")
+ db=readDb({appointments:[{id:"job",shop_id:"shop",photos_before:[uppercase],photos_after:[]}]}).db
+ const result=await getJobPhotoUrls("job")
+ expect.soft(result).toEqual({before:[],after:[]})
+ expect.soft(createServiceClient).not.toHaveBeenCalled()
+ expect(signed).not.toHaveBeenCalled()
+})
