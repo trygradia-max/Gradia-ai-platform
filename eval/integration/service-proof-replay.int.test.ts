@@ -34,6 +34,13 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable service proof execution",()=
   const nonce=JSON.parse(Buffer.from(proof,"base64url").toString()).nonce
   const r=await owner.from("service_proof_audit").select("event").eq("shop_id",shop.shopId).eq("proof_id",nonce);expect(r.error).toBeNull();return r.data!.map(x=>x.event)
  }
+ it("SQL claim accepts verified canonical metadata exactly once",async()=>{
+  const f=await fixture("sms"),id=await f.stage()
+  expect((await db.from("pending_actions").update({status:"approved"}).eq("id",id)).error).toBeNull()
+  const claims=JSON.parse(Buffer.from(f.proof,"base64url").toString());delete claims.signature
+  const result=await db.rpc("claim_service_execution",{p_shop:shop.shopId,p_action:id,p_pending:true,p_claims:claims})
+  expect(result.error).toBeNull();expect(result.data).toBe("claimed")
+ })
  for(const channel of ["sms","email"] as const) {
   const transport=channel==="sms"?sendOutboundSms:sendEmailMessage
   it(`${channel}: sequential cross-action replay and completed same-action retry send once`,async()=>{

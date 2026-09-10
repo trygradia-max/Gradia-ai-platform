@@ -48,7 +48,7 @@ BEGIN
   RAISE EXCEPTION 'Invalid proof claim';
  END IF;
  IF public.canonical_contact_destination(p_claims->>'channel',p_claims->>'destination') IS DISTINCT FROM p_claims->>'destination' OR p_claims->>'destination' IS NULL THEN RAISE EXCEPTION 'Invalid proof destination'; END IF;
- IF p_pending AND NOT EXISTS(SELECT 1 FROM public.pending_actions WHERE shop_id=p_shop AND id=p_action AND status='approved' AND action_type=CASE p_claims->>'channel' WHEN 'sms' THEN 'send_sms' ELSE 'send_email' END) THEN RAISE EXCEPTION 'Action cannot claim proof'; END IF;
+ IF p_pending AND NOT EXISTS(SELECT 1 FROM public.pending_actions WHERE shop_id=p_shop AND id=p_action AND status='approved' AND action_type::text=CASE p_claims->>'channel' WHEN 'sms' THEN 'send_sms' ELSE 'send_email' END) THEN RAISE EXCEPTION 'Action cannot claim proof'; END IF;
  INSERT INTO public.service_proof_consumptions(proof_id,shop_id,action_id,claims)
  VALUES(nonce,p_shop,p_action,p_claims) ON CONFLICT DO NOTHING RETURNING proof_id INTO inserted;
  IF inserted IS NOT NULL THEN
