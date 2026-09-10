@@ -65,3 +65,9 @@ it("rejects uppercase appointment input before even reading the database",async(
  expect(await getJobPhotoUrls("BBBBBBBB-1234-4234-9234-123456789abc")).toMatchObject({before:[],after:[],error:expect.stringContaining("identity is invalid")})
  expect(from).not.toHaveBeenCalled();expect(createServiceClient).not.toHaveBeenCalled();expect(signed).not.toHaveBeenCalled()
 })
+
+it.each(["\n","\r","\u2028"])("rejects trailing path whitespace %j without storage effects",async suffix=>{
+ db=readDb({appointments:[{id:"bbbbbbbb-1234-4234-9234-123456789abc",shop_id:"aaaaaaaa-1234-4234-9234-123456789abc",photos_before:[path+suffix],photos_after:[]}]}).db
+ expect(await getJobPhotoUrls("bbbbbbbb-1234-4234-9234-123456789abc")).toMatchObject({before:[],after:[],error:expect.stringContaining("Photo paths are invalid")})
+ expect(createServiceClient).not.toHaveBeenCalled();expect(signed).not.toHaveBeenCalled()
+})

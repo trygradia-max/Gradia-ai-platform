@@ -60,7 +60,7 @@ describe.skipIf(!INTEGRATION)("canonical lowercase photo path parity",()=>{
   const appointment="bbbbbbbb-1234-4234-9234-123456789abc"
   const filename="before-cccccccc-1234-4234-9234-123456789abc.jpg"
   const path=`${seed.shopId}/${appointment}/${filename}`
-  const bad=[`${seed.shopId.toUpperCase()}/${appointment}/${filename}`,`${seed.shopId}/${appointment.toUpperCase()}/${filename}`,`${seed.shopId}/${appointment}/${filename.replace("cccccccc","CCCCCCCC")}`,path.replace("before-","after-"),path.replace("/before-","/../before-"),path.replace("/before-","%2fbefore-"),path+"/extra",path.replace(".jpg",".exe"),path.replace(".jpg",".JPG"),"https://invalid.test/"+path]
+  const bad=[`${seed.shopId.toUpperCase()}/${appointment}/${filename}`,`${seed.shopId}/${appointment.toUpperCase()}/${filename}`,`${seed.shopId}/${appointment}/${filename.replace("cccccccc","CCCCCCCC")}`,path.replace("before-","after-"),path.replace("/before-","/../before-"),path.replace("/before-","%2fbefore-"),path+"/extra",path+"\n",path.replace(".jpg",".exe"),path.replace(".jpg",".JPG"),"https://invalid.test/"+path]
   for(const value of [path,...bad]) {
    const valid=value===path
    expect(isOwnedJobPhotoPath(value,seed.shopId,appointment,"before")).toBe(valid)
