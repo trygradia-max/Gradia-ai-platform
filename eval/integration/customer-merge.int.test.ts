@@ -20,6 +20,17 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("atomic consent-preserving customer m
  }
  async function merge(w:string,l:string){return owner.rpc("merge_customers_atomic",{p_shop:shop.shopId,p_winner:w,p_loser:l})}
  for(const reverse of [false,true]) {
+  it(`preserves exact consent timestamps and source evidence in direction ${reverse}`,async()=>{
+   const early=await customer(),late=await customer()
+   const first=await permission(early.id,{marketing_consent_at:"2026-01-01T00:00:00Z",consent_source:"synthetic-form"})
+   const second=await permission(late.id,{marketing_consent_at:"2026-02-01T00:00:00Z",consent_source:"synthetic-import"})
+   const w=reverse?early:late,l=reverse?late:early
+   expect((await merge(w.id,l.id)).error).toBeNull()
+   const current=await db.from("customer_channel_permissions").select("*").eq("customer_id",w.id).single()
+   expect(current.data).toMatchObject({destination:first.destination,marketing_consent_at:first.marketing_consent_at,consent_source:first.consent_source})
+   const history=await owner.from("customer_merge_history").select("evidence").eq("loser_id",l.id).single()
+   expect(history.data!.evidence.permissions).toEqual(expect.arrayContaining([first,second]))
+  })
   it(`preserves DNC, STOP and channel suppression in direction ${reverse}`,async()=>{
    const safe=await customer(),blocked=await customer({do_not_contact:true,sms_opted_out_at:"2026-01-02T00:00:00Z"})
    await permission(blocked.id,{suppressed_at:"2026-01-03T00:00:00Z",suppression_source:"operator"});await permission(safe.id)
@@ -71,9 +82,11 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("atomic consent-preserving customer m
   const v=await insert("vehicles",{customer_id:l.id,make:"Ford"})
   const q=await insert("quotes",{customer_id:l.id,vehicle_id:v.id})
   const permissionRow=await permission(l.id,{suppressed_at:"2026-01-01T00:00:00Z"})
+  const interaction=await insert("interactions",{customer_id:l.id,channel:"note",role:"system",content:"synthetic rollback",metadata:{customer_id:l.id}})
   const p=await insert("pending_actions",{action_type:"send_sms",payload:{customer_id:l.id},requested_by:shop.ownerId})
   const result=await merge(w.id,l.id);expect(result.error?.message).toContain("Injected mid-merge failure")
-  for(const [table,id] of [...others,["vehicles",v.id],["quotes",q.id],["customer_channel_permissions",permissionRow.id]]) expect((await db.from(table).select("customer_id").eq("id",id).single()).data!.customer_id).toBe(l.id)
+  for(const [table,id] of [...others,["vehicles",v.id],["quotes",q.id],["interactions",interaction.id],["customer_channel_permissions",permissionRow.id]]) expect((await db.from(table).select("customer_id").eq("id",id).single()).data!.customer_id).toBe(l.id)
+  expect((await db.from("interactions").select("metadata").eq("id",interaction.id).single()).data!.metadata).toEqual({customer_id:l.id})
   expect((await db.from("customers").select("email").eq("id",l.id).single()).data!.email).toBe("rollback@example.test")
   expect((await db.from("pending_actions").select("payload").eq("id",p.id).single()).data!.payload.customer_id).toBe(l.id)
   expect((await db.from("customer_merge_history").select("id").eq("winner_id",w.id)).data).toHaveLength(0)

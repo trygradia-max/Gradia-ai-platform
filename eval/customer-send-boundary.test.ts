@@ -7,6 +7,9 @@ import { sendOutboundSms } from "@/lib/twilio"
 import { getAccessTokenForShop, sendEmailMessage } from "@/lib/aurinko"
 import { sendOpsAlert } from "@/lib/alerts"
 import { recordInteraction } from "@/lib/memory"
+import { issueServiceProof } from "@/lib/service-purpose"
+vi.mock("@/lib/credits", () => ({ recordUsage: vi.fn() }))
+vi.mock("@/lib/pricing", async original => ({...await original<typeof import("@/lib/pricing")>(), getPricing: vi.fn(), priceUsage: () => ({credits:0,wholesale_cost:0,retail_cost:0})}))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/shop", () => ({ requireUser: async () => ({id:"owner"}), requireShop: async () => safeShop }))
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => currentDb }))
@@ -64,4 +67,23 @@ it("manual arbitrary promotion requires affirmative marketing consent",async()=>
  dbFor("send_sms")
  expect(await sendOperatorSms({to_phone:safeCustomer.phone,body:"Buy our promotion"})).toMatchObject({ok:false,error:expect.stringContaining("No affirmative consent")})
  expect(sendOutboundSms).not.toHaveBeenCalled();expect(recordInteraction).not.toHaveBeenCalled()
+})
+it("a service proof cannot be replayed through a second pending action",async()=>{
+ vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","synthetic-unit-purpose-signing-material")
+ try {
+  const {db}=readDb({customers:[safeCustomer],shops:[{...safeShop,quiet_hours_start:0,quiet_hours_end:0,twilio_phone_number:"+15550001111"}],appointments:[{id:"appointment",shop_id:safeShop.id,customer_id:safeCustomer.id}]})
+  const proof=await issueServiceProof(db,{shopId:safeShop.id,customerId:safeCustomer.id,channel:"sms",destination:safeCustomer.phone,body:"Appointment confirmed"},{kind:"appointment",id:"appointment"})
+  expect(proof).toBeTruthy()
+  const payload={customer_id:safeCustomer.id,to_phone:safeCustomer.phone,body:"Appointment confirmed",category:"transactional",service_proof:proof}
+  vi.mocked(sendOutboundSms).mockResolvedValue({messageSid:"synthetic-message",status:"queued"})
+  vi.mocked(recordInteraction).mockResolvedValue({ok:true,id:"synthetic-interaction"})
+  function actionDb(id:string) {
+   const pending={update:()=>pending,eq:()=>pending,in:()=>pending,select:()=>pending,maybeSingle:async()=>({data:{id,shop_id:safeShop.id,action_type:"send_sms",payload},error:null})}
+   return {from:(table:string)=>table==="pending_actions"?pending:db.from(table)} as unknown as SupabaseClient
+  }
+  expect(await executeApproval(actionDb("first-action"),"first-action",safeShop.id,{userId:"owner"})).toMatchObject({ok:true})
+  const replay=await executeApproval(actionDb("second-action"),"second-action",safeShop.id,{userId:"owner"})
+  expect.soft(replay).toMatchObject({ok:false})
+  expect(sendOutboundSms).toHaveBeenCalledTimes(1)
+ } finally {vi.unstubAllEnvs()}
 })
