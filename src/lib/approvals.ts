@@ -10,7 +10,7 @@
  *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
-import { servicePayload, claimServiceExecution, completeServiceExecution, auditServiceActionRetry } from "@/lib/service-purpose"
+import { servicePayload, claimServiceExecution, completeServiceExecution, auditServiceActionRetry, serviceActionIsUnspent } from "@/lib/service-purpose"
 import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -1879,6 +1879,10 @@ async function executeSendSms(
     return { ok: false, error: policy.reason }
   }
 
+  if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
+  }
   const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"sms" as const,destination:policy.destination,body:proposal.body,actionId:claimed.id},proposal.service_proof) : null
   if (execution && !execution.ok) {
     await rollbackClaim(supabase, claimed)
@@ -1986,6 +1990,10 @@ async function executeSendEmail(
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
+  }
+  if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
   }
   const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email" as const,destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id},proposal.service_proof) : null
   if (execution && !execution.ok) {

@@ -88,6 +88,17 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable service proof execution",()=
   expect(await events(f.proof)).toEqual(expect.arrayContaining(["execution_claimed","same_action_retry"]))
   expect(await events(f.proof)).not.toContain("execution_completed")
  })
+ it("changing category cannot reopen an uncertain consumed action",async()=>{
+  const f=await fixture("sms"),id=await f.stage()
+  vi.mocked(sendOutboundSms).mockRejectedValueOnce(new Error("Synthetic uncertain delivery"))
+  expect(await execute(id)).toMatchObject({ok:false,error:expect.stringContaining("Synthetic uncertain delivery")})
+  expect((await db.from("customer_channel_permissions").insert({shop_id:shop.shopId,customer_id:customer,channel:"sms",destination:f.message.destination,marketing_consent_at:new Date().toISOString(),consent_source:"synthetic-replay-test"})).error).toBeNull()
+  const row=await db.from("pending_actions").select("payload").eq("id",id).single();expect(row.error).toBeNull()
+  expect((await db.from("pending_actions").update({payload:{...row.data!.payload,category:"marketing",service_proof:null}}).eq("id",id)).error).toBeNull()
+  expect(await execute(id)).toMatchObject({ok:false,error:expect.stringContaining("already used")})
+  expect(sendOutboundSms).toHaveBeenCalledTimes(1)
+  expect(await events(f.proof)).toEqual(expect.arrayContaining(["execution_claimed","same_action_retry"]))
+ })
  it("a proof bound at issue time refuses a different action before claiming",async()=>{
   const f=await fixture("sms"),first=await f.stage()
   const proof=await issueServiceProof(db,{...f.message,actionId:first},{kind:"appointment",id:appointment})

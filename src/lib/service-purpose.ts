@@ -93,6 +93,15 @@ export async function claimServiceExecution(db: SupabaseClient, message: Service
         return {ok:true,nonce:p.nonce,actionId};
     } catch { return {ok:false,reason:"Held for review — Service proof claim failed. No message was sent."}; }
 }
+/** Reclassification must not reopen an action whose service execution is uncertain. */
+export async function serviceActionIsUnspent(db: SupabaseClient, shopId: string, actionId: string): Promise<boolean> {
+    try {
+        const {data,error} = await db.from("service_proof_consumptions").select("proof_id").eq("shop_id",shopId).eq("action_id",actionId).maybeSingle();
+        if (error) return false;
+        if (data) { await auditServiceActionRetry(db,shopId,actionId); return false; }
+        return true;
+    } catch { return false; }
+}
 export async function completeServiceExecution(db: SupabaseClient, shopId: string, claim: ServiceExecution | null): Promise<void> {
     if (!claim?.ok) return;
     // A failed completion write never releases the durable pre-send claim.
