@@ -1,7 +1,7 @@
 "use server"
 
 import { servicePayload } from "@/lib/service-purpose"
-import { isOwnedJobPhotoPath } from "@/lib/job-photo-paths"
+import { isOwnedJobPhotoPath, isCanonicalPhotoId } from "@/lib/job-photo-paths"
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -479,8 +479,9 @@ export async function uploadJobPhoto(
   formData: FormData
 ): Promise<PhotoUploadResult> {
   if (phase !== "before" && phase !== "after") return { ok: false, error: "Photo phase must be before or after." }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(jobId)) return {ok:false,error:"Appointment ID must be canonical."}
+  if (!isCanonicalPhotoId(jobId)) return {ok:false,error:"Appointment ID must be canonical."}
   const shop = await requireShop()
+  if (!isCanonicalPhotoId(shop.id)) return {ok:false,error:"Shop identity must be canonical."}
   const supabase = await createClient()
   const file = formData.get("photo")
   if (!(file instanceof File) || file.size === 0) {
@@ -532,8 +533,10 @@ export async function uploadJobPhoto(
 /** Signed URLs for a job's photos (private bucket — 1h links). */
 export async function getJobPhotoUrls(
   jobId: string
-): Promise<{ before: string[]; after: string[] }> {
+): Promise<{ before: string[]; after: string[]; error?: string }> {
+  if (!isCanonicalPhotoId(jobId)) return {before:[],after:[],error:"Photo identity is invalid. Review the appointment record."}
   const shop = await requireShop()
+  if (!isCanonicalPhotoId(shop.id)) return {before:[],after:[],error:"Photo identity is invalid. Review the shop record."}
   const supabase = await createClient()
   const { data } = await supabase
     .from("appointments")
@@ -544,7 +547,7 @@ export async function getJobPhotoUrls(
   const job = data as Pick<AppointmentRow, "photos_before" | "photos_after"> | null
   if (!job) return { before: [], after: [] }
   if (!(job.photos_before ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "before")) ||
-      !(job.photos_after ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "after"))) return { before: [], after: [] }
+      !(job.photos_after ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "after"))) return { before: [], after: [], error:"Photo paths are invalid. Review the appointment photos before retrying." }
 
   const service = createServiceClient()
   const sign = async (paths: string[] | undefined, phase: "before" | "after"): Promise<string[]> => {

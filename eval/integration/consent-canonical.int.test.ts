@@ -51,3 +51,25 @@ describe.skipIf(!INTEGRATION)("canonical consent and SMS lifecycle",()=>{
  })
 
 })
+
+describe.skipIf(!INTEGRATION)("canonical lowercase photo path parity",()=>{
+ let db:SupabaseClient,seed:Seeded
+ beforeAll(async()=>{db=serviceClient();seed=await seedShop(db)})
+ afterAll(async()=>{if(seed)await cleanup(db,seed)})
+ it("every UUID path segment, phase, separator and extension agrees with SQL",async()=>{
+  const appointment="bbbbbbbb-1234-4234-9234-123456789abc"
+  const filename="before-cccccccc-1234-4234-9234-123456789abc.jpg"
+  const path=`${seed.shopId}/${appointment}/${filename}`
+  const bad=[`${seed.shopId.toUpperCase()}/${appointment}/${filename}`,`${seed.shopId}/${appointment.toUpperCase()}/${filename}`,`${seed.shopId}/${appointment}/${filename.replace("cccccccc","CCCCCCCC")}`,path.replace("before-","after-"),path.replace("/before-","/../before-"),path.replace("/before-","%2fbefore-"),path+"/extra",path.replace(".jpg",".exe"),path.replace(".jpg",".JPG"),"https://invalid.test/"+path]
+  for(const value of [path,...bad]) {
+   const valid=value===path
+   expect(isOwnedJobPhotoPath(value,seed.shopId,appointment,"before")).toBe(valid)
+   const sql=await db.rpc("valid_job_photo_paths",{paths:[value],shop:seed.shopId,appointment,phase:"before"})
+   expect(sql.error).toBeNull();expect(sql.data).toBe(valid)
+  }
+  const {error}=await db.from("appointments").insert({id:appointment,shop_id:seed.shopId,scheduled_at:"2032-01-01T12:00:00Z",photos_before:[path]})
+  expect(error).toBeNull()
+  for(const value of bad)expect((await db.from("appointments").update({photos_before:[value]}).eq("id",appointment).eq("shop_id",seed.shopId)).error?.code).toBe("23514")
+  expect((await db.from("appointments").select("photos_before").eq("id",appointment).single()).data!.photos_before).toEqual([path])
+ })
+})
