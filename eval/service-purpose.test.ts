@@ -29,3 +29,18 @@ it("arbitrary proposals cannot acquire proof merely by declaring a transactional
  const payload=await servicePayload(db,safeShop.id,{category:"transactional",customer_id:safeCustomer.id,to_email:safeCustomer.email,body:"Unrequested promotion",source:"operator_propose"})
  expect(payload.service_proof).toBeNull()
 })
+it("expired proofs and a substituted conversation context fail closed",async()=>{
+ const now=Date.now()
+ const clock=vi.spyOn(Date,"now").mockReturnValue(now)
+ try {
+  const {db}=readDb({customers:[safeCustomer],appointments:[appointment]})
+  const proof=await issueServiceProof(db,message,{kind:"appointment",id:appointment.id})
+  expect(proof).toBeTruthy()
+  const decoded=JSON.parse(Buffer.from(proof!,"base64url").toString())
+  decoded.context={kind:"reply",id:"different-conversation"}
+  expect(await verifyServiceProof(db,message,Buffer.from(JSON.stringify(decoded)).toString("base64url"))).toBe(false)
+  clock.mockReturnValue(now+24*60*60*1000+1)
+  expect(await verifyServiceProof(db,message,proof)).toBe(false)
+  expect(await evaluateCustomerSendPolicy(db,safeShop,{channel:message.channel,destination:message.destination,customerId:message.customerId,body:message.body,subject:message.subject,category:"transactional",serviceProof:proof})).toMatchObject({allowed:false,held:true})
+ } finally {clock.mockRestore()}
+})
