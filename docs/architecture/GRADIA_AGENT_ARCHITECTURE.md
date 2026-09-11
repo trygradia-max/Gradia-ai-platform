@@ -5,9 +5,11 @@
 > at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
 > This documentation branch starts at that reviewed head to describe its safety
 > boundaries accurately; inherited changes are not new documentation-phase implementation.
+> Founder decision package **approved September 11, 2026**. These product requirements
+> are decided; implementation contracts remain designs, not claims of built behavior.
 > Source review: 2026-09-10 (local). Static inspection and prior verification are
 > distinguished from live acceptance. No production access or live model evaluation.
-> The founder's current architecture request governs this proposal where older
+> The approved founder decision package governs these requirements where older
 > scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
 
 ## MVP NOW
@@ -83,6 +85,22 @@ payload invisibly; edits invalidate stale proof and require a new verified propo
 PR #44's durable proof consumption is narrower than a general command ledger: reuse
 its at-most-once SMS/email guarantee and extend action identity deliberately for
 other effects. Never release consumed proof after uncertain provider delivery.
+Automatic resend
+is prohibited. Assign the visibly held action to the responsible manager, with
+owner fallback. Reconcile evidence; only confirmed non-delivery permits intentional
+creation of a new action/proof. Record resolution and responsible actor.
+
+### Notifications and communications
+
+Whisper unifies enabled SMS, email and calls; voice notes feed the same primary
+Agent. Qualification, Booking and other functional labels may explain activity,
+but internal skills do not become separate personalities or data silos.
+
+Use the in-app approval inbox plus independent transactional email. Support immediate
+notifications, deduplication, quiet hours and optional daily digest. Track delivery
+and retries and prevent notification loops. A replaceable provider adapter is
+required; vendor choice is an implementation selection, not an architecture blocker.
+Connected shop Gmail and removed Slack approvals are not notification dependencies.
 
 ### Scheduling and tenant model
 
@@ -92,6 +110,10 @@ through a staged RLS migration. Bootstrap one owner membership for existing shop
 preserve nullable relationships and deletion semantics. Keep `forShop` as the existing
 service-role facade and tenant-reference validation; widen coverage as code changes.
 A model cannot choose a shop, elevate a role or read another tenant's vectors.
+MVP permits one active location or mobile service area, with multiple members,
+resources and capacity schedules. Owner controls membership, connectors, billing,
+exports, merges, shop-wide rules and autonomy; manager operations are delegated;
+staff are assignment-scoped. Every sensitive command records its human or Gradia actor.
 
 Reuse `availability.ts`, working-hours and `write_appointment_serialized`. Define
 capacity per relevant staff/resource/location before enabling automatic booking.
@@ -99,8 +121,14 @@ Concurrent requests must arbitrate in Postgres, not just via a UI availability r
 Keep existing Aurinko behavior until a separately verified calendar adapter change:
 booking currently creates external calendar state as part of execution. A minimal
 native booking path plus explicit sync/reconciliation status is the desired escape
-from that dependency, not a reason to replace the entire calendar now. Never call
-an external busy-time outage an empty calendar without an approved policy.
+from that dependency, not a reason to replace the entire calendar now. Availability
+has three states: **available, unavailable, unknown**. Unknown or stale
+required-calendar state blocks automatic confirmation. Qualification and preferred-time
+capture may continue, producing a held action for explicit manager resolution. Never
+interpret unknown as free. Operation without the external calendar requires a
+separately verified native-calendar authority design. Availability is rechecked at
+execution; hard resource/capacity conflicts cannot be bypassed by ordinary approval
+or autonomy settings.
 
 ### Replaceable model providers
 
@@ -112,9 +140,12 @@ Claude, GPT, Grok, Gemini and future models are adapter candidates, not launch
 requirements or owners of memory, tools, orchestration, pricing or consent.
 
 Do not turn provider tool-call objects into public domain types. Model output is
-untrusted input validated against Gradia schemas. A fallback is permitted only if
-its task evals and data policy pass; it may retry inference, never an uncertain
-external action. Embeddings (current 1536 dimensions), speech transcription and
+untrusted input validated against Gradia schemas. **Automatic multi-model fallback
+is out of MVP scope.** Retain the current
+model setup behind Gradia-owned interfaces. Future provider changes require
+quality, safety, cost and latency evaluations with no safety regression; any future
+inference retry must never repeat an uncertain external action. Embeddings (current
+1536 dimensions), speech transcription and
 Vapi-hosted realtime models require separate compatibility contracts and tests.
 No re-embedding or voice-provider replacement is required for this MVP document.
 
@@ -167,12 +198,18 @@ checkboxes alone are not evidence of missing implementation.
 
 ## FOUNDER DECISIONS
 
-Current direction settles the one-Agent experience and provider independence.
-Still decide: launch location count, manager permission boundaries, calendar authority
-transition timing and acceptable degraded behavior during external-calendar outage.
-Choose task quality/cost/latency gates before selecting a second model provider;
-model brand preference is not a substitute for evaluation. Capacity exceptions and
-confirmed-appointment changes need explicit product policy before autonomy expands.
+**Approved September 11, 2026:** retain the monolith, current model setup and
+Gradia-owned interfaces; no automatic multi-model fallback for MVP. One primary
+Agent uses internal skills. One active location/mobile service area supports multiple
+staff/resources. Role authority follows [the control model](AUTONOMY_APPROVAL_MODES.md#policy-resolution).
+
+Unknown/stale required-calendar state prevents automatic confirmation; managers
+resolve held actions explicitly. Normal bookings and menu-priced quotes may receive
+separate bounded opt-ins, but hard conflicts remain non-overridable. Customer-facing
+actions start approval-required. Notification vendor choice and future native-calendar
+implementation are separately verified implementation work, not unresolved authority.
+Full-channel release requires inbound voice; the controlled non-voice pilot does not.
+This replaces D-069's first-release gate and B-18's named roster.
 
 ## ACCEPTANCE CRITERIA
 
@@ -188,5 +225,14 @@ confirmed-appointment changes need explicit product policy before autonomy expan
   is explicit, and rescheduling cannot bypass approval by creating a new booking.
 - Every execution links intake, proposal, policy, approver/automation identity,
   domain result and audit. PR #44 protections remain regression-locked.
+
+- Tests cover unknown/stale required-calendar state: no automatic confirmation,
+  continued qualification and one held action; a hard capacity conflict is refused
+  even with ordinary approval. Execution rechecks current availability.
+- Notification tests prove deduplicated immediate/digest delivery, quiet-hour
+  behavior, recorded retries and no recursive approval notification.
+- Model outage tests prove no automatic cross-model fallback is attempted in MVP.
+- Uncertain delivery produces a visible manager-owned hold (owner fallback), no
+  automatic resend, and an auditable resolution before any intentional new action.
 
 Policy: [modes](AUTONOMY_APPROVAL_MODES.md). Memory: [design](GRADIA_MEMORY.md).

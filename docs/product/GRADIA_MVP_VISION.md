@@ -5,9 +5,11 @@
 > at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
 > This documentation branch starts at that reviewed head to describe its safety
 > boundaries accurately; inherited changes are not new documentation-phase implementation.
+> Founder decision package **approved September 11, 2026**. These product requirements
+> are decided; implementation contracts remain designs, not claims of built behavior.
 > Source review: 2026-09-10 (local). Static inspection and prior verification are
 > distinguished from live acceptance. No production access or live model evaluation.
-> The founder's current architecture request governs this proposal where older
+> The approved founder decision package governs these requirements where older
 > scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
 
 ## MVP NOW
@@ -25,10 +27,10 @@ Lead enters → resolve customer and vehicle → qualify → nurture through **G
 Whisper** → determine service or quote → check availability → obtain approval when
 required → book → update CRM/pipeline → follow up → retain structured Gradia Memory.
 
-“Gradia Whisper” is the proposed customer-facing communications umbrella in this
-phase: SMS, email and calls share identity, context, permissions and action history.
-Existing voice-note capture remains an input to the same Agent. This does not mean
-all channels already work as one conversation or that OpenAI Whisper owns the brand.
+“Gradia Whisper” is the unified communications experience across enabled SMS, email
+and calls. These channels share identity, context, permissions and action history.
+Voice-note capture remains an input to the same Agent. Whisper is not a separate
+agent, brain or voice-only feature. This does not mean all channels already work as one conversation or that OpenAI Whisper owns the brand.
 
 | Operational surface | Minimum useful behavior |
 | --- | --- |
@@ -38,7 +40,7 @@ all channels already work as one conversation or that OpenAI Whisper owns the br
 | Customers and vehicles | Search, create, edit, duplicate review/merge, vehicle association, contact details, notes, communication history, quote/appointment history and next action; export and bounded import |
 | Pipeline | Single authoritative stage, accountable owner, next action and due time, quote/booking linkage, no duplicate leads from retries |
 | Quotes and calendar | Approved menu pricing, vehicle-dependent duration, conflict/capacity checks, staff assignment and location context, explicit approval for exceptions |
-| Team controls | Manager seats and revocable invitations, role permissions, assigned-work view, audit actor identity; solo owner receives the same workflow without team setup burden |
+| Team controls | Owner controls members, integrations/connectors, billing, exports, merges, shop-wide rules and autonomy grants. Managers handle delegated approvals, customer-level memory, assignments and daily operations. Staff access assigned customers/jobs, add notes and update permitted progress; they cannot elevate policy, change connectors, bulk-export, merge or publish shop-wide rules. Every sensitive operation records its human or Gradia actor |
 | Control Center | Connector and action controls, effective-policy explanation, per-operation consent/permission gates and workspace kill switch |
 
 Capture enough qualification to book responsibly: requested service, vehicle and
@@ -47,16 +49,40 @@ Unknown paint condition or ambiguous identity produces clarification or a manage
 handoff, not fabricated facts, prices or availability. A lead is not silently lost
 when extraction or a provider fails.
 
+### Approved release stages
+
+A **controlled pilot** may precede the completed full-channel MVP. Pilot-ready means
+enough verified functionality to onboard **5–10 controlled shops** accurately.
+Pilot channels are **SMS, website intake and Meta**, activated independently only
+after their readiness tests pass. Email may join after its complete inbound and
+reply flow passes acceptance. A limited pilot must never be marketed as the completed
+full-channel MVP; the active channel set is explicit for every pilot shop.
+
+The **completed full-channel sellable MVP** requires SMS, website intake, Meta,
+email and inbound voice to pass their individual gates. Voice does not block the
+first controlled non-voice pilot. It stays Off until real-call, forwarding,
+escalation, consent and number-continuity acceptance passes. Outbound calls remain
+Off for the initial MVP. No registration or provider acceptance is implied here.
+
+### Approved workspace and operating scope
+
 An excellent booking loop includes a lightweight completion outcome and a governed
 follow-up, not an entire work-order suite. Staff responsibility and shop capacity
 must be explicit; a single global overlap rule cannot represent three people doing
-independent jobs. Design for location-scoped operation from the start; the initial
-number of active locations remains a launch decision below.
+independent jobs. MVP supports **one active operating location or mobile service
+area per workspace**,
+with multiple staff, resources and capacity schedules. Location identity is explicit
+in records, permissions and policies. Cross-location scheduling, transfers and
+shared-resource routing are deferred.
 
 Customer-facing actions default to **APPROVAL REQUIRED** until an authorized shop
 owner explicitly enables autonomy for the operation. An inbound message does not
 confer blanket marketing consent. STOP, DNC, suppression and destination-bound
 permissions cannot be overridden by approval or a more permissive autonomy setting.
+
+Solo workspaces use implicit owner assignment and simplified setup. Staffed shops
+add invitations, manager delegation, assignments, capacity and scoped views. Both
+receive the same complete core experience; there are no separate product forks.
 
 ## ARCHITECT FOR LATER
 
@@ -110,22 +136,28 @@ Conflicts to retire by explicit follow-up, not bulk rewriting:
 
 | Earlier source | Conflict and treatment |
 | --- | --- |
-| `CONTEXT.md` §1/§2, D-067 | Staff-only ICP, no solo users, jobs/team scheduling/locations excluded. Current request admits solo and staffed shops; only minimal assignment/capacity/location scope is proposed now |
-| Founder D-069 edit / PR #43 handoff | Voice-first v1 excludes SMS/Meta. Current target loop includes them; channel launch gating remains explicit rather than claiming registration/review is complete |
+| `CONTEXT.md` §1/§2, D-067 | Staff-only ICP, no solo users, jobs/team scheduling/locations excluded. Approved package admits solo and staffed shops with one location/mobile service area and minimal assignment/capacity scope |
+| Founder D-069 edit / PR #43 handoff | Voice-first v1 excludes SMS/Meta. Superseded September 11: controlled SMS/website/Meta pilot may precede full-channel MVP; voice remains required for the latter |
 | `CONTEXT.md` D-068 | Default autonomous replies/bookings and several named agents conflict with current approval-by-default, explicitly enabled operations and one primary Agent |
 | Historical `PROJECT_BRIEF.md`, `mcp-architecture.md` | Payment-first examples, Slack approvals, direct vendor MCP orchestration and old pricing are not current architecture requirements |
 
 ## FOUNDER DECISIONS
 
-**Already supplied:** one primary Agent; Gradia-owned orchestration/data/rules/tools;
-replaceable models; solo and multi-person shops; connector/action controls; controlled
-learning; no self-modifying code. Approval-first defaults and consent safety remain.
+**Approved September 11, 2026:** release stages and independently gated pilot
+channels; inbound voice required only for the completed full-channel MVP; one active
+location/mobile service area; owner/manager/staff authority; approval-first customer
+actions with bounded opt-ins; unified Whisper and one primary Gradia Agent; solo/team
+parity; controlled memory and retained current model setup. These are not open choices.
 
-**Still needed before launch:** whether SMS/Meta readiness gates the named sellable
-MVP or whether a clearly labeled voice/email pilot precedes it; minimum active
-locations at launch; exact manager delegation and staff visibility; operational
-response-time/approval-notification targets; acceptance of the manual uncertain-send
-reconciliation path. None blocks writing these docs. Do not reopen pricing here.
+D-069's voice-required-first-release gate is replaced. Older solo exclusions and
+owner-only launch limitations are superseded by common solo/team support. B-18's
+named-agent roster is superseded by internal skills with optional functional activity
+labels. D-068's automatic customer-action defaults give way to explicit opt-in.
+No payment, pricing/package or full work-order expansion is authorized.
+
+Notification vendor selection is an implementation choice. Retention defaults need
+privacy/legal review before production; details are in [Gradia Memory](../architecture/GRADIA_MEMORY.md#retention-defaults).
+No additional founder choice blocks this documentation package.
 
 ## ACCEPTANCE CRITERIA
 
@@ -142,5 +174,14 @@ reconciliation path. None blocks writing these docs. Do not reopen pricing here.
    delivery is held for reconciliation, never automatically resent.
 6. Channel readiness is shown honestly; blocked SMS/Meta never falls through to a
    different channel without that channel's permissions and consent.
+
+7. Onboard 5–10 controlled pilot shops with their active channels listed. Each
+   enabled adapter passes valid/invalid binding, replay, consent and failure tests.
+   Email acceptance includes both inbound processing and in-thread reply.
+8. Full-channel acceptance includes all five channels and real inbound voice tests
+   for forwarding, escalation, consent and retained number continuity. Voice remains
+   Off until those pass; outbound calls and bulk campaigns remain Off.
+9. Solo and staffed shops complete the same loop at one location/mobile service area.
+   Staff cannot perform owner-only operations; audit identifies every sensitive actor.
 
 Implementation order: [MVP sequence](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md).

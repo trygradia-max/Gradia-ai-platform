@@ -5,16 +5,23 @@
 > at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
 > This documentation branch starts at that reviewed head to describe its safety
 > boundaries accurately; inherited changes are not new documentation-phase implementation.
+> Founder decision package **approved September 11, 2026**. These product requirements
+> are decided; implementation contracts remain designs, not claims of built behavior.
 > Source review: 2026-09-10 (local). Static inspection and prior verification are
 > distinguished from live acceptance. No production access or live model evaluation.
-> The founder's current architecture request governs this proposal where older
+> The approved founder decision package governs these requirements where older
 > scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
 
 ## MVP NOW
 
 The Gradia Control Center applies **READ → SUGGEST → APPROVAL REQUIRED → AUTONOMOUS**
 at connector and individual operation level. These are permissions to attempt a
-bounded operation, not a promise that every attempt will execute.
+bounded operation, not a promise that every
+attempt will execute. Every connector and operation exposes a simple choice equivalent
+to **Off, Suggest, Approval required, Autonomous, Custom**. READ is the underlying
+scoped read capability, not permission to perform a business write. Custom composes
+supported per-action modes for capture, qualification, nurture, quoting, booking,
+reminders and follow-ups; it never grants authority above the applicable ceilings.
 
 | Mode | Meaning |
 | --- | --- |
@@ -64,29 +71,48 @@ Evaluation order, shared by manual and automated entry points:
 7. Claim stable action/proof identity atomically before external execution. Record
    outcome and delivery uncertainty. Retries do not recreate consumed authority.
 
+Owner controls members, integrations/connectors, billing, exports, merges, shop-wide
+rules and autonomy grants. Managers handle delegated operational approvals,
+customer-level memory, assignments and daily operations. Staff view assigned
+customers/jobs, add notes and update permitted job progress; they cannot elevate
+policy, change connectors, bulk-export, merge or publish shop-wide rules. Record the
+human or Gradia actor for every sensitive operation.
+
+Discounts require owner approval unless the owner defines a manager discount limit;
+the default is **zero**. Hard resource/capacity conflicts cannot be bypassed through
+ordinary approval or autonomy. Availability is rechecked at execution time.
+
 A manager approving an action cannot implicitly enable autonomy for future actions.
 Editing the message, destination, workflow context or booking invalidates stale
 approval/proof. Bulk approval must still evaluate each recipient and action.
 Role revocation or a connector being switched Off while an action waits blocks it.
 
-### Example shop configuration (explicit opt-in, not launch defaults)
+### Approved initial autonomy matrix
 
-| Connector / action | Example mode | Additional guard |
+| Operation | Initial behavior | Guard / opt-in |
 | --- | --- | --- |
-| SMS / capture lead | AUTONOMOUS | Signature/replay checks, canonical identity; intake does not grant marketing consent |
-| SMS / set appointment | APPROVAL REQUIRED | Authorizes neither separate booking nor confirmation without their own policies |
-| SMS / nurture | AUTONOMOUS | Destination-bound marketing consent unless valid service context; suppression/quiet hours/cooldown |
-| Email / reply | APPROVAL REQUIRED | Thread/customer/destination binding and current channel consent |
-| Meta / import lead | AUTONOMOUS | Verified page/workspace binding and replay; form proof must support later outreach separately |
-| Calls / answer and qualify | AUTONOMOUS | Approved factual scope, identity uncertainty handling, human escalation |
-| Calls / outbound follow-up | APPROVAL REQUIRED | Separate capability, readiness and contact rules; not part of initial launch loop |
-| Booking / normal open slot | AUTONOMOUS | Explicit shop grant, service/menu duration, location/staff capacity and serialized conflict check |
-| Rescheduling / confirmed appointment | APPROVAL REQUIRED | Ownership, customer intent, new availability, impact and notification review |
-| Quoting / menu price | APPROVAL REQUIRED initially | Shop may explicitly grant menu-only autonomy after implementation and review |
-| Quoting / discount | APPROVAL REQUIRED | Approved limit; beyond-limit requests cannot use generic CRM mutation to bypass it |
-| Follow-up / reminder | APPROVAL REQUIRED initially | Service proof, current booking, once-only transport and quiet hours |
-| CRM / note or stage change | Explicit per-action grant | Role, owned record, stage transition and audit; merge is a separately controlled destructive operation |
-| Campaigns / segment send | APPROVAL REQUIRED minimum | POST-MVP: reviewed audience snapshot plus per-recipient marketing consent and caps |
+| Scoped CRM/history/menu/availability reads | READ | Actor, tenant and location scope |
+| Private drafts and proposed reusable memory | SUGGEST | No execution or publication |
+| Verified intake and deterministic deduplication | AUTONOMOUS after explicit connector setup/verification | No inferred marketing consent |
+| STOP, suppression, security and delivery events | Mandatory deterministic processing | Never waits for approval |
+| Ambiguous identity and customer merge | APPROVAL REQUIRED | Merge requires owner authority |
+| SMS/email qualification, replies, nurturing | APPROVAL REQUIRED | Granular opt-ins later; destination/consent/proof checks |
+| Inbound voice | OFF until enabled and verified | Then bounded autonomous operation under shop policy |
+| Outbound calls | OFF | Initial MVP exclusion |
+| Quote sending and normal booking | APPROVAL REQUIRED | Separate bounded opt-ins for menu-priced quotes and compliant bookings |
+| Discounts | APPROVAL REQUIRED | Owner approval unless explicit manager limit; default limit zero |
+| Confirmed reschedules and cancellations | APPROVAL REQUIRED | Current availability and impact review |
+| Confirmations, reminders, follow-ups | APPROVAL REQUIRED separately | Separate autonomy opt-ins |
+| Agent-authored discretionary CRM edits, assignments and stage changes | APPROVAL REQUIRED | No generic write bypass |
+| Mechanical pipeline updates from authorized actions | AUTONOMOUS | Causally bound, idempotent |
+| Operational evidence and audit recording | AUTONOMOUS | No inferred consent or reusable-rule publication |
+| Reusable memory publication | APPROVAL REQUIRED | Manager customer-specific scope; owner shop-wide rules |
+| Manager notifications | AUTONOMOUS after setup | Deduplication, quiet hours, retry state |
+| Campaigns and bulk outreach | OFF / POST-MVP | Not enabled by Custom |
+
+Direct human actions use that human's authority and do not need a second Gradia
+approval. Human action still obeys ownership, consent, hard capacity and other safety
+constraints. Approving a compound action does not change future autonomy grants.
 
 A compound “book and text” evaluates booking AND SMS confirmation, independently.
 If the booking succeeds and the message is held, show “booked; confirmation held.”
@@ -135,19 +161,29 @@ The approved P0 consent defaults win. “Inbound = consent” is not a marketing
 
 ## FOUNDER DECISIONS
 
-Approved: action/connector configuration and approval-first customer-facing defaults;
-shops can explicitly enable bounded autonomy. Open: which managers can approve versus
-change policy; discount bands and other risk limits; whether confirmed reschedules
-remain permanently human-reviewed or support a later tightly bounded opt-in. Proposed
-MVP default: owner manages grants, manager handles delegated approvals, staff cannot
-elevate permissions. No billing/seat-price decision is implied.
+**Approved September 11, 2026:** the initial matrix above, owner/manager/staff
+authority, customer-facing approval-first defaults, distinct normal-booking and
+menu-quote opt-ins, zero default manager discount limit, initial reschedule/cancel
+approval, non-overridable hard conflicts and direct-human authority without a second
+Gradia approval. Off/Suggest/Approval required/Autonomous/Custom are the simple
+user choices; READ remains a scoped capability and Custom is a constrained composition.
+
+D-068 automatic customer-action defaults are superseded. Existing code hard floors
+remain until separately authorized implementation and replacement locking tests
+establish the approved bounded behavior. Approval never permits suppressed/DNC
+contact. No unresolved founder choice remains for this initial policy matrix.
 
 ## ACCEPTANCE CRITERIA
 
 - Table-driven policy tests exercise every scope, inheritance, conflicting settings,
   unknown inputs and policy outage; no missing setting creates autonomy.
-- Given the example shop, SMS nurture can run while appointment setting waits; a
-  discount waits independently of a normal booking. Each action explains its mode.
+- New-workspace tests cover every initial matrix row. Explicitly opting SMS nurture
+  in leaves appointment setting approval-required; a booking opt-in does not enable
+  its confirmation message. Each action explains its effective mode.
+- A manager with the default zero discount limit cannot approve a discount; a grant
+  is checked against its exact bound. Staff fail all owner-only capability tests.
+- Off/Custom transitions never bypass mandatory STOP/security processing, consent
+  restrictions or hard conflicts. Authorized human actions need no second approval.
 - Revocation, STOP, changed content/destination and expired proof between staging and
   execution block transport. Proof races/retries retain PR #44's one-send guarantees.
 - Owner, manager, staff, MCP, webhook and cron paths cannot bypass effective policy.

@@ -5,9 +5,11 @@
 > at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
 > This documentation branch starts at that reviewed head to describe its safety
 > boundaries accurately; inherited changes are not new documentation-phase implementation.
+> Founder decision package **approved September 11, 2026**. These product requirements
+> are decided; implementation contracts remain designs, not claims of built behavior.
 > Source review: 2026-09-10 (local). Static inspection and prior verification are
 > distinguished from live acceptance. No production access or live model evaluation.
-> The founder's current architecture request governs this proposal where older
+> The approved founder decision package governs these requirements where older
 > scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
 
 ## MVP NOW
@@ -37,7 +39,10 @@ approved context. Database facts and permissions outrank model prose and vector 
    subject, value, scope, source action/interaction, suggested applicability and expiry.
    Separate a one-off customer exception from a reusable shop preference. Lack of
    reason means “unknown,” not inferred intent presented as fact.
-4. A permitted reviewer accepts, edits or rejects the candidate. Material shop rules,
+4. A permitted reviewer accepts, edits or rejects the candidate. Managers publish
+   customer-specific preferences within scope; owners approve shop-wide rules and
+   policies; staff may propose candidates. Explicit human CRM edits need no second
+   memory approval; model-generated reusable lessons do. Material shop rules,
    discounts, hours and permission changes require their normal domain authority;
    memory review cannot alter those domains through a back door.
 5. Publish a versioned approved entry. New behavior cites it; superseded or revoked
@@ -72,6 +77,24 @@ history where adequate; otherwise ask or hold. Do not invent a remembered price 
 availability. A vector score does not resolve ambiguous customer identity. Embedding
 providers receive only allowed, minimized content; credentials, secrets and service
 proofs are never memory.
+
+### Retention defaults
+
+**Approved September 11, 2026 as provisional product defaults.** They must match
+the final privacy policy and receive privacy/legal review before production.
+
+| Data class | Provisional default |
+| --- | --- |
+| Raw audio | 30 days |
+| Message and transcript content | 12 months |
+| Rejected memory candidates | 90 days |
+| Approved structured memory | Until superseded, expired or deleted |
+| Consent, suppression, proof-replay tombstones and minimum safety/audit evidence | Separate safety-retention policy |
+
+Routine cleanup must never erase suppression evidence, recreate consent or reopen
+a consumed action. Deletion of content and retention of minimal safety evidence are
+separate operations. The final safety-retention schedule requires privacy/legal
+review; this document neither invents a duration nor authorizes cleanup jobs.
 
 ### Correction, deletion and merge
 
@@ -131,13 +154,17 @@ engines. Keep one customer/vehicle identity spine and one channel-permission tru
 
 ## FOUNDER DECISIONS
 
-Approved: controlled learning from manager corrections; no self-modifying code;
-consent preservation across customer merge. Open: which roles publish shop-wide versus
-customer-specific preferences, retention durations for transcripts/deltas/rejected
-candidates, and which low-risk explicitly supplied facts may update without a second
-review. Proposed MVP: raw evidence logs automatically, extracted reusable rules remain
-candidates; canonical facts follow normal CRM permissions. No inferred preference
-automatically becomes consent or a shop-wide operating rule.
+**Approved September 11, 2026:** operational memory never crosses shop boundaries.
+Managers may publish customer-specific preferences within authorized scope; owners
+approve shop-wide rules and policies; staff may propose candidates. Explicit human
+CRM edits need no second memory approval. Model-generated reusable lessons require
+publication approval. Learning uses structured evidence, candidates, rules,
+preferences and versioned evaluations, never uncontrolled code modification.
+Important memory changes retain provenance, appropriate expiry, supersession and audit.
+
+Retention defaults above are decided but provisional pending privacy/legal review
+before production, including the separate safety-retention policy. Those are review
+obligations, not a reason to reopen memory-publication authority or consent safety.
 
 ## ACCEPTANCE CRITERIA
 
@@ -152,5 +179,12 @@ automatically becomes consent or a shop-wide operating rule.
   injected mid-merge failure rolls back added memory references with the other data.
 - Deleting/superseding a source invalidates derived retrieval according to policy;
   an embedding outage still preserves permitted evidence without inventing facts.
+- Role tests prove managers cannot publish shop-wide rules, staff cannot publish
+  candidates, and authorized human CRM edits require no second approval. Every
+  publication records reviewer, version and source.
+- Clock-controlled retention tests verify the 30-day, 12-month and 90-day boundaries,
+  source/derived invalidation and approved-memory supersession/deletion. Routine
+  cleanup cannot remove suppression or reopen a consumed proof. Production cleanup
+  remains gated on privacy/legal approval of the final policy.
 - Prompt injection in a source, summary or suggested rule cannot change tools,
   service-purpose classification, recipient, policy or tenant boundaries.
