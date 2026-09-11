@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "fix/p0-tenant-policy-safety": false
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/reminders",
