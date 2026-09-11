@@ -1,8 +1,9 @@
 # P0 safety branch — final local correction verification
 
 **Verdict: READY FOR PUSH REVIEW.** Both enabled blocking regressions pass.
-This is a local engineering verification verdict, not deployment authorization or
-production acceptance. Nothing has been pushed or submitted as a PR.
+This is a local engineering verification verdict, not production acceptance.
+The founder subsequently authorized a draft PR with automatic deployment disabled
+for this exact branch; see the infrastructure safety addendum below.
 
 Branch: `fix/p0-tenant-policy-safety`.
 Original main/base: `20e153a8ac7b55bc682e5a49c6e9486ac51e9ae5`.
@@ -257,3 +258,59 @@ empty-production status was not independently verified.
 - `src/lib/service-purpose.ts`
 - `supabase/migrations/20260910100000_service_proof_consumption.sql`
 - `supabase/migrations/20260910101000_canonical_photo_identifiers.sql`
+
+## Draft-PR infrastructure safety addendum (2026-09-10)
+
+Previous verified HEAD: `e980d729f04d104f47a61769ca7e028ed6678341`.
+Infrastructure-safety commit: `96212f9ac79b02722aa9d9f09141371aa391c091`.
+Final publication HEAD is the documentation commit containing this addendum
+(resolve with `git rev-parse HEAD`; the PR pins its full hash). A commit cannot
+contain its own hash. Only `vercel.json` and this report changed after the previous
+verified HEAD; no application, tests, migration or credential changes were made.
+
+Vercel Preview was confirmed to share Production-scoped Supabase configuration.
+No values were revealed or changed. The exact branch is now excluded using:
+
+```json
+{"git":{"deploymentEnabled":{"fix/p0-tenant-policy-safety":false}}}
+```
+
+All nine existing cron definitions are preserved exactly. No global rule, production
+exclusion or wildcard was added. Vercel's official Git configuration documentation
+states that unspecified branches default to enabled:
+https://vercel.com/docs/project-configuration/git-configuration
+This is an automatic Git deployment exclusion, not a block on manual deployment.
+Do not manually deploy this branch. Merging to main would still permit production
+deployment and requires separate founder authorization and rollout review.
+
+Validation and reruns on the infrastructure commit, all final exits 0:
+
+```sh
+curl --fail --silent --show-error https://openapi.vercel.sh/vercel.json -o .local-tools/vercel-schema.json
+.local-tools/node-v22.23.2-darwin-arm64/bin/node < .local-tools/validate-vercel.txt
+.local-tools/node-v22.23.2-darwin-arm64/bin/node scripts/isolated-check.mjs lint
+.local-tools/node-v22.23.2-darwin-arm64/bin/node scripts/isolated-check.mjs build
+.local-tools/node-v22.23.2-darwin-arm64/bin/node scripts/isolated-check.mjs types
+git diff --check origin/main..HEAD
+```
+
+The ignored validator uses installed Ajv against the fetched official schema and
+asserts deep equality with the previous configuration plus only the exact exclusion.
+The upstream schema declares draft-04 but includes an unrelated numeric
+exclusiveMinimum in experimentalTriggers; schema self-validation initially failed.
+Ajv schema self-validation was disabled, while configuration validation remained
+active and passed (no schema/config fields removed). Initial lint found only the
+new ignored CommonJS validator helper; it was moved to a text fixture, then full
+lint passed unchanged. Offline webpack build passed; post-build typecheck passed
+with no diagnostics. Existing Sentry deprecation/missing-token notices remain;
+OS-level outbound denial prevented telemetry or provider access.
+
+The prior **850 unit / 156 integration / 69 fresh migration / 26 relationship**
+results remain evidence for unchanged executable code. These suites were not rerun
+locally for a five-line Vercel-only configuration addition; GitHub CI is monitored
+on the draft PR. GitHub workflows contain no deploy or remote database operation.
+New tracked diffs contain only the branch exclusion and this report, with no secret,
+runtime artifact, database state or unrelated change. The founder checkout remains
+on main with only its original CONTEXT.md edit and the exact SHA-256 recorded above.
+Post-push Vercel skip and GitHub results are recorded in the PR/final handoff, not
+asserted in advance in this pre-push report.
