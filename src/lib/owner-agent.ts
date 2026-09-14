@@ -23,6 +23,7 @@
  * prompt + toolset.
  */
 
+import { servicePayload } from "@/lib/service-purpose"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
@@ -632,7 +633,10 @@ async function runOwnerTool(
         knowledge: grounding,
       }).catch(() => null)
       if (!body) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
+      const reply = await servicePayload(ctx.supabase, ctx.shop.id, {to_phone:to,body,customer_id:c.id,source:"verified_reply"})
       const ok = await stageSingle(ctx, "send_sms", {
+        category: reply.service_proof ? "transactional" : "marketing",
+        service_proof: reply.service_proof,
         to_phone: to,
         body,
         customer_name: c.name,
@@ -659,7 +663,10 @@ async function runOwnerTool(
       knowledge: grounding,
     }).catch(() => null)
     if (!draft) return { content: json({ error: "Couldn't draft that — try again." }), isError: true }
+    const reply = await servicePayload(ctx.supabase, ctx.shop.id, {to_email:to,body:draft.body,subject:draft.subject,customer_id:c.id,source:"verified_reply"})
     const ok = await stageSingle(ctx, "send_email", {
+      category: reply.service_proof ? "transactional" : "marketing",
+      service_proof: reply.service_proof,
       to_email: to,
       subject: draft.subject,
       body: draft.body,

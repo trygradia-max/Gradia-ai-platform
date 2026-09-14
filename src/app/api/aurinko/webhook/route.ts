@@ -28,6 +28,7 @@
  *     through the HITL approval engine (card lands in /approvals)
  */
 
+import { servicePayload } from "@/lib/service-purpose"
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -192,6 +193,7 @@ async function handleMessage(
     content: interactionContent(message),
     metadata: {
       aurinko_message_id: message.id,
+      direction: "inbound",
       from_email: senderEmail || null,
       from_name: message.fromName,
       subject: message.subject,
@@ -315,7 +317,8 @@ async function proposeDraftEmailReply(
     .insert({
       shop_id: shop.id,
       action_type: "send_email",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+        category: "transactional",
         to_email: senderEmail,
         subject: draft.subject,
         body: draft.body,
@@ -324,7 +327,7 @@ async function proposeDraftEmailReply(
         reason,
         source: "email_auto_draft",
         aurinko_inbound_message_id: message.id,
-      },
+      }),
       requested_by: shop.owner_id,
     })
     .select("id")

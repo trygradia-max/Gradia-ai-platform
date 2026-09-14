@@ -46,35 +46,16 @@ jobs:
       # Boots the full local stack (Postgres + auth + PostgREST) and applies
       # every migration in supabase/migrations.
       - name: Start Supabase
-        run: supabase start
+        run: node scripts/test-stack.mjs start
 
-      # Export the test DB URL + service-role key. Tolerant of CLI key-name
-      # changes across versions (the original failure mode), and FAILS LOUD if
-      # either value is missing — a silent empty key previously masqueraded as a
-      # Postgres permission error. On failure it prints the actual JSON keys so
-      # the cause is obvious from the run log.
-      - name: Export local Supabase env
+      - name: Export validated disposable test environment
         run: |
-          set -euo pipefail
-          json=$(supabase status -o json)
-          url=$(echo "$json" | jq -r '.API_URL // .api_url // ."api.url" // empty')
-          key=$(echo "$json" | jq -r '.SERVICE_ROLE_KEY // .service_role_key // ."auth.service_role_key" // empty')
-          anon=$(echo "$json" | jq -r '.ANON_KEY // .anon_key // ."auth.anon_key" // empty')
-          if [ -z "$url" ] || [ -z "$key" ] || [ -z "$anon" ]; then
-            echo "::error::Could not extract Supabase URL/service-role/anon key. Keys present in status JSON:"
-            echo "$json" | jq -r 'keys'
-            exit 1
-          fi
-          echo "SUPABASE_TEST_URL=$url" >> "$GITHUB_ENV"
-          echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$key" >> "$GITHUB_ENV"
-          # Anon key: P0-005's ledger RLS permission tests sign in as a real
-          # owner session to prove SELECT-only. Local demo-stack key, not a secret.
-          echo "SUPABASE_TEST_ANON_KEY=$anon" >> "$GITHUB_ENV"
-          echo "Supabase env OK (service-role key length=${#key})."
+          node scripts/test-stack.mjs credentials
+          node scripts/export-test-env.mjs
 
       - name: Run integration tests
         run: npm run test:int
 
       - name: Stop Supabase
         if: always()
-        run: supabase stop --no-backup
+        run: node scripts/test-stack.mjs stop

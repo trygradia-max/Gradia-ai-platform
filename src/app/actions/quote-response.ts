@@ -1,5 +1,6 @@
 "use server"
 
+import { validQuoteReferences } from "@/lib/tenant-references"
 import { stagingAvailability } from "@/lib/availability"
 import { recordInteraction } from "@/lib/memory"
 import { moveLeadToStage } from "@/lib/pipeline"
@@ -40,7 +41,7 @@ export async function loadPublicQuote(token: string): Promise<QuoteWithShop | nu
     .eq("public_token", token)
     .maybeSingle()
   const quote = data as QuoteWithShop | null
-  if (!quote) return null
+  if (!quote || !await validQuoteReferences(supabase, quote.shop_id, quote)) return null
 
   // First view stamps viewed_at (+ status) and the timeline — quote
   // follow-up discipline runs off this.
@@ -106,7 +107,7 @@ export async function respondToQuote(
     .eq("public_token", token)
     .maybeSingle()
   const quote = data as QuoteWithShop | null
-  if (!quote || !quote.shops) return { ok: false, error: STRINGS.quotePublic.invalidLink }
+  if (!quote || !quote.shops || !await validQuoteReferences(supabase, quote.shop_id, quote)) return { ok: false, error: STRINGS.quotePublic.invalidLink }
 
   // Burst guard on the public money surface (P0-009). Fail-open by design
   // (lib/rate-limit.ts) — a limiter outage never blocks a real customer.

@@ -11,6 +11,7 @@
  * `send_email` pending_actions, never send directly.
  */
 
+import { servicePayload } from "@/lib/service-purpose"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
@@ -233,6 +234,7 @@ async function executeLeadFollowupSms(
         shop_id: shop.id,
         action_type: "send_sms",
         payload: {
+          category: "marketing",
           to_phone: lead.phone,
           body: draft,
           customer_name: lead.customer_name,
@@ -441,7 +443,8 @@ async function executeAppointmentReminderEmail(
       .insert({
         shop_id: shop.id,
         action_type: "send_email",
-        payload: {
+        payload: await servicePayload(supabase, shop.id, {
+          category: "transactional",
           to_email: email,
           subject: draft.subject,
           body: draft.body,
@@ -457,7 +460,7 @@ async function executeAppointmentReminderEmail(
             subject: draft.subject,
             customerName: appt.customer?.name ?? null,
           })),
-        },
+        }),
         requested_by: agent.owner_id,
       })
       .select("id")
@@ -619,7 +622,8 @@ async function executeAppointmentReminderSms(
       .insert({
         shop_id: shop.id,
         action_type: "send_sms",
-        payload: {
+        payload: await servicePayload(supabase, shop.id, {
+          category: "transactional",
           to_phone: phone,
           body,
           customer_name: appt.customer?.name ?? null,
@@ -633,7 +637,7 @@ async function executeAppointmentReminderSms(
             body,
             customerName: appt.customer?.name ?? null,
           })),
-        },
+        }),
         requested_by: agent.owner_id,
       })
       .select("id")
@@ -785,6 +789,7 @@ async function executeStaleCustomerSms(
         shop_id: shop.id,
         action_type: "send_sms",
         payload: {
+          category: "marketing",
           to_phone: customer.phone,
           body: draft,
           customer_name: customer.name,
@@ -994,6 +999,7 @@ async function executeFreeformOutreach(
           shop_id: shop.id,
           action_type: "send_email",
           payload: {
+          category: "marketing",
             to_email: t.email,
             subject: draft.subject,
             body: draft.body,
@@ -1206,6 +1212,7 @@ export async function stageOutreachPlan(
           shop_id: shop.id,
           action_type: "send_email",
           payload: {
+          category: "marketing",
             to_email: t.email,
             subject: draft.subject,
             body: draft.body,
@@ -1318,7 +1325,8 @@ async function executePaymentReceivedThankYouSms(
     .insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+          category: "transactional",
         to_phone: event.customerPhone,
         body: draft,
         customer_name: event.customerName,
@@ -1333,7 +1341,7 @@ async function executePaymentReceivedThankYouSms(
           body: draft,
           customerName: event.customerName,
         })),
-      },
+      }),
       requested_by: agent.owner_id,
     })
     .select("id")
@@ -1443,7 +1451,8 @@ async function executeBookingApprovedPrepEmail(
     .insert({
       shop_id: shop.id,
       action_type: "send_email",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+          category: "transactional",
         to_email: event.customerEmail,
         subject: draft.subject,
         body: draft.body,
@@ -1460,7 +1469,7 @@ async function executeBookingApprovedPrepEmail(
           subject: draft.subject,
           customerName: event.customerName,
         })),
-      },
+      }),
       requested_by: agent.owner_id,
     })
     .select("id")

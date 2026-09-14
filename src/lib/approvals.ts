@@ -10,6 +10,8 @@
  *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
+import { servicePayload, claimServiceExecution, completeServiceExecution, auditServiceActionRetry, serviceActionIsUnspent } from "@/lib/service-purpose"
+import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
@@ -46,7 +48,7 @@ import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
-import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
+import { evaluateSmsSendPolicy, evaluateCustomerSendPolicy, type SendCategory } from "@/lib/send-policy"
 import { moveLeadToStage, stageFromLegacyStatus } from "@/lib/pipeline"
 import { buildQuoteLineItem, computeQuoteTotals } from "@/lib/quotes"
 import { parseVehicle } from "@/lib/vehicle"
@@ -112,11 +114,14 @@ export type SmsProposal = {
   customer_id: string | null
   /** Source-side context — what prompted this draft (e.g. inbound message ID, agent name). */
   reason: string | null
-  /** Safe-send classification (B2). Marketing needs consent/EBR; defaults transactional. */
+  /** Safe-send classification (B2). Marketing needs explicit channel consent; unknown categories are held. */
+  service_proof?: string | null
   category?: SendCategory
 }
 
 export type EmailProposal = {
+  service_proof?: string | null
+  category?: SendCategory
   to_email: string
   subject: string
   body: string
@@ -277,6 +282,7 @@ async function claimPendingAction(
     if (row && row.shop_id !== shopId) {
       reportTenantScopeViolation({
         surface: "approvals.claimPendingAction",
+        notifyExternally: false,
         authorizedShopId: shopId,
         rowShopId: row.shop_id,
         rowId: pendingId,
@@ -497,7 +503,13 @@ export async function executeApproval(
   }
 
   if (!claimed) {
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
+  }
+
+  if (!await validTenantReferences(supabase, shopId, claimed.payload)) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: "Action reference not found in this shop." }
   }
 
   switch (claimed.action_type) {
@@ -1581,7 +1593,7 @@ async function executeBookAppointment(
   // Best-effort confirmation draft. Always after a successful booking
   // landing — drafter failures must not roll back the booking.
   try {
-    await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id)
+    await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id, appointmentId)
   } catch (err) {
     console.warn(
       "[approvals] booking confirmation draft failed (booking still succeeded):",
@@ -1648,7 +1660,8 @@ async function queueBookingConfirmationSms(
   supabase: SupabaseClient,
   shop: ShopRow,
   proposal: BookingProposal,
-  customerId: string
+  customerId: string,
+  appointmentId: string
 ): Promise<void> {
   // Skip if the shop hasn't connected SMS — without a Twilio number
   // there's nothing for the operator to eventually approve & send.
@@ -1675,15 +1688,17 @@ async function queueBookingConfirmationSms(
     .insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+        category: "transactional",
         to_phone: proposal.phone,
         body: draft,
         customer_name: proposal.customer_name,
         customer_id: customerId,
         reason,
         source: "booking_confirmation",
+        appointment_id: appointmentId,
         iso_start_time: proposal.iso_start_time,
-      },
+      }),
       requested_by: shop.owner_id,
     })
     .select("id")
@@ -1857,18 +1872,27 @@ async function executeSendSms(
   const policy = await evaluateSmsSendPolicy(supabase, shop, {
     toPhone: proposal.to_phone,
     customerId: proposal.customer_id ?? null,
-    category: proposal.category ?? "transactional",
+    category: proposal.category, body: proposal.body, serviceProof: proposal.service_proof, actionId:claimed.id,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
   }
 
+  if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
+  }
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"sms" as const,destination:policy.destination,body:proposal.body,actionId:claimed.id},proposal.service_proof) : null
+  if (execution && !execution.ok) {
+    await rollbackClaim(supabase, claimed)
+    return {ok:false,error:execution.reason}
+  }
   let sendResult
   try {
     sendResult = await sendOutboundSms({
       from: shop.twilio_phone_number,
-      to: proposal.to_phone,
+      to: policy.destination,
       body: proposal.body,
       statusCallback: defaultStatusCallbackUrl(claimed.shop_id),
       creds: resolveTwilioCredentials(shop),
@@ -1884,13 +1908,8 @@ async function executeSendSms(
   }
 
   // Best-effort attachment — proposal may already carry customer_id.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      phone: proposal.to_phone,
-    })
-    if (customer) customerId = customer.id
-  }
+  await completeServiceExecution(supabase, claimed.shop_id, execution)
+  const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -1960,6 +1979,27 @@ async function executeSendEmail(
   }
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
+  if (!shop) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: "Shop not found." }
+  }
+  const policy = await evaluateCustomerSendPolicy(supabase, shop, {
+    channel: "email", destination: proposal.to_email,
+    customerId: proposal.customer_id ?? null, category: proposal.category, body: proposal.body, subject: proposal.subject, serviceProof: proposal.service_proof, actionId:claimed.id,
+  })
+  if (!policy.allowed) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: policy.reason }
+  }
+  if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
+  }
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email" as const,destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id},proposal.service_proof) : null
+  if (execution && !execution.ok) {
+    await rollbackClaim(supabase, claimed)
+    return {ok:false,error:execution.reason}
+  }
   let accessToken: string | null = null
   if (shop) {
     try {
@@ -1981,7 +2021,7 @@ async function executeSendEmail(
     const sent = await sendEmailMessage(accessToken, {
       subject: proposal.subject,
       body: proposal.body,
-      to: proposal.to_email,
+      to: policy.destination,
     })
     sentId = sent.id
   } catch (err) {
@@ -1995,13 +2035,8 @@ async function executeSendEmail(
     }
   }
 
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      email: proposal.to_email,
-    })
-    if (customer) customerId = customer.id
-  }
+  await completeServiceExecution(supabase, claimed.shop_id, execution)
+  const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -2130,6 +2165,7 @@ export async function markEditRequested(
   }
 
   if (!claimed) {
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 
@@ -2160,6 +2196,7 @@ export async function executeRejection(
   }
 
   if (!claimed) {
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 

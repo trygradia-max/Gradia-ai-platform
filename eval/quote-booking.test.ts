@@ -181,8 +181,8 @@ function mockDb(opts: {
 }
 
 const RESOLVING_TABLES = {
-  quotes: { id: "q-1", lead_id: "lead-1" },
-  leads: { id: "lead-1" },
+  quotes: { id: "q-1", shop_id: "shop-1", lead_id: "lead-1" },
+  leads: { id: "lead-1", shop_id: "shop-1" },
 }
 
 function leadInserts(writes: Write[]): Write[] {
@@ -220,7 +220,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
     expect(link).toBeDefined()
   })
 
-  it("quote row is the trusted anchor: its lead link WINS over a mismatched payload lead_id", async () => {
+  it("rejects before side effects: quote row is the trusted anchor", async () => {
     const writes: Write[] = []
     const db = mockDb({
       payload: quotePayload({ lead_id: "lead-forged" }),
@@ -228,31 +228,28 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       writes,
     })
     const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
-    expect(res.ok).toBe(true)
+    expect(res.ok).toBe(false)
     expect(leadInserts(writes)).toHaveLength(0)
-    expect(mockedMoveLeadToStage).toHaveBeenCalledWith(db, "shop-1", "lead-real", "booked", {
-      by: "system",
-    })
+    expect(quoteStatusUpdates(writes)).toHaveLength(0)
+    expect(mockedMoveLeadToStage).not.toHaveBeenCalled()
+    expect(aurinko.createCalendarEvent).not.toHaveBeenCalled()
   })
 
-  it("foreign/unknown refs (shop-scoped lookups return nothing): falls back to create, quote NOT advanced", async () => {
+  it("rejects before side effects: foreign/unknown refs (shop-scoped lookups return nothing)", async () => {
     const writes: Write[] = []
     const db = mockDb({
       tables: { quotes: null, leads: null }, // .eq(shop_id) filtered them out
       writes,
     })
     const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
-    expect(res.ok).toBe(true)
-    // Historical behavior: a fresh lead, in THIS shop — the foreign rows untouched.
-    expect(leadInserts(writes)).toHaveLength(1)
-    expect(leadInserts(writes)[0].values.shop_id).toBe("shop-1")
+    expect(res.ok).toBe(false)
+    expect(leadInserts(writes)).toHaveLength(0)
     expect(quoteStatusUpdates(writes)).toHaveLength(0)
-    expect(mockedMoveLeadToStage).toHaveBeenCalledWith(db, "shop-1", "leads-new", "booked", {
-      by: "system",
-    })
+    expect(mockedMoveLeadToStage).not.toHaveBeenCalled()
+    expect(aurinko.createCalendarEvent).not.toHaveBeenCalled()
   })
 
-  it("lead READ ERROR (transient fault, not a clean not-found): FAILS CLOSED — no duplicate lead, reconciliation recorded", async () => {
+  it("rejects before side effects: lead READ ERROR (transient fault, not a clean not-found)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     const writes: Write[] = []
     const db = mockDb({
@@ -261,31 +258,25 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
       writes,
     })
     const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
-    // Appointment persisted → booking succeeds; but the uncertain lead read
-    // must NOT spawn a replacement lead (that resurrects the duplicate card).
-    expect(res.ok).toBe(true)
+    expect(res.ok).toBe(false)
     expect(leadInserts(writes)).toHaveLength(0)
     expect(quoteStatusUpdates(writes)).toHaveLength(0)
-    const recon = writes.find(
-      (w) =>
-        w.table === "pending_actions" &&
-        w.op === "update" &&
-        (w.values.payload as { reconciliation?: { kind?: string } } | undefined)?.reconciliation
-          ?.kind === "lead_resolve_error"
-    )
-    expect(recon).toBeDefined()
+    expect(mockedMoveLeadToStage).not.toHaveBeenCalled()
+    expect(aurinko.createCalendarEvent).not.toHaveBeenCalled()
   })
 
-  it("quote resolves but its lead was deleted: fallback create, quote STILL advances to booked", async () => {
+  it("rejects before side effects: quote resolves but its lead was deleted", async () => {
     const writes: Write[] = []
     const db = mockDb({
-      tables: { quotes: { id: "q-1", lead_id: "lead-gone" }, leads: null },
+      tables: { quotes: { id: "q-1", shop_id: "shop-1", lead_id: "lead-gone" }, leads: null },
       writes,
     })
     const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
-    expect(res.ok).toBe(true)
-    expect(leadInserts(writes)).toHaveLength(1)
-    expect(quoteStatusUpdates(writes)).toHaveLength(1)
+    expect(res.ok).toBe(false)
+    expect(leadInserts(writes)).toHaveLength(0)
+    expect(quoteStatusUpdates(writes)).toHaveLength(0)
+    expect(mockedMoveLeadToStage).not.toHaveBeenCalled()
+    expect(aurinko.createCalendarEvent).not.toHaveBeenCalled()
   })
 
   it("no refs at all (voice booking / old in-flight payload): create path unchanged, no quote reads matter", async () => {

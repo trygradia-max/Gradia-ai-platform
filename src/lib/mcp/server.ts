@@ -442,6 +442,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       description:
         "Stages a send_sms pending_action. Operator approves in /approvals before Twilio actually sends. Recipient must be in E.164 format — call normalize_phone first.",
       inputSchema: {
+        category: z.enum(["transactional", "marketing"]).default("marketing"),
         to_phone: z
           .string()
           .regex(/^\+\d{8,15}$/, "Must be E.164, e.g. +14155551234"),
@@ -464,6 +465,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           shop_id: ctx.shopId,
           action_type: "send_sms",
           payload: {
+            category: "marketing",
             to_phone: args.to_phone,
             body: args.body,
             customer_name: args.customer_name,
@@ -489,6 +491,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       description:
         "Stages a send_email pending_action. On approval, Aurinko sends via the shop's connected Gmail. Plain text body, never HTML.",
       inputSchema: {
+        category: z.enum(["transactional", "marketing"]).default("marketing"),
         to_email: z.string().email(),
         subject: z.string().min(1).max(200),
         body: z.string().min(1).max(8_000),
@@ -505,6 +508,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
           shop_id: ctx.shopId,
           action_type: "send_email",
           payload: {
+            category: "marketing",
             to_email: args.to_email,
             subject: args.subject,
             body: args.body,

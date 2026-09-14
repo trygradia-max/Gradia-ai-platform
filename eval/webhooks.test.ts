@@ -123,6 +123,11 @@ const fakeDb = {
   },
   client() {
     return {
+      rpc: async (name:string,args:unknown) => {
+        if(name!=="record_sms_keyword") throw new Error("Unexpected RPC")
+        fakeDb.calls.push({table:name,method:"rpc",args:[args]})
+        return fakeDb.tables[name] ?? {data:null,error:null}
+      },
       from: (table: string) => {
         let op: string | null = null
         const resultFor = () =>
@@ -661,9 +666,10 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const first = await post(stopForm)
     expect(first.status).toBe(200)
     const consentWrites = fakeDb.calls.filter(
-      (c) => c.table === "customers" && c.method === "update"
+      (c) => c.table === "record_sms_keyword" && c.method === "rpc"
     )
     expect(consentWrites).toHaveLength(1)
+    expect(consentWrites[0].args[0]).toMatchObject({p_customer:"cust-1",p_opted_in:false})
 
     // Replay of the SAME MessageSid: suppressed — no second consent write.
     fakeDb.calls = []
@@ -671,7 +677,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const replay = await post(stopForm)
     expect(replay.status).toBe(200)
     expect(
-      fakeDb.calls.filter((c) => c.table === "customers" && c.method === "update")
+      fakeDb.calls.filter((c) => c.table === "record_sms_keyword" && c.method === "rpc")
     ).toHaveLength(0)
   })
 
@@ -681,7 +687,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
       customer: { id: "cust-1" },
       created: false,
     })
-    fakeDb.tables.customers = { data: null, error: { message: "rls denied" } }
+    fakeDb.tables.record_sms_keyword = { data: null, error: { message: "rls denied" } }
     const res = await post(makeForm({ Body: "STOP" }))
     expect(res.status).toBe(500)
     expect(failMock).toHaveBeenCalledTimes(1)

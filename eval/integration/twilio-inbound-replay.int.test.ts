@@ -450,12 +450,18 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     const startForm = makeForm({ MessageSid: id3, From: phone, Body: "START" })
     expect((await post(startForm)).status).toBe(200)
     const afterStart = await customer()
-    expect(afterStart?.marketing_consent_at).toBeTruthy()
+    expect(afterStart?.marketing_consent_at).toBeNull()
+    const permission = async () => (await sb.from("customer_channel_permissions").select("*").eq("shop_id",seed.shopId).eq("customer_id",afterStart!.id).eq("channel","sms").eq("destination",phone).single()).data!
+    const grant=await permission()
+    expect(grant.marketing_consent_at).toBeTruthy()
+    expect(grant.consent_source).toBe("sms_keyword")
+    expect(grant.suppressed_at).toBeNull()
     expect(afterStart?.sms_opted_out_at).toBeNull()
     await new Promise((r) => setTimeout(r, 25))
     expect((await post(startForm)).status).toBe(200)
     const afterStartReplay = await customer()
-    expect(afterStartReplay?.marketing_consent_at).toBe(afterStart?.marketing_consent_at)
+    expect(afterStartReplay?.marketing_consent_at).toBeNull()
+    expect((await permission()).marketing_consent_at).toBe(grant.marketing_consent_at)
   })
 
   it("a forged request cannot create a claim or poison the sid; the real delivery still processes", async () => {

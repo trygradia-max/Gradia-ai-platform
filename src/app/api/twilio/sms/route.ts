@@ -30,6 +30,7 @@
  * payload cannot reserve (poison) a legitimate MessageSid.
  */
 
+import { servicePayload } from "@/lib/service-purpose"
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -261,6 +262,7 @@ async function handleMessage(
       content: sms.body.trim() || "(empty SMS body)",
       metadata: {
         twilio_message_sid: sms.messageSid,
+        direction: "inbound",
         from_phone: fromPhone,
         from_city: sms.fromCity,
         from_state: sms.fromState,
@@ -277,36 +279,10 @@ async function handleMessage(
     }
   }
 
-  // Consent ledger (B2): a STOP/START keyword updates the customer's marketing
-  // opt-out / opt-in state — the affirmative-consent signal the send gate reads.
-  // Write failures throw (compliance-critical): the failed claim lets the
-  // provider retry re-apply consent instead of dropping it silently.
-  if (customerId) {
-    if (looksOptedOut(sms.body)) {
-      const { error: consentErr } = await supabase
-        .from("customers")
-        .update({ sms_opted_out_at: new Date().toISOString(), marketing_consent_at: null })
-        .eq("id", customerId)
-      if (consentErr) {
-        throw new Error(
-          `[twilio sms] opt-out consent write failed: ${consentErr.message}`
-        )
-      }
-    } else if (looksOptedIn(sms.body)) {
-      const { error: consentErr } = await supabase
-        .from("customers")
-        .update({
-          marketing_consent_at: new Date().toISOString(),
-          marketing_consent_source: "sms_keyword",
-          sms_opted_out_at: null,
-        })
-        .eq("id", customerId)
-      if (consentErr) {
-        throw new Error(
-          `[twilio sms] opt-in consent write failed: ${consentErr.message}`
-        )
-      }
-    }
+  // Signature-verified webhook: atomically update STOP and destination consent.
+  if (customerId && (looksOptedOut(sms.body) || looksOptedIn(sms.body))) {
+    const {error} = await supabase.rpc("record_sms_keyword", {p_shop:shop.id,p_customer:customerId,p_destination:fromPhone,p_opted_in:looksOptedIn(sms.body) && !looksOptedOut(sms.body)})
+    if(error) throw new Error("SMS consent update failed; retry required")
   }
 
   // No-show ladder (NEXT-2): a YES-style reply confirms the customer's nearest
@@ -456,7 +432,8 @@ async function proposeDraftReply(
     .insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+        category: "transactional",
         to_phone: fromPhone,
         body: draft,
         customer_name: customerName,
@@ -464,7 +441,7 @@ async function proposeDraftReply(
         reason,
         source: "sms_auto_draft",
         twilio_message_sid: sms.messageSid,
-      },
+      }),
       requested_by: shop.owner_id,
     })
     .select("id")

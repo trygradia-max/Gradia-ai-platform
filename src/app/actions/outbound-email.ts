@@ -7,6 +7,7 @@ import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
 const proposeSchema = z.object({
+  category: z.enum(["transactional", "marketing"]).default("marketing"),
   to_email: z.string().trim().email("Recipient must be a valid email."),
   subject: z
     .string()
@@ -52,6 +53,7 @@ export async function proposeOutboundEmail(
   if (!ownerId) return { ok: false, error: "Shop owner not found." }
 
   const payload = {
+    category: "marketing",
     to_email: parsed.data.to_email,
     subject: parsed.data.subject,
     body: parsed.data.body,
