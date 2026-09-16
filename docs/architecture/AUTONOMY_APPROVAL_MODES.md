@@ -1,16 +1,18 @@
 # Autonomy and approval modes
 
-> Planning baseline: `main` at `20e153a8ac7b55bc682e5a49c6e9486ac51e9ae5`, plus
-> verified draft [PR #44](https://github.com/trygradia-max/Gradia-ai-platform/pull/44)
-> at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
-> This documentation branch starts at that reviewed head to describe its safety
-> boundaries accurately; inherited changes are not new documentation-phase implementation.
-> Founder decision package **approved September 11, 2026**. These product requirements
-> are decided; implementation contracts remain designs, not claims of built behavior.
-> Source review: 2026-09-10 (local). Static inspection and prior verification are
-> distinguished from live acceptance. No production access or live model evaluation.
-> The approved founder decision package governs these requirements where older
-> scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
+> Implementation baseline: merged `main` at
+> `4552f586a3b892b4e112337aca6eb76a530dd829` (PR #45), including merged P0 PR #44.
+> Product decisions **approved September 11, 2026** remain unchanged. These five
+> documents are the founder-designated source of truth for the sellable MVP build;
+> their approved requirements supersede conflicting historical scope documents.
+> Existing implementation, future requirements and release permission are distinct.
+> Release status verified September 15, 2026 (Pacific): Node 22 deployment and
+> founder authentication passed; **35 production write guards remain active**.
+> Public access remains restricted to the authentication test gate. Non-authentication
+> delivery, crons, automatic builds and automatic domain assignment remain disabled.
+> See [verified baseline and production gate](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md#verified-baseline-and-production-gate).
+> This documentation-only update does not authorize feature implementation or lift
+> any release gate. Protected `CONTEXT.md` and application code remain unchanged.
 
 ## MVP NOW
 
@@ -138,10 +140,16 @@ option for contacting a suppressed/DNC recipient.
 
 ## EXISTING SUPPORT
 
+The current production freeze overrides execution eligibility: all 35 application
+write guards remain active. Approved target autonomy modes are not live activation
+grants. User-requested Supabase authentication email is the sole narrow communication
+exception; neither Agent actions nor manager/business notifications inherit it.
+PR #45 secures login redirects but does not expand permissions.
+
 `src/lib/autonomy.ts` has default/per-agent `suggest|autonomous`, package gating and
 `ALWAYS_HITL` for booking, reschedule, cancellation and quote creation. `trust.ts`
 records approval resolution and recommends eligible changes. `approvals.ts` has the
-atomic execution boundary. `send-policy.ts` and **pending PR #44** provide shop- and
+atomic execution boundary. `send-policy.ts` and **merged PR #44** provide shop- and
 destination-bound SMS/email permission checks and durable service-purpose claims.
 Catalog `automations.ts` has a separate autopilot model that must use the same policy.
 

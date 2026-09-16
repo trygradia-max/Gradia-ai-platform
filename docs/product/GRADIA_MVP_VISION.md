@@ -1,16 +1,18 @@
 # Gradia Agent MVP vision
 
-> Planning baseline: `main` at `20e153a8ac7b55bc682e5a49c6e9486ac51e9ae5`, plus
-> verified draft [PR #44](https://github.com/trygradia-max/Gradia-ai-platform/pull/44)
-> at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
-> This documentation branch starts at that reviewed head to describe its safety
-> boundaries accurately; inherited changes are not new documentation-phase implementation.
-> Founder decision package **approved September 11, 2026**. These product requirements
-> are decided; implementation contracts remain designs, not claims of built behavior.
-> Source review: 2026-09-10 (local). Static inspection and prior verification are
-> distinguished from live acceptance. No production access or live model evaluation.
-> The approved founder decision package governs these requirements where older
-> scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
+> Implementation baseline: merged `main` at
+> `4552f586a3b892b4e112337aca6eb76a530dd829` (PR #45), including merged P0 PR #44.
+> Product decisions **approved September 11, 2026** remain unchanged. These five
+> documents are the founder-designated source of truth for the sellable MVP build;
+> their approved requirements supersede conflicting historical scope documents.
+> Existing implementation, future requirements and release permission are distinct.
+> Release status verified September 15, 2026 (Pacific): Node 22 deployment and
+> founder authentication passed; **35 production write guards remain active**.
+> Public access remains restricted to the authentication test gate. Non-authentication
+> delivery, crons, automatic builds and automatic domain assignment remain disabled.
+> See [verified baseline and production gate](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md#verified-baseline-and-production-gate).
+> This documentation-only update does not authorize feature implementation or lift
+> any release gate. Protected `CONTEXT.md` and application code remain unchanged.
 
 ## MVP NOW
 
@@ -119,9 +121,12 @@ not an automatic place in a later release. No pricing/package changes are propos
 - `src/lib/approvals.ts`, `provider-events.ts`, availability and serialized booking
   protect existing execution. Outbound email exists through Aurinko; missing inbox
   reply is not the same as missing email transport.
-- **Pending PR #44 only:** destination-bound permission checks, atomic consent-safe
+- **Merged PR #44:** destination-bound permission checks, atomic consent-safe
   customer merge, durable service-proof claims, canonical photo validation and
-  tenant relationship constraints. Its green CI does not make it deployed.
+  tenant relationship constraints. These are completed safety prerequisites.
+- **Merged PR #45:** same-origin authentication callback protection is deployed,
+  and the founder login test passed. The 35 production write guards still prevent
+  onboarding completion and operational CRM writes; login is not MVP acceptance.
 
 ## ARCHITECTURAL GAPS
 

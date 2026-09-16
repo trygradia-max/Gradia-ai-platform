@@ -1,30 +1,75 @@
 # MVP implementation sequence
 
-> Planning baseline: `main` at `20e153a8ac7b55bc682e5a49c6e9486ac51e9ae5`, plus
-> verified draft [PR #44](https://github.com/trygradia-max/Gradia-ai-platform/pull/44)
-> at `3b99bf4b5d9022a248bd1716fe2b070d8ae455f5`. PR #44 is **pending, not merged**.
-> This documentation branch starts at that reviewed head to describe its safety
-> boundaries accurately; inherited changes are not new documentation-phase implementation.
-> Founder decision package **approved September 11, 2026**. These product requirements
-> are decided; implementation contracts remain designs, not claims of built behavior.
-> Source review: 2026-09-10 (local). Static inspection and prior verification are
-> distinguished from live acceptance. No production access or live model evaluation.
-> The approved founder decision package governs these requirements where older
-> scope documents conflict. Neither the original nor committed `CONTEXT.md` is edited.
+> Implementation baseline: merged `main` at
+> `4552f586a3b892b4e112337aca6eb76a530dd829` (PR #45), including merged P0 PR #44.
+> Product decisions **approved September 11, 2026** remain unchanged. These five
+> documents are the founder-designated source of truth for the sellable MVP build;
+> their approved requirements supersede conflicting historical scope documents.
+> Existing implementation, future requirements and release permission are distinct.
+> Release status verified September 15, 2026 (Pacific): Node 22 deployment and
+> founder authentication passed; **35 production write guards remain active**.
+> Public access remains restricted to the authentication test gate. Non-authentication
+> delivery, crons, automatic builds and automatic domain assignment remain disabled.
+> See [verified baseline and production gate](#verified-baseline-and-production-gate).
+> This documentation-only update does not authorize feature implementation or lift
+> any release gate. Protected `CONTEXT.md` and application code remain unchanged.
 
 ## MVP NOW
 
-This sequence records the approved requirements for the lead-to-booking direction,
-not a new
-implementation authorization or a claim that PR #44 is merged. It supplements the
-older roadmap where the September 11, 2026 approved scope differs. Keep changes small
-and
-reviewable; do not activate tenancy and calendar migrations together. Reuse existing
-ticket work after verifying it, rather than rebuilding every old unchecked item.
+This is the implementation sequence for the approved sellable MVP. Use the five
+linked documents as the requirements baseline when feature work is separately
+authorized. Reuse existing ticket work after code verification; do not restart P0
+cleanup, migrations or merged security fixes. Keep changes small and reviewable;
+do not activate tenancy and calendar migrations together.
+
+### Verified baseline and production gate
+
+| Completed work | Evidence and practical limit |
+| --- | --- |
+| P0 safety, [PR #44](https://github.com/trygradia-max/Gradia-ai-platform/pull/44) | Merged as `77c1c9acd115806baacb737d3ab65c15be396127`: shop/destination-bound consent, cross-tenant reference checks, atomic consent-preserving customer merge, durable proof replay prevention and canonical photo paths. This is a security foundation, not a completed Agent MVP |
+| Database release | Approved cleanup completed once after verified encrypted recovery; shared ledger has all 69 migrations. All 26 tenant relationships, reviewed functions/security definitions/grants and retained `waitlist` schema passed verification. Both inconsistent-data refusal probes passed; no silent repair |
+| P0 verification | 850 unit passes, 4 intentional live-test skips, 156 disposable integration passes; Node 22 lint, offline build and post-build typecheck passed. See [P0 verification](../P0_LOCAL_VERIFICATION.md) for the historical exact-commit evidence |
+| Callback security, [PR #45](https://github.com/trygradia-max/Gradia-ai-platform/pull/45) | Merged/deployed as `4552f586a3b892b4e112337aca6eb76a530dd829`. Trusted production-origin internal redirects replace unsafe `next` concatenation; `/dashboard` default and successful code exchange preserved. 41 callback regressions; 891 unit passes plus 4 intentional live-test skips; 156 integration passes; lint, offline Node 22 build and post-build typecheck passed; protected `checks` and `integration` passed |
+| Production callback probes | 19 token-free deployed failure-path probes and database health passed. Successful-exchange destination validation is covered by isolated regressions; do not describe these probes as 19 real logins |
+| Controlled authentication | Founder-reported login corroborated by advanced auth metadata and a browser tab at `https://gradia-ai-platform.vercel.app/onboarding`, without authentication parameters in its address. All 35 public application-table content hashes remained unchanged; retained counts stayed 7 auth users, 10 identities and 5 shops |
+| Auth redirect configuration | Site URL is `https://gradia-ai-platform.vercel.app`; explicit allowlist contains that exact origin and `/auth/callback`. Development, ngrok and wildcard Preview entries removed. PR #45 validates the subsequent application redirect; the allowlist alone is not that protection |
+
+**Authentication is accepted; operational production release is not.** The narrow
+exception permits only user-requested Supabase login emails. It does not enable
+business email, manager notifications, SMS, calls, Meta, campaigns, follow-ups or
+unattended delivery. Registration behavior was preserved; testing reused an
+existing confirmed account. No addresses, links, tokens or private release artifacts
+belong in these documents.
+
+All **35 temporary application-table write guards** remain enabled. The production
+domain is bound to the verified deployment, but network/method/path restrictions
+still limit access to the controlled test. Crons, automatic Git builds, automatic
+domain assignment and non-authentication provider activity remain disabled.
+Login landing on onboarding is not proof of onboarding completion or usable CRM:
+the guards block onboarding writes, customer edits, booking and other mutations.
+
+Removing those guards and widening traffic require a separate, explicit founder
+release decision and controlled verification; neither follows automatically from
+successful login or this documentation PR. Preserve application/RLS constraints,
+consent and replay protections when removing only temporary release guards.
+Provider/channel activation remains a separate decision after its acceptance gates.
+Future implementation may use isolated development infrastructure without lifting
+production restrictions. The usable manager reconciliation interface and operational
+workflow acceptance remain implementation/pilot gates, not completed P0 claims.
+
+### Authoritative document set
+
+- [MVP vision](../product/GRADIA_MVP_VISION.md): product scope and release stages.
+- [Agent architecture](../architecture/GRADIA_AGENT_ARCHITECTURE.md): reused systems and incremental contracts.
+- [Autonomy and approval modes](../architecture/AUTONOMY_APPROVAL_MODES.md): authority and initial action defaults.
+- [Gradia Memory](../architecture/GRADIA_MEMORY.md): evidence, reviewed learning and retention.
+- This sequence: dependencies, verification and remaining release obligations.
+
+### Build sequence
 
 | Order | Bounded outcome | Reuse / prerequisite | Exit evidence |
 | --- | --- | --- | --- |
-| 0 | Founder review of draft PR #44 and rollout plan | Existing P0 commits, 69-migration ledger, 26 relationship manifest, 850 unit/156 integration CI evidence | Independent security/migration review; founder separately authorizes merge/deploy; inconsistent data is refused, never repaired silently |
+| 0 | P0 and callback foundation completed; production write gate remains | PRs #44/#45, 69 migrations, 26 tenant relationships and accepted founder authentication | Separate founder authorization and controlled acceptance before removing the 35 temporary write guards or widening traffic; provider/cron activation remains independently gated |
 | 1 | Membership and minimum operations scope | `shops`, `shop.ts`, `forShop`, existing appointment/CRM spine | Solo owner and three-person shop; invite/revoke; owner/manager/staff RLS, scoped approvals, assignments and one active location/mobile service area, explicit location identity; additive backfill and tenant tests |
 | 2 | Control Center and command authority | Existing approval executor, autonomy and send policy | READ capability and Off/Suggest/Approval required/Autonomous/Custom controls, approved initial matrix and explicit action grants, connector ceilings, policy version/audit; all reachable tool paths inventoried; old floors retained until replacement tests pass |
 | 3 | Reliable normalized lead intake | Provider event claims, identity/dedupe, import/form adapters | Durable lead event/transition; synthetic duplicate/reordered input and crash recovery; no identity/consent inference; new/ambiguous lead appears in Chief of Staff |
@@ -74,10 +119,13 @@ Do not expand into a full scheduling rewrite to obtain these guarantees.
   workflow tests pass; live model changes require their own controlled quality evals.
 - Unknown transport outcome remains held with manual reconciliation. Never reissue
   a consumed proof or auto-resend to make a dashboard look complete.
-- No unapproved production or provider operations. PR #44 remains draft until founder
-  changes its status. This documentation branch is local only. The inherited Vercel
-  exclusion names the P0 branch **only**; it does not protect a future push of this
-  docs branch. A separate deployment-safety preflight is required before any push.
+- No unapproved production or provider operations. PRs #44 and #45 merged with founder
+  authorization; this documentation-only branch is authorized for a draft PR, not
+  merge or deployment. The inherited branch exclusion protects the P0 branch only.
+  The project-level ignored-build command currently prevents automatic builds;
+  historical deployment hosts are denied. Recheck these holds before any future push.
+  Releasing documentation does not authorize restoring providers, crons or automatic
+  deployments, or count as authenticated pilot workflow acceptance.
 
 ## ARCHITECT FOR LATER
 
@@ -116,7 +164,7 @@ commit only; no architecture behavior was executed in this documentation phase.
 | `src/lib/owner-agent.ts`, `agent-planner.ts`, `agent-runtime.ts`, `agent-events.ts`, `autonomy.ts`, `trust.ts` | Actual tools, recipe scheduling, event kinds, hard floors and telemetry |
 | `src/lib/shop.ts`, `supabase/for-shop.ts`, `availability.ts`, `approvals.ts`, CRM actions and schema | Owner-only tenancy, existing conflict wiring, external-calendar coupling and dual state |
 | `src/lib/memory.ts`, `knowledge.ts`, `customer-context.ts`, `whisper.ts`, `whisper-summary.ts` | Shared recall, limited voice intent parsing, inference versus approved memory |
-| `docs/P0_LOCAL_VERIFICATION.md`, PR #44 state/head and safety implementation | Pending safety work, verification limits and deployment exclusion |
+| `docs/P0_LOCAL_VERIFICATION.md`, merged PRs #44/#45, callback tests and controlled login evidence | Completed safety work, exact-commit verification, authentication acceptance and remaining write/traffic gates |
 
 ## ARCHITECTURAL GAPS
 
