@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import { getA2pState } from "@/app/actions/a2p"
 import { GrainOverlay } from "@/components/gradia/grain-overlay"
 import { MeshBackground } from "@/components/gradia/mesh-background"
@@ -37,6 +38,12 @@ export default async function OnboardingPage({
         .maybeSingle()
 
   const shop = (shopRow as ShopRow | null) ?? null
+
+  // Existing owners retain onboarding. Invited teammates land in their scoped workspace.
+  if (!shop && !startFresh) {
+    const { data: memberships, error } = await supabase.rpc("team_workspaces")
+    if (!error && memberships?.length) redirect("/team")
+  }
 
   let services: ServiceRow[] = []
   if (shop) {

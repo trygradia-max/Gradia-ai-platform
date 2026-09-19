@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Settings,
+  Users,
   Sparkles,
 } from "lucide-react"
 
@@ -56,6 +57,7 @@ const nav: NavItem[] = [
 ]
 
 const pinnedNav: NavItem[] = [
+  { href: "/team", label: "Team & assigned work", icon: Users },
   { href: "/billing", label: "Numbers & Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
