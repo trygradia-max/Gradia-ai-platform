@@ -1,4 +1,4 @@
-> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+> **HISTORICAL.** Sellable MVP authority is the five September 11, 2026 documents named in `CLAUDE.md`. This file is evidence only. `CONTEXT.md` does not outrank those documents; see `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md`. Do not resurrect payments, full work orders, or E04–E10 scope from this file.
 
 > **⚠️ SUPERSEDED (banner added 2026-08-28).** This plan has been replaced. Do NOT work from it. Successor: `platform/docs/gradia-v2/` — roadmap `10-roadmap.md`, decisions `11-decision-log.md`, precedence `16-document-source-map.md`.
 

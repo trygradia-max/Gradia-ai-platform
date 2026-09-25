@@ -1,3 +1,5 @@
+> **HISTORICAL LIBRARY.** This directory is the audit trail. Sellable MVP authority is the five September 11, 2026 documents in `CLAUDE.md`, not this README’s old precedence list. `CONTEXT.md` does not outrank them. See `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md`.
+
 # Gradia v2 — Planning & Operating System
 
 _Created 2026-07-25 by the Organizer. This directory is the single source-of-truth **layer** for planning, architecture decisions, tickets, and operating contracts. It references — never duplicates — the existing documents scattered across the repo. Planning docs only: nothing in this directory is application code._

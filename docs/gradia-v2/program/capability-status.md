@@ -1,3 +1,26 @@
+# Current MVP status matrix (2026-09-24)
+
+This matrix is the live summary. The numbered table below is the older v2 board and can disagree with it. Scope comes from the five September 11 documents. Implementation evidence is GitHub `main` `247bb50` unless noted. Production write guards and channel activation were not re-inspected here; September 15 remains the last documented production hold.
+
+| Capability | Scope | Implementation | Source and remaining acceptance |
+| --- | --- | --- | --- |
+| Security, tenancy, callback | APPROVED MVP foundation | Merged #44/#45 | Not operational release. 35 write guards last documented 2026-09-15 |
+| Membership | APPROVED MVP | BUILT / VERIFY on `main` via #48 (includes #47) | `96321b6` reported 921 unit + 183 integration. Scoped manager execution and invitation delivery remain |
+| Control Center drafts | APPROVED MVP contract | BUILT / VERIFY drafts only, merge `247bb50` | `543e3c1` reported 1,014 unit + 194 integration. Drafts do not activate policy |
+| Runtime command authority | APPROVED MVP | Not built | Next dependency after #48. Do not add a second editor |
+| Chief of Staff | APPROVED MVP, partial | Merged #39 | Upcoming bookings, assigned work, and held/executed/delivered/failed distinctions remain |
+| Services, prices, hours onboarding | APPROVED MVP, partial | Merged #41 | Solo/team, one location, and explicit channel activation remain |
+| Lead intake to booking loop | APPROVED MVP | Not built as one workflow | Sequence steps 3–6 |
+| Whisper inbox reply | APPROVED MVP | Outbound Aurinko email exists; thread reply does not | Sequence step 4 |
+| Reviewed memory | APPROVED MVP | Retrieval exists; publication does not | Delta capture in step 4; publish loop in step 7 |
+| Pilot SMS, website, Meta | APPROVED MVP channels | Not accepted | Independent gates. 5–10 shops. Not claimed live |
+| Email channel | APPROVED MVP for full product; optional in pilot | Transport exists; inbound reply unaccepted | Both directions required |
+| Inbound voice | APPROVED MVP for full product only | Code exists; real-call acceptance absent | Off until forwarding, escalation, consent, number continuity |
+| Payments, full work orders, campaigns | Not approved | Old code may exist | Do not schedule from E04–E10 |
+| Prices, trial, seats | FOUNDER DECISION REQUIRED | PR #38 still open at this check | Not evidence of approved prices |
+
+## Historical v2 board
+
 # Program — Capability Status
 
 _Created 2026-07-25 by the Organizer. Compact live status board. **`../04-capability-map.md` governs** — this is a summary the Organizer keeps in sync; on any discrepancy, 04 wins. Status vocabulary: not planned / planned / designed / building / internal / pilot / public / deprecated. A capability is never marked further along because a table or page exists._

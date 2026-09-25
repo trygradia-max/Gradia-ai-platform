@@ -192,3 +192,17 @@ It does not exercise a real login email or any provider.
 - Next dependency: the Control Center's common command-authority contract, including
   execution-time capability checks for delegated operational approvals. Membership
   alone must never be treated as permission to use the legacy general executor.
+
+
+## Later status — 2026-09-24 documentation recheck
+
+This section does not replace the results above. They remain the exact-commit
+evidence for `96321b6`.
+
+GitHub PR #47 and PR #48 both show merged. PR #48 merge commit is
+`247bb5056002b97b57bbafd503655f51a498e199` (2026-09-25 04:33:31 UTC). The merge
+contains this branch’s commits, including `96321b6`. GitHub `checks` and
+`integration` on #48 completed successfully before that merge. Merge is not
+production migration, not removal of the 35 write guards, and not delegated
+manager approval execution. Invitation delivery remains inactive. This
+documentation pass did not rerun the suites above.

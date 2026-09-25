@@ -1,3 +1,5 @@
+> **2026-09-24.** The 15 September 11 MVP decisions are closed in the five governing documents. Do not re-open them as queue items. Prices, trial caps, seat terms, privacy/legal retention alignment, and any payment or full work-order scope remain unresolved and are listed in `docs/roadmap/POST_MVP_IDEAS.md`. Older open Q-items below are historical unless a later founder decision adopted them.
+
 # Program — Decision Queue
 
 _Created 2026-07-25 by the Organizer. Open founder-level decisions. **None below is decided** — every item requires explicit founder approval; on approval the Organizer records it in `../11-decision-log.md` (and an ADR where it's an architecture mechanism) and removes it here. Agents never resolve these silently (Builder contract / D-026-style locks)._

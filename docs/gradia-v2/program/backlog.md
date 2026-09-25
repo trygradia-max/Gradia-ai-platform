@@ -1,3 +1,5 @@
+> **HISTORICAL ORDERING.** Do not pull E04–E10, payments, or full work orders back into the MVP from this backlog. Current dependency order is `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md`. Next incomplete work is runtime command authority on top of merged PR #48, not a new policy editor.
+
 # Program — Backlog
 
 _Created 2026-07-25 by the Organizer. Ordered backlog below the two live sprints. Ticketed items reference `../tickets/`; epic-level entries are NOT yet ticketed — the Organizer cuts tickets per phase as each epic approaches. Order within a band is priority order._
