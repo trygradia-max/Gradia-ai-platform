@@ -5,9 +5,11 @@ The parent folder `~/Gradia` also contains the marketing repo, active git
 worktrees, and `old-gradia-info/` for retired notes and screenshots. Do not
 start a second platform checkout to “clean up” history.
 
-Sellable MVP authority is the five September 11, 2026 documents listed in
-`CLAUDE.md`. There is no free trial. Prices and seat counts are not decided.
-Payments and POS are a future intention, not this MVP.
+Start with `docs/CHEAT_SHEET.md`. Sellable MVP authority is the five September
+11, 2026 documents listed in `CLAUDE.md`. There is no free trial. Plan prices
+are Core $99, Pro $149, Operator $249. Seat counts are still a guess.
+Payments, work orders, win-back, review texts, and the on-the-go app are
+future, not this MVP.
 
 ## AI handoff rule
 

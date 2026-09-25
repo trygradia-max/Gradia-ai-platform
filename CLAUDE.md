@@ -2,16 +2,17 @@
 
 Reading order:
 
-1. `docs/product/GRADIA_MVP_VISION.md` — product, pilot versus full-channel MVP, surfaces.
-2. `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md` — dependency order, release gates, what is actually verified.
-3. `docs/architecture/GRADIA_AGENT_ARCHITECTURE.md` — monolith, intake, commands, one executor.
-4. `docs/architecture/AUTONOMY_APPROVAL_MODES.md` — approval-first matrix. Draft Control Center settings are not live enforcement.
-5. `docs/architecture/GRADIA_MEMORY.md` — reviewed structured memory. Not uncontrolled learning.
-6. `docs/roadmap/POST_MVP_IDEAS.md` — preserved ideas. Not approved scope.
-7. `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md` — proposed `CONTEXT.md` notice. The founder file was not overwritten.
-8. `docs/BUILD_REFERENCE.md` — how screens look and sound, when it does not conflict with the five documents.
-9. `docs/gradia-v2/` — historical audit trail. `16-document-source-map.md` says what is reference-only.
-10. `docs/AI_WORK_LOG.md` — what Cursor, Claude Code, and Codex already changed. Append a tagged entry before you finish.
+1. `docs/CHEAT_SHEET.md` — one-page scope, folders, and the AI tag.
+2. `docs/product/GRADIA_MVP_VISION.md` — product, pilot versus full-channel MVP, surfaces.
+3. `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md` — dependency order, release gates, what is actually verified.
+4. `docs/architecture/GRADIA_AGENT_ARCHITECTURE.md` — monolith, intake, commands, one executor.
+5. `docs/architecture/AUTONOMY_APPROVAL_MODES.md` — approval-first matrix. Draft Control Center settings are not live enforcement.
+6. `docs/architecture/GRADIA_MEMORY.md` — reviewed structured memory. Not uncontrolled learning.
+7. `docs/roadmap/POST_MVP_IDEAS.md` — preserved ideas. Not approved scope.
+8. `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md` — proposed `CONTEXT.md` notice. The founder file was not overwritten.
+9. `docs/BUILD_REFERENCE.md` — how screens look and sound, when it does not conflict with the five documents.
+10. `docs/gradia-v2/` — historical audit trail. `16-document-source-map.md` says what is reference-only.
+11. `docs/AI_WORK_LOG.md` — what Cursor, Claude Code, and Codex already changed. Append a tagged entry before you finish.
 
 `CONTEXT.md` on GitHub still claims it outranks every plan. That notice is stale. The uncommitted founder checkout edit is protected and was not changed here. `PROJECT_BRIEF.md` and `GRADIA_MVP_PLAN.md` are historical.
 

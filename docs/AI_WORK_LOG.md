@@ -41,3 +41,7 @@ only. No build, merge, or deploy.
 Recorded three future products, not in the MVP: win-back campaigns, Google
 review request texts, and on-the-go owner access by texting a Gradia number
 or an in-app Muse-style conversation. Same Agent. No build, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Added `docs/CHEAT_SHEET.md` and linked it from the README and `CLAUDE.md`.
+No product code, merge, or deploy.
