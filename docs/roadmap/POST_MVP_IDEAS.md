@@ -40,8 +40,11 @@ them into tickets from this register.
 | Deeper technician workforce management | POST-MVP IDEA | MVP is assignment, progress, and capacity only |
 | Payments and POS | FUTURE PRODUCT, not current MVP | Founder wants deposits, invoices, and in-person card capture later. Not authorized in the pilot |
 | Full work orders | FUTURE PRODUCT, not current MVP | Founder confirmed 2026-09-24: the job after booking is a later Gradia system. Not in the pilot |
+| Win-back campaigns | FUTURE PRODUCT, not current MVP | Founder confirmed 2026-09-24. A reviewed outreach to past customers. Not the one-customer follow-up in the MVP |
+| Google review request texts | FUTURE PRODUCT, not current MVP | Founder confirmed 2026-09-24. Ask a customer for a Google review after the job. Not in the pilot |
+| On-the-go owner Agent | FUTURE PRODUCT, not current MVP | Founder confirmed 2026-09-24. Owner texts a Gradia number, or talks in an app the way Meta Muse works. Same Agent and approvals. Not a second bot |
 | Fleet accounts | DESCRIBED, not current MVP | A multi-vehicle business customer. Not scheduled and not the same as the lead finder |
-| Native apps, PWA, memberships | NOT APPROVED | Needs a separate scope decision |
+| Memberships | NOT APPROVED | Needs a separate scope decision |
 | Jobber connector | Historical adapter | Live acceptance unverified. Do not show it as working |
 | Housecall Pro and Slack approvals | SUPERSEDED | Do not revive |
 | Voice-first v1 that excludes SMS and Meta (D-069) | SUPERSEDED 2026-09-11 | Pilot is SMS, website, and Meta. Voice is required for the full five-channel MVP |
@@ -76,6 +79,21 @@ Gradia to take shop payments later: deposits, invoices, and in-person card
 capture (a point of sale). That does not authorize Stripe Connect, charging
 cards, or a payments build in the current pilot. Scheduling it still needs its
 own scope decision when the lead-to-booking loop is accepted.
+
+**Win-back campaigns and Google review texts are future products, not this
+MVP.** Confirmed 2026-09-24. A win-back campaign is a reviewed message to past
+customers who went quiet. A review request asks a customer to leave a Google
+review after the job. The MVP still includes one-customer follow-up only:
+confirmation, reminder, and check-in for the lead already in play. These two
+sends need their own consent and opt-out rules before any build.
+
+**On-the-go owner access is a future product, not this MVP.** Confirmed
+2026-09-24. The owner can run Gradia from the bay or the truck in either of
+two ways: text a Gradia number, or talk inside an app the way Meta Muse works.
+Both reach the same Gradia Agent. They do not create a second assistant.
+Approvals, consent, and the shop's rules still apply. This is the owner
+operating the shop, not a customer marketing channel. It is not authorized
+in the pilot.
 
 Monthly prices and seat counts are still not chosen. Older $20/$29 and
 $99/$149/$249 figures are not approval. PR #38 does not set price. How many

@@ -36,3 +36,8 @@ Moved loose parent-folder clutter into `old-gradia-info/`. Did not move
 Recorded the founder confirmation that full work orders are a future Gradia
 product system, alongside payments and POS. Fleet accounts stay described
 only. No build, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Recorded three future products, not in the MVP: win-back campaigns, Google
+review request texts, and on-the-go owner access by texting a Gradia number
+or an in-app Muse-style conversation. Same Agent. No build, merge, or deploy.
