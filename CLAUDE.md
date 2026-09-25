@@ -11,6 +11,7 @@ Reading order:
 7. `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md` — proposed `CONTEXT.md` notice. The founder file was not overwritten.
 8. `docs/BUILD_REFERENCE.md` — how screens look and sound, when it does not conflict with the five documents.
 9. `docs/gradia-v2/` — historical audit trail. `16-document-source-map.md` says what is reference-only.
+10. `docs/AI_WORK_LOG.md` — what Cursor, Claude Code, and Codex already changed. Append a tagged entry before you finish.
 
 `CONTEXT.md` on GitHub still claims it outranks every plan. That notice is stale. The uncommitted founder checkout edit is protected and was not changed here. `PROJECT_BRIEF.md` and `GRADIA_MVP_PLAN.md` are historical.
 

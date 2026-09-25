@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gradia platform
 
-## Getting Started
+This directory is the only product repo: `trygradia-max/Gradia-ai-platform`.
+The parent folder `~/Gradia` also contains the marketing repo, active git
+worktrees, and `old-gradia-info/` for retired notes and screenshots. Do not
+start a second platform checkout to “clean up” history.
 
-First, run the development server:
+Sellable MVP authority is the five September 11, 2026 documents listed in
+`CLAUDE.md`. There is no free trial. Prices and seat counts are not decided.
+Payments and POS are a future intention, not this MVP.
+
+## AI handoff rule
+
+Claude Code, Cursor, and Codex all read `docs/AI_WORK_LOG.md` before editing
+and append one tagged entry before finishing:
+
+`[AI: cursor | claude-code | codex] [DATE: YYYY-MM-DD] [AREA: platform | marketing | docs | archive] [STATUS: done | in-progress | blocked]`
+
+Say what you changed, the branch or PR, and what you left alone. Do not claim
+a merge or deploy you did not perform.
+
+## Run locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open [http://localhost:3000](http://localhost:3000). Read
+`node_modules/next/dist/docs/` before changing Next.js code. This app is not
+the Next.js version assumed by older training data.

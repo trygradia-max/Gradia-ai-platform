@@ -38,7 +38,9 @@ them into tickets from this register.
 | Multi-model routing and automatic fallback | ARCHITECT FOR LATER / POST-MVP | Keep the current model setup |
 | Privacy-preserving aggregate learning | POST-MVP IDEA | No cross-shop operational memory |
 | Deeper technician workforce management | POST-MVP IDEA | MVP is assignment, progress, and capacity only |
-| Native apps, PWA, fleet accounts, memberships, payments, deposits | NOT APPROVED | Needs a separate scope decision |
+| Payments and POS | FUTURE, not current MVP | Founder wants deposits, invoices, and in-person card capture later. Not authorized in the pilot |
+| Fleet accounts and full work orders | DESCRIBED, not current MVP | See the section below. Not scheduled |
+| Native apps, PWA, memberships | NOT APPROVED | Needs a separate scope decision |
 | Jobber connector | Historical adapter | Live acceptance unverified. Do not show it as working |
 | Housecall Pro and Slack approvals | SUPERSEDED | Do not revive |
 | Voice-first v1 that excludes SMS and Meta (D-069) | SUPERSEDED 2026-09-11 | Pilot is SMS, website, and Meta. Voice is required for the full five-channel MVP |
@@ -59,22 +61,44 @@ From the raw idea notes, kept as POST-MVP IDEA, not a roadmap:
 The AI fleet lead finder is an additional explicit POST-MVP IDEA, not one of
 those six and not part of fleet-account operations.
 
-## Commercial terms still unresolved
+## Founder commercial decisions — 2026-09-24
 
-No later approval was found in the September 11 documents or this 2026-09-24
-recheck. Record these as **FOUNDER DECISION REQUIRED**. Do not publish them as
-current prices.
+**No free trial.** Founder decision in the Cursor session the same evening:
+there is no GTM budget for a trial, so do not offer one. Delete the idea of a
+14-day free trial from anything presented as current. If a trial is ever
+reconsidered, it may expose manual shop tools only. It must not include the
+Agent, voice, SMS, email sending, or other model spend. That exception is not
+authorized now.
 
-- Sellable prices. Older documents say $20/$29 and, later, $99/$149/$249. PR #38
-  (three-tier billing) was still open and is not pricing approval.
-- Trial length and caps on voice, messaging, and model use. A 14-day trial was
-  an assistant suggestion in website planning.
-- Paid full seats versus restricted seats, and any numeric allowance.
-- Core / Pro / Operator may share one data and permission model. Entitlements
-  are not confirmed.
-- Privacy-policy alignment and the safety-evidence retention schedule. The
-  30-day / 12-month / 90-day defaults are provisional product decisions, not
-  legal sign-off.
+**Payments and POS are a future product, not this MVP.** The founder wants
+Gradia to take shop payments later: deposits, invoices, and in-person card
+capture (a point of sale). That does not authorize Stripe Connect, charging
+cards, or a payments build in the current pilot. Scheduling it still needs its
+own scope decision when the lead-to-booking loop is accepted.
+
+Monthly prices and seat counts are still not chosen. Older $20/$29 and
+$99/$149/$249 figures are not approval. PR #38 does not set price. How many
+owner, manager, or staff seats a plan includes is still open. Core, Pro, and
+Operator may share one permission model later; entitlements are not confirmed.
+Privacy/legal retention review is still required before production cleanup.
+
+## What fleet accounts and work orders are
+
+These stay out of the current MVP. They are described here so later sessions
+do not invent a different meaning.
+
+A **fleet account** is a business customer, not one vehicle owner. A rental
+company, dealer, or mobile operator has many vehicles, one billing contact,
+and repeating work. Gradia does not have that company record, shared billing,
+or fleet scheduling today. The separate post-MVP idea of an AI lead finder
+that prospects fleets is not the same thing as operating a fleet account.
+
+A **full work-order system** is the job after the appointment is booked:
+assign a technician, list the steps, track parts and photos, mark the job
+started and finished, and hand it to an invoice. The approved MVP keeps only
+a lightweight assignment and completion note on the booking. It does not
+include checklists, bays, technician dispatch, or payroll. Payments and POS,
+above, would sit after that job. Neither is in the pilot.
 
 ## GTM notes that are not product requirements
 
