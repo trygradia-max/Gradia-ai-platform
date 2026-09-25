@@ -31,3 +31,8 @@ a future intention, not current MVP. Described fleet accounts and full work
 orders without adding them to the pilot. Added this log and the README rule.
 Moved loose parent-folder clutter into `old-gradia-info/`. Did not move
 `platform/`, `marketing/`, worktrees, or scripts.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Recorded the founder confirmation that full work orders are a future Gradia
+product system, alongside payments and POS. Fleet accounts stay described
+only. No build, merge, or deploy.

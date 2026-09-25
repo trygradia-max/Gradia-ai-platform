@@ -38,8 +38,9 @@ them into tickets from this register.
 | Multi-model routing and automatic fallback | ARCHITECT FOR LATER / POST-MVP | Keep the current model setup |
 | Privacy-preserving aggregate learning | POST-MVP IDEA | No cross-shop operational memory |
 | Deeper technician workforce management | POST-MVP IDEA | MVP is assignment, progress, and capacity only |
-| Payments and POS | FUTURE, not current MVP | Founder wants deposits, invoices, and in-person card capture later. Not authorized in the pilot |
-| Fleet accounts and full work orders | DESCRIBED, not current MVP | See the section below. Not scheduled |
+| Payments and POS | FUTURE PRODUCT, not current MVP | Founder wants deposits, invoices, and in-person card capture later. Not authorized in the pilot |
+| Full work orders | FUTURE PRODUCT, not current MVP | Founder confirmed 2026-09-24: the job after booking is a later Gradia system. Not in the pilot |
+| Fleet accounts | DESCRIBED, not current MVP | A multi-vehicle business customer. Not scheduled and not the same as the lead finder |
 | Native apps, PWA, memberships | NOT APPROVED | Needs a separate scope decision |
 | Jobber connector | Historical adapter | Live acceptance unverified. Do not show it as working |
 | Housecall Pro and Slack approvals | SUPERSEDED | Do not revive |
@@ -93,12 +94,14 @@ and repeating work. Gradia does not have that company record, shared billing,
 or fleet scheduling today. The separate post-MVP idea of an AI lead finder
 that prospects fleets is not the same thing as operating a fleet account.
 
-A **full work-order system** is the job after the appointment is booked:
-assign a technician, list the steps, track parts and photos, mark the job
-started and finished, and hand it to an invoice. The approved MVP keeps only
-a lightweight assignment and completion note on the booking. It does not
-include checklists, bays, technician dispatch, or payroll. Payments and POS,
-above, would sit after that job. Neither is in the pilot.
+A **full work-order system** is a future Gradia product, confirmed by the
+founder on 2026-09-24. It is the job after the appointment is booked: assign
+a technician, list the steps, track parts and photos, mark the job started
+and finished, and hand it to an invoice. The approved MVP keeps only a
+lightweight assignment and completion note on the booking. The future system
+is not authorized in the pilot. It does not include bays or payroll until a
+later scope decision says so. Payments and POS sit after that job and are
+also future, not current.
 
 ## GTM notes that are not product requirements
 
