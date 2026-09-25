@@ -203,6 +203,10 @@ export default async function SettingsPage({
       />
 
       <div className="space-y-8 pt-2">
+        <Link href="/control-center" className="block rounded-md border p-4">
+          <span className="font-medium">Control Center policy drafts</span>
+          <span className="mt-1 block text-sm text-muted-foreground">Review and save future operation rules. Drafts do not change active behavior.</span>
+        </Link>
         {/* "What Gradia does" lives here now that the primary nav is three
             pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
         <Link
