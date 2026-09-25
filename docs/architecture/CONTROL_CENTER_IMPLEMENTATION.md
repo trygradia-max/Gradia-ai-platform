@@ -74,8 +74,9 @@ operation that bypasses the policy evaluator.
 
 ## Remaining work in this milestone
 
-1. Persist versioned policies and append-only change/decision evidence; owner-only
-   policy mutation, tenant/location relationships, RLS, concurrent revision checks.
+1. Complete active policy publication and append-only execution-decision evidence.
+   Draft snapshots, owner-only saves, tenant/location relationships, RLS and
+   concurrent revision checks are implemented in the draft-review slice below.
 2. Implement trusted command adapters and atomic execution authorization, including
    delegated operational approvals. Existing memberships alone grant no approval.
 3. Integrate every staging, direct-write and execution family above. Preserve proof
@@ -127,3 +128,83 @@ The exact branch exclusion `codex/mvp-control-center: false` was added to
 No Vercel project setting, deployment, domain, production database or provider was
 operated. PR #47 remains a draft. This slice remains local pending the remaining
 runtime implementation; it is not presented as a completed Control Center PR.
+
+## Versioned policy drafts and owner review
+
+The next local slice adds `/control-center`, linked from Settings, with editable
+workspace defaults/ceilings, connector ceilings, individual operation rules, and
+role/risk/exception ceilings. It explicitly says that drafts do not alter current
+execution. There is no activation button, live-policy pointer or implicit migration
+of existing autonomy settings. A saved draft is not an autonomy grant.
+
+`20260924120000_control_policy_drafts.sql` adds owner-readable draft and revision
+history tables. It initializes existing and new one-location shops with an inherited
+baseline. Both tables have composite shop/location constraints. Authenticated and
+anonymous clients cannot write them directly; only an authenticated shop owner can
+use the save RPC. Manager/staff memberships cannot elevate themselves through it.
+The RPC locks the same shop row as membership changes, validates a finite vocabulary,
+checks the expected revision, and saves the snapshot and actual actor atomically.
+Identical same-revision saves are idempotent. Stale saves return HTTP 409 and require
+reload; they never silently overwrite the winner. Unknown scopes, modes, script-like
+rules or extra activation/actor fields are rejected. Inheritance is stored explicitly
+as null where chosen. No credentials or customer content belongs in a policy draft.
+
+The first focused database run exposed a real error-contract bug: returning SQLSTATE
+`40001` for a stale draft caused PostgREST retry loops, timing out two tests. This is
+an application conflict, not a retryable serialization failure. The implementation
+now uses `PT409`, the supported explicit HTTP conflict response. See
+[Supabase's diagnosis](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b)
+and [PostgREST custom error responses](https://docs.postgrest.org/en/v13/references/errors.html).
+No test was skipped or timeout relaxed. The final from-zero reset used the corrected
+migration. The first browser attempt also uncovered ambiguous select accessible
+names; each mode selector now has its explicit visible label as its accessible name.
+
+Database evidence includes fresh initialization through migration 71, exact ledger,
+owner/manager/staff/anonymous boundaries, foreign shop/location refusal, immutable
+history for authenticated users, concurrent saves with one winner, actor attribution,
+SQL/TypeScript action/mode parity, invalid-definition refusal, and audit-failure
+rollback. A transactional 70→71 upgrade probe verifies an existing shop's entire row
+is unchanged and exactly one baseline draft/history is created. The existing 26 P0
+relationships and both inconsistent-data refusal probes remain verified.
+
+This completes draft persistence/review, **not live command authority**. Remaining
+milestone work includes effective-policy previews, trusted context resolution,
+activation and durable execution decisions, delegated manager approvals, and complete
+integration of staging/direct-write/provider paths. Drafts must not be activated
+until those execution and race tests pass. The accepted roadmap and production gates
+are unchanged; no additional founder decision is needed to continue local work.
+
+### Draft-review verification results
+
+Node 22.23.2, September 24, 2026 (Pacific):
+
+| Check | Result |
+| --- | --- |
+| Complete unit suite | 1,014 passed; four unchanged intentional live-test skips; 88 files |
+| Complete disposable integration suite | 194 passed; zero skips; 19 files |
+| Final migration initialization | All 71 migrations applied from zero on the dedicated disposable stack |
+| Migration and failure probes | Exact ledger, existing 26 tenant relationships, membership constraints, two new policy/location relationships, both P0 refusal probes, policy audit rollback in both write orders, and 70→71 backfill passed |
+| Lint / offline build / post-build typecheck | Passed |
+| Browser smoke | Fictional owner loaded screen, changed ceiling, saved revision 2 through the actual form and RPC, saw saved confirmation and refreshed history; fresh anonymous browser redirected to login |
+| Scan / whitespace | 847 tracked files, 15 files changed since the membership base; no matched credential patterns, tracked runtime files or new machine-specific paths; whitespace passed |
+
+Reproducible checks: `node scripts/test-stack.mjs reset`,
+`node scripts/isolated-check.mjs unit`,
+`node scripts/isolated-check.mjs integration`,
+`python3 scripts/verify-control-policy-migration.py`,
+`python3 scripts/verify-team-migration.py`,
+`python3 scripts/verify-tenant-migration.py`,
+`python3 scripts/verify-photo-migration.py`,
+`node scripts/isolated-check.mjs lint`,
+`node scripts/isolated-check.mjs build`, and
+`node scripts/isolated-check.mjs types` after the build. Browser verification used
+an ignored local harness, fictional auth records and an OS network deny allowing
+only the disposable API and local application. Its fixtures were removed afterward.
+No shared database or provider credentials were loaded into the application.
+
+Persistence and tests are committed in `46420f2`; the following local UI/documentation
+commit completes this slice. PR #47 and remote branches are unchanged. The founder
+checkout remains on `main` with only its original `CONTEXT.md` modification and hash
+`9b2c32f773118f8e66e5909aa6a8a0eee1d09e86b210001aee81e5145179f773`.
+No push, merge, deployment, production migration, provider activation or write-guard
+change is included. These test results do not claim runtime Control Center enforcement.
