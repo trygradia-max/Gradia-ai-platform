@@ -45,3 +45,10 @@ or an in-app Muse-style conversation. Same Agent. No build, merge, or deploy.
 [AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
 Added `docs/CHEAT_SHEET.md` and linked it from the README and `CLAUDE.md`.
 No product code, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Corrected the diary `CONTEXT.md` on this branch so it no longer outranks the
+five September 11 documents. Fixed the false "no data export" and "email is
+read-only" lines, and stopped the build list from sending the next session to
+billing. Founder checkout untouched. Parent `CLAUDE.md`, pricing, and
+`WHAT_GRADIA_DOES.md` got the same warning. No application code.

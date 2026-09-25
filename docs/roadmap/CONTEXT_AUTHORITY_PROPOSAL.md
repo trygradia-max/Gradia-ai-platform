@@ -1,6 +1,8 @@
 # Proposed CONTEXT.md reconciliation
 
-Status: proposal only. **`CONTEXT.md` was not modified.**
+Status: applied on the documentation branch only. The founder checkout
+`~/Gradia/platform` at `20e153a` was not modified. Its uncommitted `CONTEXT.md`
+edit is still there.
 
 The founder checkout `/Users/harryhatch/Gradia/platform` is local `main` at
 `20e153a8ac7b55bc682e5a49c6e9486ac51e9ae5`, behind GitHub `main`, with a
