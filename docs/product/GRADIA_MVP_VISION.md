@@ -13,6 +13,14 @@
 > See [verified baseline and production gate](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md#verified-baseline-and-production-gate).
 > This documentation-only update does not authorize feature implementation or lift
 > any release gate. Protected `CONTEXT.md` and application code remain unchanged.
+>
+> **Evidence addendum, 2026-09-24 (Pacific).** Fresh `origin/main` is
+> `247bb5056002b97b57bbafd503655f51a498e199` (PR #48 merge, which includes PR #47).
+> Membership schema and an owner-only Control Center draft editor are on `main`.
+> Draft policy does not execute. Scoped manager approval and runtime command
+> authority remain incomplete. A merge is not channel activation and does not
+> remove the 35 production write guards. September 11 requirements below are
+> unchanged. “Chief of Operations” names this same Chief of Staff dashboard.
 
 ## MVP NOW
 

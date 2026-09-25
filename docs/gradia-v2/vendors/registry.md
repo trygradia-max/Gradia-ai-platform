@@ -1,3 +1,5 @@
+> **STATUS RULE 2026-09-24.** A row that says a provider is integrated is not channel acceptance and not production activation. Voice stays off until real-call, forwarding, escalation, consent, and number-continuity acceptance. SMS is not carrier-approved on the strength of this registry. The 2026-09-03 A2P note was not rechecked in a provider console. Housecall Pro stays removed. Jobber remains unverified. Slack approvals stay removed. Outbound shop email via Aurinko exists; it is not Gradia’s transactional notification sender and not inbox reply.
+
 # Vendor Registry — Consolidated Provider Records
 
 _Created 2026-07-27 by the Organizer (vendor-architecture amendment, D-030/ADR-002). One record per provider; facts drawn from the classified vendor docs (which cite the 2026-07-20 audit) — unknown facts are marked **requires verification**, never invented. Classification model and adoption gate: `README.md`. Boundary rule: D-029 / `../adr/ADR-002-provider-boundaries.md`._

@@ -1,6 +1,6 @@
 # Program — Next Sprint
 
-> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+> **HISTORICAL.** Sellable MVP authority is the five September 11, 2026 documents named in `CLAUDE.md`. This file is evidence only. `CONTEXT.md` does not outrank those documents; see `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md`. Do not resurrect payments, full work orders, or E04–E10 scope from this file.
 
 
 _Created 2026-07-25 by the Organizer. Sprint 2 candidate scope — contingent on Sprint 1 completing (P0-001 + P0-002 done and reviewed). Not started; the Organizer promotes this to `current-sprint.md` when Sprint 1 closes._
