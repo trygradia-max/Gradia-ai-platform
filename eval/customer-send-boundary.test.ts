@@ -23,7 +23,7 @@ function dbFor(action: "send_sms" | "send_email", customer = safeCustomer, failu
   const claimed = {id:"pending",shop_id:safeShop.id,action_type:action,payload:{customer_id:"c1",to_phone:safeCustomer.phone,to_email:safeCustomer.email,body:"Hello",subject:"Service",category:"transactional"}}
   const {db} = readDb({customers:[customer],shops:[{...safeShop,twilio_phone_number:"+15550001111"}]},failure)
   const pending = {update: () => pending,eq: () => pending,in: () => pending,select: () => pending,maybeSingle: async () => ({data:claimed,error:null})}
-  currentDb = {from: (table:string) => table === "pending_actions" ? pending : db.from(table)} as unknown as SupabaseClient
+  currentDb = {rpc: async () => ({ data: claimed, error: null }), from: (table:string) => table === "pending_actions" ? pending : db.from(table)} as unknown as SupabaseClient
   return currentDb
 }
 afterEach(() => vi.clearAllMocks())
@@ -50,9 +50,9 @@ describe("denied sends have zero external effects", () => {
   })
 })
 
-it("foreign pending-action denial logs locally without provider alerts", async () => {
+it("foreign pending-action denial has no provider alerts", async () => {
   const pending = {update: () => pending, eq: () => pending, in: () => pending, select: () => pending, maybeSingle: vi.fn().mockResolvedValueOnce({data:null,error:null}).mockResolvedValueOnce({data:{id:"foreign",shop_id:"shop-2"},error:null})}
-  const db = {from:()=>pending} as unknown as SupabaseClient
+  const db = {rpc:async()=>({data:{already_decided:true},error:null}),from:()=>pending} as unknown as SupabaseClient
   expect(await executeApproval(db,"foreign","shop-1",{userId:"owner"})).toMatchObject({status:"already_decided"})
   expect(sendOpsAlert).not.toHaveBeenCalled()
 })
@@ -80,7 +80,7 @@ it("a service proof cannot be replayed through a second pending action",async()=
   const spent = new Set<string>() // RPC fake only; durable concurrency is tested against Postgres.
   function actionDb(id:string) {
    const pending={update:()=>pending,eq:()=>pending,in:()=>pending,select:()=>pending,maybeSingle:async()=>({data:{id,shop_id:safeShop.id,action_type:"send_sms",payload},error:null})}
-   return {rpc:async(name:string,args:{p_claims:{nonce:string}})=>{if(name!=="claim_service_execution")return {data:null,error:null};const nonce=args.p_claims.nonce;if(spent.has(nonce))return {data:"cross_action_replay_denied",error:null};spent.add(nonce);return {data:"claimed",error:null}},from:(table:string)=>table==="pending_actions"?pending:db.from(table)} as unknown as SupabaseClient
+   return {rpc:async(name:string,args:{p_claims:{nonce:string}})=>{if(name==="claim_control_action")return {data:{id,shop_id:safeShop.id,action_type:"send_sms",payload},error:null};if(name!=="claim_service_execution")return {data:null,error:null};const nonce=args.p_claims.nonce;if(spent.has(nonce))return {data:"cross_action_replay_denied",error:null};spent.add(nonce);return {data:"claimed",error:null}},from:(table:string)=>table==="pending_actions"?pending:db.from(table)} as unknown as SupabaseClient
   }
   expect(await executeApproval(actionDb("aaaaaaaa-1234-4234-9234-123456789abc"),"aaaaaaaa-1234-4234-9234-123456789abc",safeShop.id,{userId:"owner"})).toMatchObject({ok:true})
   const replay=await executeApproval(actionDb("bbbbbbbb-1234-4234-9234-123456789abc"),"bbbbbbbb-1234-4234-9234-123456789abc",safeShop.id,{userId:"owner"})

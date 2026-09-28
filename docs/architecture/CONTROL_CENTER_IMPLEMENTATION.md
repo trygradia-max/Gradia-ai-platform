@@ -208,3 +208,62 @@ checkout remains on `main` with only its original `CONTEXT.md` modification and 
 `9b2c32f773118f8e66e5909aa6a8a0eee1d09e86b210001aee81e5145179f773`.
 No push, merge, deployment, production migration, provider activation or write-guard
 change is included. These test results do not claim runtime Control Center enforcement.
+
+## Activated policy at the approval claim
+
+September 27, 2026, local branch `codex/mvp-policy-execution` only. This slice uses
+the existing Control Center editor and the existing approval executor. It does not
+add a second policy editor, and it does not change production, providers, crons, or
+write guards.
+
+A saved draft remains inert. The owner activates one saved revision through
+`activate_control_policy`, which checks the caller is the current owner and that
+the expected active revision still matches. Activation does not connect a provider
+or remove a release restriction. Catalog automations and `maybeAutoExecute` call
+the executor with an explicit `automatic` context. They are no longer treated as
+an owner click. `claim_control_action` rechecks the current policy, owner
+membership, and entitlement inside the same transaction as the claim and the
+decision audit. There is no legacy fallback when that claim fails.
+
+SMS and email actions still do not carry a trusted granular purpose. The claim
+applies the strictest relevant channel rule rather than a label from the payload.
+Off, Read, and Suggest block executable staging when a policy is active. Calendar
+and quote actions cannot be loosened past approval. With no activated policy, an
+owner can still approve a pending action; an automatic claim cannot. Manager and
+staff memberships do not gain approval authority in this slice.
+
+Direct tools, inbound voice, human-composed sends, alerts, and cron jobs are not
+all covered by this claim. Delegated manager approval remains owner-only on
+purpose. Edit and reject still use the existing pending-action claim; they do not
+execute a customer effect.
+
+### Execution-slice verification
+
+Node on the disposable stack `gradia-isolated-tests` only. The stack already held
+all 72 migrations, including `20260927120000`. This run did not repeat a from-zero
+reset.
+
+| Check | Result |
+| --- | --- |
+| Complete unit suite | 1,024 passed; four unchanged intentional live-test skips; 89 files |
+| Complete disposable integration suite | 210 passed; zero skips; 20 files |
+| Policy execution integration file | 16 passed, included in the suite above |
+| Permission and rollback probe | Passed: exact 72-migration ledger, RLS and RPC ACLs, six tenant relationships, activation and claim roll back when the audit write fails |
+| Lint | Passed |
+| Offline production build | Passed |
+| Typecheck | Passed |
+
+Commands: `node scripts/isolated-check.mjs unit`,
+`node scripts/isolated-check.mjs integration`,
+`python3 scripts/verify-control-execution.py`,
+`node scripts/isolated-check.mjs lint`,
+`node scripts/isolated-check.mjs build`, and
+`node scripts/isolated-check.mjs types`. The isolated runner denies external
+egress. Integration may reach only `http://127.0.0.1:56531`. No live provider or
+model test ran. The authenticated Control Center click was not repeated in a
+browser: the auth callback sends a completed login to the production origin, so
+this session did not sign in. The activation button calls the same owner RPC the
+integration tests exercise.
+
+`vercel.json` disables Preview deployment for `codex/mvp-policy-execution`. No
+push, merge, production migration, or provider change is included.

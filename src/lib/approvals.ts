@@ -488,21 +488,42 @@ export async function executeApproval(
   const context: ConflictPolicyContext = options?.context ?? "hitl"
   let claimed: ClaimedAction | null
   try {
-    claimed = await claimPendingAction(
-      supabase,
-      pendingId,
-      shopId,
-      "approved",
-      decider
-    )
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
+    // Policy, current membership, audit and action claim share one transaction.
+    // No read-then-update authorization window and no legacy fallback on errors.
+    const { data, error } = await supabase.rpc("claim_control_action", {
+      p_shop: shopId, p_action: pendingId, p_actor: decider.userId ?? null,
+      p_context: context,
+    })
+    if (error) return { ok: false, error: "Current execution authority could not be verified. Nothing was executed." }
+    if (data?.denied) {
+      const reasons: Record<string, string> = {
+        actor_not_authorized: "Only the current shop owner can approve this action.",
+        execution_not_permitted: "The active Control Center policy does not permit this action.",
+        explicit_activation_required: "An owner must activate a policy before autonomous actions can run.",
+        human_approval_required: "This action requires owner approval.",
+        autonomy_entitlement_required: "Autonomous execution is not available for this workspace.",
+        location_unavailable: "The workspace location could not be verified.",
+      }
+      return { ok: false, error: reasons[String(data.denied)] ?? "Current execution authority could not be verified. Nothing was executed." }
     }
+    if (data?.already_decided === true) claimed = null
+    else {
+      if (!data || data.id !== pendingId || data.shop_id !== shopId || typeof data.action_type !== "string" || !data.payload || typeof data.payload !== "object" || Array.isArray(data.payload)) {
+        return { ok: false, error: "The policy claim could not be verified. Nothing was executed." }
+      }
+      claimed = data as ClaimedAction
+    }
+  } catch {
+    return { ok: false, error: "Current execution authority could not be verified. Nothing was executed." }
   }
 
   if (!claimed) {
+    // Preserve the existing local-only cross-tenant attack signal. This probe
+    // never authorizes execution; session RLS still hides foreign rows.
+    try {
+      const { data: probe } = await supabase.from("pending_actions").select("id, shop_id").eq("id", pendingId).maybeSingle()
+      if (probe && probe.shop_id !== shopId) reportTenantScopeViolation({ surface: "approvals.claimPendingAction", notifyExternally: false, authorizedShopId: shopId, rowShopId: probe.shop_id, rowId: pendingId, detail: "policy claim rejected foreign action" })
+    } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
     await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
@@ -2165,6 +2186,12 @@ export async function markEditRequested(
   }
 
   if (!claimed) {
+    // Preserve the existing local-only cross-tenant attack signal. This probe
+    // never authorizes execution; session RLS still hides foreign rows.
+    try {
+      const { data: probe } = await supabase.from("pending_actions").select("id, shop_id").eq("id", pendingId).maybeSingle()
+      if (probe && probe.shop_id !== shopId) reportTenantScopeViolation({ surface: "approvals.claimPendingAction", notifyExternally: false, authorizedShopId: shopId, rowShopId: probe.shop_id, rowId: pendingId, detail: "policy claim rejected foreign action" })
+    } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
     await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
@@ -2196,6 +2223,12 @@ export async function executeRejection(
   }
 
   if (!claimed) {
+    // Preserve the existing local-only cross-tenant attack signal. This probe
+    // never authorizes execution; session RLS still hides foreign rows.
+    try {
+      const { data: probe } = await supabase.from("pending_actions").select("id, shop_id").eq("id", pendingId).maybeSingle()
+      if (probe && probe.shop_id !== shopId) reportTenantScopeViolation({ surface: "approvals.claimPendingAction", notifyExternally: false, authorizedShopId: shopId, rowShopId: probe.shop_id, rowId: pendingId, detail: "policy claim rejected foreign action" })
+    } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
     await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }

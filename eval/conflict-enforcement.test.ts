@@ -99,6 +99,8 @@ function mockDb(opts: {
   const rpcCalls = opts.rpcCalls ?? []
   return {
     rpc: (fn: string, args: Record<string, unknown>) => {
+      // Policy claim is tested against PostgreSQL in control-execution.int.test.ts.
+      if (fn === "claim_control_action") return Promise.resolve({ data: opts.claimed ?? { already_decided: true }, error: null })
       rpcCalls.push({ fn, args })
       if (opts.rpcResult instanceof Error) {
         return Promise.resolve({ data: null, error: { message: opts.rpcResult.message } })
