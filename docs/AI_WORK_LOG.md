@@ -52,3 +52,15 @@ five September 11 documents. Fixed the false "no data export" and "email is
 read-only" lines, and stopped the build list from sending the next session to
 billing. Founder checkout untouched. Parent `CLAUDE.md`, pricing, and
 `WHAT_GRADIA_DOES.md` got the same warning. No application code.
+
+[AI: cursor] [DATE: 2026-09-27] [AREA: platform] [STATUS: done]
+Finished the local Control Center execution slice on
+`codex/mvp-policy-execution` at `f2fccee`. Saving a draft still does nothing
+until the owner activates that revision. The approval claim rechecks the
+current policy, and catalog automations are marked automatic instead of
+looking like an owner approval. Verified on the disposable test stack only:
+1,024 unit tests passed with the four existing live skips, 210 integration
+tests passed with zero skips, and the permission/rollback probe passed.
+Preview deploy for this branch is disabled. Not pushed, merged, or deployed.
+Manager approval stays owner-only. Direct tools, voice, alerts, and crons are
+not covered by this claim.
