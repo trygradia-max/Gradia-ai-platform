@@ -59,6 +59,9 @@ print('PASS: owner-only table ACLs; RLS; two composite location constraints; his
 migration=(root/'supabase/migrations/20260924120000_control_policy_drafts.sql').read_text().removeprefix('BEGIN;').removesuffix('COMMIT;\n')
 run("""
 BEGIN;
+-- Remove later execution tables only inside this rolled-back historical probe.
+-- Their history foreign keys otherwise prevent recreating the pre-71 schema.
+DROP TABLE IF EXISTS public.control_execution_decisions,public.control_policy_activations,public.control_policy_active;
 DROP TRIGGER control_initialize_draft ON public.shop_locations;
 DROP FUNCTION public.save_control_policy_draft(uuid,integer,jsonb);
 DROP TABLE public.control_policy_history,public.control_policy_drafts;

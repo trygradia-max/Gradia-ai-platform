@@ -267,3 +267,59 @@ integration tests exercise.
 
 `vercel.json` disables Preview deployment for `codex/mvp-policy-execution`. No
 push, merge, production migration, or provider change is included.
+
+### September 29 verification follow-up
+
+Resumed the existing clean implementation commit `f2fccee62c98155708ca412c8040b6807f1fd852`
+on `codex/mvp-policy-execution`, based on merged PR #48 at `247bb50`. No application
+change or repeated migration reset was needed. This entry supersedes the browser
+limitation above: the local smoke harness uses a synthetic password session and
+local cookies, without invoking a magic link or the production callback.
+
+| Check on Node 22.23.2 | Result |
+| --- | --- |
+| Complete hardened unit suite | 1,024 passed, four intentional live-test skips, 89 files |
+| Complete disposable integration suite | 210 passed, zero skips, 20 files |
+| Existing Control Center browser smoke | Saved revision 2, explicitly activated it, rejected activation of unsaved edits, saved revision 3 while active revision stayed 2; anonymous access redirected to login |
+| Ledger and policy probes | Exact 72 migrations; activation/claim audit rollback, RPC ACLs, RLS and six execution tenant relationships passed |
+| Earlier migration probes | Membership authority, draft audit rollback, 70→71 backfill, all 26 P0 relationship definitions and both inconsistent-data refusal probes passed |
+| Lint / fresh offline build / post-build typecheck | Passed |
+| Whitespace and scan | Passed; 851 tracked files before adding the existing work log; no non-placeholder credential-pattern matches, tracked runtime artifacts or new machine paths |
+
+The historical 70→71 probe initially failed because migration 72 adds foreign keys
+to policy history. Its disposable transaction now explicitly removes the three
+later execution tables before recreating the earlier schema. It still verifies
+unchanged shop data and exact backfill counts, then rolls everything back. The
+72-schema execution probe passed afterward, verifying restored tables and authority.
+This is a test-fixture correction, not a production migration change.
+
+Commands rerun: `node scripts/isolated-check.mjs unit`,
+`node scripts/isolated-check.mjs integration`,
+`python3 scripts/verify-control-policy-migration.py`,
+`python3 scripts/verify-control-execution.py`,
+`python3 scripts/verify-team-migration.py`,
+`python3 scripts/verify-tenant-migration.py`,
+`python3 scripts/verify-photo-migration.py`,
+`node scripts/isolated-check.mjs lint`,
+`node scripts/isolated-check.mjs build`, followed by
+`node scripts/isolated-check.mjs types`, and `git diff --check`.
+The ignored browser harness ran under an OS outbound deny allowing only localhost
+ports 5360 and 56531; fictional auth/shop fixtures were removed. All application
+checks used the existing isolated runner. The initial broad scan matched only
+existing password placeholders; the placeholder-safe check passed. Pattern scanning
+is not an exhaustive secret audit. Existing Sentry build warnings remain; network
+was denied and no release or source-map upload was authorized.
+
+Remaining coverage is unchanged: owner-only queued approvals, conservative channel
+purpose and risk/exception intersections, existing money/calendar approval floors,
+and legacy entitlement gates. The SQL adapter implements the bounded pending-action
+mapping; it does not make the pure TypeScript evaluator universal runtime authority.
+Direct tools, human sends, voice, alerts, cron transports and delegated manager
+approvals still require integration. Policy changes serialize with claims; they
+cannot recall an effect already authorized and in flight. Durable service-proof
+consumption and manual reconciliation of uncertain delivery remain unchanged.
+
+The five governing documents and PR #49 reconciliation were not rewritten. The
+existing work log is carried forward verbatim with one completion entry. Production,
+shared Supabase, provider settings, pricing, release guards and the founder checkout
+were untouched. No push, merge or deployment was performed.
