@@ -40,12 +40,10 @@ import {
 } from "@/lib/bi-agent"
 import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 import { precheckCredits, recordUsage } from "@/lib/credits"
-import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
+import { findOrCreateCustomer } from "@/lib/customers"
+import { captureCommandId, stageAgentCapture } from "@/lib/control-center/agent-capture"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
-import { recordInteraction } from "@/lib/memory"
-import { moveLeadToStage } from "@/lib/pipeline"
-import { parseVehicle } from "@/lib/vehicle"
 import {
   describeVehicle,
   upsertCustomerVehicle,
@@ -79,7 +77,7 @@ How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
 3. CONFIRM: show the owner the count, the cost, and the samples, then ASK for explicit confirmation ("Want us to stage these 23 revival texts for your approval?").
 4. STAGE: only after the owner clearly says yes, call stage_outreach. This queues a draft per recipient in the owner's Approvals inbox — it does NOT send. The owner sends from /approvals.
 
-Approval tiers (the friction gradient): capture and data edits — add_note, create_lead, update_customer — save IMMEDIATELY (the owner's own data, reversible), so just confirm you did it. Anything OUTBOUND — draft_reply and campaigns — stages for one-tap approval and never sends itself. Bookings always need approval. Never tell the owner a capture is "staged" — it's done; never tell them an outbound message was "sent" — it's staged.
+Approval tiers (the friction gradient): add_note and create_lead queue a capture for review through the active Control Center policy. Report the tool result: queued is not saved, and blocked means nothing was queued. update_customer still applies direct CRM edits; do not claim it uses the capture approval flow. Anything OUTBOUND — draft_reply and campaigns — stages for one-tap approval and never sends itself. Bookings always need approval. Never tell the owner a queued capture is saved; never tell them an outbound message was "sent" — it's staged.
 
 Hard rules:
 - You can preview, stage, and propose — you never directly send, confirm a booking, reschedule, cancel, or charge. A proposed booking is staged and ALWAYS needs the owner's approval before it touches the calendar. Never say something is sent or booked; say it's staged for approval.
@@ -502,10 +500,10 @@ function estimateCredits(plan: FreeformPlan, count: number): number {
 }
 
 /** Tools that create a pending_action (outbound or calendar). Shadow Mode
- *  blocks exactly these; reads, previews, and CRM capture stay available. */
-const STAGING_TOOLS = new Set(["stage_outreach", "draft_reply", "propose_booking"])
+ *  blocks these; reads and private previews stay available. */
+const STAGING_TOOLS = new Set(["stage_outreach", "draft_reply", "propose_booking", "add_note", "create_lead"])
 
-async function runOwnerTool(
+export async function runOwnerTool(
   ctx: OwnerAgentContext,
   block: AnthropicToolUseBlock
 ): Promise<{ content: string; isError: boolean }> {
@@ -518,7 +516,7 @@ async function runOwnerTool(
       content: json({
         shadow_mode: true,
         staged: 0,
-        note: "Shadow Mode is on — I worked this out and can preview it, but I didn't queue anything for sending or booking. Turn off Shadow Mode in Settings to act for real.",
+        note: "Shadow Mode is on — I worked this out and can preview it, but I didn't queue any capture, message or booking. Turn off Shadow Mode in Settings to act for real.",
       }),
       isError: false,
     }
@@ -695,84 +693,25 @@ async function runOwnerTool(
       return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
     }
     const { customer_name, phone, note } = parsed.data
-    // Capture executes immediately — owner's own data, reversible (§3 map).
-    let customerId: string | null = null
-    if (phone) {
-      const c = await findCustomerByChannel(ctx.supabase, ctx.shop.id, { phone })
-      if (c) customerId = c.id
-    }
-    await recordInteraction(ctx.supabase, {
-      shopId: ctx.shop.id,
-      customerId,
-      channel: "note",
-      role: "system",
-      content: note,
-      metadata: { source: "gradia_agent", customer_name },
-    })
-    return { content: json({ noted: true, customer: customer_name }), isError: false }
+    const result = await stageAgentCapture(ctx.supabase, {
+      shopId: ctx.shop.id, actorId: ctx.ownerId, source: "owner_agent",
+      commandId: captureCommandId(ctx.shop.id, "owner_agent", block.id),
+    }, { type: "add_note", payload: { content: note, customer_name, phone: phone ?? null } })
+    return { content: json(result), isError: !result.ok }
   }
 
   if (block.name === "create_lead") {
     const parsed = createLeadSchema.safeParse(block.input)
-    if (!parsed.success) {
-      return { content: json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }), isError: true }
-    }
+    if (!parsed.success) return { content: json({ error: "Invalid lead capture." }), isError: true }
     const { customer_name, phone, vehicle, note } = parsed.data
-    // Capture executes immediately — owner's own data, reversible (§3 map).
-    const v = parseVehicle(vehicle ?? null)
-    const customerResult = await findOrCreateCustomer(ctx.supabase, ctx.shop.id, {
-      name: customer_name,
-      phone,
-    })
-    // Structured vehicle lands in the vehicles table on the customer (C1),
-    // with write-through to the deprecated flat columns. vehicle_id links
-    // after insert so a pre-C1-migration DB still saves the lead.
-    const vehicleId = customerResult.ok
-      ? await upsertCustomerVehicle(
-          ctx.supabase,
-          ctx.shop.id,
-          customerResult.customer.id,
-          v
-        )
-      : null
-    const { data: createdLead, error } = await ctx.supabase
-      .from("leads")
-      .insert({
-        shop_id: ctx.shop.id,
-        customer_id: customerResult.ok ? customerResult.customer.id : null,
-        customer_name,
-        phone,
-        car_info: vehicle ?? null,
-        vehicle_make: v.make,
-        vehicle_model: v.model,
-        vehicle_year: v.year,
-        vehicle_color: v.color,
-        pin_notes: note ?? null,
-        status: "new",
-      })
-      .select("id")
-      .single()
-    if (error) {
-      return { content: json({ error: "Couldn't save that lead." }), isError: true }
-    }
-    if (vehicleId && createdLead) {
-      // Best-effort — leads.vehicle_id exists only post-C1-migration.
-      await ctx.supabase
-        .from("leads")
-        .update({ vehicle_id: vehicleId })
-        .eq("id", (createdLead as { id: string }).id)
-    }
-    if (createdLead) {
-      // Auto-move (C2, code): owner-captured lead lands on the board as new.
-      await moveLeadToStage(
-        ctx.supabase,
-        ctx.shop.id,
-        (createdLead as { id: string }).id,
-        "new",
-        { by: "system" }
-      )
-    }
-    return { content: json({ created: customer_name, immediate: true }), isError: false }
+    const result = await stageAgentCapture(ctx.supabase, {
+      shopId: ctx.shop.id, actorId: ctx.ownerId, source: "owner_agent",
+      commandId: captureCommandId(ctx.shop.id, "owner_agent", block.id),
+    }, { type: "create_lead", payload: {
+      customer_name, phone: phone ?? "", car_info: vehicle ?? null,
+      pin_notes: note ?? null, status: "new",
+    } })
+    return { content: json(result), isError: !result.ok }
   }
 
   if (block.name === "update_customer") {

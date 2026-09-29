@@ -323,3 +323,74 @@ The five governing documents and PR #49 reconciliation were not rewritten. The
 existing work log is carried forward verbatim with one completion entry. Production,
 shared Supabase, provider settings, pricing, release guards and the founder checkout
 were untouched. No push, merge or deployment was performed.
+
+## Agent capture integration — September 29
+
+The next bounded slice routes owner-Agent `add_note` and `create_lead`, plus MCP
+`propose_lead`, into the existing pending-action review/execution path. These calls
+no longer write customers, vehicles, leads or interactions before review. Captures
+remain proposals even when a policy would permit autonomous execution; this slice
+does not automatically execute them. The existing owner approval handler performs
+the write and rechecks current policy. Ordinary human CRM forms are unchanged.
+
+Migration `20260929120000_agent_capture_staging.sql` adds one staging RPC, no tables
+or backfill. It locks the shop, checks current owner membership and Shadow Mode,
+and uses migration 72's policy trigger. MCP must supply its independently resolved
+live same-shop token identity; revocation is checked under a row lock. Model source
+labels cannot replace server attribution. Pending actions retain source, requester,
+token identity and staged policy revision; execution retains the existing audit.
+The RPC restricts capture types to notes/leads. An unchanged command ID retries
+idempotently; changed payload/actor/type/source or foreign-shop collisions refuse.
+It never treats a chat/tool request as human approval.
+
+Owner tool invocation IDs deterministically bind stable command UUIDs to shop and
+source. MCP `propose_lead` now requires a `command_id` UUID reused on retries. MCP
+clients must refresh their tool schema. An ambiguous response tells the caller to
+check Approvals rather than claim success or automatically retry with a new ID.
+Shadow Mode prevents these queue writes in both application and SQL. The existing
+Approvals UI renders the unchanged note/lead payloads; no new settings screen exists.
+
+### Verification and limitations
+
+Node 22.23.2; dedicated disposable infrastructure only:
+
+- Hardened unit suite: 1,037 passed, four existing intentional live-test skips,
+  91 files. Includes 13 new deterministic capture/real-dispatch tests.
+- Database suite: 220 passed, zero skips, 21 files. Ten new cases cover current
+  policy, foreign/anonymous actors, stable/concurrent retries, token revocation,
+  Shadow Mode, attribution, owner approval and completed-action replay.
+- Fresh reset applied all 73 migrations. Exact ledger, policy ACLs, activation and
+  claim rollback, membership probes, historical backfill, 26 P0 relationships and
+  both inconsistent-data refusal probes passed.
+- Lint, offline production build and post-build typecheck passed. No live provider,
+  embedding or model calls; embeddings/CRM push are mocked in the execution test.
+- The live owner-Agent routing eval fixture/expectations now require honest queued
+  capture responses. Live model evaluation was **not run**; prompt wording changed
+  to remove the false immediate-save promise. Model quality remains a release gate.
+
+Commands: `node scripts/test-stack.mjs reset`,
+`node scripts/isolated-check.mjs unit`,
+`node scripts/isolated-check.mjs integration`,
+`node scripts/isolated-check.mjs lint`,
+`node scripts/isolated-check.mjs build`,
+`node scripts/isolated-check.mjs types`, all five existing migration probe scripts,
+and `git diff --check`. OS outbound denial stayed in place; integration allowed
+only the disposable API. Probes must run sequentially after integration: overlapping
+schema-probe transactions with the full suite produced a failed historical probe;
+the sequential rerun passed. No failure was accepted as a release skip.
+
+Initial focused testing exposed inappropriate use of the session-only `team_lock`
+helper for MCP. The RPC now takes the same shop row lock directly and independently
+checks actor/token authority. A revocation fixture incorrectly attempted to disable
+the protected owner membership; the corrected test verifies that operation is
+refused, rather than weakening owner protection. Final focused/full suites passed.
+
+**Not complete:** direct `update_customer`, lead-only customer materialization in
+`resolveCustomer`, MCP `find_or_create_customer`/`record_interaction`, read capability
+scoping and general MCP token capabilities remain uncovered. Next is their explicit
+command/review adapter, without disguising edits as notes or lead creation. Voice,
+alerts, cron transport, granular message-purpose rules and delegated manager
+approvals also remain separate work. The policy milestone is not release-complete.
+No push, merge, deployment, shared migration, provider activation or founder-file
+change is included. September 11 product scope and the reconciled pricing remain
+unchanged.

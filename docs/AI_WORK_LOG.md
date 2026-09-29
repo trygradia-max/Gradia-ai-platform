@@ -77,3 +77,15 @@ for local review; complete direct-tool/transport policy coverage and delegated
 manager approvals remain outstanding. No push, merge, deployment, production or
 provider activity. Founder checkout and CONTEXT.md preserved. See the September 29
 entry in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md` for limitations.
+
+[AI: codex] [DATE: 2026-09-29] [AREA: platform] [STATUS: done]
+Added the bounded Agent capture adapter: owner-Agent notes/leads and MCP lead
+proposals now use a durable, current-policy staging RPC and the existing approval
+executor. Added migration 73, command retry binding, token revocation checks and
+Shadow Mode enforcement. Verified 1,037 unit tests (four existing live skips),
+220 integration tests (zero skips), fresh 73-migration initialization, all existing
+migration probes, lint, offline build and post-build typecheck. Live model routing
+evaluation remains unrun; capture prompt wording and its eval expectations now say
+queued rather than saved. Direct customer edits/materialization and MCP memory
+writes remain the next adapter work. This does not complete universal Control Center
+coverage. No push, merge, deploy, production/provider action or founder-file change.

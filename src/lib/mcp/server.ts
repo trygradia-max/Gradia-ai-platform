@@ -22,6 +22,7 @@ import {
   ResourceTemplate,
 } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
+import { stageAgentCapture } from "@/lib/control-center/agent-capture"
 
 import { stagingAvailability } from "@/lib/availability"
 import {
@@ -46,6 +47,7 @@ export type GradiaMcpContext = {
   shopId: string
   shopName: string
   ownerId: string
+  tokenId?: string
   supabase: SupabaseClient
 }
 
@@ -72,6 +74,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       description:
         "Stages a create_lead pending_action for human approval. Use this when an agent has identified a new prospective customer; the lead does NOT exist in the leads table until the operator approves it in /approvals.",
       inputSchema: {
+        command_id: z.string().uuid().describe("Stable UUID for this proposal; reuse unchanged on retries."),
         customer_name: z
           .string()
           .min(1)
@@ -110,33 +113,14 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "create_lead",
-          payload: {
-            customer_name: args.customer_name,
-            phone: args.phone,
-            car_info: args.car_info,
-            pin_notes: args.pin_notes,
-            status: args.status,
-            source: args.source,
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) {
-        return errorResult(error?.message ?? "Insert failed.")
-      }
-      const pendingId = (data as { id: string }).id
-
-      return jsonResult({
-        ok: true,
-        pending_action_id: pendingId,
-        message: `Lead "${args.customer_name}" staged for approval.`,
-      })
+      const result = await stageAgentCapture(ctx.supabase, {
+        shopId: ctx.shopId, actorId: ctx.ownerId, source: "mcp",
+        tokenId: ctx.tokenId, commandId: args.command_id,
+      }, { type: "create_lead", payload: {
+        customer_name: args.customer_name, phone: args.phone, car_info: args.car_info,
+        pin_notes: args.pin_notes, status: args.status,
+      } })
+      return result.ok ? jsonResult(result) : errorResult(result.error)
     }
   )
 
