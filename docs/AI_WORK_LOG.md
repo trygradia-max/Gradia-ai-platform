@@ -162,3 +162,21 @@ replay integration tests, 9 lead-intake unit tests, 6 tenant-scoping unit tests,
 and 77 webhook unit tests passed; touched-file lint and typecheck passed. Did
 not build A2P, Twilio Trust Hub, Meta lead ads, or a Chief of Staff card, and
 did not push, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added Meta Lead Ads intake on `codex/mvp-lead-intake`. `GET` and `POST /api/intake/meta-lead-ads`
+check `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with `META_APP_SECRET`) before any
+parse or write, and fail closed when that secret is unset. The shop is a row in
+`meta_lead_page_bindings` (`shop_id` plus a unique `page_id`). An unknown page, a page bound
+to two shops, or a body shop id that disagrees with the binding does not write. Provider
+`meta_lead_ads`, event id the Meta `leadgen_id`; the first payload wins. The envelope stores
+`page_id`, `form_id`, `leadgen_id`, and `created_time` only, with no thread key. The write
+does not create a customer, lead, consent row, or approval. The hub challenge is echoed only
+when `META_WEBHOOK_VERIFY_TOKEN` matches, and is refused when that token is unset. Disposable
+stack: 5 Meta integration tests, 5 existing lead-intake integration tests, 5 website-form
+integration tests, 14 Twilio inbound replay tests, and 21 focused unit tests passed;
+touched-file lint and typecheck passed. Migration `20261002075347` was applied in place on
+`gradia-isolated-tests` (ledger 77). Did not call the Meta Graph API
+(`meta_graph_lead_field_retrieval` remains), did not map in-body `field_data`, and did not
+build an OAuth connect screen, a Settings tile, a Chief of Staff card, or A2P. Nothing
+pushed, merged, or deployed.

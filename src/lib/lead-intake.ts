@@ -4,9 +4,16 @@ import { z } from "zod"
 /**
  * Durable normalized intake. The shop id is an explicit argument and is
  * never taken from the payload. Contact fields are stored as supplied text.
+ * page_id, form_id, leadgen_id, and created_time identify a Meta lead
+ * event. They are not a person and they are not a thread key.
  * The website-form acceptor checks that the bound shop row exists. It does
  * not look up a customer, infer consent, create a lead, or call a provider.
  */
+const eventIdText = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/)
+const createdTimeText = z.string().trim().min(1).max(64).regex(
+  /^[0-9]{1,16}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})$/,
+)
+
 const intakePayloadSchema = z.object({
   display_name: z.string().trim().min(1).max(200).optional(),
   phone: z.string().trim().min(1).max(200).optional(),
@@ -14,6 +21,10 @@ const intakePayloadSchema = z.object({
   message: z.string().trim().min(1).max(4000).optional(),
   vehicle_text: z.string().trim().min(1).max(200).optional(),
   service_text: z.string().trim().min(1).max(200).optional(),
+  page_id: eventIdText.optional(),
+  form_id: eventIdText.optional(),
+  leadgen_id: eventIdText.optional(),
+  created_time: createdTimeText.optional(),
 }).strict()
 
 export const leadIntakeInputSchema = z.object({
