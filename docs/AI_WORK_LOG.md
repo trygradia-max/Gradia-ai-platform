@@ -209,3 +209,33 @@ Existing fault fixture was installed before the passing full integration rerun.
 Release requires explicit replacement of legacy unscoped tokens and live tool evals;
 new grant-picker browser testing remains outstanding. See the implementation report.
 No push, merge, deployment, production/provider activity or founder-file changes.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Prepared the additional intake work for push. Preserved commits bdbdb5a, b998248,
+8ca34ab and 6ce508a, merged the current policy/capability branch 2e634cf locally
+without rewriting history, and retained both work-log histories. Merge commit
+45d2609 adds the exact Vercel exclusion for codex/mvp-lead-intake while preserving
+all other deployment settings. This is a feature-branch reconciliation, not a merge
+into main or a production deployment.
+
+Combined Node 22.23.2 verification passed: 1,118 unit tests (four intentional live
+skips; 97 files), 272 database integration tests (zero skips; 27 files), lint,
+offline production build and post-build typecheck. All 78 migrations initialized
+from zero on the separate unlinked gradia-record-fresh stack with the existing
+merge-failure fixture. Exact ledger, atomic-record rollback/ACL probe, all 26 tenant
+relationship definitions and tenant/photo inconsistent-data refusal probes passed.
+Commands: node scripts/isolated-check.mjs unit; integration --fresh; lint; build;
+types; python3 scripts/verify-agent-record-migration.py --fresh. Tenant/photo probes
+used their existing code with only the fixed disposable target/config names
+substituted in memory. Credential-pattern scans covered every previously unpushed
+commit; changed files passed runtime-artifact, machine-path and whitespace checks.
+No dependencies installed, shared database modified or real provider contacted.
+
+This is intake foundation, not pilot activation. Website-form intake requires a
+signed-in shop owner; it is not yet a public lead form. Meta POST verifies HMAC;
+GET validates only the subscription verify token. Meta stores notification IDs,
+not contact fields; Graph retrieval, connect/binding UI and Chief of Staff intake
+review remain unfinished. Intake workflows remain in identity_review; the existing
+SMS handling still performs its separate customer/consent flow. Missing routing,
+provider acceptance, live tool evaluation, existing-token replacement and production
+release safeguards remain gates. Founder checkout and CONTEXT.md hash are unchanged.
