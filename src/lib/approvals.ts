@@ -1,3 +1,4 @@
+import { isRecordAction, type RecordCommand } from "@/lib/control-center/record-command"
 /**
  * Shared approval engine. The dashboard action (and, before CLEANUP-001, the Slack callback) and the
  * /approvals dashboard call into these helpers so the actual claim → execute
@@ -131,6 +132,7 @@ export type EmailProposal = {
 }
 
 type ClaimedAction = {
+  result_id?: string | null
   id: string
   shop_id: string
   action_type: PendingActionType
@@ -138,6 +140,7 @@ type ClaimedAction = {
 }
 
 export type ApprovalSuccess =
+  | { status: "executed"; actionType: RecordCommand["type"]; resultId: string; proposal: Record<string, unknown> }
   | {
       status: "executed"
       actionType: "create_lead"
@@ -201,6 +204,7 @@ export type ApprovalResult =
     }
 
 export type DecisionSuccess =
+  | { status: "claimed"; actionType: RecordCommand["type"]; proposal: Record<string, unknown> }
   | { status: "claimed"; actionType: "create_lead"; proposal: LeadProposal }
   | { status: "claimed"; actionType: "add_note"; proposal: NoteProposal }
   | {
@@ -494,7 +498,7 @@ export async function executeApproval(
       p_shop: shopId, p_action: pendingId, p_actor: decider.userId ?? null,
       p_context: context,
     })
-    if (error) return { ok: false, error: "Current execution authority could not be verified. Nothing was executed." }
+    if (error) return { ok: false, error: "Execution status could not be verified. Review action history before retrying." }
     if (data?.denied) {
       const reasons: Record<string, string> = {
         actor_not_authorized: "Only the current shop owner can approve this action.",
@@ -504,17 +508,17 @@ export async function executeApproval(
         autonomy_entitlement_required: "Autonomous execution is not available for this workspace.",
         location_unavailable: "The workspace location could not be verified.",
       }
-      return { ok: false, error: reasons[String(data.denied)] ?? "Current execution authority could not be verified. Nothing was executed." }
+      return { ok: false, error: reasons[String(data.denied)] ?? "Execution status could not be verified. Review action history before retrying." }
     }
     if (data?.already_decided === true) claimed = null
     else {
       if (!data || data.id !== pendingId || data.shop_id !== shopId || typeof data.action_type !== "string" || !data.payload || typeof data.payload !== "object" || Array.isArray(data.payload)) {
-        return { ok: false, error: "The policy claim could not be verified. Nothing was executed." }
+        return { ok: false, error: "The policy claim could not be verified. Review action history before retrying." }
       }
       claimed = data as ClaimedAction
     }
   } catch {
-    return { ok: false, error: "Current execution authority could not be verified. Nothing was executed." }
+    return { ok: false, error: "Execution status could not be verified. Review action history before retrying." }
   }
 
   if (!claimed) {
@@ -528,6 +532,12 @@ export async function executeApproval(
     return { ok: true, status: "already_decided" }
   }
 
+  // Record commands commit validation, audit, domain write and claim atomically.
+  // Never reopen an already-committed command after an application read failure.
+  if (isRecordAction(claimed.action_type)) {
+    if (!claimed.result_id) return { ok: false, error: "Record execution status is uncertain. Review history before retrying." }
+    return { ok: true, status: "executed", actionType: claimed.action_type, resultId: claimed.result_id, proposal: claimed.payload }
+  }
   if (!await validTenantReferences(supabase, shopId, claimed.payload)) {
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: "Action reference not found in this shop." }
@@ -2104,6 +2114,7 @@ async function executeSendEmail(
 }
 
 function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
+  if (isRecordAction(claimed.action_type)) return { ok: true, status: "claimed", actionType: claimed.action_type, proposal: claimed.payload }
   switch (claimed.action_type) {
     case "create_lead":
       return {

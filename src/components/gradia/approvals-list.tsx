@@ -1,5 +1,7 @@
 "use client"
 
+import { isRecordAction } from "@/lib/control-center/record-command"
+import { RecordProposalDetails } from "./record-proposal-details"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -115,6 +117,9 @@ type ActionMeta = {
 }
 
 const ACTION_META: Record<PendingActionType, ActionMeta> = {
+  update_customer: { icon: User, label: "Customer edit", tone: "lead" },
+  resolve_customer: { icon: User, label: "Customer identity", tone: "lead" },
+  record_interaction: { icon: StickyNote, label: "Reported history", tone: "note" },
   create_lead: { icon: User, label: "Lead", tone: "lead" },
   add_note: { icon: StickyNote, label: "Note", tone: "note" },
   book_appointment: { icon: Calendar, label: "Booking", tone: "booking" },
@@ -497,7 +502,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
             )}
           >
             <Pencil className="size-4" aria-hidden />
-            Tweak it
+            {isRecordAction(item.action_type) ? "Review details" : "Tweak it"}
           </Link>
           <Button
             onClick={() => onDecision(item.id, "reject")}
@@ -622,6 +627,7 @@ function ConflictWarning({
 }
 
 const ACTION_CTA: Partial<Record<PendingActionType, string>> = {
+  update_customer: "Approve edit", resolve_customer: "Resolve customer", record_interaction: "Save reported history",
   send_sms: "Send it",
   send_email: "Send it",
   book_appointment: "Book it",
@@ -655,6 +661,7 @@ function EmptyState() {
 // --- per-action renderers ---------------------------------------------------
 
 function ActionHeader({ item }: { item: PendingActionRow }) {
+  if(isRecordAction(item.action_type))return <span>{ACTION_META[item.action_type].label}</span>
   switch (item.action_type) {
     case "add_note":
       return <NoteHeader proposal={item.payload as unknown as NoteProposal} />
@@ -677,6 +684,7 @@ function ActionHeader({ item }: { item: PendingActionRow }) {
 }
 
 function ActionBody({ item }: { item: PendingActionRow }) {
+  if(isRecordAction(item.action_type))return <RecordProposalDetails type={item.action_type} payload={item.payload as Record<string,unknown>}/>
   switch (item.action_type) {
     case "add_note":
       return <NoteBody proposal={item.payload as unknown as NoteProposal} />

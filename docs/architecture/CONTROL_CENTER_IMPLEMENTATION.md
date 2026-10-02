@@ -385,12 +385,82 @@ checks actor/token authority. A revocation fixture incorrectly attempted to disa
 the protected owner membership; the corrected test verifies that operation is
 refused, rather than weakening owner protection. Final focused/full suites passed.
 
-**Not complete:** direct `update_customer`, lead-only customer materialization in
-`resolveCustomer`, MCP `find_or_create_customer`/`record_interaction`, read capability
-scoping and general MCP token capabilities remain uncovered. Next is their explicit
-command/review adapter, without disguising edits as notes or lead creation. Voice,
-alerts, cron transport, granular message-purpose rules and delegated manager
-approvals also remain separate work. The policy milestone is not release-complete.
-No push, merge, deployment, shared migration, provider activation or founder-file
-change is included. September 11 product scope and the reconciled pricing remain
-unchanged.
+**Not complete at the September 29 commit:** direct `update_customer`, lead-only
+customer materialization in `resolveCustomer`, MCP `find_or_create_customer`/
+`record_interaction`, read capability scoping and general MCP token capabilities
+remained uncovered. Voice, alerts, cron transport, granular message-purpose rules
+and delegated manager approvals also remained separate work.
+
+## Reviewed customer and history commands — October 1
+
+Local branch `codex/mvp-policy-execution` only. This slice continues the capture
+adapter. Owner-agent `update_customer`, MCP `find_or_create_customer`, and MCP
+`record_interaction` now stage `update_customer`, `resolve_customer`, or
+`record_interaction`. They do not write customers, vehicles, or interactions
+before review. Approval applies the command inside `claim_control_action`, in the
+same transaction as the decision audit. A saved draft still does not execute
+anything, and these three commands stay on the approval floor even if a policy
+would otherwise allow autonomy.
+
+Customer edits carry the reviewed name, phone, email, and vehicle snapshot.
+A changed record or a vehicle write that fails rolls the contact change, the
+claim, and the audit back together. Customer and vehicle updates set
+`updated_at` to `clock_timestamp()`, so a proposal bound to the previous
+snapshot cannot land after a later write. A new phone or email does not receive
+the old destination's marketing permission. Reported history is stored as
+agent-reported, unverified content. It cannot satisfy inbound reply proof.
+Consent fields cannot be patched through a customer edit. Records are not merged.
+
+A lead with no customer row is no longer created as a side effect of lookup, and
+it is no longer reported as missing. A unique lead with a complete international
+phone queues `resolve_customer` and leaves the original reply, edit, or booking
+unperformed. Several matching leads are described for the owner to choose.
+Shadow Mode does not queue that proposal. Ordinary human CRM forms are unchanged.
+
+### Verification and limitations
+
+Final verification used Node 22.23.2 and the isolated runner with outbound network
+denied except the disposable database API. The existing local demo was preserved.
+A separate, unlinked `gradia-record-fresh` stack applied all **75 migrations from
+zero** and its exact ledger matched the repository. No shared schema was touched.
+
+| Check | Final result |
+| --- | --- |
+| Full hardened unit suite | 1,048 passed; four intentional live-provider skips; 92 files |
+| Full database integration suite | 239 passed; zero skips; 22 files |
+| Record-command integration subset | 19 passed |
+| Customer-edit/lead-resolution unit subset | 10 passed |
+| Lint, offline production build, post-build typecheck | Passed |
+| Existing five migration probes | Passed; all 26 tenant relationship definitions verified |
+| Record command probe, existing and fresh stack | Passed; exact ledger, ACLs and late-failure rollback |
+| Local browser approval | Reviewed fictional email before/after; approved through existing UI; database confirms approved, expected value and exactly one decision audit |
+| Whitespace and credential/runtime-artifact inspection | Passed |
+
+Commands (with Node 22 selected): `node scripts/isolated-check.mjs unit`,
+`node scripts/isolated-check.mjs integration`, `node scripts/isolated-check.mjs lint`,
+`node scripts/isolated-check.mjs build`, `node scripts/isolated-check.mjs types`;
+`python3 scripts/verify-control-policy-migration.py`,
+`python3 scripts/verify-control-execution.py`,
+`python3 scripts/verify-team-migration.py`,
+`python3 scripts/verify-tenant-migration.py`,
+`python3 scripts/verify-photo-migration.py`,
+`python3 scripts/verify-agent-record-migration.py` and the latter with `--fresh`;
+`git diff --check`. Migration probes ran sequentially after integration.
+Fresh-stack startup used `supabase --workdir .local-tools/record-fresh start`
+with an ignored isolated configuration, unique project ID and non-conflicting
+ports. Local demo fixtures/configuration/credentials remain ignored.
+
+Additional boundaries verified: complete canonical phone comparison distinguishes
+international lead identities with the same trailing digits; failed lookups cannot
+queue identity creation; vehicle edits bind both timestamp and reviewed fields;
+reported-history parent references must also belong to the selected customer.
+The late-failure probe rejects the final pending-action update and verifies that
+the domain change and decision audit roll back together. Browser checks are a
+focused local smoke test, not comprehensive visual or accessibility coverage.
+Live model/prompt evaluation was not run and remains a release gate.
+
+**Still not covered:** MCP read-capability scoping, general token capabilities,
+voice, alerts, cron transport, granular message purposes, and delegated manager
+approval. The policy milestone is not release-complete. No push, merge,
+deployment, shared migration, provider activation, or founder-file change is
+included. September 11 product scope and the reconciled pricing remain unchanged.

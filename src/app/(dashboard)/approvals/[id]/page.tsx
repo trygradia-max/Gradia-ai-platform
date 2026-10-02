@@ -1,3 +1,5 @@
+import { isRecordAction } from "@/lib/control-center/record-command"
+import { RecordProposalReview } from "@/components/gradia/record-proposal-review"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
@@ -113,6 +115,8 @@ export default async function PendingProposalPage({
       </div>
     )
   }
+
+  if(isRecordAction(pending.action_type))return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><h1 className="font-display text-2xl">Review record change</h1><RecordProposalReview id={pending.id} type={pending.action_type} payload={pending.payload as Record<string,unknown>}/></div>
 
   const editorProps = buildEditorProps(pending)
   const quickReplyTarget = await resolveQuickReplyTarget(

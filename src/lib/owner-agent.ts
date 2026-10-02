@@ -40,13 +40,13 @@ import {
 } from "@/lib/bi-agent"
 import { BI_TOOLS, findBiTool } from "@/lib/bi-tools"
 import { precheckCredits, recordUsage } from "@/lib/credits"
-import { findOrCreateCustomer } from "@/lib/customers"
+import { prepareCustomerEdit } from "@/lib/control-center/customer-edit"
 import { captureCommandId, stageAgentCapture } from "@/lib/control-center/agent-capture"
+import { normalizeDestination } from "@/lib/contact-destination"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
 import { verifierPayloadFragment, verifyDraft } from "@/lib/draft-verifier"
 import {
   describeVehicle,
-  upsertCustomerVehicle,
   vehiclesByCustomerIds,
 } from "@/lib/vehicles"
 import { connectionStatus } from "@/lib/data/connections"
@@ -77,12 +77,12 @@ How to run a campaign (e.g. a cold-lead revival) — ALWAYS this sequence:
 3. CONFIRM: show the owner the count, the cost, and the samples, then ASK for explicit confirmation ("Want us to stage these 23 revival texts for your approval?").
 4. STAGE: only after the owner clearly says yes, call stage_outreach. This queues a draft per recipient in the owner's Approvals inbox — it does NOT send. The owner sends from /approvals.
 
-Approval tiers (the friction gradient): add_note and create_lead queue a capture for review through the active Control Center policy. Report the tool result: queued is not saved, and blocked means nothing was queued. update_customer still applies direct CRM edits; do not claim it uses the capture approval flow. Anything OUTBOUND — draft_reply and campaigns — stages for one-tap approval and never sends itself. Bookings always need approval. Never tell the owner a queued capture is saved; never tell them an outbound message was "sent" — it's staged.
+Approval tiers (the friction gradient): add_note and create_lead queue a capture for review through the active Control Center policy. Report the tool result: queued is not saved, and blocked means nothing was queued. update_customer also queues a snapshot-bound edit for approval; it does not save directly. Anything OUTBOUND — draft_reply and campaigns — stages for one-tap approval and never sends itself. Bookings always need approval. Never tell the owner a queued capture is saved; never tell them an outbound message was "sent" — it's staged.
 
 Hard rules:
 - You can preview, stage, and propose — you never directly send, confirm a booking, reschedule, cancel, or charge. A proposed booking is staged and ALWAYS needs the owner's approval before it touches the calendar. Never say something is sent or booked; say it's staged for approval.
 - Disambiguation: when a name matches more than one customer, NEVER guess and NEVER act. The candidates come back with each person's vehicle, last visit, and phone ending — quote those ACTUAL details back so the owner can pick at a glance: "the silver Tesla one or the red Honda one?" or "the one ending 4821?". Do NOT ask a generic "what's their last name?" when you already have distinguishing details. Act only once the owner names which one.
-- Messy data: if someone you need is missing a phone, email, or vehicle, say so plainly ("Mike has no email on file"). If the owner gives you the detail, fix it on the spot with update_customer — then continue what they asked. Never invent details.
+- Messy data: if someone you need is missing a phone, email, or vehicle, say so plainly ("Mike has no email on file"). If the owner gives you the detail, propose the correction with update_customer and explain that it awaits review. Never invent details. A person who exists only as a lead is not missing: the tool queues identity resolution for review and does not perform the original action.
 - Segments are built from a fixed set of filters: lead status, record age (min/max days), recent-inbound window, customer inactivity, a keyword (name / vehicle / notes), structured VEHICLE (make, model, year range), and time since LAST VISIT (customers). So "Tesla owners" → vehicle_make "Tesla"; "haven't been in for 6 months" → not_visited_in_days 180; "2020-or-newer trucks" → vehicle_year_min 2020 + keyword. Vehicle make is reliable; model is sparse on older records — fall back to keyword if a model match looks empty. If the owner asks to segment by something genuinely outside this set (lifetime spend, location), say so honestly and offer the closest thing you CAN do — never pretend a filter exists.
 - Respect the guardrails: outreach is capped (default 50 recipients), cooled down, and opt-outs are honored — these are applied automatically; surface them when the count comes back smaller than expected.
 - Finding people: to check whether someone exists in the CRM, use find_person FIRST — it searches leads AND customers deterministically and works with zero conversation history. search_memory only covers recorded conversations; an empty memory result never means the person is missing.
@@ -287,7 +287,7 @@ async function resolveCustomer(
   if (q.includes("@")) ors.push(`email.eq.${q}`)
   const digits = q.replace(/\D/g, "")
   if (digits.length >= 4) ors.push(`phone.ilike.%${digits}%`)
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("customers")
     // vehicle_* read only as the pre-C1-migration backup (write-through
     // keeps them current — lib/vehicles.ts).
@@ -297,6 +297,7 @@ async function resolveCustomer(
     .eq("shop_id", shopId)
     .or(ors.join(","))
     .limit(8)
+  if (error) throw new Error("Customer lookup could not be verified. Nothing was queued.")
   const rows =
     (data as (Omit<CustomerMatch, "vehicle"> & {
       vehicle_make: string | null
@@ -318,64 +319,93 @@ async function resolveCustomer(
   }))
   if (matches.length > 0) return matches
 
-  // Fix-pass 2026-07-13 (P0): a lead with no customer record was invisible
-  // to every action tool ("book mike" → not found, mike on the pipeline).
-  // Fall back to LEADS; a unique lead materializes its customer via the
-  // idempotent find-or-create so the action can proceed — never ask the
-  // owner for a phone that's already on file.
-  const leadOrs = [`customer_name.ilike.%${q}%`]
-  if (digits.length >= 4) leadOrs.push(`phone.ilike.%${digits}%`)
-  const { data: leadData } = await supabase
-    .from("leads")
-    .select("id, customer_id, customer_name, phone, car_info")
-    .eq("shop_id", shopId)
-    .or(leadOrs.join(","))
-    .limit(8)
-  const leadRows =
-    (leadData as {
-      id: string
-      customer_id: string | null
-      customer_name: string
-      phone: string
-      car_info: string | null
-    }[] | null) ?? []
-  // Distinct people by phone (several cards can share one caller).
-  const byPhone = new Map<string, (typeof leadRows)[number]>()
-  for (const l of leadRows) {
-    const key = l.phone.replace(/\D/g, "").slice(-10) || l.id
-    if (!byPhone.has(key)) byPhone.set(key, l)
-  }
-  const distinct = [...byPhone.values()]
+  // Identity lookup must never create a customer as a side effect.
+  // A lead-only match is handled by queueLeadResolution, not by this read.
+  return []
+}
 
-  if (distinct.length === 1 && distinct[0].phone) {
-    const lead = distinct[0]
-    const created = await findOrCreateCustomer(supabase, shopId, {
-      name: lead.customer_name,
-      phone: lead.phone,
-    })
-    if (created.ok) {
-      return [
-        {
-          id: created.customer.id,
-          name: created.customer.name ?? lead.customer_name,
-          phone: created.customer.phone ?? lead.phone,
-          email: created.customer.email,
-          vehicle: lead.car_info,
-          last_visit_at: created.customer.last_visit_at ?? null,
-        },
-      ]
+/** Read leads only. A unique canonical phone becomes a reviewed identity proposal. */
+async function queueLeadResolution(
+  ctx: OwnerAgentContext,
+  query: string,
+  invocationId: string
+): Promise<{ content: string; isError: boolean }> {
+  const q = query.replace(/[%,()]/g, "").trim()
+  const missed = {
+    content: JSON.stringify({ blocked: `Couldn't find anyone matching "${query}".` }),
+    isError: false,
+  }
+  if (!q) return missed
+  const ors = [`customer_name.ilike.%${q}%`]
+  const digits = q.replace(/\D/g, "")
+  if (digits.length >= 4) ors.push(`phone.ilike.%${digits}%`)
+  const { data, error } = await ctx.supabase
+    .from("leads")
+    .select("id, customer_name, phone, car_info")
+    .eq("shop_id", ctx.shop.id)
+    .or(ors.join(","))
+    .limit(8)
+  if (error) {
+    return {
+      content: JSON.stringify({ error: "Lead lookup could not be verified. Nothing was queued." }),
+      isError: true,
     }
   }
-  // >1 lead-only people: descriptor-only matches — handlers act only on a
-  // unique match, so these safely drive the "which one?" round-trip.
-  return distinct.map((l) => ({
-    id: l.id,
-    name: l.customer_name,
-    phone: l.phone,
-    email: null,
-    vehicle: l.car_info,
-    last_visit_at: null,
-  }))
+  const rows = (data as { id: string; customer_name: string; phone: string; car_info: string | null }[] | null) ?? []
+  const byPhone = new Map<string, (typeof rows)[number]>()
+  for (const lead of rows) {
+    const key = normalizeDestination("sms", lead.phone) || lead.id
+    if (!byPhone.has(key)) byPhone.set(key, lead)
+  }
+  const distinct = [...byPhone.values()]
+  if (distinct.length === 0) return missed
+  if (distinct.length > 1) {
+    return {
+      content: JSON.stringify({
+        candidates: distinct.map((lead) => ({
+          name: lead.customer_name,
+          vehicle: lead.car_info,
+          phone_last4: lead.phone.replace(/\D/g, "").slice(-4) || null,
+        })),
+        note: "More than one lead matches, and none is a customer yet. Ask which person before resolving an identity. Nothing was queued.",
+      }),
+      isError: false,
+    }
+  }
+  const lead = distinct[0]
+  const phone = normalizeDestination("sms", lead.phone)
+  if (!phone) {
+    return {
+      content: JSON.stringify({
+        blocked: `${lead.customer_name} is a lead, but the phone on file is not a complete international number. Nothing was queued.`,
+      }),
+      isError: false,
+    }
+  }
+  if (ctx.shop.simulation_mode) {
+    return {
+      content: JSON.stringify({ blocked: "Shadow Mode is on. Lead identity was not queued." }),
+      isError: false,
+    }
+  }
+  const name = lead.customer_name.trim()
+  const result = await stageAgentCapture(ctx.supabase, {
+    shopId: ctx.shop.id,
+    actorId: ctx.ownerId,
+    source: "owner_agent",
+    commandId: captureCommandId(ctx.shop.id, "owner_agent", invocationId),
+  }, {
+    type: "resolve_customer",
+    payload: { name: name.length > 0 && name.length <= 200 ? name : null, phone, email: null },
+  })
+  if (!result.ok) return { content: JSON.stringify({ error: result.error }), isError: true }
+  return {
+    content: JSON.stringify({
+      pending_action_id: result.pending_action_id,
+      message: `${lead.customer_name} is a lead, not a customer yet. Identity resolution is queued in Approvals. Nothing was saved, and the requested action was not performed.`,
+    }),
+    isError: false,
+  }
 }
 
 /** A short distinguishing descriptor so the agent can ask "which one?". */
@@ -476,7 +506,7 @@ function buildOwnerToolDefinitions(): unknown[] {
     {
       name: "update_customer",
       description:
-        "Fill in or correct a customer's details — phone, email, or vehicle (make/model/color/year). Use for 'Mike's email is mike@x.com' or 'Sarah drives a silver 2021 Tesla Model 3'. Resolves the person by name/phone/email; if several match, ask which first. Applies directly — it's the owner's own CRM data, not an outbound message.",
+        "Fill in or correct a customer's details — phone, email, or vehicle (make/model/color/year). Use for 'Mike's email is mike@x.com' or 'Sarah drives a silver 2021 Tesla Model 3'. Resolves the person by name/phone/email; if several match, ask which first. Queues the exact customer/vehicle edit for owner review; never writes the CRM directly.",
       input_schema: z.toJSONSchema(updateCustomerSchema),
     },
   ]
@@ -501,7 +531,7 @@ function estimateCredits(plan: FreeformPlan, count: number): number {
 
 /** Tools that create a pending_action (outbound or calendar). Shadow Mode
  *  blocks these; reads and private previews stay available. */
-const STAGING_TOOLS = new Set(["stage_outreach", "draft_reply", "propose_booking", "add_note", "create_lead"])
+const STAGING_TOOLS = new Set(["stage_outreach", "draft_reply", "propose_booking", "add_note", "create_lead", "update_customer"])
 
 export async function runOwnerTool(
   ctx: OwnerAgentContext,
@@ -599,9 +629,7 @@ export async function runOwnerTool(
     if (blocked) return { content: json({ blocked }), isError: false }
 
     const matches = await resolveCustomer(ctx.supabase, ctx.shop.id, customer_query)
-    if (matches.length === 0) {
-      return { content: json({ blocked: `Couldn't find anyone matching "${customer_query}".` }), isError: false }
-    }
+    if (matches.length === 0) return queueLeadResolution(ctx, customer_query, block.id)
     if (matches.length > 1) {
       return {
         content: json({
@@ -721,9 +749,7 @@ export async function runOwnerTool(
     }
     const { customer_query, ...fields } = parsed.data
     const matches = await resolveCustomer(ctx.supabase, ctx.shop.id, customer_query)
-    if (matches.length === 0) {
-      return { content: json({ blocked: `Couldn't find anyone matching "${customer_query}".` }), isError: false }
-    }
+    if (matches.length === 0) return queueLeadResolution(ctx, customer_query, `${block.id}:resolve`)
     if (matches.length > 1) {
       return {
         content: json({
@@ -734,50 +760,13 @@ export async function runOwnerTool(
       }
     }
     const c = matches[0]
-    // Vehicle fields land in the vehicles table (C1); contact fields on the
-    // customer record.
-    const { vehicle_make, vehicle_model, vehicle_color, vehicle_year, ...contact } =
-      fields
-    const patch: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(contact)) {
-      if (v === undefined || v === null) continue
-      if (typeof v === "string") {
-        if (v.trim()) patch[k] = v.trim()
-      } else {
-        patch[k] = v
-      }
-    }
-    const vehicle = {
-      make: vehicle_make?.trim() || null,
-      model: vehicle_model?.trim() || null,
-      year: vehicle_year ?? null,
-      color: vehicle_color?.trim() || null,
-    }
-    const hasVehicle = Boolean(
-      vehicle.make || vehicle.model || vehicle.color || vehicle.year != null
-    )
-    if (Object.keys(patch).length === 0 && !hasVehicle) {
-      return { content: json({ blocked: "No details given to update." }), isError: false }
-    }
-    if (Object.keys(patch).length > 0) {
-      const { error } = await ctx.supabase
-        .from("customers")
-        .update(patch)
-        .eq("id", c.id)
-        .eq("shop_id", ctx.shop.id)
-      if (error) {
-        return { content: json({ error: "Couldn't save that — the contact may already be on another record." }), isError: true }
-      }
-    }
-    const updatedFields = Object.keys(patch)
-    if (hasVehicle) {
-      const vid = await upsertCustomerVehicle(ctx.supabase, ctx.shop.id, c.id, vehicle)
-      if (vid) updatedFields.push("vehicle")
-    }
-    return {
-      content: json({ updated: c.name ?? customer_query, fields: updatedFields }),
-      isError: false,
-    }
+    const prepared=await prepareCustomerEdit(ctx.supabase,ctx.shop.id,c.id,fields)
+    if(!prepared.ok)return {content:json({error:prepared.error}),isError:true}
+    const result=await stageAgentCapture(ctx.supabase,{
+      shopId:ctx.shop.id,actorId:ctx.ownerId,source:"owner_agent",
+      commandId:captureCommandId(ctx.shop.id,"owner_agent",block.id),
+    },prepared.command)
+    return {content:json(result),isError:!result.ok}
   }
 
   if (block.name === "propose_booking") {
@@ -791,9 +780,7 @@ export async function runOwnerTool(
       return { content: json({ blocked: "That start time isn't a valid date — give a specific day and time." }), isError: false }
     }
     const matches = await resolveCustomer(ctx.supabase, ctx.shop.id, customer_query)
-    if (matches.length === 0) {
-      return { content: json({ blocked: `Couldn't find anyone matching "${customer_query}".` }), isError: false }
-    }
+    if (matches.length === 0) return queueLeadResolution(ctx, customer_query, `${block.id}:resolve`)
     if (matches.length > 1) {
       return {
         content: json({

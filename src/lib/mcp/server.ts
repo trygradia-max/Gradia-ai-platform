@@ -3,8 +3,8 @@
  *
  * Per docs/mcp-architecture.md, this is the load-bearing piece for
  * making Gradia genuinely agentic: it wraps our *domain primitives*
- * (proposeLead via HITL, findCustomerByChannel via the normalizer,
- * recordInteraction via shared memory, etc.) so an agent calling
+ * (proposeLead, find-or-create and reported history via review,
+ * findCustomerByChannel via the normalizer) so an agent calling
  * us can't accidentally bypass HITL, dedup, memory writes, or RLS.
  *
  * Transport: WebStandardStreamableHTTPServerTransport in stateless
@@ -22,18 +22,17 @@ import {
   ResourceTemplate,
 } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
+import { normalizeDestination } from "@/lib/contact-destination"
 import { stageAgentCapture } from "@/lib/control-center/agent-capture"
 
 import { stagingAvailability } from "@/lib/availability"
 import {
   findCustomerByChannel,
-  findOrCreateCustomer,
   normalizePhone,
 } from "@/lib/customers"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import {
   recentChannelActivity,
-  recordInteraction,
   searchCustomerMemory,
 } from "@/lib/memory"
 import type {
@@ -160,21 +159,20 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
     {
       title: "Find-or-create unified customer record",
       description:
-        "Like find_customer_by_channel but inserts a new row if nothing matched, with at-least-one-identifier required. Returns the resolved row.",
+        "Proposes customer identity resolution for owner review. Does not create, merge or change a customer before approval. Use find_customer_by_channel for read-only lookup.",
       inputSchema: {
+        command_id: z.string().uuid().describe("Stable command UUID, reused on retries."),
         name: z.string().max(200).nullable().default(null),
         phone: z.string().max(60).nullable().default(null),
         email: z.string().max(200).nullable().default(null),
       },
     },
     async (args) => {
-      const result = await findOrCreateCustomer(ctx.supabase, ctx.shopId, {
-        name: args.name ?? undefined,
-        phone: args.phone ?? undefined,
-        email: args.email ?? undefined,
-      })
-      if (!result.ok) return errorResult(result.error)
-      return jsonResult({ customer: result.customer, created: result.created })
+      const phone=args.phone?normalizeDestination("sms",args.phone):null
+      const email=args.email?normalizeDestination("email",args.email):null
+      if((args.phone&&!phone)||(args.email&&!email))return errorResult("Confirm the complete customer destination first.")
+      const result=await stageAgentCapture(ctx.supabase,{shopId:ctx.shopId,actorId:ctx.ownerId,source:"mcp",tokenId:ctx.tokenId,commandId:args.command_id},{type:"resolve_customer",payload:{name:args.name,phone,email}})
+      return result.ok?jsonResult(result):errorResult(result.error)
     }
   )
 
@@ -184,8 +182,9 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
     {
       title: "Record a customer touchpoint to shared memory",
       description:
-        "Persists one turn of a conversation (any channel) and embeds it for pgvector recall. Use after every meaningful agent ↔ customer exchange so future agents have context.",
+        "Proposes reported communication history for owner review. No write or embedding occurs before approval. Reported content is never verified inbound evidence or consent.",
       inputSchema: {
+        command_id: z.string().uuid().describe("Stable command UUID, reused on retries."),
         customer_id: z
           .string()
           .uuid()
@@ -208,16 +207,8 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
-      const result = await recordInteraction(ctx.supabase, {
-        shopId: ctx.shopId,
-        customerId: args.customer_id,
-        channel: args.channel,
-        role: args.role,
-        content: args.content,
-        metadata: args.metadata ?? undefined,
-      })
-      if (!result.ok) return errorResult(result.error)
-      return jsonResult({ interaction_id: result.id })
+      const result=await stageAgentCapture(ctx.supabase,{shopId:ctx.shopId,actorId:ctx.ownerId,source:"mcp",tokenId:ctx.tokenId,commandId:args.command_id},{type:"record_interaction",payload:{customer_id:args.customer_id,channel:args.channel,role:args.role,content:args.content,metadata:args.metadata??{}}})
+      return result.ok?jsonResult(result):errorResult(result.error)
     }
   )
 

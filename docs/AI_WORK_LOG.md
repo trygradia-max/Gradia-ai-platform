@@ -89,3 +89,30 @@ evaluation remains unrun; capture prompt wording and its eval expectations now s
 queued rather than saved. Direct customer edits/materialization and MCP memory
 writes remain the next adapter work. This does not complete universal Control Center
 coverage. No push, merge, deploy, production/provider action or founder-file change.
+
+[AI: cursor] [DATE: 2026-10-01] [AREA: platform] [STATUS: done]
+Finished the local record-command slice on `codex/mvp-policy-execution`.
+Owner-agent customer edits, MCP identity resolution, and MCP reported history
+now queue for review and commit only inside the existing approval claim.
+Lead-only matches queue identity resolution instead of creating a customer or
+disappearing. Customer and vehicle writes advance `updated_at`, so a stale
+snapshot rolls back. Verified on the already-initialized disposable stack:
+16 record integration tests, 30 adjacent integration tests, and 16 focused
+unit tests passed; typecheck and touched-file lint passed. No from-zero reset,
+full suite, build, browser pass, push, merge, or deploy. MCP read scoping,
+voice, alerts, crons, and delegated manager approval remain uncovered.
+
+[AI: codex] [DATE: 2026-10-01] [AREA: platform] [STATUS: done]
+Completed verification and hardened the existing local record-command slice.
+Customer/vehicle edits, identity resolution and reported history use existing
+policy-controlled approvals with atomic domain write, audit and claim. Added
+canonical lead identity comparison, field-bound vehicle snapshots and customer-bound
+history references. Final Node 22 results: 1,048 unit tests passed (four intentional
+live skips), 239 integration tests passed (zero skips), lint, offline build and
+post-build typecheck passed. All 75 migrations initialized from zero in a separate
+unlinked disposable stack; all migration probes and 26 relationship checks passed.
+A fictional customer edit was approved in the local browser and verified in the
+database with exactly one decision audit. Local preview preserved. Live model evals
+and broader policy coverage remain outstanding as documented in
+`docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Nothing pushed, merged,
+deployed or sent to production/providers; protected founder checkout unchanged.

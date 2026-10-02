@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { captureCommandId, stageAgentCapture, type CaptureCommand } from "@/lib/control-center/agent-capture"
+import { recordCommandSchema } from "@/lib/control-center/record-command"
 import { readFileSync } from "node:fs"
 const shopId="00000000-0000-4000-8000-000000000001", actorId="00000000-0000-4000-8000-000000000002"
 const commandId=captureCommandId(shopId,"owner_agent","tool-1")
@@ -39,8 +40,23 @@ describe("Agent capture boundary",()=>{
   const handlers=owner.slice(owner.indexOf('  if (block.name === "add_note")'),owner.indexOf('  if (block.name === "update_customer")'))
   expect(handlers.match(/stageAgentCapture\(/g)).toHaveLength(2)
   expect(handlers).not.toMatch(/\.from\(|recordInteraction\(|findOrCreateCustomer\(|upsertCustomerVehicle\(/)
-  expect(owner).toContain('"propose_booking", "add_note", "create_lead"')
-  const mcp=readFileSync("src/lib/mcp/server.ts","utf8").split('// ---------- find_customer_by_channel')[0]
-  expect(mcp).toContain('commandId: args.command_id');expect(mcp).not.toContain('.insert(')
+  expect(owner).toContain('"propose_booking", "add_note", "create_lead", "update_customer"')
+  const edit=owner.slice(owner.indexOf('  if (block.name === "update_customer")'),owner.indexOf('  if (block.name === "propose_booking")'))
+  expect(edit).toContain("prepareCustomerEdit")
+  expect(edit).toContain("queueLeadResolution")
+  expect(edit).not.toMatch(/\.update\(|upsertCustomerVehicle\(|findOrCreateCustomer\(/)
+  expect(owner).not.toContain("findOrCreateCustomer")
+  const mcp=readFileSync("src/lib/mcp/server.ts","utf8")
+  const proposals=mcp.split('// ---------- search_customer_memory')[0]
+  expect(proposals).toContain('type:"resolve_customer"')
+  expect(proposals).toContain('type:"record_interaction"')
+  expect(proposals).not.toMatch(/findOrCreateCustomer\(|recordInteraction\(|\.insert\(/)
+ })
+ it("rejects consent fields and non-canonical destinations before a record command exists",()=>{
+  const stamp="2026-10-01T18:45:12.123456+00:00"
+  const base={customer_id:"00000000-0000-4000-8000-000000000003",before:{name:"Fictional",phone:"+15555550100",email:null},expected_updated_at:stamp,vehicle:null}
+  expect(recordCommandSchema.safeParse({type:"update_customer",payload:{...base,changes:{email:"owner@example.test"}}}).success).toBe(true)
+  expect(recordCommandSchema.safeParse({type:"update_customer",payload:{...base,changes:{sms_consent:true}}}).success).toBe(false)
+  expect(recordCommandSchema.safeParse({type:"update_customer",payload:{...base,changes:{phone:"5555550100"}}}).success).toBe(false)
  })
 })
