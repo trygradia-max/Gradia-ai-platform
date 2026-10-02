@@ -116,3 +116,17 @@ database with exactly one decision audit. Local preview preserved. Live model ev
 and broader policy coverage remain outstanding as documented in
 `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Nothing pushed, merged,
 deployed or sent to production/providers; protected founder checkout unchanged.
+
+[AI: cursor] [DATE: 2026-10-01] [AREA: platform] [STATUS: done]
+Added the first half of normalized lead intake on `codex/mvp-lead-intake`,
+based on `a02fc97`. `record_lead_intake` writes one envelope and one workflow
+transition in the same transaction, deduped on provider plus provider event id.
+The shop id is an explicit argument. Contact text is stored only. The workflow
+stays in `identity_review` with handoff pending. A duplicate, an out-of-order
+explicit thread, and a replay after the row is saved keep a single record and
+do not create a customer, lead, consent row, or approval. Focused result on
+the already-initialized disposable stack: 3 unit tests, 4 integration tests,
+touched-file lint, and typecheck passed. Migration `20261001130000` was applied
+in place (ledger 76); no from-zero reset, full suite, or build. Did not wire
+live SMS, the website form, Meta, or a Chief of Staff card, and did not change
+owner-agent, MCP, approvals, or agent capture. Nothing pushed, merged, or deployed.
