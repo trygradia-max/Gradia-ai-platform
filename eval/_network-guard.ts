@@ -5,8 +5,8 @@ export function allowedTestUrl(raw: string): boolean {
   try {
     const url = new URL(raw)
     return process.env.INTEGRATION === "1" &&
-      process.env.GRADIA_DISPOSABLE_TEST === "gradia-isolated-tests" &&
-      url.origin === "http://127.0.0.1:56531" &&
+      ((process.env.GRADIA_DISPOSABLE_TEST === "gradia-isolated-tests" && url.origin === "http://127.0.0.1:56531") ||
+       (process.env.GRADIA_DISPOSABLE_TEST === "gradia-record-fresh" && url.origin === "http://127.0.0.1:56731")) &&
       !url.username && !url.password
   } catch { return false }
 }

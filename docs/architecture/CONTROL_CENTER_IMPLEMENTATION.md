@@ -464,3 +464,122 @@ voice, alerts, cron transport, granular message purposes, and delegated manager
 approval. The policy milestone is not release-complete. No push, merge,
 deployment, shared migration, provider activation, or founder-file change is
 included. September 11 product scope and the reconciled pricing remain unchanged.
+
+## MCP read admission — October 2
+
+The five data-reading tools and five resources now recheck the current shop-bound
+MCP token, revocation, shop owner and active owner membership before domain queries
+or embedding lookups. The server still scopes every domain query by shop because
+its service client bypasses RLS. The activated revision, not the saved draft, supplies
+the policy. Missing/failed/malformed authority fails closed with a generic denial;
+no active policy preserves the existing authenticated read baseline.
+
+| MCP surface | Required existing policy operations/connectors |
+| --- | --- |
+| Customer lookup, recent customers, active leads, customer detail | `crm.read` / CRM |
+| Recent channel activity, customer timeline | `history.read` / CRM |
+| Customer memory and shop knowledge search | `history.read` / CRM plus memory connector ceiling |
+| Service menu | `menu.read` / CRM |
+| Shop snapshot | Both `crm.read` / CRM and `availability.read` / calendar |
+
+All non-Off modes include read permission. Disabled policy, an effective Off grant,
+or an Off workspace, location, owner-role, connector, risk or exception ceiling
+blocks the read. Risk/exception ceilings apply conservatively until trusted request
+classification exists. Shop knowledge uses the restrictive history-read permission
+plus memory ceiling because the current action catalog has no dedicated knowledge
+read action. The pure phone normalizer is unchanged and reads no shop data.
+
+Verification on Node 22.23.2: **1,093 unit tests passed**, four existing intentional
+live-test skips (94 files); **243 integration tests passed**, zero skips (23 files).
+Focused coverage: 45 unit tests plus four database tests. Tests exercise all ten
+registered denial boundaries with zero downstream reads/provider calls, subsequent
+revocation and policy changes, foreign-shop/owner contexts, disabled scopes,
+malformed authority, failed lookups and saved-versus-activated policy behavior.
+Lint, offline production build, post-build typecheck and whitespace checks passed.
+Commands: `node scripts/isolated-check.mjs unit`, `integration`, `lint`, `build`,
+then `types`, under the existing outbound-denying runner. No migrations added;
+the verified 75-migration schema remains unchanged. Credential-pattern and generated
+artifact inspection includes newly added files. The localhost demo is preserved.
+
+This is per-invocation **read admission**, not a database transaction spanning the
+read/provider request: revocation during an already admitted read cannot cancel it.
+No persistent per-read audit or per-token capability grant model is added here.
+General token capabilities, MCP outbound/calendar proposal staging, voice, alerts,
+cron transport, granular message purposes and delegated manager approval remain
+unfinished. Authorized semantic searches still use the existing embedding adapter;
+none were invoked against real providers during verification. No model prompt was
+changed in this slice. This is local implementation, not release authorization.
+
+## MCP capability grants and remaining proposals — October 2
+
+Every token now has an explicit allowlist of ten data-read surfaces and six proposal
+tools. No wildcard or implied grant exists. The existing Settings token card lets
+the owner select grants at mint time and shows the grants for each token; replace a
+token to change its grants through the UI. Existing owner-only token RLS protects
+management. Migration `20261002120000_mcp_capabilities.sql` adds a non-null, checked
+`capabilities` array with an **empty default for existing and new tokens**. This is
+an intentional restrictive rollout: existing MCP integrations lose read/proposal
+access until an owner mints and configures an explicitly scoped replacement.
+No token is deleted or production credential rotated by this local work.
+
+Read admission requires the exact token grant as well as the previously documented
+current owner and activated policy checks. All six MCP proposal tools now use
+`stage_agent_capture`: lead capture, identity resolution, reported history, SMS,
+email and booking. The database locks/checks the same-shop token, revocation and
+proposal grant during staging. Stable command IDs bind retries to one pending row;
+changed payloads conflict. Trusted attribution overrides caller source labels.
+Approval rechecks the token grant, so removal/revocation holds already queued MCP
+work. Legacy queued MCP work without valid token attribution is also held, never
+implicitly grandfathered. Shop policy, Shadow Mode, consent, proof and calendar
+execution checks remain in force. Token permission never grants direct execution.
+
+SMS/email proposals require the referenced customer and exact canonical destination
+in the same shop and always stage as marketing. Service classification, proof
+injection and hidden reference/transport fields are rejected by the RPC. Existing
+execution still enforces destination-bound permission; staging is not permission
+to send. Booking proposals require an owned customer and matching contacts. MCP
+booking staging no longer calls availability/providers: authoritative availability
+is checked in the existing approval executor. Cards therefore do not receive the
+old advisory availability snapshot from MCP staging. No provider call occurs on
+denied proposal dispatch. Pure phone normalization remains a data-free helper.
+
+### Verification
+
+Node 22.23.2: **1,102 unit tests passed**, four intentional live skips (95 files);
+**254 database integration tests passed**, zero skips (24 files). Lint, offline
+production build and post-build typecheck passed. Whitespace, credential-pattern,
+machine-path and generated-artifact scans passed. All **76 migrations** initialized
+from zero; exact ledger, all **26 tenant relationships**, tenant/photo refusal
+probes and atomic-record late-failure probe passed.
+
+The usual disposable stack had a migration from other work (`20261001130000`),
+so migration-up refused it; no repair/reset was attempted. Tests instead used the
+separate unlinked `gradia-record-fresh` stack. The test runner and socket guard now
+explicitly allow either exact project/origin pair, never arbitrary URLs or credentials.
+`--fresh` selects only the dedicated second stack. The original local demo is
+preserved; it has not been migrated to this slice and token-management UI should
+not be used there to verify the new schema. A browser interaction test of the new
+grant picker remains outstanding; build/typecheck cover the UI compilation.
+
+Commands: `supabase --workdir .local-tools/record-fresh db reset --local --no-seed`;
+install `tests/sql/merge-failure.sql` only in `supabase_db_gradia-record-fresh`;
+`node scripts/isolated-check.mjs unit`, `integration --fresh`, `lint`, `build`,
+`types`; `python3 scripts/verify-agent-record-migration.py --fresh`; existing tenant
+and photo probes run with their fixed target/config names substituted in memory
+for this separate disposable stack; `git diff --check`.
+
+The first full integration attempt correctly failed the merge rollback test because
+fresh initialization omitted its test-only fault trigger. Installing the existing
+fixture and rerunning all tests passed; no assertion or release skip was added.
+The old source assertion requiring MCP staging to import availability was replaced
+with a staging-only regression while retaining the central availability checks for
+execution. MCP test tokens now explicitly receive the capabilities used by their
+fixtures; empty, unknown, wrong-shop and removed grants have separate denial tests.
+
+Remaining limits: no persistent per-read audit, no cancellation of already admitted
+reads or external work, no self-service in-place grant editing (revoke/reissue), and
+no live model/tool-routing evaluation. Read-admission race limitations above remain.
+The wider voice/alert/cron adapters, granular message purposes and delegated manager
+approval are still unfinished. Tool schema changes require live evaluation before
+release activation; no real provider/model was contacted here. No push, merge,
+deployment, shared database change or founder-file change is included.

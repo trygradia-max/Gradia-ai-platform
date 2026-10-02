@@ -647,6 +647,7 @@ export type BiMessageRow = {
 }
 
 export type McpTokenRow = {
+  capabilities: import("@/lib/mcp/capabilities").McpCapability[]
   id: string
   shop_id: string
   name: string

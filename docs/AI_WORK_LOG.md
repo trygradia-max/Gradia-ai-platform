@@ -180,3 +180,32 @@ touched-file lint and typecheck passed. Migration `20261002075347` was applied i
 (`meta_graph_lead_field_retrieval` remains), did not map in-body `field_data`, and did not
 build an OAuth connect screen, a Settings tile, a Chief of Staff card, or A2P. Nothing
 pushed, merged, or deployed.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added the next bounded Control Center adapter: current-authority admission for
+all ten MCP data-reading tools/resources. Rechecks token/shop/current owner and
+membership, then the activated policy; Off and unavailable authority deny before
+business data or embedding access. Reuses existing policies/settings, no schema or
+UI added. 1,093 unit tests passed (four intentional live skips), 243 integration
+tests passed (zero skips), lint, offline Node 22 build and post-build typecheck
+passed. PR #50's prior a02fc97 checks were both green before starting. New work
+remains local. No production/provider activity or founder-file changes. Per-token
+capability grants, read audit, in-flight revocation semantics and remaining MCP
+proposal/transport policy coverage are explicitly not complete; see the October 2
+section of docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added explicit per-token MCP read/proposal grants in the existing Settings card and
+migration 76 (existing tokens default to no grants). Routed remaining booking,
+SMS and email proposals through durable policy-controlled staging with customer/
+destination validation, stable command IDs and token checks at staging and approval.
+Removed provider-reaching booking preflight; approval retains authoritative checks.
+Final Node 22 verification: 1,102 unit tests (four live skips), 254 integration tests
+(zero skips), lint, offline build and post-build typecheck passed. Fresh exact
+76-migration ledger, all 26 tenant relationships and refusal/rollback probes passed.
+Used the separate disposable fresh stack after the usual stack's unrelated extra
+migration caused migration-up refusal; preserved that stack and the local demo.
+Existing fault fixture was installed before the passing full integration rerun.
+Release requires explicit replacement of legacy unscoped tokens and live tool evals;
+new grant-picker browser testing remains outstanding. See the implementation report.
+No push, merge, deployment, production/provider activity or founder-file changes.
