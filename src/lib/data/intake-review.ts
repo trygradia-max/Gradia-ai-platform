@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 const item = z.object({
   id: z.string().uuid(), channel: z.enum(["sms", "website_form", "meta", "synthetic"]),
   provider: z.string(), state: z.literal("identity_review"), revision: z.number().int().positive(),
+  event_count: z.number().int().positive(),
   last_received_at: z.string(), payload: z.record(z.string(), z.string()),
 })
 const queue = z.object({total:z.number().int().nonnegative(),items:z.array(item)})

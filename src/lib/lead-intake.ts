@@ -46,7 +46,7 @@ const leadIntakeResultSchema = z.object({
   workflow_id: z.string().uuid(),
   transition_id: z.string().uuid(),
   revision: z.number().int().positive(),
-  state: z.literal("identity_review"),
+  state: z.enum(["identity_review", "identity_linked"]),
 })
 
 export type LeadIntakeResult = {
@@ -55,7 +55,7 @@ export type LeadIntakeResult = {
   workflowId: string
   transitionId: string
   revision: number
-  state: "identity_review"
+  state: "identity_review" | "identity_linked"
 }
 
 /**

@@ -71,3 +71,79 @@ Final lint, offline production build and post-build typecheck passed on the fina
 UI. Whitespace and changed-file credential/runtime-artifact scans passed. Original
 founder checkout and CONTEXT.md hash were preserved. This slice is committed locally;
 no push, merge, deployment or production migration is included.
+
+
+## Owner-reviewed customer linking — October 2, 2026
+
+This follow-on supersedes the read-only limitation above. The existing `/intake`
+queue now lets the actual active shop owner search up to 20 same-shop customers,
+explicitly select one and confirm the identity. CRM-read managers retain read-only
+access. This does not infer consent, create a customer, link a vehicle, qualify a
+lead, dismiss an intake or send a communication. New customers still use the
+existing CRM. No additional settings screen or execution engine is introduced.
+
+Migration `20261002140000_intake_identity_link.sql` is migration 80. A session-only,
+fixed-search-path RPC serializes on the shop and workflow, verifies active ownership,
+the reviewed workflow revision and the exact current customer snapshot, then writes
+the customer link, revision and actor-attributed decision in one transaction. A
+unique command identity makes exact retries idempotent; changed bindings and stale
+reviews fail closed. Concurrent distinct decisions have one winner. No direct
+client table-write grant is added. Auth-user deletion can null historical actor IDs.
+
+Additional evidence, including late arrivals, reopens identity review. Duplicate
+provider events do not reopen it. Event count now counts envelopes, separately from
+the workflow revision which also includes human decisions. Customer deletion retains
+the workflow with a nullable link; future qualification must require a live owned
+customer rather than trusting state alone. The existing atomic customer merge now
+moves the workflow link to the surviving customer. Historical decision snapshots
+retain the original reviewed identity; consent-preservation logic is unchanged.
+
+### Verification and limitations
+
+Node 22.23.2, final implementation:
+- 1,134 unit tests passed in 100 files; four intentional live-provider skips.
+- 287 integration tests passed in 29 files; zero skips, synthetic data only.
+- Lint, offline production build and post-build typecheck passed.
+- All 80 migrations applied from zero and exactly matched the disposable ledger.
+- All 26 existing tenant relationship definitions and tenant/photo refusal probes
+  passed. The atomic-record rollback/ACL probe passed.
+- Nine new database cases cover concurrent retries, competing decisions, unauthorized
+  and foreign references, stale/forged snapshots, evidence reopening, immutable
+  command bindings, injected rollback, scoped search, and merge success/rollback.
+- Six new action tests cover validation, success/retry, failed or malformed replies
+  and uncertain outcomes. No automatic retry is attempted.
+
+The first integration run found one obsolete assertion that workflows had no
+`customer_id` column. It now asserts that intake leaves the new column null, retaining
+the no-automatic-identity guarantee. The final full suite passed after this correction.
+
+Exact commands (using the isolated Node 22 runtime):
+
+```sh
+supabase --workdir .local-tools/record-fresh db reset --local --no-seed
+node scripts/isolated-check.mjs unit
+node scripts/isolated-check.mjs integration --fresh
+node scripts/isolated-check.mjs lint
+node scripts/isolated-check.mjs build
+node scripts/isolated-check.mjs types
+python3 scripts/verify-agent-record-migration.py --fresh
+git diff --check
+```
+
+The test-stack setup installs `tests/sql/merge-failure.sql` and
+`tests/sql/intake-link-failure.sql` only in the disposable database; neither fixture
+is a production migration. Existing tenant/photo probes were executed with only
+the fixed target/config names substituted in memory to `gradia-record-fresh`.
+The workflow link uses a same-shop composite foreign key with nullable deletion.
+
+The queue still displays only the latest envelope, not a complete evidence timeline.
+An owner must check the existing customer/conversation separately; multiple or
+late submissions are not yet fully reviewable here. Linked workflows disappear
+from the unresolved queue, with success feedback, but a completed-decision history
+screen and qualification continuation are not implemented. Interactive browser and
+accessibility acceptance remain required. These limitations prevent treating this
+slice as a complete sellable intake workflow.
+
+The prior read-only slice (`81d086f`) is now pushed. This customer-linking slice is
+committed locally separately. Shared Supabase, providers, deployment settings and
+the protected founder checkout were untouched. This is not pilot activation.

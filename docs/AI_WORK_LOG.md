@@ -255,3 +255,20 @@ regressions passed; interactive browser/a11y acceptance remains outstanding.
 Next is reviewed identity linking and atomic workflow advancement, not provider
 activation. See docs/architecture/LEAD_INTAKE_REVIEW.md. Local commit only; no push,
 merge, deployment, production/provider activity or protected founder-file change.
+
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Pushed the existing intake-review slice at 81d086f to codex/mvp-lead-intake. Built
+owner-confirmed linking to an existing same-shop customer in the existing queue.
+Database-enforced active-owner authorization, exact customer snapshot and workflow
+revision checks, durable command dedupe and atomic audit/link updates prevent stale,
+foreign or duplicate decisions. New evidence reopens review; duplicate intake does
+not. Existing atomic customer merges preserve workflow links and immutable decision
+history, with rollback coverage. No consent inference, delivery or qualification.
+Migration 80 applied from zero to the unlinked disposable stack. Final Node 22:
+1,134 units passed (four live skips), 287 integrations passed (zero skips), lint,
+offline build and post-build types passed; exact 80-migration ledger, all 26 prior
+tenant constraints and refusal/rollback probes passed. Full evidence history,
+vehicle linking, qualification and interactive browser acceptance remain outstanding.
+See docs/architecture/LEAD_INTAKE_REVIEW.md. New slice is local only; no merge,
+deployment, shared database/provider activity or protected founder-file changes.

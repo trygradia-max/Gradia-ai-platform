@@ -147,7 +147,7 @@ describe.skipIf(!INTEGRATION)("durable lead intake record", () => {
       thread_key: threadKey,
       last_envelope_id: first.envelopeId,
     })
-    expect(workflow.data).not.toHaveProperty("customer_id")
+    expect(workflow.data!.customer_id).toBeNull() // Intake never infers the new explicit identity link.
     expect(workflow.data).not.toHaveProperty("lead_id")
     expect(Date.parse(workflow.data!.last_received_at)).toBe(Date.parse(later.receivedAt))
 
