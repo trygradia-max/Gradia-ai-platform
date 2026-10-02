@@ -272,3 +272,20 @@ tenant constraints and refusal/rollback probes passed. Full evidence history,
 vehicle linking, qualification and interactive browser acceptance remain outstanding.
 See docs/architecture/LEAD_INTAKE_REVIEW.md. New slice is local only; no merge,
 deployment, shared database/provider activity or protected founder-file changes.
+
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Pushed verified customer-linking commit adcfdf9 on codex/mvp-lead-intake. Built the
+next bounded slice: read-only, paginated intake evidence and decision history,
+including late submissions and completed identity decisions. Session-only SQL
+checks live owner/CRM-read manager authority and same-shop relationships. Revision-
+anchored continuation rejects stale history; historical customer snapshots remain
+separate from current records. Provider/internal evidence IDs are withheld. Reads
+have no domain, consent or delivery effects. Migration 81 adds only the read RPC.
+Final Node 22: 1,144 unit passes (four intentional live skips), 293 integration
+passes (zero skips), lint, offline build and post-build types passed. Fresh exact
+81-migration ledger, all 26 tenant relationships and refusal/rollback probes passed.
+Interactive browser/a11y acceptance and completed-history search remain outstanding.
+Vehicle linking and qualification remain next. See docs/architecture/LEAD_INTAKE_REVIEW.md.
+New history slice is committed locally, not pushed; no merge, deployment, production,
+provider activity or protected founder-file changes.

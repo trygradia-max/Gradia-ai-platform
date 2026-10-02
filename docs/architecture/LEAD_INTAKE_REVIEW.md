@@ -147,3 +147,70 @@ slice as a complete sellable intake workflow.
 The prior read-only slice (`81d086f`) is now pushed. This customer-linking slice is
 committed locally separately. Shared Supabase, providers, deployment settings and
 the protected founder checkout were untouched. This is not pilot activation.
+
+
+## Evidence and decision history — October 2, 2026
+
+The customer-linking slice at `adcfdf9` is now pushed. This next local slice adds
+`/intake/[workflowId]?shop=...`, reached from each existing queue card. It supersedes
+the latest-envelope-only visibility limitation: the separate read-only history
+shows all submissions and owner identity decisions in bounded pages of 20, ordered
+by durable workflow revision. Received and recorded times are shown independently,
+so late evidence remains visible in its actual recording order. Queue previews are
+explicitly labelled as the latest submission.
+
+Migration `20261002150000_intake_history.sql` adds one fixed-search-path, stable,
+session-only read function. It authorizes the actual active owner or an active
+manager with `crm.read`, then scopes workflow, transitions and envelopes to the
+shop. Anonymous callers, service clients without a user session, staff, foreign
+workflows and revoked membership/grants are denied. No table grants or relationships
+change. Returned evidence is restricted to customer-facing submission fields;
+provider identifiers, internal evidence references and command IDs are omitted.
+
+History also remains readable for completed links. Decisions display the original
+customer snapshot and owner user ID, explicitly separated from current customer
+state; deleted actors have a truthful fallback. A missing current customer shows a
+hold warning. Reading cannot qualify a lead, restore a customer, grant consent,
+change a workflow or send a communication.
+
+Continuation pages carry the workflow revision. A changed revision fails with an
+explicit refresh-required state rather than mixing versions across pages. Each
+request independently checks current permissions. No cross-request cache is used.
+Database/read failures remain errors, never an empty-history claim.
+
+### Verification
+
+Node 22.23.2 final checks passed:
+- 1,144 units in 101 files; four intentional live-test skips.
+- 293 integrations in 30 files; zero skips.
+- Lint, offline production build and post-build typecheck.
+- Fresh initialization applied all 81 migrations; the ledger exactly matched disk.
+- All 26 reviewed tenant relationship definitions, tenant/photo inconsistent-data
+  refusal probes and the atomic-record rollback/ACL probe.
+- Whitespace and changed-file credential, runtime-artifact and machine-path scans.
+
+Commands: `node scripts/isolated-check.mjs unit`, `integration --fresh`, `lint`,
+`build`, then `types`; `supabase --workdir .local-tools/record-fresh db reset --local
+--no-seed`; `python3 scripts/verify-agent-record-migration.py --fresh`; `git diff
+--check`. Both existing synthetic failure fixtures were installed after reset.
+Tenant/photo probes used the same in-memory disposable-target substitutions
+previously documented. No shared stack or provider credentials were used.
+
+Ten new unit cases cover validation, response binding, stale/failed reads, escaped
+presentation, historical versus current identity, omitted provider IDs and missing
+actors/customers. Six new integration cases cover late evidence and pagination,
+cross-tenant/role denial, grant removal and revocation, stale pages, completed
+historical snapshots after customer edits, and zero mutation across workflow,
+evidence, decisions, customers and business/communication tables.
+
+Limitations: interactive browser/a11y acceptance remains pending; this read view
+does not prove the human read every page. Identity confirmation remains in the
+existing owner queue. A completed history is accessible by its scoped URL, but a
+workspace-wide completed-history search/list is not implemented. Vehicle linking,
+qualification and channel activation remain separate next dependencies. No second
+settings screen, automatic identity resolution or communication executor was added.
+
+GitHub reported no deployment for pushed commit `adcfdf9`; its exact branch Preview
+exclusion remains present. The new history slice is local only. The protected
+founder checkout remains on its original main commit, with the founder CONTEXT.md
+hash unchanged. No production/shared Supabase, merge or deployment operations occurred.
