@@ -130,3 +130,18 @@ touched-file lint, and typecheck passed. Migration `20261001130000` was applied
 in place (ledger 76); no from-zero reset, full suite, or build. Did not wire
 live SMS, the website form, Meta, or a Chief of Staff card, and did not change
 owner-agent, MCP, approvals, or agent capture. Nothing pushed, merged, or deployed.
+
+[AI: cursor] [DATE: 2026-10-01] [AREA: platform] [STATUS: done]
+Wired the existing Twilio inbound SMS webhook on `codex/mvp-lead-intake` through
+`record_lead_intake`. After signature verification and the provider-event claim,
+each MessageSid writes one intake envelope and one workflow transition. A
+duplicate delivery and a retry after the row is saved keep that single record;
+the first payload wins, and the sender phone is not a thread key. The intake
+write does not create a customer, lead, consent row, or approval. The existing
+SMS path still resolves or creates a customer, applies STOP/START consent, and
+stages `create_lead` for review when the classifier marks a lead. Verified on
+the disposable stack: 5 lead-intake unit tests, 77 webhook unit tests, 5
+lead-intake integration tests, and 14 Twilio inbound replay integration tests
+passed; touched-file lint passed. No website-form handler exists in this tree,
+so it was not built. Did not build Meta lead ads or a Chief of Staff card.
+Nothing pushed, merged, or deployed.

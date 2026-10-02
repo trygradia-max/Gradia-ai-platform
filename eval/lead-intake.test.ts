@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { leadIntakeInputSchema } from "@/lib/lead-intake"
+import { inboundSmsIntakeInput, leadIntakeInputSchema } from "@/lib/lead-intake"
 
 const valid = {
   shopId: "00000000-0000-4000-8000-000000000001",
@@ -48,5 +48,40 @@ describe("lead intake input", () => {
     }
     expect(sql).toContain("UNIQUE (provider, provider_event_id)")
     expect(sql).toContain("identity_review")
+  })
+})
+
+describe("inbound SMS intake input", () => {
+  it("stores the sender address and message with an empty thread key", () => {
+    const mapped = inboundSmsIntakeInput({
+      shopId: valid.shopId,
+      messageSid: " SM123 ",
+      from: " +15555550111 ",
+      body: "  Fictional text  ",
+      receivedAt: valid.receivedAt,
+    })
+    expect(mapped).toEqual({
+      shopId: valid.shopId,
+      channel: "sms",
+      provider: "twilio",
+      providerEventId: "SM123",
+      receivedAt: valid.receivedAt,
+      evidenceRef: null,
+      threadKey: null,
+      payload: { phone: "+15555550111", message: "Fictional text" },
+    })
+    expect(leadIntakeInputSchema.safeParse(mapped).success).toBe(true)
+  })
+
+  it("keeps a blank body out of the payload", () => {
+    const mapped = inboundSmsIntakeInput({
+      shopId: valid.shopId,
+      messageSid: "SM124",
+      from: "+15555550111",
+      body: "   ",
+      receivedAt: valid.receivedAt,
+    })
+    expect(mapped.threadKey).toBeNull()
+    expect(mapped.payload).toEqual({ phone: "+15555550111" })
   })
 })

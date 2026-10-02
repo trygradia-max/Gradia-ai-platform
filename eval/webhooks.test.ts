@@ -81,6 +81,20 @@ vi.mock("@/lib/sms-drafter", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sms-drafter")>()),
   draftSmsReply: vi.fn(async () => null),
 }))
+vi.mock("@/lib/lead-intake", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/lead-intake")>()
+  return {
+    ...actual,
+    recordLeadIntake: vi.fn(async () => ({
+      status: "recorded" as const,
+      envelopeId: "env-1",
+      workflowId: "wf-1",
+      transitionId: "tr-1",
+      revision: 1,
+      state: "identity_review" as const,
+    })),
+  }
+})
 // ── Vapi route dependencies (P0-007 suite below) ──
 vi.mock("@/lib/call-records", () => ({
   persistCallRecord: vi.fn(async () => {}),
@@ -424,6 +438,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   let findOrCreateMock: any
   let rateLimitMock: any
   let draftMock: any
+  let intakeMock: any
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const savedEnv: Record<string, string | undefined> = {}
@@ -445,6 +460,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     findOrCreateMock = vi.mocked((await import("@/lib/customers")).findOrCreateCustomer)
     rateLimitMock = vi.mocked((await import("@/lib/rate-limit")).checkRateLimit)
     draftMock = vi.mocked((await import("@/lib/sms-drafter")).draftSmsReply)
+    intakeMock = vi.mocked((await import("@/lib/lead-intake")).recordLeadIntake)
   })
   afterAll(() => {
     for (const [k, v] of Object.entries(savedEnv)) {
@@ -468,12 +484,21 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     findOrCreateMock.mockResolvedValue({ ok: false, error: "no customer" })
     rateLimitMock.mockResolvedValue({ allowed: true, remaining: 99, resetInSeconds: 60 })
     draftMock.mockResolvedValue(null)
+    intakeMock.mockResolvedValue({
+      status: "recorded",
+      envelopeId: "env-1",
+      workflowId: "wf-1",
+      transitionId: "tr-1",
+      revision: 1,
+      state: "identity_review",
+    })
   })
 
   it("rejects a forged signature BEFORE any claim — no provider_events reach, no side effects", async () => {
     const res = await post(makeForm(), "not-a-real-signature")
     expect(res.status).toBe(401)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(recordInteractionMock).not.toHaveBeenCalled()
     expect(classifyMock).not.toHaveBeenCalled()
     expect(recordUsageMock).not.toHaveBeenCalled()
@@ -483,16 +508,19 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const res = await post(makeForm(), null)
     expect(res.status).toBe(401)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
   })
 
   it("a forged request cannot poison a MessageSid — the legitimate delivery still processes", async () => {
     const forged = await post(makeForm(), "forged-signature")
     expect(forged.status).toBe(401)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
 
     const real = await post(makeForm())
     expect(real.status).toBe(200)
     expect(claimMock).toHaveBeenCalledTimes(1)
+    expect(intakeMock).toHaveBeenCalledTimes(1)
     expect(claimMock.mock.calls[0][1]).toMatchObject({
       provider: "twilio",
       eventId: SID,
@@ -512,8 +540,25 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(res.status).toBe(200)
     expect(await res.text()).toContain("<Response></Response>")
 
-    // Ordering: claim strictly before the first write and the LLM call.
+    // Ordering: claim strictly before the intake write, then the rest.
     expect(claimMock).toHaveBeenCalledTimes(1)
+    expect(intakeMock).toHaveBeenCalledTimes(1)
+    expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
+      intakeMock.mock.invocationCallOrder[0]
+    )
+    expect(intakeMock.mock.invocationCallOrder[0]).toBeLessThan(
+      recordInteractionMock.mock.invocationCallOrder[0]
+    )
+    expect(intakeMock.mock.calls[0][1]).toEqual({
+      shopId: SHOP.id,
+      channel: "sms",
+      provider: "twilio",
+      providerEventId: SID,
+      receivedAt: expect.any(String),
+      evidenceRef: null,
+      threadKey: null,
+      payload: { phone: "+15035550133", message: "do you do ceramic?" },
+    })
     expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
       recordInteractionMock.mock.invocationCallOrder[0]
     )
@@ -533,6 +578,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(res.status).toBe(200)
     expect(await res.text()).toContain("<Response></Response>")
     expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(classifyMock).not.toHaveBeenCalled()
     expect(recordUsageMock).not.toHaveBeenCalled()
     expect(completeMock).not.toHaveBeenCalled()
@@ -543,6 +589,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     claimMock.mockResolvedValue(claimed("duplicate_processing"))
     const res = await post(makeForm())
     expect(res.status).toBe(200)
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(recordInteractionMock).not.toHaveBeenCalled()
     expect(completeMock).not.toHaveBeenCalled()
     expect(failMock).not.toHaveBeenCalled()
@@ -552,8 +599,21 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     claimMock.mockRejectedValue(new Error("db unreachable"))
     const res = await post(makeForm())
     expect(res.status).toBe(500)
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(recordInteractionMock).not.toHaveBeenCalled()
     expect(classifyMock).not.toHaveBeenCalled()
+  })
+
+  it("an intake write failure fails the claim before a customer lookup or interaction", async () => {
+    intakeMock.mockRejectedValue(new Error("intake down"))
+    const res = await post(makeForm())
+    expect(res.status).toBe(500)
+    expect(intakeMock).toHaveBeenCalledTimes(1)
+    expect(findOrCreateMock).not.toHaveBeenCalled()
+    expect(recordInteractionMock).not.toHaveBeenCalled()
+    expect(classifyMock).not.toHaveBeenCalled()
+    expect(failMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).not.toHaveBeenCalled()
   })
 
   it("processing failure marks the claim failed and returns 5xx so a retry can reprocess", async () => {
@@ -605,6 +665,13 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     fakeDb.tables.interactions = { data: [{ id: "int-existing" }], error: null }
     const res = await post(makeForm())
     expect(res.status).toBe(200)
+    expect(intakeMock).toHaveBeenCalledTimes(1)
+    expect(intakeMock.mock.calls[0][1]).toMatchObject({
+      shopId: SHOP.id,
+      provider: "twilio",
+      providerEventId: SID,
+      threadKey: null,
+    })
     expect(recordInteractionMock).not.toHaveBeenCalled() // deduped on reprocess
     expect(classifyMock).toHaveBeenCalledTimes(1) // pipeline still completes
     expect(completeMock).toHaveBeenCalledTimes(1)
@@ -624,6 +691,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const res = await post(form)
     expect(res.status).toBe(200)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(recordInteractionMock).not.toHaveBeenCalled()
   })
 
@@ -632,6 +700,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const res = await post(makeForm())
     expect(res.status).toBe(200)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(recordInteractionMock).not.toHaveBeenCalled()
   })
 
@@ -640,12 +709,14 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     const res = await post(makeForm())
     expect(res.status).toBe(500)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
   })
 
   it("malformed payload (missing From/To) is acknowledged with zero side effects", async () => {
     const res = await post(new URLSearchParams({ MessageSid: SID }))
     expect(res.status).toBe(200)
     expect(claimMock).not.toHaveBeenCalled()
+    expect(intakeMock).not.toHaveBeenCalled()
     expect(recordInteractionMock).not.toHaveBeenCalled()
   })
 
@@ -670,6 +741,12 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     )
     expect(consentWrites).toHaveLength(1)
     expect(consentWrites[0].args[0]).toMatchObject({p_customer:"cust-1",p_opted_in:false})
+    expect(intakeMock).toHaveBeenCalledTimes(1)
+    expect(intakeMock.mock.calls[0][1].payload).toEqual({
+      phone: "+15035550133",
+      message: "STOP",
+    })
+    expect(intakeMock.mock.calls[0][1].threadKey).toBeNull()
 
     // Replay of the SAME MessageSid: suppressed — no second consent write.
     fakeDb.calls = []
@@ -679,6 +756,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(
       fakeDb.calls.filter((c) => c.table === "record_sms_keyword" && c.method === "rpc")
     ).toHaveLength(0)
+    expect(intakeMock).toHaveBeenCalledTimes(1)
   })
 
   it("a consent write failure fails the claim (compliance never fails silently)", async () => {

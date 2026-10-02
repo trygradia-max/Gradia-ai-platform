@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { recordLeadIntake, type LeadIntakeInput } from "@/lib/lead-intake"
+import { inboundSmsIntakeInput, recordLeadIntake, type LeadIntakeInput } from "@/lib/lead-intake"
 import {
   INTEGRATION,
   anonClient,
@@ -288,5 +288,65 @@ describe.skipIf(!INTEGRATION)("durable lead intake record", () => {
     })
     expect(anonCall.error).not.toBeNull()
     expect(await count("leads")).toBe(0)
+  })
+
+  it("records an inbound SMS without a customer, consent row, approval, or phone thread", async () => {
+    const messageSid = `SM${Date.now()}`
+    const delivery = {
+      shopId: shop.shopId,
+      messageSid,
+      from: ` ${PHONE} `,
+      body: " Fictional inbound text ",
+      receivedAt: "2026-10-01T17:00:00.000Z",
+    }
+    const customersBefore = await count("customers")
+    const leadsBefore = await count("leads")
+    const consentBefore = await count("customer_channel_permissions")
+    const approvalsBefore = await count("pending_actions")
+    const saved = await recordLeadIntake(db, inboundSmsIntakeInput(delivery))
+    expect(saved).toMatchObject({ status: "recorded", revision: 1, state: "identity_review" })
+
+    const envelope = await db
+      .from("lead_intake_envelopes")
+      .select("shop_id, channel, provider, provider_event_id, thread_key, payload")
+      .eq("id", saved.envelopeId)
+      .single()
+    expect(envelope.error).toBeNull()
+    expect(envelope.data).toEqual({
+      shop_id: shop.shopId,
+      channel: "sms",
+      provider: "twilio",
+      provider_event_id: messageSid,
+      thread_key: null,
+      payload: { phone: PHONE, message: "Fictional inbound text" },
+    })
+
+    const replay = await recordLeadIntake(db2, inboundSmsIntakeInput({
+      ...delivery,
+      body: "Retry must not replace the saved text",
+      from: "+15555550999",
+    }))
+    expect(replay).toMatchObject({
+      status: "already_recorded",
+      envelopeId: saved.envelopeId,
+      workflowId: saved.workflowId,
+      transitionId: saved.transitionId,
+    })
+    const kept = await db
+      .from("lead_intake_envelopes")
+      .select("payload, thread_key")
+      .eq("id", saved.envelopeId)
+      .single()
+    expect(kept.data).toEqual({
+      payload: { phone: PHONE, message: "Fictional inbound text" },
+      thread_key: null,
+    })
+    expect(
+      (await db.from("lead_workflow_transitions").select("id").eq("envelope_id", saved.envelopeId)).data,
+    ).toHaveLength(1)
+    expect(await count("customers")).toBe(customersBefore)
+    expect(await count("leads")).toBe(leadsBefore)
+    expect(await count("customer_channel_permissions")).toBe(consentBefore)
+    expect(await count("pending_actions")).toBe(approvalsBefore)
   })
 })

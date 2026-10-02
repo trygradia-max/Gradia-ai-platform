@@ -47,6 +47,35 @@ export type LeadIntakeResult = {
   state: "identity_review"
 }
 
+/**
+ * Verified inbound SMS. The shop id is the number binding, and the
+ * MessageSid is the provider event id. The sender address is stored as
+ * text. It is not a thread key, a customer lookup, or a consent record.
+ */
+export function inboundSmsIntakeInput(input: {
+  shopId: string
+  messageSid: string
+  from: string
+  body: string
+  receivedAt: string
+}): LeadIntakeInput {
+  const phone = input.from.trim()
+  const message = input.body.trim()
+  return {
+    shopId: input.shopId,
+    channel: "sms",
+    provider: "twilio",
+    providerEventId: input.messageSid.trim(),
+    receivedAt: input.receivedAt,
+    evidenceRef: null,
+    threadKey: null,
+    payload: {
+      ...(phone ? { phone } : {}),
+      ...(message ? { message } : {}),
+    },
+  }
+}
+
 export async function recordLeadIntake(
   db: SupabaseClient,
   input: LeadIntakeInput,
