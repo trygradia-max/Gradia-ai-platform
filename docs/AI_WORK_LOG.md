@@ -145,3 +145,20 @@ lead-intake integration tests, and 14 Twilio inbound replay integration tests
 passed; touched-file lint passed. No website-form handler exists in this tree,
 so it was not built. Did not build Meta lead ads or a Chief of Staff card.
 Nothing pushed, merged, or deployed.
+
+[AI: cursor] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added website-form intake on `codex/mvp-lead-intake`. `POST /api/intake/website-form`
+calls `record_lead_intake` once per caller-supplied submission id, with provider
+`website_form`. This app has no website-form token or public form key — a quote
+`public_token` identifies one quote, not a lead form — so the shop is the
+signed-in owner's active shop. A missing shop, a body shop id that does not
+match that session, or a submission id already stored for another shop does not
+write. An unsigned body cannot name the tenant, and no public marketing site
+was added. Submitted fields are stored as text. Phone and email are not a
+thread key unless the caller sends one. The write does not create a customer,
+lead, consent row, or approval. Disposable-stack result: 5 website-form
+integration tests, 5 existing lead-intake integration tests, 14 Twilio inbound
+replay integration tests, 9 lead-intake unit tests, 6 tenant-scoping unit tests,
+and 77 webhook unit tests passed; touched-file lint and typecheck passed. Did
+not build A2P, Twilio Trust Hub, Meta lead ads, or a Chief of Staff card, and
+did not push, merge, or deploy.
