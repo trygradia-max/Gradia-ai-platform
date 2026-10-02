@@ -1,3 +1,5 @@
+> **PRECEDENCE UPDATE 2026-09-24.** For sellable MVP requirements, the five September 11, 2026 documents named in `CLAUDE.md` outrank this map, `11-decision-log.md`, `GRADIA_MVP_PLAN.md`, and `CONTEXT.md`. Code and exact-commit evidence govern what is built. Independent production evidence governs LIVE claims. The inventory below remains a historical index.
+
 # 16 — Document Source Map
 
 _The reconciliation layer: every existing planning/spec/ops document, what it controls, its status, and who wins on conflict. Maintained by the Organizer. Created 2026-07-25._

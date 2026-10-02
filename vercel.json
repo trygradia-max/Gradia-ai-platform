@@ -3,7 +3,8 @@
     "deploymentEnabled": {
       "fix/p0-tenant-policy-safety": false,
       "feat/mvp-team-permissions": false,
-      "codex/mvp-control-center": false
+      "codex/mvp-control-center": false,
+      "codex/mvp-documentation-reconciliation": false
     }
   },
   "crons": [

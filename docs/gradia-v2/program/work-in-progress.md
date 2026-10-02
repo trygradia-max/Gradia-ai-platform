@@ -1,3 +1,5 @@
+> **HISTORICAL BOARD.** Active MVP dependency status is the sequence document, not this sprint board. As of 2026-09-24, PR #48 is merged to `main` `247bb50` and another task may be handling release gates. This documentation pass does not merge, deploy, or activate providers.
+
 # Program — Work In Progress
 
 _Created 2026-07-25 by the Organizer. The live WIP board. **Every Builder session checks this file before starting any work** — that is an invariant, not a courtesy. The Organizer is the only role that edits it._

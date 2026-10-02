@@ -13,6 +13,18 @@
 > See [verified baseline and production gate](#verified-baseline-and-production-gate).
 > This documentation-only update does not authorize feature implementation or lift
 > any release gate. Protected `CONTEXT.md` and application code remain unchanged.
+>
+> **Evidence addendum, 2026-09-24 (Pacific).** Fresh `origin/main` is
+> `247bb5056002b97b57bbafd503655f51a498e199`, merge of PR #48, which contains PR #47.
+> Step 1’s membership foundation is merged code, not accepted delegated execution.
+> Step 2’s policy contract and versioned draft editor are merged code. **Drafts do
+> not activate policy.** Runtime authority, effective-policy preview, trusted
+> context, activation, durable decisions and delegated manager approval execution
+> remain the next incomplete dependency. Do not start a second policy editor.
+> Production write guards and channel activation were not re-inspected in this
+> documentation pass; the September 15 hold below stays the last documented gate.
+> The 15 September 11 decisions are not reopened. Prices, trial caps and seat
+> terms stay unresolved in [post-MVP ideas](POST_MVP_IDEAS.md).
 
 ## MVP NOW
 
@@ -70,8 +82,8 @@ workflow acceptance remain implementation/pilot gates, not completed P0 claims.
 | Order | Bounded outcome | Reuse / prerequisite | Exit evidence |
 | --- | --- | --- | --- |
 | 0 | P0 and callback foundation completed; production write gate remains | PRs #44/#45, 69 migrations, 26 tenant relationships and accepted founder authentication | Separate founder authorization and controlled acceptance before removing the 35 temporary write guards or widening traffic; provider/cron activation remains independently gated |
-| 1 | Membership and minimum operations scope | `shops`, `shop.ts`, `forShop`, existing appointment/CRM spine | Solo owner and three-person shop; invite/revoke; owner/manager/staff RLS, scoped approvals, assignments and one active location/mobile service area, explicit location identity; additive backfill and tenant tests |
-| 2 | Control Center and command authority | Existing approval executor, autonomy and send policy | READ capability and Off/Suggest/Approval required/Autonomous/Custom controls, approved initial matrix and explicit action grants, connector ceilings, policy version/audit; all reachable tool paths inventoried; old floors retained until replacement tests pass |
+| 1 | Membership and minimum operations scope | `shops`, `shop.ts`, `forShop`, existing appointment/CRM spine | **BUILT / VERIFY on `main` via PR #48 (includes #47), commit `247bb50`.** Reported at #47 head `96321b6`: 921 unit passes + 4 live skips, 183 integration passes, 70 disposable migrations. Still missing: scoped manager approval execution, invitation delivery, full navigation. Do not mark step 1 accepted from the schema alone |
+| 2 | Control Center and command authority | Existing approval executor, autonomy and send policy | **PARTIAL on `main` via PR #48 head `543e3c1`, merge `247bb50`.** Policy contract and owner-only versioned drafts exist. Reported at that head: 1,014 unit passes + 4 live skips, 194 integration passes, 71 migrations from zero; GitHub `checks` and `integration` succeeded before merge. **Drafts do not activate policy.** Next work is runtime authority, not a second editor |
 | 3 | Reliable normalized lead intake | Provider event claims, identity/dedupe, import/form adapters | Durable lead event/transition; synthetic duplicate/reordered input and crash recovery; no identity/consent inference; new/ambiguous lead appears in Chief of Staff |
 | 4 | Whisper inbox and operational handoff | Interactions, call records, SMS/email transports, existing Chief of Staff | In-thread SMS/email replies, thread context, assignment/unread state, immediate manager notifications and optional digest through an independent transactional-email adapter, quiet hours, deduplication and retry state; honest held/unknown status |
 | 5 | Bounded qualification and nurture workflow | Owner-agent tools, drafter context, planner/runtime recipes | Persisted conversation state; asks missing service/vehicle/timing information; approved per-action nurture; STOP and human takeover interrupt automation; replay does not double-send |
@@ -222,6 +234,18 @@ select the transactional-email vendor behind the adapter; privacy/legal review a
 final privacy-policy alignment before production retention (including the separate
 safety-retention schedule); channel readiness and native-calendar authority acceptance
 where applicable. None authorizes live operations in this documentation phase.
+
+## Marketing repository follow-up
+
+Do not edit `Gradia-Web-Cursor` from this platform pass. Local marketing checkout
+`58bef16` on `site-v2` was 22 commits ahead of `origin/site-v2` at the 2026-09-24
+handoff and was not re-fetched here. Needed corrections, when that repo is edited
+on purpose: use one Gradia Agent and Whisper as unified communications; say
+controlled pilot versus five-channel MVP; admit solo and staffed shops; call the
+dashboard Chief of Staff (Chief of Operations is the same screen); do not claim
+SMS, Meta, email reply, or voice are live; do not publish $99/$149/$249, a 14-day
+trial, or seat prices as decided. Outbound email exists in the product via
+connected Gmail; in-thread inbox reply does not.
 
 ## ACCEPTANCE CRITERIA
 

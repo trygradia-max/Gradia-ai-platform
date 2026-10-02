@@ -1,6 +1,10 @@
 # GRADIA — CONTEXT
 
-_Founder decision, 2026-09-03. **This file is the single source of truth for what Gradia is and what gets built next.** Any session — Claude Code, Cursor, or a new Cowork chat — reads this file first and needs nothing else to start work. The `docs/gradia-v2/` library remains the audit trail and the detail reference; it is no longer on the critical path of every session. Where this file and any other plan disagree, **this file wins.**_
+_Founder diary, 2026-09-03. Updated 2026-09-24._
+
+Product requirements for the sellable MVP are the five September 11, 2026 documents: `docs/product/GRADIA_MVP_VISION.md`, `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md`, `docs/architecture/GRADIA_AGENT_ARCHITECTURE.md`, `docs/architecture/AUTONOMY_APPROVAL_MODES.md`, and `docs/architecture/GRADIA_MEMORY.md`. Start with `docs/CHEAT_SHEET.md`. This file is a dated status diary. Where it conflicts with those five documents, those documents win. Future products are listed in `docs/roadmap/POST_MVP_IDEAS.md`. Do not pick the next build from the unchecked boxes below.
+
+The founder checkout at local `main` `20e153a` still has an older uncommitted edit of this file. That working tree was not overwritten.
 
 ---
 
@@ -12,13 +16,13 @@ Every channel flows in: phone calls, SMS, email, website forms, and Meta lead ad
 
 **The Gradia Agent sits on top and operates it.** A new lead arrives; the agent qualifies it over SMS, answers questions, quotes, proposes times, books the appointment, and moves the card through the pipeline. The owner reads what happened and approves what matters. They do not operate the software — they supervise it.
 
-**ICP:** established shops with staff (3–30 employees), already spending on ads. Not solo operators.
+**ICP:** solo detailers and established shops. September 11 replaced the staff-only limit. One active location or mobile service area.
 
 **The commercial claim:** Jobber and Urable are systems of record you operate. Gradia does the work and reports it.
 
-## 2. What Gradia is NOT (D-067 — do not build, do not plan, do not claim)
+## 2. What Gradia is NOT in this MVP (D-067, narrowed 2026-09-24)
 
-Removed from scope entirely. Not "later" — out. Revisit only on a recorded founder decision after a paying customer asks.
+Not in the current pilot. Payments, point of sale, full work orders, win-back campaigns, Google review texts, and an on-the-go owner app are future products in `docs/roadmap/POST_MVP_IDEAS.md`. They are not “never.” Do not build them in an MVP session.
 
 - Jobs, work orders, checklists, team scheduling
 - Invoices, deposits, payments, Stripe Connect, any payment processing
@@ -54,13 +58,13 @@ Gradia is **not** a payment processor and never will be (licensing, underwriting
 
 **Missing for the definition in §1:**
 - Meta lead ads intake
-- Email sending / in-thread reply (read-only today)
+- In-thread email reply. Outbound email already exists through the shop's connected Gmail on approval. Gradia has no transactional sender of its own.
 - The new-lead → qualify → book flow wired as one automatic path
-- CRM holes: no direct "add customer" form, no data export, no VIN field, dual-truth `leads.status` vs `stage`
+- CRM holes: no direct "add customer" form, no VIN field, dual-truth `leads.status` vs `stage`. Data export shipped in PR #37.
 
 ## 4. Build list — in order, one ticket = one session
 
-A session picks the **first unchecked item**, builds it, opens a PR, and stops. It does not start the next one.
+Do not pick the first unchecked box. The live order is `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md`. Next incomplete work is runtime command authority on the merged PR #48 policy drafts. Boxes below are a 2026-09-03 diary. B-03 Chief of Staff shipped in PR #39. B-16 services, prices, and hours shipped in PR #41. The rest of those tickets is still open.
 
 - [x] **B-01 — Data export.** Customers, vehicles, leads, appointments, conversations → CSV + JSON. Tenant-scoped, rate-limited. _Loop proof ticket: small, no money, no schema._
 - [x] **B-00 — Fix Preview auth redirect. BLOCKS THE ACCEPTANCE RULE — do before any further review.** Logging in on a Vercel Preview bounces the user to production because the auth callback uses the hardcoded `GRADIA_DASHBOARD_URL` env var (`https://gradia-ai-platform.vercel.app`) instead of the request's own origin. Consequence: **no ticket can actually be verified on a Preview**, so §6's acceptance rule and autorun rule 8 are unenforceable, and anything previously "verified on Preview" was in fact viewed on production. Fix: derive the redirect origin from the incoming request (or `VERCEL_URL`) and fall back to the env var only when neither is available. Small — auth callback + config read. Add a test that a Preview-host request never redirects to the production host.

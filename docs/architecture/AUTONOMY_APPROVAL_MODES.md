@@ -13,6 +13,12 @@
 > See [verified baseline and production gate](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md#verified-baseline-and-production-gate).
 > This documentation-only update does not authorize feature implementation or lift
 > any release gate. Protected `CONTEXT.md` and application code remain unchanged.
+>
+> **Evidence addendum, 2026-09-24 (Pacific).** PR #48 on `main` (`247bb50`)
+> persists owner-only policy drafts and revision history. Saving a draft does
+> not change `autonomy.ts`, `approvals.ts`, or provider execution. Legacy
+> `suggest` still stages approvals in the live executor; the new SUGGEST mode
+> exists in the draft contract only. September 11 matrix below is unchanged.
 
 ## MVP NOW
 
