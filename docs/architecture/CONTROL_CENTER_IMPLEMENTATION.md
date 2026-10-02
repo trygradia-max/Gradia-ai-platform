@@ -464,3 +464,48 @@ voice, alerts, cron transport, granular message purposes, and delegated manager
 approval. The policy milestone is not release-complete. No push, merge,
 deployment, shared migration, provider activation, or founder-file change is
 included. September 11 product scope and the reconciled pricing remain unchanged.
+
+## MCP read admission — October 2
+
+The five data-reading tools and five resources now recheck the current shop-bound
+MCP token, revocation, shop owner and active owner membership before domain queries
+or embedding lookups. The server still scopes every domain query by shop because
+its service client bypasses RLS. The activated revision, not the saved draft, supplies
+the policy. Missing/failed/malformed authority fails closed with a generic denial;
+no active policy preserves the existing authenticated read baseline.
+
+| MCP surface | Required existing policy operations/connectors |
+| --- | --- |
+| Customer lookup, recent customers, active leads, customer detail | `crm.read` / CRM |
+| Recent channel activity, customer timeline | `history.read` / CRM |
+| Customer memory and shop knowledge search | `history.read` / CRM plus memory connector ceiling |
+| Service menu | `menu.read` / CRM |
+| Shop snapshot | Both `crm.read` / CRM and `availability.read` / calendar |
+
+All non-Off modes include read permission. Disabled policy, an effective Off grant,
+or an Off workspace, location, owner-role, connector, risk or exception ceiling
+blocks the read. Risk/exception ceilings apply conservatively until trusted request
+classification exists. Shop knowledge uses the restrictive history-read permission
+plus memory ceiling because the current action catalog has no dedicated knowledge
+read action. The pure phone normalizer is unchanged and reads no shop data.
+
+Verification on Node 22.23.2: **1,093 unit tests passed**, four existing intentional
+live-test skips (94 files); **243 integration tests passed**, zero skips (23 files).
+Focused coverage: 45 unit tests plus four database tests. Tests exercise all ten
+registered denial boundaries with zero downstream reads/provider calls, subsequent
+revocation and policy changes, foreign-shop/owner contexts, disabled scopes,
+malformed authority, failed lookups and saved-versus-activated policy behavior.
+Lint, offline production build, post-build typecheck and whitespace checks passed.
+Commands: `node scripts/isolated-check.mjs unit`, `integration`, `lint`, `build`,
+then `types`, under the existing outbound-denying runner. No migrations added;
+the verified 75-migration schema remains unchanged. Credential-pattern and generated
+artifact inspection includes newly added files. The localhost demo is preserved.
+
+This is per-invocation **read admission**, not a database transaction spanning the
+read/provider request: revocation during an already admitted read cannot cancel it.
+No persistent per-read audit or per-token capability grant model is added here.
+General token capabilities, MCP outbound/calendar proposal staging, voice, alerts,
+cron transport, granular message purposes and delegated manager approval remain
+unfinished. Authorized semantic searches still use the existing embedding adapter;
+none were invoked against real providers during verification. No model prompt was
+changed in this slice. This is local implementation, not release authorization.

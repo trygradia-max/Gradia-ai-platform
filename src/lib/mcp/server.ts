@@ -25,6 +25,8 @@ import { z } from "zod"
 import { normalizeDestination } from "@/lib/contact-destination"
 import { stageAgentCapture } from "@/lib/control-center/agent-capture"
 
+import { authorizeMcpRead, MCP_READ_DENIED } from "@/lib/mcp/read-authority"
+
 import { stagingAvailability } from "@/lib/availability"
 import {
   findCustomerByChannel,
@@ -141,6 +143,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "find_customer_by_channel")) return errorResult(MCP_READ_DENIED)
       const customer = await findCustomerByChannel(
         ctx.supabase,
         ctx.shopId,
@@ -226,6 +229,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "search_customer_memory")) return errorResult(MCP_READ_DENIED)
       const matches = await searchCustomerMemory(
         ctx.supabase,
         ctx.shopId,
@@ -250,6 +254,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "search_shop_knowledge")) return errorResult(MCP_READ_DENIED)
       const matches = await searchShopKnowledge(
         ctx.supabase,
         ctx.shopId,
@@ -283,6 +288,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "recent_channel_activity")) return errorResult(MCP_READ_DENIED)
       const activity = await recentChannelActivity(
         ctx.supabase,
         ctx.shopId,
@@ -306,6 +312,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       inputSchema: {},
     },
     async () => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "list_services")) return errorResult(MCP_READ_DENIED)
       const { data, error } = await ctx.supabase
         .from("services")
         .select("*")
@@ -514,6 +521,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       mimeType: "application/json",
     },
     async (uri) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "shop_snapshot")) throw new Error(MCP_READ_DENIED)
       const [leadsRes, customersRes, todayAppts] = await Promise.all([
         ctx.supabase
           .from("leads")
@@ -574,6 +582,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       mimeType: "application/json",
     },
     async (uri) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "recent_customers")) throw new Error(MCP_READ_DENIED)
       const { data, error } = await ctx.supabase
         .from("customers")
         .select(
@@ -619,6 +628,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       mimeType: "application/json",
     },
     async (uri) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "active_leads")) throw new Error(MCP_READ_DENIED)
       const { data, error } = await ctx.supabase
         .from("leads")
         .select("*")
@@ -667,6 +677,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       mimeType: "application/json",
     },
     async (uri, variables) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "customer_detail")) throw new Error(MCP_READ_DENIED)
       const id = String(variables.id)
       const { data, error } = await ctx.supabase
         .from("customers")
@@ -701,6 +712,7 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       mimeType: "application/json",
     },
     async (uri, variables) => {
+      if (!await authorizeMcpRead(ctx.supabase, ctx, "customer_timeline")) throw new Error(MCP_READ_DENIED)
       const id = String(variables.id)
       const { data, error } = await ctx.supabase
         .from("interactions")

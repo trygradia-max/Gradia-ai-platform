@@ -116,3 +116,16 @@ database with exactly one decision audit. Local preview preserved. Live model ev
 and broader policy coverage remain outstanding as documented in
 `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Nothing pushed, merged,
 deployed or sent to production/providers; protected founder checkout unchanged.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added the next bounded Control Center adapter: current-authority admission for
+all ten MCP data-reading tools/resources. Rechecks token/shop/current owner and
+membership, then the activated policy; Off and unavailable authority deny before
+business data or embedding access. Reuses existing policies/settings, no schema or
+UI added. 1,093 unit tests passed (four intentional live skips), 243 integration
+tests passed (zero skips), lint, offline Node 22 build and post-build typecheck
+passed. PR #50's prior a02fc97 checks were both green before starting. New work
+remains local. No production/provider activity or founder-file changes. Per-token
+capability grants, read audit, in-flight revocation semantics and remaining MCP
+proposal/transport policy coverage are explicitly not complete; see the October 2
+section of docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md.
