@@ -509,3 +509,77 @@ cron transport, granular message purposes and delegated manager approval remain
 unfinished. Authorized semantic searches still use the existing embedding adapter;
 none were invoked against real providers during verification. No model prompt was
 changed in this slice. This is local implementation, not release authorization.
+
+## MCP capability grants and remaining proposals — October 2
+
+Every token now has an explicit allowlist of ten data-read surfaces and six proposal
+tools. No wildcard or implied grant exists. The existing Settings token card lets
+the owner select grants at mint time and shows the grants for each token; replace a
+token to change its grants through the UI. Existing owner-only token RLS protects
+management. Migration `20261002120000_mcp_capabilities.sql` adds a non-null, checked
+`capabilities` array with an **empty default for existing and new tokens**. This is
+an intentional restrictive rollout: existing MCP integrations lose read/proposal
+access until an owner mints and configures an explicitly scoped replacement.
+No token is deleted or production credential rotated by this local work.
+
+Read admission requires the exact token grant as well as the previously documented
+current owner and activated policy checks. All six MCP proposal tools now use
+`stage_agent_capture`: lead capture, identity resolution, reported history, SMS,
+email and booking. The database locks/checks the same-shop token, revocation and
+proposal grant during staging. Stable command IDs bind retries to one pending row;
+changed payloads conflict. Trusted attribution overrides caller source labels.
+Approval rechecks the token grant, so removal/revocation holds already queued MCP
+work. Legacy queued MCP work without valid token attribution is also held, never
+implicitly grandfathered. Shop policy, Shadow Mode, consent, proof and calendar
+execution checks remain in force. Token permission never grants direct execution.
+
+SMS/email proposals require the referenced customer and exact canonical destination
+in the same shop and always stage as marketing. Service classification, proof
+injection and hidden reference/transport fields are rejected by the RPC. Existing
+execution still enforces destination-bound permission; staging is not permission
+to send. Booking proposals require an owned customer and matching contacts. MCP
+booking staging no longer calls availability/providers: authoritative availability
+is checked in the existing approval executor. Cards therefore do not receive the
+old advisory availability snapshot from MCP staging. No provider call occurs on
+denied proposal dispatch. Pure phone normalization remains a data-free helper.
+
+### Verification
+
+Node 22.23.2: **1,102 unit tests passed**, four intentional live skips (95 files);
+**254 database integration tests passed**, zero skips (24 files). Lint, offline
+production build and post-build typecheck passed. Whitespace, credential-pattern,
+machine-path and generated-artifact scans passed. All **76 migrations** initialized
+from zero; exact ledger, all **26 tenant relationships**, tenant/photo refusal
+probes and atomic-record late-failure probe passed.
+
+The usual disposable stack had a migration from other work (`20261001130000`),
+so migration-up refused it; no repair/reset was attempted. Tests instead used the
+separate unlinked `gradia-record-fresh` stack. The test runner and socket guard now
+explicitly allow either exact project/origin pair, never arbitrary URLs or credentials.
+`--fresh` selects only the dedicated second stack. The original local demo is
+preserved; it has not been migrated to this slice and token-management UI should
+not be used there to verify the new schema. A browser interaction test of the new
+grant picker remains outstanding; build/typecheck cover the UI compilation.
+
+Commands: `supabase --workdir .local-tools/record-fresh db reset --local --no-seed`;
+install `tests/sql/merge-failure.sql` only in `supabase_db_gradia-record-fresh`;
+`node scripts/isolated-check.mjs unit`, `integration --fresh`, `lint`, `build`,
+`types`; `python3 scripts/verify-agent-record-migration.py --fresh`; existing tenant
+and photo probes run with their fixed target/config names substituted in memory
+for this separate disposable stack; `git diff --check`.
+
+The first full integration attempt correctly failed the merge rollback test because
+fresh initialization omitted its test-only fault trigger. Installing the existing
+fixture and rerunning all tests passed; no assertion or release skip was added.
+The old source assertion requiring MCP staging to import availability was replaced
+with a staging-only regression while retaining the central availability checks for
+execution. MCP test tokens now explicitly receive the capabilities used by their
+fixtures; empty, unknown, wrong-shop and removed grants have separate denial tests.
+
+Remaining limits: no persistent per-read audit, no cancellation of already admitted
+reads or external work, no self-service in-place grant editing (revoke/reissue), and
+no live model/tool-routing evaluation. Read-admission race limitations above remain.
+The wider voice/alert/cron adapters, granular message purposes and delegated manager
+approval are still unfinished. Tool schema changes require live evaluation before
+release activation; no real provider/model was contacted here. No push, merge,
+deployment, shared database change or founder-file change is included.

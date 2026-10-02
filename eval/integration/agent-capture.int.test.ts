@@ -1,3 +1,4 @@
+import { MCP_CAPABILITIES } from "@/lib/mcp/capabilities"
 import { randomUUID } from "node:crypto"
 import { afterAll,beforeAll,describe,expect,it,vi } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -20,7 +21,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable Agent capture staging",()=>{
  beforeAll(async()=>{
   db=serviceClient();shop=await seedShop(db,{password:"Synthetic-Capture-927!"});foreign=await seedShop(db,{password:"Synthetic-Capture-927!"})
   owner=await ownerSessionClient(shop.email,"Synthetic-Capture-927!");foreignOwner=await ownerSessionClient(foreign.email,"Synthetic-Capture-927!")
-  token=randomUUID();expect((await db.from("mcp_tokens").insert({id:token,shop_id:shop.shopId,name:"Synthetic token",token_hash:randomUUID()})).error).toBeNull()
+  token=randomUUID();expect((await db.from("mcp_tokens").insert({id:token,shop_id:shop.shopId,name:"Synthetic token",capabilities:[...MCP_CAPABILITIES],token_hash:randomUUID()})).error).toBeNull()
  })
  afterAll(async()=>{if(shop)await cleanup(db,shop);if(foreign)await cleanup(db,foreign)})
  it("unactivated capture creates only an attributed pending action, no domain records",async()=>{
@@ -39,7 +40,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable Agent capture staging",()=>{
   expect((await anonClient().rpc("stage_agent_capture",args())).error).not.toBeNull()
   expect((await foreignOwner.rpc("stage_agent_capture",args())).error?.code).toBe("42501")
   expect((await db.rpc("stage_agent_capture",args({p_actor:foreign.ownerId}))).error?.code).toBe("42501")
-  expect((await owner.rpc("stage_agent_capture",args({p_type:"send_sms"}))).error?.code).toBe("22023")
+  expect((await owner.rpc("stage_agent_capture",args({p_type:"send_sms"}))).error?.code).toBe("42501")
  })
  it.each(["off","read","suggest"] as const)("%s refuses executable staging without a domain effect",async mode=>{
   await publish(mode);const a=args();expect((await owner.rpc("stage_agent_capture",a)).error?.code).toBe("42501")
@@ -64,7 +65,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable Agent capture staging",()=>{
   expect((await db.from("leads").select("id").eq("shop_id",shop.shopId)).data).toHaveLength(1)
  })
  it("MCP requires a live same-shop token; attribution cannot be supplied by tool payload",async()=>{
-  const a=args({p_source:"mcp",p_token:token,p_payload:{...payload,source:"forged",mcp_token_id:randomUUID()}})
+  const a=args({p_source:"mcp",p_token:token,p_type:"create_lead",p_payload:{customer_name:"Fictional",phone:"+15555550189",car_info:null,pin_notes:null,status:"new",source:"forged",mcp_token_id:randomUUID()}})
   expect((await db.rpc("stage_agent_capture",a)).error).toBeNull()
   expect((await db.from("pending_actions").select("payload").eq("id",a.p_command).single()).data?.payload).toMatchObject({source:"mcp",mcp_token_id:token})
   expect((await db.rpc("stage_agent_capture",args({p_source:"mcp",p_token:randomUUID()}))).error?.code).toBe("42501")

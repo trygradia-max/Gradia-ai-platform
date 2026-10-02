@@ -1,3 +1,4 @@
+import { MCP_CAPABILITIES } from "@/lib/mcp/capabilities"
 import { describe, expect, it, vi } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { authorizeMcpRead, MCP_READ_REQUIREMENTS } from "@/lib/mcp/read-authority"
@@ -5,7 +6,7 @@ import { initialPolicyDraft } from "@/lib/control-center/drafts"
 const context = { shopId: "00000000-0000-4000-8000-000000000001", ownerId: "00000000-0000-4000-8000-000000000002", tokenId: "00000000-0000-4000-8000-000000000003" }
 function database(overrides: Record<string, unknown> = {}) {
   const rows: Record<string, unknown> = {
-    mcp_tokens: { id: context.tokenId, shop_id: context.shopId, revoked_at: null },
+    mcp_tokens: { id: context.tokenId, shop_id: context.shopId, revoked_at: null, capabilities: [...MCP_CAPABILITIES] },
     shops: { id: context.shopId, owner_id: context.ownerId },
     shop_memberships: { shop_id: context.shopId, user_id: context.ownerId, role: "owner", active: true },
     control_policy_active: { shop_id: context.shopId, revision: 2 },

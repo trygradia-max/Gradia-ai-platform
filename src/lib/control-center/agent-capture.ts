@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
+import { mcpProposalSchemas } from "@/lib/mcp/proposal"
 import { recordSchemas } from "./record-command"
 
 const commandSchema = z.discriminatedUnion("type", [
   ...recordSchemas,
+  ...mcpProposalSchemas,
   z.object({ type: z.literal("add_note"), payload: z.object({
     content: z.string().trim().min(1).max(8000),
     customer_name: z.string().max(200).nullable(), phone: z.string().max(60).nullable(),

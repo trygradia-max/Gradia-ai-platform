@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
+import { hasMcpCapability } from "./capabilities"
 import { policyDraftSchema } from "@/lib/control-center/drafts"
 import { ACTIONS, type Connector } from "@/lib/control-center/policy"
 
@@ -34,8 +35,8 @@ export async function authorizeMcpRead(
   if (!parsed.success || !requirements) return false
   const { shopId, ownerId, tokenId } = parsed.data
   try {
-    const token = await db.from("mcp_tokens").select("id,shop_id,revoked_at").eq("id", tokenId).eq("shop_id", shopId).maybeSingle()
-    if (token.error || token.data?.id !== tokenId || token.data.shop_id !== shopId || token.data.revoked_at !== null) return false
+    const token = await db.from("mcp_tokens").select("id,shop_id,revoked_at,capabilities").eq("id", tokenId).eq("shop_id", shopId).maybeSingle()
+    if (token.error || token.data?.id !== tokenId || token.data.shop_id !== shopId || token.data.revoked_at !== null || !hasMcpCapability(token.data.capabilities, capability)) return false
     const shop = await db.from("shops").select("id,owner_id").eq("id", shopId).maybeSingle()
     if (shop.error || shop.data?.id !== shopId || shop.data.owner_id !== ownerId) return false
     const member = await db.from("shop_memberships").select("user_id,shop_id,role,active").eq("shop_id", shopId).eq("user_id", ownerId).maybeSingle()

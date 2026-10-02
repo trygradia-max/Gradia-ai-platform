@@ -36,3 +36,18 @@ describe('MCP registered read boundaries',()=>{
   expect(mocks.lookup).toHaveBeenCalledTimes(1)
  })
 })
+
+describe('MCP proposal dispatch',()=>{
+ it.each(['propose_sms','propose_email','propose_booking'])('%s denies without any calendar, data or provider fallback',async name=>{
+  const id='00000000-0000-4000-8000-000000000001'
+  buildMcpServer({shopId:id,ownerId:id,shopName:'Fictional',tokenId:id,supabase:{from,rpc} as unknown as SupabaseClient})
+  rpc.mockResolvedValue({data:null,error:{message:'private denial'}})
+  const result=await mocks.tools.get(name)!({command_id:id,customer_id:id,customer_name:'Fictional',phone:'+15555550111',to_phone:'+15555550111',email:'fictional@example.test',to_email:'fictional@example.test',subject:'Synthetic',body:'Synthetic',reason:null,car_info:null,service:null,iso_start_time:'2027-01-01T18:00:00Z',duration_minutes:90,timezone:null,pin_notes:null,category:'transactional',source:'forged'})
+  expect(result).toMatchObject({isError:true})
+  expect(JSON.stringify(result)).not.toContain('private denial')
+  expect(rpc).toHaveBeenCalledTimes(1)
+  expect(rpc).toHaveBeenCalledWith('stage_agent_capture',expect.objectContaining({p_source:'mcp',p_token:id,p_command:id}))
+  if(name!=='propose_booking')expect(rpc.mock.calls[0][1].p_payload.category).toBe('marketing')
+  for(const effect of [from,mocks.memory,mocks.knowledge,mocks.lookup])expect(effect).not.toHaveBeenCalled()
+ })
+})

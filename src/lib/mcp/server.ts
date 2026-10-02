@@ -27,7 +27,6 @@ import { stageAgentCapture } from "@/lib/control-center/agent-capture"
 
 import { authorizeMcpRead, MCP_READ_DENIED } from "@/lib/mcp/read-authority"
 
-import { stagingAvailability } from "@/lib/availability"
 import {
   findCustomerByChannel,
   normalizePhone,
@@ -349,6 +348,8 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       description:
         "Stages a book_appointment pending_action. On approval, Gradia creates the Google Calendar event (via Aurinko) + booked lead + appointment row + Jobber sync (if connected). iso_start_time MUST be a real ISO datetime — the action falls back to a quoted lead otherwise.",
       inputSchema: {
+        customer_id: z.string().uuid(),
+        command_id: z.string().uuid().describe("Stable proposal UUID; reuse unchanged on retries."),
         customer_name: z.string().min(1).max(200),
         phone: z.string().max(60).default(""),
         car_info: z.string().max(200).nullable().default(null),
@@ -376,43 +377,11 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
-      // P0-004 advisory snapshot for the approval card; the executor
-      // re-checks authoritatively at approve time.
-      const startMs = Date.parse(args.iso_start_time)
-      const availability = Number.isNaN(startMs)
-        ? null
-        : (
-            await stagingAvailability(ctx.supabase, ctx.shopId, {
-              start: args.iso_start_time,
-              end: new Date(startMs + args.duration_minutes * 60_000),
-              path: "stage:mcp_propose_booking",
-            })
-          ).summary
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "book_appointment",
-          payload: {
-            customer_name: args.customer_name,
-            phone: args.phone,
-            car_info: args.car_info,
-            service: args.service,
-            iso_start_time: args.iso_start_time,
-            duration_minutes: args.duration_minutes,
-            timezone: args.timezone,
-            pin_notes: args.pin_notes,
-            email: args.email,
-            source: args.source,
-            ...(availability ? { availability } : {}),
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) return errorResult(error?.message ?? "Insert failed.")
-      const pendingId = (data as { id: string }).id
-      return jsonResult({ ok: true, pending_action_id: pendingId })
+      const result = await stageAgentCapture(ctx.supabase, {
+        shopId: ctx.shopId, actorId: ctx.ownerId, source: "mcp",
+        tokenId: ctx.tokenId, commandId: args.command_id,
+      }, { type: "book_appointment", payload: { customer_id: args.customer_id, customer_name: args.customer_name, phone: args.phone, email: args.email, car_info: args.car_info, service: args.service, iso_start_time: args.iso_start_time, duration_minutes: args.duration_minutes, timezone: args.timezone, pin_notes: args.pin_notes } })
+      return result.ok ? jsonResult(result) : errorResult(result.error)
     }
   )
 
@@ -424,13 +393,14 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       description:
         "Stages a send_sms pending_action. Operator approves in /approvals before Twilio actually sends. Recipient must be in E.164 format — call normalize_phone first.",
       inputSchema: {
+        command_id: z.string().uuid().describe("Stable proposal UUID; reuse unchanged on retries."),
         category: z.enum(["transactional", "marketing"]).default("marketing"),
         to_phone: z
           .string()
           .regex(/^\+\d{8,15}$/, "Must be E.164, e.g. +14155551234"),
         body: z.string().min(1).max(1600),
         customer_name: z.string().max(200).nullable().default(null),
-        customer_id: z.string().uuid().nullable().default(null),
+        customer_id: z.string().uuid(),
         reason: z
           .string()
           .max(200)
@@ -441,27 +411,11 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       },
     },
     async (args) => {
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "send_sms",
-          payload: {
-            category: "marketing",
-            to_phone: args.to_phone,
-            body: args.body,
-            customer_name: args.customer_name,
-            customer_id: args.customer_id,
-            reason: args.reason,
-            source: args.source,
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) return errorResult(error?.message ?? "Insert failed.")
-      const pendingId = (data as { id: string }).id
-      return jsonResult({ ok: true, pending_action_id: pendingId })
+      const result = await stageAgentCapture(ctx.supabase, {
+        shopId: ctx.shopId, actorId: ctx.ownerId, source: "mcp",
+        tokenId: ctx.tokenId, commandId: args.command_id,
+      }, { type: "send_sms", payload: { customer_id: args.customer_id, customer_name: args.customer_name, to_phone: args.to_phone, body: args.body, reason: args.reason, category: "marketing" } })
+      return result.ok ? jsonResult(result) : errorResult(result.error)
     }
   )
 
@@ -473,39 +427,23 @@ export function buildMcpServer(ctx: GradiaMcpContext): McpServer {
       description:
         "Stages a send_email pending_action. On approval, Aurinko sends via the shop's connected Gmail. Plain text body, never HTML.",
       inputSchema: {
+        command_id: z.string().uuid().describe("Stable proposal UUID; reuse unchanged on retries."),
         category: z.enum(["transactional", "marketing"]).default("marketing"),
         to_email: z.string().email(),
         subject: z.string().min(1).max(200),
         body: z.string().min(1).max(8_000),
         customer_name: z.string().max(200).nullable().default(null),
-        customer_id: z.string().uuid().nullable().default(null),
+        customer_id: z.string().uuid(),
         reason: z.string().max(200).nullable().default(null),
         source: z.string().max(40).default("mcp"),
       },
     },
     async (args) => {
-      const { data, error } = await ctx.supabase
-        .from("pending_actions")
-        .insert({
-          shop_id: ctx.shopId,
-          action_type: "send_email",
-          payload: {
-            category: "marketing",
-            to_email: args.to_email,
-            subject: args.subject,
-            body: args.body,
-            customer_name: args.customer_name,
-            customer_id: args.customer_id,
-            reason: args.reason,
-            source: args.source,
-          },
-          requested_by: ctx.ownerId,
-        })
-        .select("id")
-        .single()
-      if (error || !data) return errorResult(error?.message ?? "Insert failed.")
-      const pendingId = (data as { id: string }).id
-      return jsonResult({ ok: true, pending_action_id: pendingId })
+      const result = await stageAgentCapture(ctx.supabase, {
+        shopId: ctx.shopId, actorId: ctx.ownerId, source: "mcp",
+        tokenId: ctx.tokenId, commandId: args.command_id,
+      }, { type: "send_email", payload: { customer_id: args.customer_id, customer_name: args.customer_name, to_email: args.to_email, subject: args.subject, body: args.body, reason: args.reason, category: "marketing" } })
+      return result.ok ? jsonResult(result) : errorResult(result.error)
     }
   )
 

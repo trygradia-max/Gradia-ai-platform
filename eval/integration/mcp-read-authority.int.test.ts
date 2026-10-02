@@ -1,3 +1,4 @@
+import { MCP_CAPABILITIES } from "@/lib/mcp/capabilities"
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -13,7 +14,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)('MCP current read authority',()=>{
   db=serviceClient();shop=await seedShop(db,{password:'Synthetic-Mcp-Read-Only-1002!'})
   foreign=await seedShop(db)
   owner=await ownerSessionClient(shop.email,'Synthetic-Mcp-Read-Only-1002!')
-  const token=await db.from('mcp_tokens').insert({shop_id:shop.shopId,name:'Fictional read test',token_hash:randomUUID()}).select('id').single()
+  const token=await db.from('mcp_tokens').insert({shop_id:shop.shopId,name:'Fictional read test',capabilities:[...MCP_CAPABILITIES],token_hash:randomUUID()}).select('id').single()
   expect(token.error).toBeNull();tokenId=token.data!.id
  })
  afterAll(async()=>{if(shop)await cleanup(db,shop);if(foreign)await cleanup(db,foreign)})
