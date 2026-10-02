@@ -1,0 +1,147 @@
+# AI work log
+
+Every Claude Code, Cursor, and Codex session that changes Gradia appends one
+entry here before it finishes. Read this file before starting so you do not
+redo finished work or overwrite another tool’s uncommitted edit.
+
+## Tag
+
+Use this exact shape:
+
+`[AI: cursor | claude-code | codex] [DATE: YYYY-MM-DD] [AREA: platform | marketing | docs | archive] [STATUS: done | in-progress | blocked]`
+
+Then one short paragraph: what changed, the branch or PR, and what was
+deliberately not done.
+
+Do not tag a merge, deploy, or production change unless that session actually
+merged, deployed, or changed production.
+
+## Entries
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Reconciled MVP documentation onto `codex/mvp-documentation-reconciliation`
+and opened draft PR #49. Recorded the September 11 documents as authority,
+PR #48 as merged draft-only Control Center code, and left founder `CONTEXT.md`
+at local `20e153a` untouched. Did not implement features, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Recorded the founder trial decision: no free trial. A future exception, if
+ever approved, is manual tools only and excludes AI. Recorded payments/POS as
+a future intention, not current MVP. Described fleet accounts and full work
+orders without adding them to the pilot. Added this log and the README rule.
+Moved loose parent-folder clutter into `old-gradia-info/`. Did not move
+`platform/`, `marketing/`, worktrees, or scripts.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Recorded the founder confirmation that full work orders are a future Gradia
+product system, alongside payments and POS. Fleet accounts stay described
+only. No build, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Recorded three future products, not in the MVP: win-back campaigns, Google
+review request texts, and on-the-go owner access by texting a Gradia number
+or an in-app Muse-style conversation. Same Agent. No build, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Added `docs/CHEAT_SHEET.md` and linked it from the README and `CLAUDE.md`.
+No product code, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
+Corrected the diary `CONTEXT.md` on this branch so it no longer outranks the
+five September 11 documents. Fixed the false "no data export" and "email is
+read-only" lines, and stopped the build list from sending the next session to
+billing. Founder checkout untouched. Parent `CLAUDE.md`, pricing, and
+`WHAT_GRADIA_DOES.md` got the same warning. No application code.
+
+[AI: cursor] [DATE: 2026-09-27] [AREA: platform] [STATUS: done]
+Finished the local Control Center execution slice on
+`codex/mvp-policy-execution` at `f2fccee`. Saving a draft still does nothing
+until the owner activates that revision. The approval claim rechecks the
+current policy, and catalog automations are marked automatic instead of
+looking like an owner approval. Verified on the disposable test stack only:
+1,024 unit tests passed with the four existing live skips, 210 integration
+tests passed with zero skips, and the permission/rollback probe passed.
+Preview deploy for this branch is disabled. Not pushed, merged, or deployed.
+Manager approval stays owner-only. Direct tools, voice, alerts, and crons are
+not covered by this claim.
+
+[AI: codex] [DATE: 2026-09-29] [AREA: platform] [STATUS: done]
+Resumed policy execution commit `f2fccee` without recreating completed work.
+Finished disposable browser activation verification and reran 1,024 unit tests
+(four intentional live skips), 210 integration tests (zero skips), lint, offline
+Node 22 build and post-build typecheck. Corrected the historical 70→71 probe to
+remove later dependent tables only inside its rolled-back transaction; all 72
+ledger, permission, relationship and refusal probes pass. Existing editor and
+executor reused; no second settings screen. The bounded execution slice is ready
+for local review; complete direct-tool/transport policy coverage and delegated
+manager approvals remain outstanding. No push, merge, deployment, production or
+provider activity. Founder checkout and CONTEXT.md preserved. See the September 29
+entry in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md` for limitations.
+
+[AI: codex] [DATE: 2026-09-29] [AREA: platform] [STATUS: done]
+Added the bounded Agent capture adapter: owner-Agent notes/leads and MCP lead
+proposals now use a durable, current-policy staging RPC and the existing approval
+executor. Added migration 73, command retry binding, token revocation checks and
+Shadow Mode enforcement. Verified 1,037 unit tests (four existing live skips),
+220 integration tests (zero skips), fresh 73-migration initialization, all existing
+migration probes, lint, offline build and post-build typecheck. Live model routing
+evaluation remains unrun; capture prompt wording and its eval expectations now say
+queued rather than saved. Direct customer edits/materialization and MCP memory
+writes remain the next adapter work. This does not complete universal Control Center
+coverage. No push, merge, deploy, production/provider action or founder-file change.
+
+[AI: cursor] [DATE: 2026-10-01] [AREA: platform] [STATUS: done]
+Finished the local record-command slice on `codex/mvp-policy-execution`.
+Owner-agent customer edits, MCP identity resolution, and MCP reported history
+now queue for review and commit only inside the existing approval claim.
+Lead-only matches queue identity resolution instead of creating a customer or
+disappearing. Customer and vehicle writes advance `updated_at`, so a stale
+snapshot rolls back. Verified on the already-initialized disposable stack:
+16 record integration tests, 30 adjacent integration tests, and 16 focused
+unit tests passed; typecheck and touched-file lint passed. No from-zero reset,
+full suite, build, browser pass, push, merge, or deploy. MCP read scoping,
+voice, alerts, crons, and delegated manager approval remain uncovered.
+
+[AI: codex] [DATE: 2026-10-01] [AREA: platform] [STATUS: done]
+Completed verification and hardened the existing local record-command slice.
+Customer/vehicle edits, identity resolution and reported history use existing
+policy-controlled approvals with atomic domain write, audit and claim. Added
+canonical lead identity comparison, field-bound vehicle snapshots and customer-bound
+history references. Final Node 22 results: 1,048 unit tests passed (four intentional
+live skips), 239 integration tests passed (zero skips), lint, offline build and
+post-build typecheck passed. All 75 migrations initialized from zero in a separate
+unlinked disposable stack; all migration probes and 26 relationship checks passed.
+A fictional customer edit was approved in the local browser and verified in the
+database with exactly one decision audit. Local preview preserved. Live model evals
+and broader policy coverage remain outstanding as documented in
+`docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Nothing pushed, merged,
+deployed or sent to production/providers; protected founder checkout unchanged.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added the next bounded Control Center adapter: current-authority admission for
+all ten MCP data-reading tools/resources. Rechecks token/shop/current owner and
+membership, then the activated policy; Off and unavailable authority deny before
+business data or embedding access. Reuses existing policies/settings, no schema or
+UI added. 1,093 unit tests passed (four intentional live skips), 243 integration
+tests passed (zero skips), lint, offline Node 22 build and post-build typecheck
+passed. PR #50's prior a02fc97 checks were both green before starting. New work
+remains local. No production/provider activity or founder-file changes. Per-token
+capability grants, read audit, in-flight revocation semantics and remaining MCP
+proposal/transport policy coverage are explicitly not complete; see the October 2
+section of docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added explicit per-token MCP read/proposal grants in the existing Settings card and
+migration 76 (existing tokens default to no grants). Routed remaining booking,
+SMS and email proposals through durable policy-controlled staging with customer/
+destination validation, stable command IDs and token checks at staging and approval.
+Removed provider-reaching booking preflight; approval retains authoritative checks.
+Final Node 22 verification: 1,102 unit tests (four live skips), 254 integration tests
+(zero skips), lint, offline build and post-build typecheck passed. Fresh exact
+76-migration ledger, all 26 tenant relationships and refusal/rollback probes passed.
+Used the separate disposable fresh stack after the usual stack's unrelated extra
+migration caused migration-up refusal; preserved that stack and the local demo.
+Existing fault fixture was installed before the passing full integration rerun.
+Release requires explicit replacement of legacy unscoped tokens and live tool evals;
+new grant-picker browser testing remains outstanding. See the implementation report.
+No push, merge, deployment, production/provider activity or founder-file changes.

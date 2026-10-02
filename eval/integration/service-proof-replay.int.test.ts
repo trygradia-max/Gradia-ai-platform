@@ -68,7 +68,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("durable service proof execution",()=
   })
   it(`${channel}: database claim error has zero provider or token refresh effects`,async()=>{
    const f=await fixture(channel),id=await f.stage()
-   const failed=new Proxy(db,{get(target,key){if(key==="rpc")return ()=>Promise.resolve({data:null,error:{message:"Injected claim failure"}});const value=Reflect.get(target,key);return typeof value==="function"?value.bind(target):value}})
+   const failed=new Proxy(db,{get(target,key){if(key==="rpc")return (name:string,args:Record<string,unknown>)=>name==="claim_service_execution"?Promise.resolve({data:null,error:{message:"Injected claim failure"}}):target.rpc(name,args);const value=Reflect.get(target,key);return typeof value==="function"?value.bind(target):value}})
    expect(await execute(id,failed)).toMatchObject({ok:false,error:expect.stringContaining("could not be claimed")})
    expect(transport).not.toHaveBeenCalled();expect(getAccessTokenForShop).not.toHaveBeenCalled()
    expect(await events(f.proof)).toEqual([])

@@ -309,6 +309,9 @@ export const STRINGS = {
         "US carriers verify every business that texts. Until they approve, calls work and texting waits.",
     },
     approvals: {
+      update_customer: "Approve applies the displayed record changes only if the reviewed record is still current.",
+      resolve_customer: "Resolve one identity without merging records or granting consent.",
+      record_interaction: "Save reported history without treating it as verified inbound evidence.",
       create_lead:
         "Approve saves this person as a lead in Customers. Nothing is sent to them.",
       add_note:

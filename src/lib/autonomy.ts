@@ -24,6 +24,7 @@ export type AutonomyMode = "suggest" | "autonomous"
  * reviewed" promise even when an agent is otherwise autonomous.
  */
 export const ALWAYS_HITL: ReadonlySet<PendingActionType> = new Set([
+  "update_customer", "resolve_customer", "record_interaction",
   "book_appointment",
   "reschedule_appointment",
   "cancel_appointment",

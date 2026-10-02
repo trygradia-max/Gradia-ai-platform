@@ -9,9 +9,9 @@
  *      intent parser).
  *   4. Return the agent's reply for the UI to read back.
  *
- * Approval gradient is enforced by the engine's tools: capture/data edits
- * (add_note, create_lead, update_customer) execute immediately; outbound
- * (draft_reply, campaigns) stages to /approvals; booking/money is ALWAYS_HITL.
+ * Approval gradient is enforced by the engine's tools: notes, leads,
+ * customer edits and lead-only identity resolution queue for review.
+ * Outbound drafts stage to /approvals; booking/money is ALWAYS_HITL.
  * The loop has NO send tool — Whisper stages, never sends.
  */
 

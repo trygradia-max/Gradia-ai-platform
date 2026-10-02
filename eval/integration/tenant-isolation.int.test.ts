@@ -135,7 +135,7 @@ describe.skipIf(!INTEGRATION)("tenant isolation [integration]", () => {
       "3f9a2b1c-7d4e-4a08-9c21-5b6e8d0f1a23",
       { userId: shopB.ownerId }
     )
-    expect(res).toEqual({ ok: true, status: "already_decided" })
+    expect(res).toEqual({ ok: false, error: "Only the current shop owner can approve this action." })
     expect((await getPending(sb, id))?.status).toBe("pending")
   })
 
