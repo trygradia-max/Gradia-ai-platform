@@ -239,3 +239,19 @@ review remain unfinished. Intake workflows remain in identity_review; the existi
 SMS handling still performs its separate customer/consent flow. Missing routing,
 provider acceptance, live tool evaluation, existing-token replacement and production
 release safeguards remain gates. Founder checkout and CONTEXT.md hash are unchanged.
+
+[AI: codex] [DATE: 2026-10-02] [AREA: platform] [STATUS: done]
+Added read-only unresolved intake visibility to Chief of Staff and a paginated
+/intake workspace view, linked from the team page. Owners and explicitly CRM-read
+managers can inspect submitted details; a session-only fixed-search-path RPC checks
+live membership and shop ownership. Staff, revoked managers and cross-shop reads
+are denied. No identity/consent inference, acknowledgement or business writes.
+The dashboard does not claim all-clear when intake exists or cannot load. Meta
+cards disclose missing contact retrieval. Final Node 22 checks: 1,128 unit tests
+passed (four intentional live skips), 278 integration tests passed (zero skips),
+lint, offline build and post-build types passed. Fresh 79-migration ledger, all 26
+tenant relationship definitions and refusal/rollback probes passed. Static render
+regressions passed; interactive browser/a11y acceptance remains outstanding.
+Next is reviewed identity linking and atomic workflow advancement, not provider
+activation. See docs/architecture/LEAD_INTAKE_REVIEW.md. Local commit only; no push,
+merge, deployment, production/provider activity or protected founder-file change.

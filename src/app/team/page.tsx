@@ -103,6 +103,7 @@ export default async function TeamPage({
           </Link>
         </div>
       )}
+      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))) ? <Link href={`/intake?shop=${workspace.id}`} className="block underline">Review unresolved intake</Link> : null}
       <AcceptInvitation />
     </main>
   )
