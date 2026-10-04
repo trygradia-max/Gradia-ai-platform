@@ -214,3 +214,88 @@ GitHub reported no deployment for pushed commit `adcfdf9`; its exact branch Prev
 exclusion remains present. The new history slice is local only. The protected
 founder checkout remains on its original main commit, with the founder CONTEXT.md
 hash unchanged. No production/shared Supabase, merge or deployment operations occurred.
+
+
+## Reviewed vehicle linking — October 4, 2026
+
+Owners can now explicitly select an existing vehicle on intake history after
+confirming a customer. Customer confirmation opens that history page. The choices
+are limited to the current shop and customer (at most 50); no match is inferred
+from submitted text. The owner must confirm their selection. Missing vehicles
+remain unresolved and use the existing CRM creation flow. Changed choice data
+resets the form confirmation instead of carrying an old checkbox forward.
+
+Migration `20261004120000_intake_vehicle_link.sql` is migration 82. It adds a
+nullable vehicle reference and reviewed snapshot to the existing workflow, not a
+second vehicle/workflow table. The new composite relationship is:
+
+`lead_workflows(shop_id, customer_id, vehicle_id)` →
+`vehicles(shop_id, customer_id, id)`.
+
+It preserves nullable deletion with `ON DELETE SET NULL (vehicle_id)` and is
+initially deferred so an existing atomic customer merge can move parent records
+within its transaction. A trigger clears current vehicle confirmation when the
+workflow customer changes or new evidence reopens identity review. Historical
+vehicle decisions remain in the existing transition history. The old merge
+function is unchanged in this slice; successful merges require vehicle re-review,
+and injected merge failures restore both the original customer and vehicle link.
+
+The owner-only session RPC locks the shop, workflow, customer and vehicle; verifies
+current ownership/membership, workflow revision, customer update timestamp and exact
+vehicle snapshot; then commits the link, revision and actor-attributed decision
+together. Unique command IDs make exact retries idempotent and changed bindings
+fail closed. Read grants do not grant write authority. Anonymous and sessionless
+service callers cannot execute either vehicle RPC.
+
+Current vehicle status is independently checked against the live owned vehicle:
+- New evidence or a changed customer clears the confirmation.
+- Edited vehicle details show `needs_review`; the old decision stays historical.
+- Vehicle deletion nulls its reference; customer deletion retains the workflow
+  with null customer/vehicle references and historical decisions.
+- Direct reassignment of a linked vehicle to another customer is rejected by the
+  composite constraint. This is an intentional restriction, not a silent repair.
+  No general reassignment/unlink UI is added in this slice.
+
+Future qualification must require a current confirmed vehicle where vehicle
+information is needed. A non-null ID or `identity_linked` state alone is not proof
+of current vehicle confirmation. This slice does not start qualification, update
+consent, create a quote/booking, or send any communication.
+
+### Verification
+
+Node 22.23.2 final verification:
+- 1,153 unit passes in 102 files; four intentional live-test skips.
+- 305 integration passes in 31 files; zero skips.
+- Lint, offline production build and post-build typecheck passed.
+- All 82 migrations applied from zero to unlinked `gradia-record-fresh`; exact ledger
+  verified. Both intake customer/vehicle relationship definitions and vehicle RPC
+  grants passed the new checked-in catalog verifier.
+- All 26 original tenant relationship definitions, tenant/photo inconsistent-data
+  refusal probes and atomic-record rollback/ACL probe passed.
+- Whitespace and changed-file credential/runtime/machine-path scans passed.
+
+Commands: `node scripts/isolated-check.mjs unit`, `integration --fresh`, `lint`,
+`build`, then `types`; `supabase --workdir .local-tools/record-fresh db reset --local
+--no-seed`; `python3 scripts/verify-intake-vehicle-migration.py --fresh`;
+`python3 scripts/verify-agent-record-migration.py --fresh`; `git diff --check`.
+Both existing disposable failure fixtures were installed after reset. The intake
+fixture now supports an injected final vehicle update failure. It is not shipped
+as an application migration. Existing tenant/photo probes used the previously
+documented in-memory substitutions for the same disposable target.
+
+Twelve new integration cases cover competing decisions/retries, ownership and
+role denial, stale snapshots, new versus duplicate evidence, edits/deletion,
+constraint-enforced reassignment refusal, merge success/rollback, customer deletion
+and atomic failure with no business effects. Nine additional unit cases cover the
+action boundary, failed/uncertain replies, empty choices and historical rendering.
+Initial checks caught a JSX escaping issue, a synthetic fixture parameter type,
+and a test expecting FK denial where direct-table permissions deny earlier. Those
+were corrected without weakening permissions, constraints or tests.
+
+Interactive browser/a11y acceptance remains pending. Vehicle choices are bounded
+at 50 with no search/paging yet. Completed-workflow discovery and general vehicle
+reassignment recovery are still limited; history URLs remain usable. Next is intake
+usability/acceptance and the approved Whisper operational-handoff milestone, before
+bounded qualification. The history commit and this vehicle slice remain local;
+no additional push, merge, deployment or provider activation occurred. Founder
+checkout and CONTEXT.md remained unchanged; no shared database was modified.

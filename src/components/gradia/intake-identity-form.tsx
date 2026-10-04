@@ -8,7 +8,7 @@ export function IntakeIdentityForm({shopId,workflowId,revision,commandId,custome
  const [selected,setSelected]=useState(''),[confirmed,setConfirmed]=useState(false),[message,setMessage]=useState(''),[busy,start]=useTransition(),router=useRouter()
  const customer=customers.find(c=>c.id===selected)
  return <form className="mt-4 space-y-3 border-t pt-3" onSubmit={e=>{e.preventDefault();if(!customer||!confirmed)return;start(async()=>{
-  try{const result=await linkIntakeIdentity({shopId,workflowId,revision,commandId,customer,confirmed});setMessage(result.message);if(result.ok){toast.success(result.message);router.refresh()}}
+  try{const result=await linkIntakeIdentity({shopId,workflowId,revision,commandId,customer,confirmed});setMessage(result.message);if(result.ok){toast.success(result.message);router.push(`/intake/${workflowId}?shop=${shopId}`)}}
   catch{setMessage('Result uncertain. Refresh the queue before retrying.')}
  })}}>
  <label className="block text-sm">Link to an existing customer<select aria-label="Existing customer" className="mt-1 block w-full rounded border bg-background p-2" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setConfirmed(false)}}><option value="">Choose explicitly — no automatic match</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name??'Unnamed customer'} · {c.phone??'No phone'} · {c.email??'No email'}</option>)}</select></label>

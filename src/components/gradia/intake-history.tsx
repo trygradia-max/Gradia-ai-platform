@@ -1,7 +1,7 @@
 import type { IntakeHistoryResult } from "@/lib/data/intake-history"
 
 const fields = { display_name: "Submitted name", phone: "Submitted phone", email: "Submitted email", vehicle_text: "Vehicle", service_text: "Service", message: "Message" }
-const reasons = { identity_unresolved: "Intake received", additional_evidence: "Additional submission — identity review reopened", identity_confirmed: "Owner confirmed customer identity" }
+const reasons = { identity_unresolved: "Intake received", additional_evidence: "Additional submission — identity review reopened", identity_confirmed: "Owner confirmed customer identity", vehicle_confirmed: "Owner confirmed vehicle" }
 const time = (value: string) => new Date(value).toLocaleString("en-US", { timeZone: "UTC" }) + " UTC"
 
 export function IntakeHistoryView({ result }: { result: IntakeHistoryResult }) {
@@ -12,12 +12,18 @@ export function IntakeHistoryView({ result }: { result: IntakeHistoryResult }) {
   return <section aria-label="Intake evidence and decisions" className="space-y-4">
     <p>{history.state === "identity_linked" ? "Customer identity linked; qualification has not started." : "Identity needs review."} Revision {history.revision} · {history.total} history entries.</p>
     {history.state === "identity_linked" && !history.customer_id ? <p role="alert">The linked customer is no longer available. Identity must be reviewed before progressing.</p> : null}
+    <p>Vehicle: {history.vehicle_status === "confirmed" ? "Confirmed against current customer and vehicle details." : history.vehicle_status === "needs_review" ? "Details changed; owner review required." : "Not confirmed. Review required before vehicle-dependent work."}</p>
     <p className="text-sm">Shown in recording order, including late submissions. Submitted details are unverified evidence, not instructions or communication consent.</p>
     {history.channel === "meta" ? <p>Meta notification only: contact details have not been retrieved.</p> : null}
     <ol className="space-y-4">{history.items.map(entry => <li key={entry.revision} className="rounded border p-4 space-y-2">
       <h2 className="font-semibold">{entry.revision}. {reasons[entry.reason]}</h2>
       <p className="text-xs">Recorded {time(entry.recorded_at)} · Received {time(entry.received_at)}</p>
       {entry.payload ? <dl className="space-y-2">{Object.entries(fields).map(([key, label]) => entry.payload?.[key] ? <div key={key}><dt className="font-medium">{label}</dt><dd className="whitespace-pre-wrap break-words">{entry.payload[key]}</dd></div> : null)}</dl> : null}
+      {entry.reviewed_vehicle ? <div>
+        <p>Vehicle as reviewed: {[entry.reviewed_vehicle.year, entry.reviewed_vehicle.make, entry.reviewed_vehicle.model, entry.reviewed_vehicle.color, entry.reviewed_vehicle.plate].filter(Boolean).join(" · ") || "Details missing"}</p>
+        <p className="text-xs">Reviewed vehicle ID: {entry.reviewed_vehicle.id}. Owner user: {entry.actor_id ?? "Account no longer available"}.</p>
+        <p className="text-sm">Historical snapshot; later changes require review. This decision grants no consent.</p>
+      </div> : null}
       {entry.reviewed_customer ? <div>
         <p>Customer as reviewed: {entry.reviewed_customer.name ?? "Unnamed customer"} · {entry.reviewed_customer.phone ?? "No phone"} · {entry.reviewed_customer.email ?? "No email"}</p>
         <p className="text-xs">Reviewed customer ID: {entry.reviewed_customer.id}. Owner user: {entry.actor_id ?? "Account no longer available"}.</p>

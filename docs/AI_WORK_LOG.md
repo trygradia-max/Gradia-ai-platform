@@ -289,3 +289,22 @@ Interactive browser/a11y acceptance and completed-history search remain outstand
 Vehicle linking and qualification remain next. See docs/architecture/LEAD_INTAKE_REVIEW.md.
 New history slice is committed locally, not pushed; no merge, deployment, production,
 provider activity or protected founder-file changes.
+
+
+[AI: codex] [DATE: 2026-10-04] [AREA: platform] [STATUS: done]
+Completed reviewed vehicle linking in the existing intake history. Owners explicitly
+select an existing vehicle belonging to the confirmed same-shop customer. SQL checks
+live authority, workflow revision, customer timestamp and exact vehicle snapshot;
+link/revision/audit commit atomically with durable command dedupe. Customer changes
+and new evidence invalidate the current link; edits require review; deletion retains
+nullable workflow references and immutable history. A composite FK rejects foreign
+customer references and direct reassignment of a linked vehicle. Existing customer
+merges clear vehicle confirmation, preserving rollback and historical decisions.
+Migration 82 applied from zero to the dedicated disposable stack. Node 22: 1,153
+unit passes (four live skips), 305 integration passes (zero skips), lint, offline
+build and post-build types passed. Exact ledger, both intake relationships, 26 prior
+tenant constraints, RPC grants and refusal/rollback probes passed. No qualification,
+consent change, communication or second settings screen. Browser/a11y acceptance,
+completed-workflow discovery and reassignment recovery remain limited. See
+LEAD_INTAKE_REVIEW.md for commands and restrictions. Local commit only; no push,
+merge, deployment, shared Supabase/provider activity or protected founder changes.

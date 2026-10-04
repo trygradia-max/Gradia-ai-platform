@@ -1,3 +1,4 @@
+import { intakeVehicleSchema } from "@/lib/intake-vehicle"
 import { z } from "zod"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -6,13 +7,17 @@ const historySchema = z.object({
   state: z.enum(["identity_review", "identity_linked"]),
   revision: z.number().int().positive(),
   channel: z.enum(["sms", "website_form", "meta", "synthetic"]),
+  can_link_vehicle: z.boolean(),
+  vehicle_id: z.string().uuid().nullable(),
+  vehicle_status: z.enum(["unresolved", "confirmed", "needs_review"]),
   customer_id: z.string().uuid().nullable(),
   total: z.number().int().nonnegative(),
   items: z.array(z.object({
     revision: z.number().int().positive(),
-    reason: z.enum(["identity_unresolved", "additional_evidence", "identity_confirmed"]),
+    reason: z.enum(["identity_unresolved", "additional_evidence", "identity_confirmed", "vehicle_confirmed"]),
     received_at: z.string(), recorded_at: z.string(), actor_id: z.string().uuid().nullable(),
     payload: z.record(z.string(), z.string()).nullable(),
+    reviewed_vehicle: intakeVehicleSchema.nullable(),
     reviewed_customer: z.object({
       id: z.string().uuid(), name: z.string().nullable(),
       phone: z.string().nullable(), email: z.string().nullable(),

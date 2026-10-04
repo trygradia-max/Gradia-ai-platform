@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadIntakeHistory, type IntakeHistory } from '@/lib/data/intake-history'
 import { IntakeHistoryView } from '@/components/gradia/intake-history'
 const id = '00000000-0000-4000-8000-000000000001'
-const history: IntakeHistory = { workflow_id: id, state: 'identity_review', revision: 1, channel: 'meta', customer_id: null, total: 1, items: [{ revision: 1, reason: 'identity_unresolved', received_at: '2026-10-01T00:00:00Z', recorded_at: '2026-10-02T00:00:00Z', actor_id: null, reviewed_customer: null, payload: { message: '<script>untrusted</script>', leadgen_id: 'private-provider-id' } }] }
+const history: IntakeHistory = { workflow_id: id, state: 'identity_review', revision: 1, channel: 'meta', customer_id: null, can_link_vehicle: true, vehicle_id: null, vehicle_status: 'unresolved', total: 1, items: [{ revision: 1, reason: 'identity_unresolved', received_at: '2026-10-01T00:00:00Z', recorded_at: '2026-10-02T00:00:00Z', actor_id: null, reviewed_customer: null, reviewed_vehicle: null, payload: { message: '<script>untrusted</script>', leadgen_id: 'private-provider-id' } }] }
 describe('intake history boundary and presentation', () => {
  it('uses a bounded session RPC anchored to a revision', async () => {
   const rpc = vi.fn().mockResolvedValue({data: history}), from = vi.fn()
@@ -31,6 +31,10 @@ describe('intake history boundary and presentation', () => {
  it('escapes evidence and hides provider identifiers while showing both times',()=>{
   const html=renderToStaticMarkup(createElement(IntakeHistoryView,{result:{ok:true,history}}))
   expect(html).toContain('&lt;script&gt;');expect(html).not.toContain('<script>');expect(html).not.toContain('private-provider-id');expect(html).toContain('Recorded');expect(html).toContain('Received');expect(html).toContain('contact details have not been retrieved')
+ })
+ it('shows changed vehicle as requiring review and escapes the historical vehicle snapshot',()=>{
+  const html=renderToStaticMarkup(createElement(IntakeHistoryView,{result:{ok:true,history:{...history,state:'identity_linked',vehicle_id:id,vehicle_status:'needs_review',items:[{...history.items[0],reason:'vehicle_confirmed',payload:null,reviewed_vehicle:{id,customer_id:id,year:2020,make:'<script>bad</script>',model:null,color:null,plate:null,updated_at:'2026-10-04T00:00:00Z'}}]}}}))
+  expect(html).toContain('Details changed; owner review required');expect(html).toContain('&lt;script&gt;');expect(html).not.toContain('<script>');expect(html).toContain('Historical snapshot');expect(html).toContain('grants no consent')
  })
  it('keeps reviewed identity distinct from live records and warns on deleted customer',()=>{
   const html=renderToStaticMarkup(createElement(IntakeHistoryView,{result:{ok:true,history:{...history,state:'identity_linked',items:[{...history.items[0],reason:'identity_confirmed',payload:null,reviewed_customer:{id,name:'Fictional',phone:null,email:null}}]}}}))
