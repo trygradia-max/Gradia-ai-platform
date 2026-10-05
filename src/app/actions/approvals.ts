@@ -1,6 +1,6 @@
 "use server"
 
-import { servicePayload } from "@/lib/service-purpose"
+import { servicePayload, serviceActionIsUnspent } from "@/lib/service-purpose"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -332,6 +332,10 @@ export async function updatePendingProposal(
     return { ok: true, alreadyDecided: true }
   }
 
+  if (["send_sms","send_email"].includes(current.action_type) && !await serviceActionIsUnspent(supabase,shop.id,pendingId)) {
+    return {ok:false,error:"Held for review — execution is already claimed or could not be verified. Reconcile delivery; do not edit or resend."}
+  }
+
   const mergedPayload =
     parsed.data.type === "create_lead"
       ? {
@@ -391,6 +395,8 @@ export async function updatePendingProposal(
     .update({ payload: mergedPayload })
     .eq("id", pendingId)
     .eq("shop_id", shop.id)
+    .in("status", ["pending", "edit_requested"])
+    .eq("payload", JSON.stringify(current.payload))
     .select("*")
     .single()
 
@@ -433,13 +439,14 @@ export async function reviewCommunicationPurpose(pendingId:string, purpose:"mark
   const user=await requireUser(),shop=await requireShop(),db=await createClient()
   const {data,error}=await db.from("pending_actions").select("*").eq("shop_id",shop.id).eq("id",pendingId).in("status",["pending","edit_requested"]).maybeSingle()
   if(error||!data||data.shop_id!==shop.id||data.id!==pendingId||!["send_sms","send_email"].includes(data.action_type)) return {ok:false,error:"Pending customer message could not be verified."}
+  if (!await serviceActionIsUnspent(db,shop.id,pendingId)) return {ok:false,error:"Held for review — execution is already claimed or could not be verified. Reconcile delivery; do not resend."}
   const original=data.payload as Record<string,unknown>
   let reviewed:Record<string,unknown>={...original,category:"marketing",service_proof:null}
   if(purpose==="reply") {
     // Do not pass caller-editable quote/appointment IDs to the service issuer.
     const reply=await servicePayload(db,shop.id,{to_phone:original.to_phone,to_email:original.to_email,body:original.body,subject:original.subject,customer_id:original.customer_id,source:"verified_reply"},pendingId)
     if(!reply.service_proof) return {ok:false,error:"Held for review — no verified inbound conversation for this recipient within 48 hours."}
-    reviewed={...reviewed,...reply,category:"transactional"}
+    reviewed={...reviewed,...reply,source:original.source,category:"transactional"}
   }
   reviewed.purpose_review={by:user.id,at:new Date().toISOString(),purpose}
   const result=await db.from("pending_actions").update({payload:reviewed}).eq("shop_id",shop.id).eq("id",pendingId).in("status",["pending","edit_requested"]).eq("payload",JSON.stringify(original)).select("id").maybeSingle()

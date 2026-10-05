@@ -7,7 +7,7 @@ export type ServiceMessage = {
     shopId: string; customerId: string; channel: "sms" | "email";
     destination: string; body: string; subject?: string; actionId?: string;
 };
-export type ServiceContext = { kind: "quote" | "appointment" | "payment" | "reply"; id: string };
+export type ServiceContext = { kind: "quote" | "appointment" | "payment" | "reply"; id: string; whisperAction?: string; whisperFingerprint?: string };
 type Proof = {
     version: 2; nonce: string; actionId: string | null; shopId: string;
     customerId: string; channel: "sms" | "email"; destination: string;
@@ -22,7 +22,10 @@ function contentHash(message: ServiceMessage) {
     return createHash("sha256").update(JSON.stringify([normalize(message.body), normalize(message.subject ?? "")])).digest("hex");
 }
 function encoded(p: Omit<Proof, "signature">) {
-    return JSON.stringify(["gradia.service-purpose.v2",p.nonce,p.actionId,p.shopId,p.customerId,p.channel,p.destination,p.contentHash,p.context.kind,p.context.id,p.purpose,p.expires]);
+    return JSON.stringify(["gradia.service-purpose.v2",p.nonce,p.actionId,p.shopId,p.customerId,p.channel,p.destination,p.contentHash,p.context.kind,p.context.id,p.purpose,p.expires,...(p.context.whisperAction ? [p.context.whisperAction,p.context.whisperFingerprint] : [])]);
+}
+function whisperFingerprint(anchor: {content: string; recorded_at: string}) {
+    return createHash("sha256").update(JSON.stringify([anchor.content,anchor.recorded_at])).digest("hex");
 }
 async function validContext(db: SupabaseClient, message: ServiceMessage, context: ServiceContext) {
     const table = {quote:"quotes",appointment:"appointments",payment:"payments",reply:"interactions"}[context.kind];
@@ -33,6 +36,12 @@ async function validContext(db: SupabaseClient, message: ServiceMessage, context
         const age = Date.now() - Date.parse(data.created_at);
         const address = message.channel === "sms" ? data.metadata?.from_phone : data.metadata?.from_email;
         if (data.channel !== message.channel || data.role !== "customer" || data.metadata?.direction !== "inbound" || address !== message.destination || !Number.isFinite(age) || age < 0 || age > 48*60*60*1000) return false;
+    }
+    if (context.whisperAction) {
+        if (context.kind !== "reply" || context.whisperAction !== message.actionId) return false;
+        const {data: anchor, error: anchorError} = await db.rpc("whisper_reply_context", {p_shop:message.shopId,p_action:context.whisperAction});
+        if (anchorError) throw new Error("Reply evidence lookup failed");
+        if (!anchor || anchor.interaction_id !== context.id || anchor.customer_id !== message.customerId || anchor.channel !== message.channel || anchor.destination !== message.destination || context.whisperFingerprint !== whisperFingerprint(anchor)) return false;
     }
     return true;
 }
@@ -49,7 +58,7 @@ async function verifiedProof(db: SupabaseClient, message: ServiceMessage, proof:
     let p: Proof;
     try {
         p = JSON.parse(Buffer.from(proof,"base64url").toString()) as Proof;
-        if (p.version !== 2 || !uuid.test(p.nonce) || (p.actionId !== null && !uuid.test(p.actionId)) || !p.context || !["quote","appointment","payment","reply"].includes(p.context.kind) || typeof p.context.id !== "string" || !Number.isFinite(p.expires)) return {code:"invalid_proof"};
+        if (p.version !== 2 || !uuid.test(p.nonce) || (p.actionId !== null && !uuid.test(p.actionId)) || !p.context || !["quote","appointment","payment","reply"].includes(p.context.kind) || typeof p.context.id !== "string" || (p.context.whisperAction !== undefined && (!uuid.test(p.context.whisperAction) || p.context.kind !== "reply" || !/^[0-9a-f]{64}$/.test(p.context.whisperFingerprint ?? ""))) || (p.context.whisperFingerprint !== undefined && !p.context.whisperAction) || !Number.isFinite(p.expires)) return {code:"invalid_proof"};
         const expected = createHmac("sha256",secret).update(encoded(p)).digest();
         const actual = Buffer.from(p.signature,"hex");
         if (actual.length !== expected.length || !timingSafeEqual(actual,expected)) return {code:"invalid_proof"};
@@ -128,6 +137,16 @@ export async function servicePayload(db: SupabaseClient, shopId: string, payload
             const { data, error } = await db.from("payments").select("id").eq("shop_id", shopId).eq("customer_id", customerId).eq("stripe_invoice_id", payload.stripe_invoice_id).maybeSingle();
             if (!error && data)
                 context = { kind: "payment", id: data.id };
+        }
+        // Owner purpose review resolves the immutable command before the legacy lookup.
+        // A lookup failure is not permission to fall back to another inbound message.
+        if (!context && payload.source === "verified_reply" && actionId) {
+            const {data: anchor, error: anchorError} = await db.rpc("whisper_reply_context", {p_shop:shopId,p_action:actionId});
+            if (anchorError) throw new Error("Reply evidence unavailable");
+            if (anchor) {
+                if (anchor.customer_id !== customerId || anchor.channel !== channel || anchor.destination !== destination) return {...payload,service_proof:null};
+                context={kind:"reply",id:anchor.interaction_id,whisperAction:actionId,whisperFingerprint:whisperFingerprint(anchor)};
+            }
         }
         if (!context && customerId && ["sms_auto_draft", "email_auto_draft", "verified_reply"].includes(String(payload.source))) {
             const { data, error } = await db.from("interactions").select("*").eq("shop_id", shopId).eq("customer_id", customerId).eq("channel", channel).eq("role", "customer").order("created_at", { ascending: false }).limit(1).maybeSingle();

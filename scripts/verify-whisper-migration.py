@@ -27,3 +27,7 @@ for table, definitions in manifest.items():
     assert all(d in actual for d in definitions), f'Relationship mismatch: {table}'
 assert sql("SELECT count(*) FROM pg_constraint WHERE contype='p' AND conrelid='public.conversation_audit'::regclass") == '1'
 print(f'PASS: exact {len(versions)} migrations; four metadata tables deny direct access; session-only fixed-search-path RPCs; four composite relationships; durable command primary key')
+
+signature='whisper_reply_context(uuid,uuid)'
+assert sql(f"SELECT prosecdef AND proconfig=ARRAY['search_path=\"\"'] AND has_function_privilege('authenticated',oid,'EXECUTE') AND has_function_privilege('service_role',oid,'EXECUTE') AND NOT has_function_privilege('anon',oid,'EXECUTE') FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
+print('PASS: immutable reply-context RPC has fixed search path, owner/service authority and no anonymous grant')
