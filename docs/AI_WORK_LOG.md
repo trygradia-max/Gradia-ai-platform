@@ -350,3 +350,13 @@ and commands. Only local commits in this task; no push, merge, deployment, share
 Supabase or real provider activity. Founder main remains at 20e153a and CONTEXT.md
 retains its approved hash. Additional concurrent UI edits were observed in the
 original checkout; none were made, reset, copied or changed by this task.
+
+[AI: cursor] [DATE: 2026-10-05] [AREA: platform] [STATUS: done]
+Polished the existing Whisper list, thread, loading state, and controls on
+`codex/cursor-whisper-ui-polish` for phone, tablet, and desktop reading, keyboard
+focus, labels, and error or status text. Permissions, command IDs, revisions, and
+approval staging were left in place. Node 22 isolated unit result: 1,169 passed
+and 4 skipped; lint, offline build, and post-build types passed. A fictional
+static fixture was checked at 320, 390, 768, and 1280. Authenticated browser
+sessions were not run. See docs/qa/WHISPER_UI_ACCEPTANCE.md. Local commit only;
+no push, merge, deployment, shared database, or provider activity.
