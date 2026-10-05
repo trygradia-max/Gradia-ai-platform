@@ -21,7 +21,7 @@ if(action==='credentials') {
  writeFileSync('.local-tools/test-db.json',JSON.stringify(data),{mode:0o600})
 }
 if(['start','reset'].includes(action)) {
- const fixture=spawnSync('docker',['exec','-i','supabase_db_gradia-isolated-tests','psql','-X','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres'],{input:['tests/sql/merge-failure.sql','tests/sql/intake-link-failure.sql'].map(path=>readFileSync(path,'utf8')).join('\n'),encoding:'utf8',env:{PATH:process.env.PATH,DOCKER_HOST:'unix:///var/run/docker.sock'}})
+ const fixture=spawnSync('docker',['exec','-i','supabase_db_gradia-isolated-tests','psql','-X','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres'],{input:['tests/sql/merge-failure.sql','tests/sql/intake-link-failure.sql','tests/sql/whisper-failure.sql'].map(path=>readFileSync(path,'utf8')).join('\n'),encoding:'utf8',env:{PATH:process.env.PATH,DOCKER_HOST:'unix:///var/run/docker.sock'}})
  if(fixture.status!==0) throw new Error('Disposable failure fixture setup failed')
 }
 console.log(`Disposable stack ${action} completed`)
