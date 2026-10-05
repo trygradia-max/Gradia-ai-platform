@@ -88,6 +88,7 @@ export default async function TeamPage({
           </Link>
         ))}
       </nav>
+      {workspace ? <Link className="underline" href={`/conversations?shop=${workspace.id}`}>Open Whisper conversations</Link> : null}
       {workspace && team ? (
         <TeamPanel key={workspace.id} workspace={workspace} data={team} />
       ) : (

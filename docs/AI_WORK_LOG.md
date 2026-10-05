@@ -308,3 +308,45 @@ consent change, communication or second settings screen. Browser/a11y acceptance
 completed-workflow discovery and reassignment recovery remain limited. See
 LEAD_INTAKE_REVIEW.md for commands and restrictions. Local commit only; no push,
 merge, deployment, shared Supabase/provider activity or protected founder changes.
+
+[AI: codex] [DATE: 2026-10-05] [AREA: platform] [STATUS: done]
+Built the first Whisper operational-inbox slice in the existing /conversations
+route: shop/customer/channel history, personal unread acknowledgement, owner and
+explicitly authorized manager handoff, in-app notifications, and owner SMS/email
+drafts staged through existing Approvals. No new transport, message store, settings
+screen or Agent engine. Pending/uncertain execution remains visible; handoff flags
+do not pause queued delivery. Active membership, assigned staff visibility, current
+recipient binding, stale revision checks, durable command dedupe and atomic audit
+are database enforced. Direct RPC payloads reject caller classifications/proofs.
+Customer merges preserve metadata conservatively, clear assignments and reset read
+state while retaining restrictive consent/provenance and original audit bindings.
+
+Migration 83 applied from zero to unlinked gradia-record-fresh. Final Node 22:
+1,162 unit passes in 104 files (four existing intentional live skips); 322 integration
+passes in 32 files (zero skips); lint, offline build and post-build typecheck passed.
+The 17 new integration cases and nine units cover authority, direct RPC abuse,
+concurrent commands, stale recipients, notifications, SMS/email staging, unknown
+execution, merge collisions/failure and transactional rollback. Exact 83-version
+ledger, four new composite relationships, direct-table denial and session-only
+RPC grants passed catalog checks; original 26 tenant relationships, intake
+relationships and tenant/photo refusal plus atomic-record rollback probes passed.
+Whitespace and changed-file credential/runtime/machine-path scans passed.
+
+Interactive browser checks used fictional local owner/manager sessions under an
+outbound-denied preview: owner handoff persisted, one draft entered Approvals,
+manager saw both notifications without reply/approval controls, and personal
+acknowledgement cleared unread/notification state. Three inbound interactions
+remained unchanged and no outbound interaction was created. Temporary preview and
+session helper stopped. Prior intake browser checks also confirmed late-arrival
+history, owner customer/vehicle confirmation, stale-vehicle denial and manager
+read-only access; full responsive/accessibility acceptance remains outstanding.
+
+This does not complete milestone 4. Independent email notification delivery,
+provider-threaded email, trusted service-reply proof issuance, quiet hours/digest/
+retry handling and actionable uncertain-delivery reconciliation remain gaps.
+Manager email delivery is explicitly disabled pending provider choice and separate
+activation approval. See docs/architecture/WHISPER_INBOX.md for exact boundaries
+and commands. Only local commits in this task; no push, merge, deployment, shared
+Supabase or real provider activity. Founder main remains at 20e153a and CONTEXT.md
+retains its approved hash. Additional concurrent UI edits were observed in the
+original checkout; none were made, reset, copied or changed by this task.
