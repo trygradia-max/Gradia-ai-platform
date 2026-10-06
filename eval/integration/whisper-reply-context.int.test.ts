@@ -22,14 +22,15 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)('Whisper exact-context service replie
  let db:SupabaseClient,other:Seeded
  beforeAll(async()=>{
   db=serviceClient();const password=randomUUID();shop=await seedShop(db,{password});other=await seedShop(db);owner=await ownerSessionClient(shop.email,password)
-  expect((await db.from('shops').update({quiet_hours_start:0,quiet_hours_end:0,twilio_phone_number:'+15550001111'}).eq('id',shop.shopId)).error).toBeNull()
+  expect((await db.from('shops').update({aurinko_account_id:987654,quiet_hours_start:0,quiet_hours_end:0,twilio_phone_number:'+15550001111'}).eq('id',shop.shopId)).error).toBeNull()
  })
  afterEach(()=>vi.clearAllMocks())
  afterAll(async()=>{await cleanup(db,shop);await cleanup(db,other)})
  async function fixture(channel:'sms'|'email',role='customer'){
   const destination=channel==='sms'?'+1555'+String(Math.floor(Math.random()*1e7)).padStart(7,'0'):`${randomUUID()}@example.test`
   const c=await db.from('customers').insert({shop_id:shop.shopId,name:'Fictional reply customer',do_not_contact:false,...(channel==='sms'?{phone:destination}:{email:destination})}).select('id').single();expect(c.error).toBeNull()
-  const i=await db.from('interactions').insert({shop_id:shop.shopId,customer_id:c.data!.id,channel,role,content:'Fictional service question',metadata:{direction:'inbound',...(channel==='sms'?{from_phone:destination}:{from_email:destination})}}).select('id').single();expect(i.error).toBeNull()
+  const i=await db.from('interactions').insert({shop_id:shop.shopId,customer_id:c.data!.id,channel,role,content:'Fictional service question',metadata:{direction:'inbound',...(channel==='sms'?{from_phone:destination}:{from_email:destination,aurinko_message_id:'test-'+c.data!.id})}}).select('id').single();expect(i.error).toBeNull()
+  if(channel==='email')expect((await db.from('email_reply_evidence').insert({shop_id:shop.shopId,interaction_id:i.data!.id,account_id:987654,message_id:'test-'+c.data!.id})).error).toBeNull()
   const action=randomUUID(),body='Fictional answer to your question',subject=channel==='email'?'Service answer':''
   expect((await owner.rpc('whisper_command',{p_shop:shop.shopId,p_customer:c.data!.id,p_channel:channel,p_command:action,p_latest:i.data!.id,p_revision:0,p_operation:'reply',p_payload:{destination,body,subject}})).error).toBeNull()
   const original=(await db.from('pending_actions').select('payload').eq('id',action).single()).data!.payload
@@ -50,6 +51,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)('Whisper exact-context service replie
    for(const context of [{...claims.context,whisperAction:randomUUID()},{kind:'reply',id:f.inbound},{...claims.context,whisperFingerprint:'0'.repeat(64)}])expect(await verifyServiceProof(db,f.message,Buffer.from(JSON.stringify({...claims,context})).toString('base64url'))).toBe(false)
    const results=await Promise.all([execute(f.action,owner),execute(f.action,serviceClient())]);expect(results.filter(r=>r.ok&&r.status==='executed'),JSON.stringify(results)).toHaveLength(1)
    expect(await execute(f.action,serviceClient())).toMatchObject({ok:true,status:'already_decided'});expect(transport).toHaveBeenCalledTimes(1)
+   if(channel==='email')expect(sendEmailMessage).toHaveBeenCalledWith('synthetic-token',expect.objectContaining({replyToMessageId:'test-'+f.customer}))
    expect((await db.from('customer_channel_permissions').select('id').eq('shop_id',shop.shopId).eq('customer_id',f.customer)).data).toEqual([])
    expect(await readMessageDeliveryReview(owner,shop.shopId,f.action)).toMatchObject({state:'provider_accepted'})
   })
@@ -116,4 +118,34 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)('Whisper exact-context service replie
   expect((await db.from('pending_actions').update({payload:{...f.original,conversation_interaction_id:randomUUID()}}).eq('id',f.action)).error).toBeNull();expect(await reviewCommunicationPurpose(f.action,'reply')).toMatchObject({ok:false})
   expect((await db.from('pending_actions').update({payload:f.original}).eq('id',f.action)).error).toBeNull();expect((await db.from('customers').update({phone:'+15550000001'}).eq('id',f.customer)).error).toBeNull();expect(await reviewCommunicationPurpose(f.action,'reply')).toMatchObject({ok:false})
  })
+ it('marketing-threaded replies consume durable authority without a consent exemption or duplicate transport',async()=>{
+  const f=await fixture('email')
+  expect((await db.from('customer_channel_permissions').insert({shop_id:shop.shopId,customer_id:f.customer,channel:'email',destination:f.destination,marketing_consent_at:new Date().toISOString(),consent_source:'synthetic-owner-record'})).error).toBeNull()
+  vi.mocked(sendEmailMessage).mockRejectedValueOnce(new Error('Synthetic uncertain outcome'))
+  expect(await execute(f.action)).toMatchObject({ok:false})
+  expect(await execute(f.action,serviceClient())).toMatchObject({ok:false})
+  expect(sendEmailMessage).toHaveBeenCalledTimes(1)
+  expect(sendEmailMessage).toHaveBeenCalledWith('synthetic-token',expect.objectContaining({replyToMessageId:'test-'+f.customer}))
+  const claim=(await db.from('service_proof_consumptions').select('claims').eq('action_id',f.action).single()).data!.claims
+  expect(claim.executionOnly).toBe(true)
+  expect((await db.from('pending_actions').select('payload').eq('id',f.action).single()).data!.payload.service_proof).toBeUndefined()
+  expect(await readMessageDeliveryReview(owner,shop.shopId,f.action)).toMatchObject({state:'claimed'})
+ })
+ it('mailbox reconnection invalidates prior reply authority with zero token refresh or send',async()=>{
+  const f=await fixture('email');await review(f)
+  await db.from('shops').update({aurinko_account_id:987655}).eq('id',shop.shopId)
+  try{expect(await execute(f.action)).toMatchObject({ok:false});expect(sendEmailMessage).not.toHaveBeenCalled();expect(getAccessTokenForShop).not.toHaveBeenCalled()}
+  finally{await db.from('shops').update({aurinko_account_id:987654}).eq('id',shop.shopId)}
+ })
+ it('trusted provider evidence cannot be fabricated or changed through sessions',async()=>{
+  const f=await fixture('email')
+  const row={shop_id:shop.shopId,interaction_id:f.inbound,account_id:987654,message_id:'test-'+f.customer}
+  expect((await owner.from('email_reply_evidence').insert(row)).error).not.toBeNull()
+  expect((await db.from('email_reply_evidence').update({message_id:'forged'}).eq('interaction_id',f.inbound)).error).not.toBeNull()
+  const inbound=await db.from('interactions').insert({shop_id:shop.shopId,customer_id:f.customer,channel:'email',role:'customer',content:'Synthetic email without provider verification',metadata:{direction:'inbound',from_email:f.destination,aurinko_message_id:'synthetic-unverified'}}).select('id').single();expect(inbound.error).toBeNull()
+  for(const patch of [{account_id:987655},{message_id:'substituted'},{shop_id:other.shopId}])expect((await db.from('email_reply_evidence').insert({...row,interaction_id:inbound.data!.id,message_id:'synthetic-unverified',...patch})).error).not.toBeNull()
+  const action=randomUUID();expect((await owner.rpc('whisper_command',{p_shop:shop.shopId,p_customer:f.customer,p_channel:'email',p_command:action,p_latest:inbound.data!.id,p_revision:0,p_operation:'reply',p_payload:{destination:f.destination,body:'Synthetic answer',subject:'Answer'}})).error).toBeNull()
+  expect(await reviewCommunicationPurpose(action,'reply')).toMatchObject({ok:false});expect(sendEmailMessage).not.toHaveBeenCalled()
+ })
+
 })

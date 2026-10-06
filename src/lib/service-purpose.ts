@@ -12,7 +12,7 @@ type Proof = {
     version: 2; nonce: string; actionId: string | null; shopId: string;
     customerId: string; channel: "sms" | "email"; destination: string;
     contentHash: string; context: ServiceContext; purpose: string;
-    expires: number; signature: string;
+    expires: number; signature: string; executionOnly?: true;
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function key() { return process.env.SUPABASE_SERVICE_ROLE_KEY || null; }
@@ -22,10 +22,10 @@ function contentHash(message: ServiceMessage) {
     return createHash("sha256").update(JSON.stringify([normalize(message.body), normalize(message.subject ?? "")])).digest("hex");
 }
 function encoded(p: Omit<Proof, "signature">) {
-    return JSON.stringify(["gradia.service-purpose.v2",p.nonce,p.actionId,p.shopId,p.customerId,p.channel,p.destination,p.contentHash,p.context.kind,p.context.id,p.purpose,p.expires,...(p.context.whisperAction ? [p.context.whisperAction,p.context.whisperFingerprint] : [])]);
+    return JSON.stringify(["gradia.service-purpose.v2",p.nonce,p.actionId,p.shopId,p.customerId,p.channel,p.destination,p.contentHash,p.context.kind,p.context.id,p.purpose,p.expires,...(p.context.whisperAction ? [p.context.whisperAction,p.context.whisperFingerprint] : []),...(p.executionOnly ? ["execution-only"] : [])]);
 }
-function whisperFingerprint(anchor: {content: string; recorded_at: string}) {
-    return createHash("sha256").update(JSON.stringify([anchor.content,anchor.recorded_at])).digest("hex");
+function whisperFingerprint(anchor: {content: string; recorded_at: string; email_reply?: {account_id:string;message_id:string;thread_id:string|null}|null}) {
+    return createHash("sha256").update(JSON.stringify([anchor.content,anchor.recorded_at,...(anchor.email_reply?[anchor.email_reply.account_id,anchor.email_reply.message_id,anchor.email_reply.thread_id]:[])])).digest("hex");
 }
 async function validContext(db: SupabaseClient, message: ServiceMessage, context: ServiceContext) {
     const table = {quote:"quotes",appointment:"appointments",payment:"payments",reply:"interactions"}[context.kind];
@@ -45,20 +45,20 @@ async function validContext(db: SupabaseClient, message: ServiceMessage, context
     }
     return true;
 }
-export async function issueServiceProof(db: SupabaseClient, message: ServiceMessage, context: ServiceContext): Promise<string | null> {
+export async function issueServiceProof(db: SupabaseClient, message: ServiceMessage, context: ServiceContext, executionOnly = false): Promise<string | null> {
     const secret = key();
     if (!secret || (message.actionId && !uuid.test(message.actionId)) || !await validContext(db,message,context)) return null;
-    const p: Omit<Proof,"signature"> = {version:2,nonce:randomUUID(),actionId:message.actionId ?? null,shopId:message.shopId,customerId:message.customerId,channel:message.channel,destination:message.destination,contentHash:contentHash(message),context,purpose:`service:${context.kind}`,expires:Date.now()+24*60*60*1000};
+    const p: Omit<Proof,"signature"> = {version:2,nonce:randomUUID(),actionId:message.actionId ?? null,shopId:message.shopId,customerId:message.customerId,channel:message.channel,destination:message.destination,contentHash:contentHash(message),context,purpose:`service:${context.kind}`,expires:Date.now()+24*60*60*1000,...(executionOnly?{executionOnly:true as const}:{})};
     return Buffer.from(JSON.stringify({...p,signature:createHmac("sha256",secret).update(encoded(p)).digest("hex")})).toString("base64url");
 }
 type ProofFailure = {code:"invalid_proof"|"expired_proof"|"context_mismatch"|"proof_lookup_failed"};
-async function verifiedProof(db: SupabaseClient, message: ServiceMessage, proof: unknown): Promise<Proof | ProofFailure> {
+async function verifiedProof(db: SupabaseClient, message: ServiceMessage, proof: unknown, forExecution = false): Promise<Proof | ProofFailure> {
     const secret = key();
     if (!secret || typeof proof !== "string") return {code:"invalid_proof"};
     let p: Proof;
     try {
         p = JSON.parse(Buffer.from(proof,"base64url").toString()) as Proof;
-        if (p.version !== 2 || !uuid.test(p.nonce) || (p.actionId !== null && !uuid.test(p.actionId)) || !p.context || !["quote","appointment","payment","reply"].includes(p.context.kind) || typeof p.context.id !== "string" || (p.context.whisperAction !== undefined && (!uuid.test(p.context.whisperAction) || p.context.kind !== "reply" || !/^[0-9a-f]{64}$/.test(p.context.whisperFingerprint ?? ""))) || (p.context.whisperFingerprint !== undefined && !p.context.whisperAction) || !Number.isFinite(p.expires)) return {code:"invalid_proof"};
+        if ((p.executionOnly !== undefined && (p.executionOnly !== true || !forExecution)) || p.version !== 2 || !uuid.test(p.nonce) || (p.actionId !== null && !uuid.test(p.actionId)) || !p.context || !["quote","appointment","payment","reply"].includes(p.context.kind) || typeof p.context.id !== "string" || (p.context.whisperAction !== undefined && (!uuid.test(p.context.whisperAction) || p.context.kind !== "reply" || !/^[0-9a-f]{64}$/.test(p.context.whisperFingerprint ?? ""))) || (p.context.whisperFingerprint !== undefined && !p.context.whisperAction) || !Number.isFinite(p.expires)) return {code:"invalid_proof"};
         const expected = createHmac("sha256",secret).update(encoded(p)).digest();
         const actual = Buffer.from(p.signature,"hex");
         if (actual.length !== expected.length || !timingSafeEqual(actual,expected)) return {code:"invalid_proof"};
@@ -89,7 +89,7 @@ export type ServiceExecution = {ok:true; nonce:string; actionId:string} | {ok:fa
  * A consumed proof is never released: uncertain delivery requires explicit reconciliation. */
 export async function claimServiceExecution(db: SupabaseClient, message: ServiceMessage, proof: unknown, pending = true): Promise<ServiceExecution> {
     try {
-        const p = await verifiedProof(db,message,proof);
+        const p = await verifiedProof(db,message,proof,true);
         if ("code" in p) {
             await auditProofDenial(db,message,p);
             return {ok:false,reason:`Held for review — Service proof rejected (${p.code}). Review this message.`};
@@ -159,4 +159,16 @@ export async function servicePayload(db: SupabaseClient, shopId: string, payload
     catch {
         return { ...payload, service_proof: null };
     }
+}
+
+/** Additional at-most-once transport authority AFTER marketing consent passed.
+ * This proof is never persisted in a proposal or accepted as a consent exemption. */
+export async function claimWhisperEmailTransport(db:SupabaseClient,message:ServiceMessage):Promise<ServiceExecution>{
+ try {
+  if(message.channel!=="email" || !message.actionId)return {ok:false,reason:"Reply execution unavailable"}
+  const {data:anchor,error}=await db.rpc("whisper_reply_context",{p_shop:message.shopId,p_action:message.actionId})
+  if(error||!anchor?.email_reply)return {ok:false,reason:"Reply execution evidence unavailable"}
+  const proof=await issueServiceProof(db,message,{kind:"reply",id:anchor.interaction_id,whisperAction:message.actionId,whisperFingerprint:whisperFingerprint(anchor)},true)
+  return claimServiceExecution(db,message,proof)
+ }catch{return {ok:false,reason:"Reply execution could not be claimed; nothing was sent"}}
 }

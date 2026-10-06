@@ -1,3 +1,4 @@
+import { claimWhisperEmailTransport } from "@/lib/service-purpose"
 import { isRecordAction, type RecordCommand } from "@/lib/control-center/record-command"
 /**
  * Shared approval engine. The dashboard action (and, before CLEANUP-001, the Slack callback) and the
@@ -2022,11 +2023,24 @@ async function executeSendEmail(
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
   }
+  let replyToMessageId: string | undefined
+  try {
+    const context=await supabase.rpc("whisper_reply_context",{p_shop:claimed.shop_id,p_action:claimed.id})
+    if(context.error) throw new Error("Reply context unavailable")
+    if(context.data) {
+      const reply=context.data.email_reply
+      if(context.data.customer_id!==proposal.customer_id || context.data.channel!=="email" || context.data.destination!==policy.destination || !reply || String(shop.aurinko_account_id)!==reply.account_id || typeof reply.message_id!=="string") throw new Error("Reply binding changed")
+      replyToMessageId=reply.message_id
+    }
+  } catch {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — verified mailbox reply context is unavailable. No standalone fallback was sent."}
+  }
   if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
     await rollbackClaim(supabase,claimed)
     return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
   }
-  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email" as const,destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id},proposal.service_proof) : null
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email" as const,destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id},proposal.service_proof) : replyToMessageId ? await claimWhisperEmailTransport(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email",destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id}) : null
   if (execution && !execution.ok) {
     await rollbackClaim(supabase, claimed)
     return {ok:false,error:execution.reason}
@@ -2053,6 +2067,7 @@ async function executeSendEmail(
       subject: proposal.subject,
       body: proposal.body,
       to: policy.destination,
+      ...(replyToMessageId ? {replyToMessageId} : {}),
     })
     sentId = sent.id
   } catch (err) {
@@ -2078,6 +2093,7 @@ async function executeSendEmail(
     metadata: {
       direction: "outbound",
       aurinko_message_id: sentId || null,
+      aurinko_reply_to_message_id: replyToMessageId ?? null,
       to_email: proposal.to_email,
       subject: proposal.subject,
       pending_action_id: claimed.id,

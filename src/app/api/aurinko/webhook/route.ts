@@ -185,7 +185,7 @@ async function handleMessage(
     if (result.ok) customerId = result.customer.id
   }
 
-  await recordInteraction(supabase, {
+  const inbound = await recordInteraction(supabase, {
     shopId: shop.id,
     customerId,
     channel: "email",
@@ -201,6 +201,10 @@ async function handleMessage(
     },
   })
 
+  if (inbound.ok && customerId && shop.aurinko_account_id) {
+    const evidence=await supabase.from("email_reply_evidence").insert({shop_id:shop.id,interaction_id:inbound.id,account_id:shop.aurinko_account_id,message_id:message.id,thread_id:message.threadId ?? null})
+    if(evidence.error) console.warn("[aurinko webhook] reply evidence unavailable; threaded replies will stay held")
+  }
   if (!senderEmail) return false
 
   // Inbound classification: rate-limited (inbox-flood ceiling) AND metered

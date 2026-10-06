@@ -44,3 +44,11 @@ it("expired proofs and a substituted conversation context fail closed",async()=>
   expect(await evaluateCustomerSendPolicy(db,safeShop,{channel:message.channel,destination:message.destination,customerId:message.customerId,body:message.body,subject:message.subject,category:"transactional",serviceProof:proof})).toMatchObject({allowed:false,held:true})
  } finally {clock.mockRestore()}
 })
+it('execution-only authority can never become a service-consent exemption',async()=>{
+ const {db}=readDb({customers:[safeCustomer],appointments:[appointment]})
+ const proof=await issueServiceProof(db,message,{kind:'appointment',id:appointment.id},true)
+ expect(proof).toBeTruthy();expect(await verifyServiceProof(db,message,proof)).toBe(false)
+ const claims=JSON.parse(Buffer.from(proof!,'base64url').toString());delete claims.executionOnly
+ expect(await verifyServiceProof(db,message,Buffer.from(JSON.stringify(claims)).toString('base64url'))).toBe(false)
+ expect(await evaluateCustomerSendPolicy(db,safeShop,{channel:message.channel,destination:message.destination,customerId:message.customerId,body:message.body,subject:message.subject,category:'transactional',serviceProof:proof})).toMatchObject({allowed:false})
+})
