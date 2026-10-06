@@ -2,7 +2,7 @@
 
 ## Scope — October 5, 2026
 
-This is the first operational-inbox slice of milestone 4 in the five governing
+This covers the operational-inbox and exact-context reply slices of milestone 4 in the five governing
 September 11 MVP documents, not completion or activation of that milestone.
 `/conversations` remains the single conversation destination. Existing owner
 Ask Gradia chat remains separate from customer messages within that page.
@@ -55,6 +55,27 @@ DNC, suppression and idempotency checks remain authoritative. Queue success mean
 "draft in Approvals", not sent. Recipient or conversation changes require refresh.
 An uncertain command response is never automatically retried with a new ID.
 
+The existing owner purpose-review controls in Approvals now display and bind the
+exact inbound message captured by the immutable Whisper staging command. Explicit
+service-reply review signs the action, owned customer, channel, canonical destination,
+message content, inbound ID and inbound content/time fingerprint. Another or later
+inbound message cannot substitute for this context. Changed, missing, outbound or
+older-than-48-hour context fails closed. Review does not grant marketing consent or
+send anything; STOP, DNC, suppression, policy and durable execution claims still apply.
+Legacy producers retain their existing purpose rules; failed context lookup never
+falls back to a different conversation. This trusts existing inbound metadata and
+explicit owner review, not a new upstream provider-attestation system.
+
+Consumed claims remain visible as held work even when execution rolled back to
+pending or an operator previously marked the conversation complete. Approvals shows
+a read-only delivery review with claim/response timestamps and reconciliation steps;
+editing or reclassifying a claimed action is denied. Provider acceptance is not proof
+of delivery. An authorized owner must inspect provider evidence, retain a hold if
+uncertain, and explicitly review any replacement under current consent/policy rules.
+No automatic resend, provider lookup, claim release or persisted reconciliation
+resolution is implemented. This prioritizes avoiding duplicate delivery over automatic
+recovery after an uncertain provider outcome.
+
 Email currently stages a new outbound message, not a provider-threaded reply.
 Voice history is read/handoff-only. Existing intake evidence and reviewed vehicle
 references are linked where CRM-read authority permits them. The existing owner
@@ -82,18 +103,20 @@ The disposable-only `tests/sql/whisper-failure.sql` trigger injects a failure at
 final audit insertion to prove handoff and reply staging roll back. It is not an
 application migration. Shared or production migrations were not run.
 
+Migration 84, `20261005160000_whisper_reply_context.sql`, adds a fixed-search-path
+owner/service context resolver and replaces inbox read functions to expose consumed
+execution holds. Anonymous access is denied; owner access requires live membership.
+It adds no data transformation, repair, transport or new message store.
+
 ## Remaining milestone gates
 
 - Independent transactional-email provider choice/setup; real notification delivery
   stays disabled. No immediate email, digest, quiet-hour scheduler or retry worker
   is claimed. In-app notifications require a refresh; there is no realtime feed.
 - Provider thread/message identity and true in-thread email reply integration.
-- Verified service-reply proof issuance from trusted thread context. Until then,
-  replies without required marketing consent remain blocked by the existing sender.
-- Actionable uncertain-delivery reconciliation UI. Current UI exposes the hold and
-  approval record, but an authorized operator must inspect provider evidence through
-  the approved operational process. Never resend automatically after an uncertain
-  outcome. Consumed proofs remain consumed; this slice does not weaken that rule.
+- Persisted reconciliation decisions and provider-evidence tooling. The read-only
+  review panel explains the manual process, but does not record its resolution or
+  query a provider. Never resend automatically after an uncertain outcome.
 - Search/filtering, bounded related-record paging and a browsable handoff-audit
   timeline. Related intake/approval references currently return all matching records.
 - Full responsive/accessibility acceptance and live-provider pilot acceptance.
@@ -104,8 +127,8 @@ app scope is added. Qualification and booking remain later dependencies.
 
 ## Verification
 
-Final results: 1,162 unit passes (four intentional live skips), 322 integration
-passes (zero skips), lint, offline build and post-build types passed. All 83
+Final results: 1,169 unit passes (four intentional live skips), 338 integration
+passes (zero skips), lint, offline build and post-build types passed. All 84
 migrations initialized from zero; catalog, relationship and rollback/refusal probes
 passed. See the matching October 5 entry in `docs/AI_WORK_LOG.md` for browser checks.
 Node 22 isolated commands: `node scripts/isolated-check.mjs unit`,

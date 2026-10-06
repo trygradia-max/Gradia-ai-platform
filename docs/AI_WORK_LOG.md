@@ -350,3 +350,67 @@ and commands. Only local commits in this task; no push, merge, deployment, share
 Supabase or real provider activity. Founder main remains at 20e153a and CONTEXT.md
 retains its approved hash. Additional concurrent UI edits were observed in the
 original checkout; none were made, reset, copied or changed by this task.
+
+
+[AI: codex] [DATE: 2026-10-05] [AREA: platform] [STATUS: done]
+Added exact-context Whisper service-reply review using existing Approvals and the
+existing durable send executor. The immutable staging command anchors the precise
+owned inbound interaction, channel and canonical recipient; an explicit owner
+review signs that action and inbound content/time fingerprint with the outbound
+message. Later messages cannot substitute context; changed or unavailable evidence
+fails closed. Marketing defaults and STOP/DNC/suppression/policy checks remain.
+No new settings screen, provider adapter or automatic purpose classification.
+
+Consumed proof claims now hold inbox work even after pending-status rollback or
+operator completion. Approvals replaces send/edit controls with a read-only delivery
+review and manual reconciliation guidance. Purpose/edit actions refuse spent or
+unverifiable claims. This does not record reconciliation resolution or query provider
+activity: uncertain delivery stays held, and no automatic replacement is sent.
+
+Migration 84 initialized from zero on the dedicated unlinked disposable database.
+The initial PL/pgSQL CASE comparison needed parentheses; the corrected migration
+applied successfully. An added test incorrectly tried to deactivate an owner; the
+existing constraint rejected it. The test now verifies that protection without
+changing the constraint. A subsequent concurrent-execution assertion failed during
+a slow overlapping local preview run; final isolated rerun results follow below.
+
+Local browser acceptance used a fictional shop and outbound-denied runtime: staged
+one SMS draft, displayed its exact inbound evidence, reviewed purpose without
+sending, then simulated a durable claim directly in the disposable fixture. The
+approval page showed the read-only uncertain-delivery panel with no send/edit
+controls. Three inbound interactions remained and zero outbound interactions were
+created. Task preview/session helper stopped. SMS and email automated coverage
+includes mismatched/expired/forged proofs, changed context/destination, lookup/claim
+failure, consent overrides, concurrent execution, retries and persistent holds.
+
+True provider-threaded email, independently delivered manager notifications,
+quiet-hours/digest/retry workers, persisted reconciliation decisions and full
+responsive/accessibility acceptance remain milestone gates. Cursor's separate UI
+polish worktree was not edited. No push, merge, deployment, shared database or real
+provider activity. Founder main remains at 20e153a and the approved CONTEXT.md hash
+is unchanged; concurrent original-checkout UI edits remain untouched by this task.
+
+Final Node 22.23.2 verification: 1,169 unit passes in 105 files with four existing
+intentional live skips; 338 integration passes in 33 files, zero skips (47.53s).
+All 16 exact-context integration cases passed without changing timeouts or skipping
+coverage. The overlapping-run assertion failure could not be reproduced after
+stopping the preview; its precise underlying error was not retained, so it is not
+claimed as a proven timeout diagnosis. Failure diagnostics now include executor
+results. Full lint, offline production build and post-build typecheck passed.
+Exact 84-version ledger, RPC/table grants, four Whisper and two intake relationships,
+all 26 original tenant definitions, tenant/photo refusal probes and atomic record
+rollback passed. No inconsistent data was repaired. Changed-file credential,
+runtime-artifact, machine-path and whitespace scans passed.
+
+Commands: Node 22 `node scripts/isolated-check.mjs unit`, `integration --fresh`,
+`lint`, `build`, then `types`; `python3 scripts/verify-whisper-migration.py`,
+`python3 scripts/verify-intake-vehicle-migration.py --fresh`,
+`python3 scripts/verify-agent-record-migration.py --fresh`; original tenant/photo
+verifiers redirected in memory only to unlinked gradia-record-fresh; `git diff
+--cached --check`. Fresh initialization used `supabase --workdir
+.local-tools/record-fresh db reset --local --no-seed` and the three disposable
+failure fixtures. Build warnings about existing Sentry configuration/source maps
+remain; OS egress denial and absent provider credentials prevent external delivery.
+
+Implementation commit: `4a95652` (11 implementation/test/migration files); this
+verification update changes two documentation files, for 13 files in the slice.
