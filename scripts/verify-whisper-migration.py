@@ -39,3 +39,30 @@ for signature in ['record_delivery_reconciliation(uuid,uuid,uuid,integer,timesta
     assert sql(f"SELECT prosecdef AND proconfig=ARRAY['search_path=\"\"'] AND has_function_privilege('authenticated',oid,'EXECUTE') AND NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('service_role',oid,'EXECUTE') FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
 assert sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.delivery_reconciliations'::regclass AND contype='f'") == 'FOREIGN KEY (shop_id, action_id) REFERENCES service_proof_consumptions(shop_id, action_id) ON DELETE CASCADE'
 print('PASS: delivery reviews deny direct access; owner-session RPCs and tenant-bound durable proof relationship verified')
+
+for table in ['manager_notification_settings','manager_notification_settings_audit','manager_notification_deliveries','manager_notification_items']:
+    assert sql(f"SELECT relrowsecurity FROM pg_class WHERE oid='public.{table}'::regclass") == 't'
+    for role in ['anon','authenticated','service_role']:
+        assert sql(f"SELECT has_table_privilege('{role}','public.{table}','SELECT,INSERT,UPDATE,DELETE')") == 'f'
+for signature, allowed in [
+ ('configure_manager_notifications(uuid,integer,text,text,integer,integer,integer)','authenticated'),
+ ('read_manager_notifications(uuid)','authenticated'),
+ ('claim_manager_notification(uuid,text)','service_role'),
+ ('finish_manager_notification(uuid,uuid,integer,text,text)','service_role'),
+]:
+    assert sql(f"SELECT prosecdef AND proconfig=ARRAY['search_path=\"\"'] FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
+    for role in ['anon','authenticated','service_role']:
+        assert sql(f"SELECT has_function_privilege('{role}','public.{signature}','EXECUTE')") == ('t' if role == allowed else 'f')
+assert sql("SELECT relrowsecurity FROM pg_class WHERE oid='public.email_reply_evidence'::regclass") == 't'
+for role in ['anon','authenticated','service_role']:
+    assert sql(f"SELECT has_table_privilege('{role}','public.email_reply_evidence','SELECT,UPDATE,DELETE')") == 'f'
+    assert sql(f"SELECT has_table_privilege('{role}','public.email_reply_evidence','INSERT')") == ('t' if role == 'service_role' else 'f')
+for table, definitions in {
+ 'email_reply_evidence':['FOREIGN KEY (shop_id, interaction_id) REFERENCES interactions(shop_id, id) ON DELETE CASCADE'],
+ 'manager_notification_deliveries':['FOREIGN KEY (shop_id, recipient_id) REFERENCES shop_memberships(shop_id, user_id) ON DELETE CASCADE'],
+ 'manager_notification_items':['FOREIGN KEY (shop_id, notification_id) REFERENCES conversation_notifications(shop_id, id) ON DELETE CASCADE','FOREIGN KEY (shop_id, delivery_id) REFERENCES manager_notification_deliveries(shop_id, id) ON DELETE CASCADE'],
+}.items():
+    actual=sql(f"SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.{table}'::regclass AND contype='f'").splitlines()
+    assert all(d in actual for d in definitions), f'Relationship mismatch: {table}'
+assert sql("SELECT indisunique FROM pg_index WHERE indexrelid='public.manager_notification_daily_digest'::regclass") == 't'
+print('PASS: provider evidence insert-only; manager settings owner-session only; worker service-only; five new RLS tables; four new tenant relationships and daily digest uniqueness')
