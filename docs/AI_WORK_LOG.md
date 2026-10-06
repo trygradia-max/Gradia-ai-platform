@@ -414,3 +414,53 @@ remain; OS egress denial and absent provider credentials prevent external delive
 
 Implementation commit: `4a95652` (11 implementation/test/migration files); this
 verification update changes two documentation files, for 13 files in the slice.
+
+
+[AI: codex] [DATE: 2026-10-06] [AREA: platform] [STATUS: done]
+Added persisted owner delivery reconciliation to the existing approval record, the
+next bounded Whisper milestone-4 slice. Owners record delivered, not-delivered or
+still-uncertain assessments with evidence notes. These are human reports, not
+provider-verified receipts. Paginated append-only history preserves each decision,
+actor/name snapshot, timestamp and reviewed execution state. No new settings screen,
+Agent memory publication, provider lookup or delivery worker.
+
+The session-only SQL command checks live owner authority, tenant-bound consumed
+proof, expected revision and provider-completion timestamp. Exact retries dedupe;
+competing/stale decisions and changed command reuse fail closed. Anonymous, manager,
+staff, revoked-member and sessionless service callers are denied. All direct table
+privileges are revoked, including service role. Recording any outcome changes only
+the review history: it cannot release a proof, edit/retry the message, clear the
+conversation hold, grant consent or authorize a replacement. Historical reviews and
+spent authority survive pending-action deletion. No existing deletion behavior changed.
+
+Migration 85 initialized from zero on unlinked gradia-record-fresh. All 85 ledger
+versions, new RPC grants/RLS/composite proof relationship, existing four Whisper/two
+intake relationships, original 26 tenant definitions and tenant/photo refusal plus
+atomic-record rollback probes passed. Node 22: 1,176 unit passes in 106 files with
+four existing intentional live skips; 347 integration passes in 34 files, zero
+skips. Seven new unit and nine new integration cases cover validation, no retry,
+history escaping/pagination, tenant/role/direct-access denial, independent-session
+command dedupe, concurrent/stale decisions, late provider-completion changes and
+retained history. Lint initially caught JSX inside a try/catch; the database catch
+was narrowed, and full lint, offline build and post-build types passed without
+weakening the rule.
+
+Browser acceptance used a fictional owner/shop and consumed-action fixture on an
+outbound-denied local runtime. One still-uncertain assessment appeared in attributed
+history; pending state and consumed proof remained unchanged. Three inbound
+interactions remained; no outbound interaction was created. Temporary preview and
+session helper stopped. Final unit and typecheck were repeated after browser work.
+Credential/runtime/machine-path and whitespace scans passed for the changed files.
+Commands remain the Node 22 isolated-check unit, integration --fresh, lint, build,
+then types commands and disposable catalog/refusal commands documented above.
+
+Still outstanding: provider-evidence lookup, separately authorized replacement
+handling, delegated manager reconciliation, provider-threaded email, independent
+manager notification delivery/digest/quiet-hours/retry workflow, and full responsive
+and accessibility acceptance. Human review does not clear the delivery hold. No
+push, merge, deployment, shared Supabase or real provider activity. Founder main and
+CONTEXT.md are protected; concurrent founder-checkout edits were not touched. The
+separate Cursor UI-polish worktree was not changed by this task.
+
+Implementation commit: `0847317` (nine implementation/test/migration files), plus
+two documentation files in the verification commit: 11 files for this slice.

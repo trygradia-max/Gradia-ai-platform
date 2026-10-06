@@ -1,8 +1,8 @@
 # Whisper inbox and operational handoff
 
-## Scope — October 5, 2026
+## Scope — October 6, 2026
 
-This covers the operational-inbox and exact-context reply slices of milestone 4 in the five governing
+This covers the operational-inbox, exact-context reply and owner-reconciliation slices of milestone 4 in the five governing
 September 11 MVP documents, not completion or activation of that milestone.
 `/conversations` remains the single conversation destination. Existing owner
 Ask Gradia chat remains separate from customer messages within that page.
@@ -72,9 +72,20 @@ a read-only delivery review with claim/response timestamps and reconciliation st
 editing or reclassifying a claimed action is denied. Provider acceptance is not proof
 of delivery. An authorized owner must inspect provider evidence, retain a hold if
 uncertain, and explicitly review any replacement under current consent/policy rules.
-No automatic resend, provider lookup, claim release or persisted reconciliation
-resolution is implemented. This prioritizes avoiding duplicate delivery over automatic
-recovery after an uncertain provider outcome.
+Owners can now record delivered, not-delivered or still-uncertain assessments with
+bounded evidence notes in the same approval page. These are explicitly human reports,
+not provider-verified receipts. Each append-only revision captures the session actor,
+owner-name snapshot, time and reviewed execution-completion timestamp. Paginated
+history preserves earlier decisions. Missing history, changed execution state,
+stale revisions and conflicting command reuse fail closed. Exact command retries
+are idempotent. Manager/staff/service callers cannot record these owner reviews.
+
+Recording a review never changes the pending action, consumed proof, consent,
+conversation hold or policy. No automatic resend, provider lookup or claim release
+is implemented. A not-delivered assessment does not itself authorize a replacement.
+This prioritizes avoiding duplicate delivery over automatic recovery after an
+uncertain provider outcome. The review is operational evidence, not a published
+Memory rule or a new instruction for Gradia.
 
 Email currently stages a new outbound message, not a provider-threaded reply.
 Voice history is read/handoff-only. Existing intake evidence and reviewed vehicle
@@ -108,15 +119,23 @@ owner/service context resolver and replaces inbox read functions to expose consu
 execution holds. Anonymous access is denied; owner access requires live membership.
 It adds no data transformation, repair, transport or new message store.
 
+Migration 85, `20261006120000_delivery_reconciliation.sql`, adds an RLS-enabled
+append-only review table with no direct anonymous/authenticated/service privileges.
+Two fixed-search-path session-only RPCs enforce live owner authority. A composite
+shop/action relationship binds every review to durable consumed authority. Historical
+reviews survive pending-action deletion, as consumed proofs already do; deleting
+the owning shop cascades via its proof records. No existing deletion behavior,
+customer merge or provider executor is changed. Retention/pruning remains disabled.
+
 ## Remaining milestone gates
 
 - Independent transactional-email provider choice/setup; real notification delivery
   stays disabled. No immediate email, digest, quiet-hour scheduler or retry worker
   is claimed. In-app notifications require a refresh; there is no realtime feed.
 - Provider thread/message identity and true in-thread email reply integration.
-- Persisted reconciliation decisions and provider-evidence tooling. The read-only
-  review panel explains the manual process, but does not record its resolution or
-  query a provider. Never resend automatically after an uncertain outcome.
+- Provider-evidence lookup tooling and separately authorized replacement handling.
+  Owner assessments are persisted, but do not verify a provider receipt, clear the
+  execution hold or authorize a resend. Delegated manager reconciliation is not added.
 - Search/filtering, bounded related-record paging and a browsable handoff-audit
   timeline. Related intake/approval references currently return all matching records.
 - Full responsive/accessibility acceptance and live-provider pilot acceptance.
@@ -127,10 +146,10 @@ app scope is added. Qualification and booking remain later dependencies.
 
 ## Verification
 
-Final results: 1,169 unit passes (four intentional live skips), 338 integration
-passes (zero skips), lint, offline build and post-build types passed. All 84
+Final results: 1,176 unit passes (four intentional live skips), 347 integration
+passes (zero skips), lint, offline build and post-build types passed. All 85
 migrations initialized from zero; catalog, relationship and rollback/refusal probes
-passed. See the matching October 5 entry in `docs/AI_WORK_LOG.md` for browser checks.
+passed. See the October 5–6 entries in `docs/AI_WORK_LOG.md` for browser checks.
 Node 22 isolated commands: `node scripts/isolated-check.mjs unit`,
 `integration --fresh`, `lint`, `build`, then `types`. The runner uses an empty
 environment and OS egress denial; integrations allow only the dedicated loopback
