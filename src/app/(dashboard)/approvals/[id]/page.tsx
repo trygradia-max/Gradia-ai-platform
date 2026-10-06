@@ -1,3 +1,4 @@
+import {DeliveryReconciliationHistory} from "@/components/gradia/delivery-reconciliation-history"
 import {readMessageDeliveryReview} from "@/lib/message-delivery-review"
 import {MessageDeliveryReviewPanel} from "@/components/gradia/message-delivery-review"
 import {WhisperReplyEvidence} from "@/components/gradia/whisper-reply-evidence"
@@ -66,8 +67,10 @@ type EmailPayload = {
 
 export default async function PendingProposalPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{reviewOffset?: string | string[]}>
 }) {
   const { id } = await params
   const shop = await requireShop()
@@ -92,7 +95,7 @@ export default async function PendingProposalPage({
   const isMessage=pending.action_type === "send_sms" || pending.action_type === "send_email"
   if(isMessage){
     const review=await readMessageDeliveryReview(supabase,shop.id,pending.id)
-    if(review.state!=="unspent")return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><MessageDeliveryReviewPanel review={review}/></div>
+    if(review.state!=="unspent")return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><MessageDeliveryReviewPanel review={review}/>{review.state!=="unavailable" && <DeliveryReconciliationHistory db={supabase} shopId={shop.id} actionId={pending.id} page={(await searchParams).reviewOffset}/>}</div>
     if(pending.status==="approved"&&!pending.result_id)return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><h1>Execution unconfirmed</h1><p role="alert">Approval is not proof of delivery. Review execution and provider evidence before taking any further action; do not resend automatically.</p></div>
   }
 

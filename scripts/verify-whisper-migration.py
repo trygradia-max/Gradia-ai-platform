@@ -31,3 +31,11 @@ print(f'PASS: exact {len(versions)} migrations; four metadata tables deny direct
 signature='whisper_reply_context(uuid,uuid)'
 assert sql(f"SELECT prosecdef AND proconfig=ARRAY['search_path=\"\"'] AND has_function_privilege('authenticated',oid,'EXECUTE') AND has_function_privilege('service_role',oid,'EXECUTE') AND NOT has_function_privilege('anon',oid,'EXECUTE') FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
 print('PASS: immutable reply-context RPC has fixed search path, owner/service authority and no anonymous grant')
+
+assert sql("SELECT relrowsecurity FROM pg_class WHERE oid='public.delivery_reconciliations'::regclass") == 't'
+for role in ['anon','authenticated','service_role']:
+    assert sql(f"SELECT has_table_privilege('{role}','public.delivery_reconciliations','SELECT,INSERT,UPDATE,DELETE')") == 'f'
+for signature in ['record_delivery_reconciliation(uuid,uuid,uuid,integer,timestamptz,text,text)','read_delivery_reconciliation(uuid,uuid,integer)']:
+    assert sql(f"SELECT prosecdef AND proconfig=ARRAY['search_path=\"\"'] AND has_function_privilege('authenticated',oid,'EXECUTE') AND NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('service_role',oid,'EXECUTE') FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
+assert sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.delivery_reconciliations'::regclass AND contype='f'") == 'FOREIGN KEY (shop_id, action_id) REFERENCES service_proof_consumptions(shop_id, action_id) ON DELETE CASCADE'
+print('PASS: delivery reviews deny direct access; owner-session RPCs and tenant-bound durable proof relationship verified')
