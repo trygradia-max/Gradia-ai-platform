@@ -464,3 +464,14 @@ separate Cursor UI-polish worktree was not changed by this task.
 
 Implementation commit: `0847317` (nine implementation/test/migration files), plus
 two documentation files in the verification commit: 11 files for this slice.
+
+
+[AI: cursor] [DATE: 2026-10-05] [AREA: platform] [STATUS: done]
+Polished the existing Whisper list, thread, loading state, and controls on
+`codex/cursor-whisper-ui-polish` for phone, tablet, and desktop reading, keyboard
+focus, labels, and error or status text. Permissions, command IDs, revisions, and
+approval staging were left in place. Node 22 isolated unit result: 1,169 passed
+and 4 skipped; lint, offline build, and post-build types passed. A fictional
+static fixture was checked at 320, 390, 768, and 1280. Authenticated browser
+sessions were not run. See docs/qa/WHISPER_UI_ACCEPTANCE.md. Local commit only;
+no push, merge, deployment, shared database, or provider activity.
