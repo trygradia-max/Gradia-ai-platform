@@ -42,10 +42,10 @@ function KpiCard({
 }) {
   const body = (
     <>
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="text-[12.5px] text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "font-data text-2xl font-semibold",
+          "font-data text-[22px] font-medium tabular-nums tracking-tight",
           warn && value > 0 ? "text-status-warning-fg" : "text-foreground"
         )}
       >
@@ -55,10 +55,10 @@ function KpiCard({
     </>
   )
   const cardClass =
-    "flex flex-col gap-1.5 rounded-md border border-border/60 bg-card px-4 py-3.5 transition-colors duration-150"
+    "flex min-h-[4.5rem] flex-col gap-1 px-4 py-3.5 transition-colors duration-150"
   if (href) {
     return (
-      <Link href={href} className={cn(cardClass, "hover:border-border-strong")}>
+      <Link href={href} className={cn(cardClass, "hover:bg-muted/40")}>
         {body}
       </Link>
     )
@@ -69,9 +69,8 @@ function KpiCard({
 export function KpiRow({ kpis }: { kpis: HomeKpis }) {
   const s = STRINGS.pages.home
   return (
-    <section className="space-y-3">
-      <p className="label-eyebrow text-muted-foreground/70">{s.kpisEyebrow}</p>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <section aria-label={s.kpisEyebrow}>
+      <div className="grid grid-cols-2 divide-x divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70 bg-card lg:grid-cols-4 lg:divide-y-0">
         <KpiCard
           label={s.kpiCalls}
           value={kpis.callsToday}

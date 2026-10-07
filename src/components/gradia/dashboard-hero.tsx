@@ -13,6 +13,7 @@ export function DashboardHero({
   liveChannelCount,
   totalChannels,
   eyebrow,
+  status,
   rightSlot,
 }: {
   shopName: string
@@ -20,6 +21,7 @@ export function DashboardHero({
   totalChannels: number
   /** Pre-computed on the server so SSR + first paint agree. */
   eyebrow: string
+  status?: string
   /** Right-aligned action area (e.g. Add lead button). */
   rightSlot?: React.ReactNode
 }) {
@@ -29,42 +31,29 @@ export function DashboardHero({
     : `${liveChannelCount} of ${totalChannels} channels live`
 
   return (
-    <section className="relative rounded-md border border-border/60 bg-card px-6 py-6 sm:px-8 sm:py-7">
-      <PageStagger className="relative flex flex-col gap-4">
+    <section className="flex flex-wrap items-end justify-between gap-4">
+      <PageStagger className="min-w-0">
         <StaggerItem>
-          <p className="label-eyebrow text-muted-foreground/80">
+          <h1 className="font-display text-2xl tracking-tight text-foreground">
             {eyebrow}
-          </p>
-        </StaggerItem>
-
-        <StaggerItem>
-          <h1 className="font-display text-2xl text-foreground">
-            Today at <span className="text-muted-foreground">{shopName}</span>
           </h1>
         </StaggerItem>
-
         <StaggerItem>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex items-center gap-2.5">
-              <PulseDot
-                tone={allLive ? "good" : "accent"}
-                size={8}
-              />
-              <p className="text-sm text-muted-foreground">
-                <span className="text-foreground">{channelLine}</span>
-                <span className="hidden text-muted-foreground/60 sm:inline">
-                  {" "}— agents watching every inbox.
-                </span>
-              </p>
-            </div>
-            {rightSlot ? (
-              <div className="flex shrink-0 items-center gap-2">
-                {rightSlot}
-              </div>
-            ) : null}
+          <p className="mt-1 text-sm text-muted-foreground">{shopName}</p>
+        </StaggerItem>
+        <StaggerItem>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <PulseDot tone={allLive ? "good" : "accent"} size={8} />
+              <span className="text-foreground">{channelLine}</span>
+            </span>
+            {status ? <span>{status}</span> : null}
           </div>
         </StaggerItem>
       </PageStagger>
+      {rightSlot ? (
+        <div className="flex shrink-0 items-center gap-2">{rightSlot}</div>
+      ) : null}
     </section>
   )
 }

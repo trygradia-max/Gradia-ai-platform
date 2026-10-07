@@ -416,7 +416,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
     <MotionCard
       interactive={false}
       className={cn(
-        "relative overflow-hidden p-5 sm:p-6",
+        "relative overflow-hidden p-4 sm:p-5",
         // Accent rail on the left edge, color-coded to the action type.
         // Notes get no rail (low stakes); everything else does.
         tone.rail &&

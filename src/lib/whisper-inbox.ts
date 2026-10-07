@@ -12,6 +12,7 @@ export const threadSchema = z.object({
     members: z.array(z.object({ id, name: z.string() })), intakes: z.array(z.object({ id, vehicle_id: id.nullable() })), actions: z.array(z.object({ id, status: z.string(), result_id: id.nullable() })),
 });
 export type WhisperThread = z.infer<typeof threadSchema>;
+export type InboxThreadItem = z.infer<typeof threadListSchema>["items"][number];
 const envelope = { shopId: id, customerId: id, channel: channelSchema, commandId: id, latestId: id, revision: z.number().int().nonnegative() };
 export const whisperCommandSchema = z.discriminatedUnion("operation", [
     z.object({ ...envelope, operation: z.literal("read"), payload: z.object({}).strict() }).strict(),

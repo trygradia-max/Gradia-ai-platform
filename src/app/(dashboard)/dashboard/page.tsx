@@ -41,12 +41,17 @@ export default async function DashboardPage() {
   const v = STRINGS.pages.activity
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-16">
+    <div className="mx-auto w-full max-w-5xl space-y-8">
       <DashboardHero
         shopName={shop.name}
         liveChannelCount={connectedCount}
         totalChannels={channels.length}
         eyebrow={dashboardEyebrow()}
+        status={
+          approvals.length === 0
+            ? "Nothing needs you right now."
+            : `${approvals.length} waiting on you.`
+        }
         rightSlot={<AddLeadDialog />}
       />
 
