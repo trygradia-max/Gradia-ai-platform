@@ -13,6 +13,14 @@
 > See [verified baseline and production gate](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md#verified-baseline-and-production-gate).
 > This documentation-only update does not authorize feature implementation or lift
 > any release gate. Protected `CONTEXT.md` and application code remain unchanged.
+>
+> **Evidence addendum, 2026-09-24 (Pacific).** `main` `247bb50` (PR #48) adds
+> `src/lib/team-permissions.ts`, `src/lib/control-center/policy.ts` and
+> `src/lib/control-center/drafts.ts`. The policy function is not wired to
+> executors. Owner-only `shop.ts` resolution is no longer the only membership
+> model in code; scoped manager execution is still missing. Ledgers:
+> `CONTROL_CENTER_IMPLEMENTATION.md` and `../MVP_TEAM_PERMISSIONS_VERIFICATION.md`.
+> September 11 architecture decisions below are unchanged.
 
 ## MVP NOW
 

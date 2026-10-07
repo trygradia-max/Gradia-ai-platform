@@ -20,3 +20,13 @@ it("blocks ordinary TLS provider sockets before connection", async () => {
   const {connect}=await import("node:tls")
   expect(()=>connect({host:"api.twilio.com",port:443})).toThrow("Unexpected socket connection blocked")
 })
+
+it("fresh verification stack has an exact separate origin and project allowlist", () => {
+  vi.stubEnv("INTEGRATION", "1")
+  vi.stubEnv("GRADIA_DISPOSABLE_TEST", "gradia-record-fresh")
+  expect(allowedTestUrl("http://127.0.0.1:56731/rest/v1/customers")).toBe(true)
+  for (const target of ["http://127.0.0.1:56531", "https://127.0.0.1:56731", "http://localhost:56731", "http://x:y@127.0.0.1:56731", "https://api.twilio.com"]) expect(allowedTestUrl(target)).toBe(false)
+  vi.stubEnv("GRADIA_DISPOSABLE_TEST", "unknown")
+  expect(allowedTestUrl("http://127.0.0.1:56731")).toBe(false)
+  vi.unstubAllEnvs()
+})

@@ -75,6 +75,14 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // P0-012: public uptime endpoint — one fixed service-role read of
     // cron_heartbeats (no request input, no tenant data in the response).
     "src/app/api/health/route.ts",
+    // Meta Lead Ads intake. The shop id is the unique page binding.
+    // The webhook body cannot name the tenant. Signature is checked first.
+    // record_lead_intake is service-role only and rechecks the shop row.
+    "src/app/api/intake/meta-lead-ads/route.ts",
+    // Website form intake. The shop id is the signed-in owner's active shop.
+    // A body shop_id that does not match is refused before the write.
+    // record_lead_intake is service-role only and rechecks the shop row.
+    "src/app/api/intake/website-form/route.ts",
     "src/app/api/cron/agents/route.ts",
     "src/app/api/cron/automations/route.ts",
     "src/app/api/cron/no-show-ladder/route.ts",

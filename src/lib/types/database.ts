@@ -554,6 +554,9 @@ export type ShopMetricsRow = {
 }
 
 export type PendingActionType =
+  | "update_customer"
+  | "resolve_customer"
+  | "record_interaction"
   | "create_lead"
   | "add_note"
   | "book_appointment"
@@ -644,6 +647,7 @@ export type BiMessageRow = {
 }
 
 export type McpTokenRow = {
+  capabilities: import("@/lib/mcp/capabilities").McpCapability[]
   id: string
   shop_id: string
   name: string

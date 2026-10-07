@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { savePolicyDraft } from "@/app/actions/control-center"
+import { savePolicyDraft, activatePolicyDraft } from "@/app/actions/control-center"
 import { ACTIONS, modes, type Mode, type Operation } from "@/lib/control-center/policy"
 import { connectors, risks, exceptions, operationLabels, type PolicyDraft } from "@/lib/control-center/drafts"
 
@@ -13,9 +13,11 @@ function ModeField({ label, value, inherit = true, onChange }: { label: string; 
       {modes.map(mode => <option key={mode} value={mode}>{labels[mode]}</option>)}
     </select></label>
 }
-export function PolicyDraftEditor({ shopId, revision, initial }: { shopId: string; revision: number; initial: PolicyDraft }) {
+export function PolicyDraftEditor({ shopId, revision, initial, activeRevision }: { shopId: string; revision: number; initial: PolicyDraft; activeRevision: number | null }) {
   const [draft, setDraft] = useState(initial)
   const [currentRevision, setRevision] = useState(revision)
+  const [active, setActive] = useState(activeRevision)
+  const [saved, setSaved] = useState(initial)
   const [message, setMessage] = useState("")
   const [pending, startTransition] = useTransition()
   function updateMap(key: "connectorCeilings" | "actionGrants" | "roleCeilings" | "riskCeilings" | "exceptionCeilings", scope: string, value: Mode | null) {
@@ -26,11 +28,13 @@ export function PolicyDraftEditor({ shopId, revision, initial }: { shopId: strin
     startTransition(async () => {
       try {
         const result = await savePolicyDraft({ shopId, expectedRevision: currentRevision, definition: draft })
-        if (result.ok) { setRevision(result.revision); setMessage(`Draft revision ${result.revision} saved. Current execution is unchanged.`) }
+        if (result.ok) { setRevision(result.revision); setSaved(draft); setMessage(`Draft revision ${result.revision} saved. Current execution is unchanged.`) }
         else setMessage(result.error)
       } catch { setMessage("The save could not be confirmed. Reload to check the revision before retrying.") }
     })
   }}>
+    <p className="text-sm">{active === null ? "No policy activated. Existing actions require human approval." : `Active policy revision ${active}.`} Saving further edits does not replace the active revision.</p>
+    <p className="text-sm text-muted-foreground">Applies to queued lead creation, notes, SMS/email, quotes and booking changes. Other controls remain planning-only. Messages with an unverified purpose use the strictest rule for their channel; unknown conditions use the strictest configured limit. Calendar and quote actions still require approval. Activation does not connect providers or remove release restrictions.</p>
     <fieldset disabled={pending} className="space-y-4">
       <section className="rounded-md border p-4">
         <h2 className="font-medium">Workspace · draft revision {currentRevision}</h2>
@@ -52,6 +56,16 @@ export function PolicyDraftEditor({ shopId, revision, initial }: { shopId: strin
         {([ ["roleCeilings", ["owner", "manager", "staff"]], ["riskCeilings", risks], ["exceptionCeilings", exceptions] ] as const).map(([key, scopes]) => scopes.map(scope => <ModeField key={`${key}:${scope}`} label={scope.replaceAll("_", " ")} value={draft[key][scope] ?? null} onChange={value => updateMap(key, scope, value)} />))}
       </details>
       <button className="rounded-sm bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50" type="submit">{pending ? "Saving draft…" : "Save draft"}</button>
+      <button type="button" className="ml-3 rounded-sm border px-4 py-2 disabled:opacity-50" disabled={pending || JSON.stringify(draft) !== JSON.stringify(saved) || active === currentRevision} onClick={() => {
+        setMessage("")
+        startTransition(async () => {
+          try {
+            const result = await activatePolicyDraft({ shopId, revision: currentRevision, expectedActive: active })
+            if (result.ok) { setActive(result.revision); setMessage(`Revision ${result.revision} activated for queued actions.`) }
+            else setMessage(result.error)
+          } catch { setMessage("Activation could not be confirmed. Reload before retrying.") }
+        })
+      }}>Activate saved revision {currentRevision}</button>
     </fieldset>
     <p role="status" aria-live="polite" className="text-sm">{message}</p>
   </form>

@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
-import { isAutonomyAllowed, resolveAgentMode } from "@/lib/autonomy"
+import { isAutonomyAllowed } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { recordActionDecision } from "@/lib/decision-log"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
@@ -1819,7 +1819,6 @@ async function maybeAutoExecute(
   if (ids.length === 0) return outcome
   // Autonomy is a Package 2 capability; nothing auto-executes without it.
   if (!hasPackage2(shop)) return outcome
-  const agentAuto = resolveAgentMode(shop, agent.id) === "autonomous"
 
   // P0-011: ids come from this run's own shop-scoped inserts, but the
   // explicit predicate makes that an enforced mechanism — a handler bug
@@ -1839,11 +1838,8 @@ async function maybeAutoExecute(
   for (const row of rows) {
     if (row.status !== "pending") continue
     if (!isAutonomyAllowed(row.action_type)) continue
-    // Auto-execute when the whole agent is autonomous OR this action type has
-    // earned its own graduation (L6). ALWAYS_HITL is already excluded above.
-    const actionAuto =
-      agentAuto || resolveAgentMode(shop, row.action_type) === "autonomous"
-    if (!actionAuto) continue
+    // The current activated policy is authoritative; old agent/trust toggles
+    // cannot grant autonomy. The executor checks it atomically when claiming.
     try {
       // context "automatic": if a calendar action ever slipped past the
       // ALWAYS_HITL filter above, the executor's conflict gate hard-blocks

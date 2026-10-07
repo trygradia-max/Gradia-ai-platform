@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest"
 
 import {
   applyConditionMultipliers,
+  describeDuration,
   describePrice,
+  durationSpread,
   formatPriceUsd,
   priceSpread,
   resolveDurationMinutes,
@@ -222,7 +224,7 @@ describe("voice prompt reads through the shared module", () => {
       knowledge: [],
     })
     expect(prompt).toContain("$150 to $220 depending on vehicle size")
-    expect(prompt).toContain("priced by vehicle size")
+    expect(prompt).toContain("priced or timed by vehicle size")
     // The numbers in the prompt are exactly the module's resolution.
     expect(describePrice(sized)).toBe("$150 to $220 depending on vehicle size")
     expect(resolvePriceCents(sized, "truck_suv")).toBe(22000)
@@ -235,5 +237,88 @@ describe("voice prompt reads through the shared module", () => {
       knowledge: [],
     })
     expect(prompt).not.toContain("priced by vehicle size")
+  })
+})
+
+// --- duration: the same rule money already had ------------------------------
+/**
+ * Regression guard for the B-16 follow-up: onboarding collects per-size
+ * durations, and `resolveDurationMinutes(service)` with NO size class
+ * silently returns the flat `duration_minutes`. Every voice and drafting
+ * surface called it that way, so a shop configured "sedan 90, truck 150"
+ * told a truck owner 90. Price never had this bug because `describePrice`
+ * already fell back to a spread — duration now does too.
+ */
+describe("durationSpread / describeDuration", () => {
+  it("flat durations have no spread and read as one number", () => {
+    expect(durationSpread(FLAT)).toBeNull()
+    expect(describeDuration(FLAT)).toBe("90 min")
+  })
+
+  it("varying size durations read as a range when the vehicle is unknown", () => {
+    expect(durationSpread(SIZED)).toEqual({ low: 90, high: 150 })
+    expect(describeDuration(SIZED)).toBe(
+      "90–150 min depending on vehicle size"
+    )
+  })
+
+  it("a known size class resolves to that exact duration", () => {
+    expect(describeDuration(SIZED, "truck_suv")).toBe("150 min")
+    expect(describeDuration(SIZED, "sedan")).toBe("90 min")
+  })
+
+  it("a size class the owner never configured falls back to the range", () => {
+    // rv is absent from duration_by_size — do not invent a number for it.
+    expect(describeDuration(SIZED, "rv")).toBe(
+      "90–150 min depending on vehicle size"
+    )
+  })
+
+  it("a single configured size reads as that number, not a range", () => {
+    const one = { duration_minutes: 60, duration_by_size: { truck_suv: 120 } }
+    expect(durationSpread(one)).toEqual({ low: 120, high: 120 })
+    expect(describeDuration(one)).toBe("120 min")
+  })
+
+  it("malformed owner jsonb falls back instead of throwing", () => {
+    const junk = {
+      duration_minutes: 75,
+      duration_by_size: {
+        sedan: -5,
+        truck_suv: null,
+        exotic: "a while",
+        not_a_size: 999,
+      },
+    } as unknown as Parameters<typeof describeDuration>[0]
+    expect(durationSpread(junk)).toBeNull()
+    expect(describeDuration(junk)).toBe("75 min")
+  })
+
+  it("the voice prompt states a duration range, never the flat number", () => {
+    const sized: ServiceRow = {
+      id: "svc-1",
+      shop_id: "shop-1",
+      name: "Full Detail",
+      description: null,
+      price_cents: 15000,
+      duration_minutes: 90,
+      category: null,
+      base_price_by_size: null,
+      duration_by_size: { sedan: 90, truck_suv: 150 },
+      condition_multipliers: null,
+      is_addon: false,
+      addon_eligible: true,
+      mobile_eligible: true,
+      active: true,
+      created_at: "",
+      updated_at: "",
+    }
+    const prompt = synthesizeSystemPrompt({
+      shop: { name: "Shine Co", location: null, phone: null },
+      services: [sized],
+      knowledge: [],
+    })
+    expect(prompt).toContain("about 1.5 hours to about 2.5 hours depending on size")
+    expect(prompt).toContain("priced or timed by vehicle size")
   })
 })

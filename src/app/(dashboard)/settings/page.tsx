@@ -1,3 +1,5 @@
+import {getManagerNotifications} from "@/app/actions/manager-notifications"
+import {ManagerNotificationSettings} from "@/components/gradia/manager-notification-settings"
 import { headers } from "next/headers"
 import Link from "next/link"
 import { Bot, Briefcase, Calendar, ChevronRight, Mail, MessageSquare, Phone, Shield } from "lucide-react"
@@ -106,6 +108,7 @@ export default async function SettingsPage({
     jobber?: string
   }>
 }) {
+  const notificationSettings = await getManagerNotifications()
   const shopCtx = await requireShop()
   const supabase = await createClient()
 
@@ -358,6 +361,7 @@ export default async function SettingsPage({
         </section>
 
         <section id="email">
+          <ManagerNotificationSettings key={notificationSettings?.settings.revision ?? "unavailable"} initial={notificationSettings}/>
           <EmailSettingsCard
             initialConnected={connection.email.connected}
             initialAccountEmail={connection.email.identity}

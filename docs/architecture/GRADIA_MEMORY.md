@@ -13,6 +13,13 @@
 > See [verified baseline and production gate](../roadmap/MVP_IMPLEMENTATION_SEQUENCE.md#verified-baseline-and-production-gate).
 > This documentation-only update does not authorize feature implementation or lift
 > any release gate. Protected `CONTEXT.md` and application code remain unchanged.
+>
+> **Evidence addendum, 2026-09-24 (Pacific).** Reviewed memory publication is
+> still unimplemented. Capture of the before/after edit delta is scheduled with
+> Whisper inbox work (sequence step 4). The candidate, review and publish loop
+> remains sequence step 7. PR #48 does not add memory tables. September 11
+> retention defaults and publication authority below are unchanged. Privacy and
+> legal review is still required before production cleanup.
 
 ## MVP NOW
 

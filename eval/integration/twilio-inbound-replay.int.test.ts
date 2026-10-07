@@ -191,6 +191,16 @@ const usageFor = (eventId: string, shopId: string) =>
     vendor_ref: eventId,
   })
 
+async function intakeFor(eventId: string) {
+  const { data, error } = await sb
+    .from("lead_intake_envelopes")
+    .select("id, shop_id, channel, provider, thread_key, payload, workflow_id")
+    .eq("provider", "twilio")
+    .eq("provider_event_id", eventId)
+  if (error) throw new Error(`lead intake lookup failed: ${error.message}`)
+  return data ?? []
+}
+
 describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", () => {
   beforeAll(async () => {
     for (const k of [
@@ -404,6 +414,7 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     expect(res.status).toBe(200) // suppressed, not executed
     expect(cls.calls).toBe(0)
     expect(await interactionsFor(id, seed.shopId)).toBe(0)
+    expect(await intakeFor(id)).toHaveLength(0)
     await completeProviderEvent(sb, "twilio", id)
   })
 
@@ -436,6 +447,8 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     const afterReplay = await customer()
     expect(afterReplay?.sms_opted_out_at).toBe(afterFirst?.sms_opted_out_at)
     expect(await interactionsFor(id1, seed.shopId)).toBe(1)
+    expect(await intakeFor(id1)).toHaveLength(1)
+    expect((await intakeFor(id1))[0]?.thread_key).toBeNull()
 
     // A genuinely new STOP (different sid, same content) processes.
     const id2 = sid("stop-2")
@@ -471,6 +484,7 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     expect(forged.status).toBe(401)
     expect(await providerEvent(id)).toBeNull()
     expect(await interactionsFor(id, seed.shopId)).toBe(0)
+    expect(await intakeFor(id)).toHaveLength(0)
 
     const real = await post(form)
     expect(real.status).toBe(200)
@@ -484,6 +498,7 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     const res = await post(form)
     expect(res.status).toBe(200)
     expect(await providerEvent(id)).toBeNull()
+    expect(await intakeFor(id)).toHaveLength(0)
   })
 
   it("cross-tenant: a MessageSid already processed for shop A cannot mutate shop B", async () => {
@@ -501,6 +516,10 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     expect(await interactionsFor(idA, seedB.shopId)).toBe(0)
     expect(await pendingFor(idA, seedB.shopId)).toBe(0)
     expect((await providerEvent(idA))?.shop_id).toBe(seed.shopId)
+    const kept = await intakeFor(idA)
+    expect(kept).toHaveLength(1)
+    expect(kept[0]?.shop_id).toBe(seed.shopId)
+    expect(kept[0]?.payload).toMatchObject({ message: "how much is a full detail?" })
 
     // Shop B's own traffic is unaffected.
     const idB = sid("tenant-b")
@@ -509,5 +528,82 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     ).toBe(200)
     expect(await interactionsFor(idB, seedB.shopId)).toBe(1)
     expect(await interactionsFor(idB, seed.shopId)).toBe(0)
+  })
+
+  it("duplicate Twilio delivery keeps one intake envelope and one workflow", async () => {
+    const id = sid("intake-dup")
+    const form = makeForm({ MessageSid: id, Body: "Fictional first text" })
+    expect((await post(form)).status).toBe(200)
+    const first = await intakeFor(id)
+    expect(first).toHaveLength(1)
+    expect(first[0]).toMatchObject({
+      shop_id: seed.shopId,
+      channel: "sms",
+      provider: "twilio",
+      thread_key: null,
+      payload: { phone: "+15035550133", message: "Fictional first text" },
+    })
+
+    for (let i = 0; i < 3; i++) {
+      expect((await post(form)).status).toBe(200)
+    }
+    expect(await intakeFor(id)).toHaveLength(1)
+    const transitions = await sb
+      .from("lead_workflow_transitions")
+      .select("id")
+      .eq("workflow_id", first[0]!.workflow_id)
+    expect(transitions.error).toBeNull()
+    expect(transitions.data).toHaveLength(1)
+  })
+
+  it("a crash after the intake row is saved retries without a second envelope", async () => {
+    const id = sid("intake-crash")
+    cls.fail = true
+    const failed = await post(makeForm({ MessageSid: id, Body: "Original fictional inquiry" }))
+    expect(failed.status).toBe(500)
+    const saved = await intakeFor(id)
+    expect(saved).toHaveLength(1)
+    expect(saved[0]?.payload).toEqual({
+      phone: "+15035550133",
+      message: "Original fictional inquiry",
+    })
+    expect((await providerEvent(id))?.status).toBe("failed")
+
+    cls.fail = false
+    const retried = await post(makeForm({
+      MessageSid: id,
+      Body: "Retry must not replace evidence",
+    }))
+    expect(retried.status).toBe(200)
+    const after = await intakeFor(id)
+    expect(after).toEqual(saved)
+    const transitions = await sb
+      .from("lead_workflow_transitions")
+      .select("id")
+      .eq("envelope_id", saved[0]!.id)
+    expect(transitions.data).toHaveLength(1)
+    expect(await interactionsFor(id, seed.shopId)).toBe(1)
+    expect(await pendingFor(id, seed.shopId)).toBe(1)
+  })
+
+  it("ordinary inbound texts from the same phone stay on separate workflows", async () => {
+    cls.isLead = false
+    const phone = "+15035550144"
+    const firstId = sid("intake-phone-a")
+    const secondId = sid("intake-phone-b")
+    const consentBefore = await countRows("customer_channel_permissions", { shop_id: seed.shopId })
+    expect((await post(makeForm({ MessageSid: firstId, From: phone, Body: "what are your hours" }))).status).toBe(200)
+    expect((await post(makeForm({ MessageSid: secondId, From: phone, Body: "still asking" }))).status).toBe(200)
+
+    const first = await intakeFor(firstId)
+    const second = await intakeFor(secondId)
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(1)
+    expect(first[0]?.workflow_id).not.toBe(second[0]?.workflow_id)
+    expect(first[0]?.thread_key).toBeNull()
+    expect(second[0]?.thread_key).toBeNull()
+    expect(await pendingFor(firstId, seed.shopId)).toBe(0)
+    expect(await pendingFor(secondId, seed.shopId)).toBe(0)
+    expect(await countRows("customer_channel_permissions", { shop_id: seed.shopId })).toBe(consentBefore)
   })
 })

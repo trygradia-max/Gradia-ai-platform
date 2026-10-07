@@ -49,3 +49,27 @@ describe("policy draft validation and authenticated save", () => {
     expect((await savePolicyDraft({ shopId: SHOP, expectedRevision: 1, definition: initialPolicyDraft() })).ok).toBe(false)
   })
 })
+
+describe("explicit policy activation", () => {
+ beforeEach(() => { vi.resetAllMocks(); mocks.shop.mockResolvedValue({ id: SHOP }); mocks.user.mockResolvedValue({ id: "owner" }); mocks.client.mockResolvedValue({ rpc: mocks.rpc }); mocks.rpc.mockResolvedValue({ data: 2, error: null }) })
+ it("activates only the reviewed saved revision with a compare-and-swap active revision", async () => {
+  const { activatePolicyDraft } = await import("@/app/actions/control-center")
+  expect(await activatePolicyDraft({ shopId: SHOP, revision: 2, expectedActive: null })).toEqual({ ok: true, revision: 2 })
+  expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("activate_control_policy", { p_shop: SHOP, p_revision: 2, p_expected_active: null })
+ })
+ it("rejects injected policy, actors, foreign shops and malformed revisions", async () => {
+  const { activatePolicyDraft } = await import("@/app/actions/control-center")
+  for (const extra of [{ actor: SHOP }, { revision: -1 }, { definition: initialPolicyDraft() }, { shopId: "22222222-2222-4222-8222-222222222222" }]) {
+   expect((await activatePolicyDraft({ shopId: SHOP, revision: 2, expectedActive: null, ...extra })).ok).toBe(false)
+  }
+  expect(mocks.rpc).not.toHaveBeenCalled()
+ })
+ it("does not report stale, failed or unverifiable activation as success", async () => {
+  const { activatePolicyDraft } = await import("@/app/actions/control-center")
+  for (const result of [{ data: null, error: { message: "private detail" } }, { data: 3, error: null }]) {
+   mocks.rpc.mockResolvedValue(result)
+   const r = await activatePolicyDraft({ shopId: SHOP, revision: 2, expectedActive: null })
+   expect(r.ok).toBe(false); expect(JSON.stringify(r)).not.toContain("private detail")
+  }
+ })
+})
