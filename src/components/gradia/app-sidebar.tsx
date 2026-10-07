@@ -12,10 +12,9 @@ import {
   Headset,
   Inbox,
   LayoutDashboard,
-  MessagesSquare,
+  ListChecks,
   Settings,
   Users,
-  Sparkles,
 } from "lucide-react"
 
 import {
@@ -41,19 +40,19 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// The final IA (redesign spec §8-A4) — exactly these seven, in this order,
-// plus the two pinned at the bottom. Old routes (/agents, /agent, /chat,
-// /leads, /recovery, /schedule) live on as redirects, never as nav items.
-// The ⌘K / Whisper command bar stays the primary composer — a verb, not a
-// place.
-const nav: NavItem[] = [
+// Daily destinations first. Approvals and Activity stay one click away
+// (they also render on Home). Routes are unchanged.
+const workspace: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/approvals", label: "Approvals", icon: Inbox },
-  { href: "/activity", label: "Activity", icon: Activity },
-  { href: "/conversations", label: "Conversations", icon: MessagesSquare },
+  { href: "/conversations", label: "Inbox", icon: Inbox },
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/receptionist", label: "Receptionist", icon: Headset },
+]
+
+const review: NavItem[] = [
+  { href: "/approvals", label: "Approvals", icon: ListChecks },
+  { href: "/activity", label: "Activity", icon: Activity },
 ]
 
 const pinnedNav: NavItem[] = [
@@ -81,6 +80,7 @@ export function AppSidebar({
 } = {}) {
   const pathname = usePathname()
   const reduce = useReducedMotion()
+  const shopName = shops.find((s) => s.id === activeShopId)?.name
 
   return (
     <Sidebar
@@ -91,15 +91,15 @@ export function AppSidebar({
         {/* Entrance animation removed 2026-07-13 — dashboard chrome renders
             in place (BUILD_REFERENCE §1: dashboards stay calm). */}
         <div className="flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25 transition-colors duration-(--duration-fast)">
-            <Sparkles className="size-4" aria-hidden />
+          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+            G
           </div>
-          <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="font-display text-base tracking-tight text-sidebar-foreground">
+          <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="font-display text-sm tracking-tight text-sidebar-foreground">
               Gradia
             </span>
-            <span className="text-[11px] text-muted-foreground/80">
-              Your AI office
+            <span className="truncate text-[11px] text-muted-foreground/80">
+              {shopName ?? "Your shop"}
             </span>
           </div>
         </div>
@@ -109,31 +109,20 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-4">
-        <SidebarGroup>
-          <SidebarGroupLabel className="label-eyebrow !text-muted-foreground/70 group-data-[collapsible=icon]:opacity-0 transition-opacity duration-(--duration-fast)">
-            Workspace
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {nav.map((item) => {
-                const isActive =
-                  item.href === "/dashboard"
-                    ? pathname === "/dashboard"
-                    : pathname.startsWith(item.href)
-
-                return (
-                  <NavRow
-                    key={item.href}
-                    item={item}
-                    isActive={isActive}
-                    reduce={reduce ?? false}
-                    badge={item.href === "/approvals" ? approvalsCount : 0}
-                  />
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <NavGroup
+          label="Workspace"
+          items={workspace}
+          pathname={pathname}
+          reduce={reduce ?? false}
+        />
+        <NavGroup
+          label="Review"
+          items={review}
+          pathname={pathname}
+          reduce={reduce ?? false}
+          badgeFor="/approvals"
+          badge={approvalsCount}
+        />
       </SidebarContent>
 
       {/* Pinned bottom (spec §8-A4): Numbers & Billing · Settings. */}
@@ -151,6 +140,47 @@ export function AppSidebar({
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+function NavGroup({
+  label,
+  items,
+  pathname,
+  reduce,
+  badge = 0,
+  badgeFor,
+}: {
+  label: string
+  items: NavItem[]
+  pathname: string
+  reduce: boolean
+  badge?: number
+  badgeFor?: string
+}) {
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel className="label-eyebrow !text-muted-foreground/70 transition-opacity duration-(--duration-fast) group-data-[collapsible=icon]:opacity-0">
+        {label}
+      </SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => (
+            <NavRow
+              key={item.href}
+              item={item}
+              isActive={
+                item.href === "/dashboard"
+                  ? pathname === "/dashboard"
+                  : pathname.startsWith(item.href)
+              }
+              reduce={reduce}
+              badge={item.href === badgeFor ? badge : 0}
+            />
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   )
 }
 

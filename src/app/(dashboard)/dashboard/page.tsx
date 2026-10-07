@@ -1,3 +1,6 @@
+import { loadIntakeReview } from "@/lib/data/intake-review"
+import { createClient } from "@/lib/supabase/server"
+import { IntakeReviewQueue } from "@/components/gradia/intake-review-queue"
 import { getChannelStatusForCurrentShop } from "@/lib/data/channels"
 import { getHomeKpis } from "@/lib/data/kpis"
 import { listActivityFeed } from "@/lib/data/activity"
@@ -22,11 +25,13 @@ import { STRINGS } from "@/lib/strings"
  */
 export default async function DashboardPage() {
   const shop = await requireShop()
-  const [channels, kpis, approvals, activity] = await Promise.all([
+  const db = await createClient()
+  const [channels, kpis, approvals, activity, intake] = await Promise.all([
     getChannelStatusForCurrentShop(),
     getHomeKpis(),
     listOpenApprovalsForCurrentShop(),
     listActivityFeed(),
+    loadIntakeReview(db, shop.id, 0, 5),
   ])
 
   const connectedCount = channels.filter((c) => c.status === "connected").length
@@ -36,12 +41,17 @@ export default async function DashboardPage() {
   const v = STRINGS.pages.activity
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-16">
+    <div className="mx-auto w-full max-w-5xl space-y-8">
       <DashboardHero
         shopName={shop.name}
         liveChannelCount={connectedCount}
         totalChannels={channels.length}
         eyebrow={dashboardEyebrow()}
+        status={
+          approvals.length === 0
+            ? "Nothing needs you right now."
+            : `${approvals.length} waiting on you.`
+        }
         rightSlot={<AddLeadDialog />}
       />
 
@@ -50,14 +60,15 @@ export default async function DashboardPage() {
       <section className="space-y-5">
         <SectionHeader
           eyebrow={STRINGS.chrome.waitingOnYou}
-          title={approvals.length === 0 ? `${a.titleAllClear}.` : `${a.titleWaiting}.`}
+          title={approvals.length === 0 && intake.ok && intake.queue.total === 0 ? `${a.titleAllClear}.` : "Needs your review."}
           subhead={
             approvals.length === 0
-              ? a.subtitleEmpty
+              ? (!intake.ok ? "Intake status is unavailable. Check the queue below." : intake.queue.total > 0 ? "No approvals waiting, but incoming details still need identity review." : a.subtitleEmpty)
               : a.subtitleWaiting(pendingCount, editCount)
           }
         />
         <ApprovalsList items={approvals} />
+        <IntakeReviewQueue result={intake} shopId={shop.id} compact/>
       </section>
 
       <section className="space-y-5">

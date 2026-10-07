@@ -9,11 +9,16 @@
  * bypass RLS during webhook processing.
  *
  * For every inbound message we:
+ *   - record one durable intake envelope for this MessageSid
  *   - resolve the customer by phone (findOrCreateCustomer)
  *   - record the interaction in the shared memory layer (channel=sms)
  *   - classify with Claude; if it's a real new inquiry (not a short
  *     follow-up in an existing thread), propose a lead via the HITL
  *     approval engine (card lands in /approvals)
+ *
+ * The intake envelope stores the supplied text only. It does not resolve
+ * a person, record consent, create a lead, or stage an approval. Those
+ * existing steps stay on this route, after the envelope write.
  *
  * The response is always empty TwiML — per OPERATIONS.md, every
  * outbound message must go through HITL. Auto-replies are out of
@@ -43,6 +48,7 @@ import {
 import { looksOptedIn, looksOptedOut } from "@/lib/agent-audience"
 import { recordUsage } from "@/lib/credits"
 import { FEATURES } from "@/lib/features"
+import { inboundSmsIntakeInput, recordLeadIntake } from "@/lib/lead-intake"
 import { recordInteraction } from "@/lib/memory"
 import { looksLikeConfirm } from "@/lib/no-show-ladder"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -223,6 +229,19 @@ async function handleMessage(
   sms: TwilioInboundSms,
   claim: ProviderEventClaim
 ): Promise<void> {
+  // First write after the provider-event claim. A retry of the same
+  // MessageSid reads the saved envelope; the sender phone is not a thread.
+  await recordLeadIntake(
+    supabase,
+    inboundSmsIntakeInput({
+      shopId: shop.id,
+      messageSid: sms.messageSid,
+      from: sms.from,
+      body: sms.body,
+      receivedAt: new Date().toISOString(),
+    }),
+  )
+
   const fromPhone = normalizePhone(sms.from) ?? sms.from
 
   const customerResult = await findOrCreateCustomer(supabase, shop.id, {

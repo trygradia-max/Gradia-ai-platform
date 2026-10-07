@@ -8,12 +8,12 @@ vi.mock("next/cache",()=>({revalidatePath:vi.fn()}))
 vi.mock("@/lib/shop",()=>({requireUser:async()=>({id:"owner"}),requireShop:async()=>safeShop}))
 vi.mock("@/lib/supabase/server",()=>({createClient:async()=>db}))
 afterEach(()=>vi.unstubAllEnvs())
-function fixture(foreign=false,inbound=false) {
+function fixture(foreign=false,inbound=false,spent=false) {
  const writes:Record<string,unknown>[]=[]
  const original={customer_id:safeCustomer.id,to_email:safeCustomer.email,body:"Reply",subject:"Service",category:"transactional",quote_id:"forged-context"}
- const {db:reads}=readDb({customers:[safeCustomer],interactions:inbound?[{id:"inbound",shop_id:safeShop.id,customer_id:safeCustomer.id,channel:"email",role:"customer",created_at:new Date().toISOString(),metadata:{direction:"inbound",from_email:safeCustomer.email}}]:[]})
+ const {db:reads}=readDb({service_proof_consumptions:spent?[{shop_id:safeShop.id,action_id:id,proof_id:"spent"}]:[],customers:[safeCustomer],interactions:inbound?[{id:"inbound",shop_id:safeShop.id,customer_id:safeCustomer.id,channel:"email",role:"customer",created_at:new Date().toISOString(),metadata:{direction:"inbound",from_email:safeCustomer.email}}]:[]})
  const pending={select:()=>pending,eq:()=>pending,in:()=>pending,update:(value:Record<string,unknown>)=>{writes.push(value);return pending},maybeSingle:async()=>({data:writes.length?{id}:{id,shop_id:foreign?"foreign":safeShop.id,action_type:"send_email",status:"pending",payload:original},error:null})}
- db={from:(table:string)=>table==="pending_actions"?pending:reads.from(table)} as unknown as SupabaseClient
+ db={rpc:async()=>({data:null,error:null}),from:(table:string)=>table==="pending_actions"?pending:reads.from(table)} as unknown as SupabaseClient
  return writes
 }
 it("cannot reclassify a foreign-shop action",async()=>{
@@ -36,4 +36,17 @@ it("verified reply review binds existing content to its recent inbound context",
  const writes=fixture(false,true)
  expect(await reviewCommunicationPurpose(id,"reply")).toMatchObject({ok:true})
  expect(writes[0].payload).toMatchObject({category:"transactional",service_proof:expect.any(String),purpose_review:expect.objectContaining({purpose:"reply"})})
+})
+
+it("consumed authority cannot be renewed or reclassified",async()=>{
+ const writes=fixture(false,true,true)
+ for(const purpose of ["reply","marketing"] as const)expect(await reviewCommunicationPurpose(id,purpose)).toMatchObject({ok:false,error:expect.stringContaining("Reconcile delivery")})
+ expect(writes).toHaveLength(0)
+})
+it("a failed immutable-context lookup never falls back to another recent inbound",async()=>{
+ vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","synthetic-purpose-review-signing-material")
+ const writes=fixture(false,true)
+ db.rpc=vi.fn().mockResolvedValue({data:null,error:{message:"Synthetic anchor failure"}})
+ expect(await reviewCommunicationPurpose(id,"reply")).toMatchObject({ok:false})
+ expect(writes).toHaveLength(0)
 })

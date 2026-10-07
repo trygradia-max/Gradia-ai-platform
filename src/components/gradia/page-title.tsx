@@ -9,7 +9,7 @@ const TITLES: [prefix: string, title: string][] = [
   ["/approvals", "Approvals"],
   ["/activity", "Activity"],
   ["/calls", "Call record"],
-  ["/conversations", "Conversations"],
+  ["/conversations", "Inbox"],
   ["/customers/recovery", "Customers · Import"],
   ["/customers", "Customers"],
   ["/receptionist/build", "Receptionist · Build"],

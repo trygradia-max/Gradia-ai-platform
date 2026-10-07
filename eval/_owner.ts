@@ -14,13 +14,13 @@ export const daysAgo = (n: number) =>
   new Date(Date.now() - n * 86_400_000).toISOString()
 
 export const COLD_LEADS = [
-  { id: "lead_1", shop_id: "shop_test", customer_id: null, customer_name: "Mike Reyes", phone: "+15551110001", car_info: "2019 Tesla Model 3", vehicle_make: "Tesla", vehicle_model: "Model 3", vehicle_year: 2019, pin_notes: "Wanted ceramic, never booked", status: "quoted", created_at: daysAgo(120), updated_at: daysAgo(120) },
-  { id: "lead_2", shop_id: "shop_test", customer_id: null, customer_name: "Dana Webb", phone: "+15551110002", car_info: "2021 Audi Q5", vehicle_make: "Audi", vehicle_model: "Q5", vehicle_year: 2021, pin_notes: "Quoted full detail", status: "quoted", created_at: daysAgo(140), updated_at: daysAgo(140) },
-  { id: "lead_3", shop_id: "shop_test", customer_id: null, customer_name: "Sam Carter", phone: "+15551110003", car_info: "2018 Ford F-150", vehicle_make: "Ford", vehicle_model: "F-150", vehicle_year: 2018, pin_notes: "Asked about PPF", status: "new", created_at: daysAgo(95), updated_at: daysAgo(95) },
+  { id: "lead_1", shop_id: "00000000-0000-4000-8000-000000000901", customer_id: null, customer_name: "Mike Reyes", phone: "+15551110001", car_info: "2019 Tesla Model 3", vehicle_make: "Tesla", vehicle_model: "Model 3", vehicle_year: 2019, pin_notes: "Wanted ceramic, never booked", status: "quoted", created_at: daysAgo(120), updated_at: daysAgo(120) },
+  { id: "lead_2", shop_id: "00000000-0000-4000-8000-000000000901", customer_id: null, customer_name: "Dana Webb", phone: "+15551110002", car_info: "2021 Audi Q5", vehicle_make: "Audi", vehicle_model: "Q5", vehicle_year: 2021, pin_notes: "Quoted full detail", status: "quoted", created_at: daysAgo(140), updated_at: daysAgo(140) },
+  { id: "lead_3", shop_id: "00000000-0000-4000-8000-000000000901", customer_id: null, customer_name: "Sam Carter", phone: "+15551110003", car_info: "2018 Ford F-150", vehicle_make: "Ford", vehicle_model: "F-150", vehicle_year: 2018, pin_notes: "Asked about PPF", status: "new", created_at: daysAgo(95), updated_at: daysAgo(95) },
 ]
 
 export const SHOP = {
-  id: "shop_test",
+  id: "00000000-0000-4000-8000-000000000901",
   name: "Pristine Detailing",
   plan: "active",
   voice_addon: false,
@@ -80,7 +80,13 @@ export function makeOwnerMock(
   }
   return {
     from: (table: string) => chainFor(table),
-    rpc: () => chainFor("__rpc__"),
+    rpc: (name: string, args: Record<string, unknown>) => {
+      if (name === "stage_agent_capture") {
+        onInsert("pending_actions", { id: args.p_command, shop_id: args.p_shop, action_type: args.p_type, payload: args.p_payload })
+        return Promise.resolve({ data: args.p_command, error: null })
+      }
+      return chainFor("__rpc__")
+    },
   } as unknown as SupabaseClient
 }
 
@@ -95,7 +101,7 @@ export async function runOwnerTurn(
   for await (const ev of streamOwnerAgent({
     supabase,
     shop: SHOP,
-    ownerId: "owner_test",
+    ownerId: "00000000-0000-4000-8000-000000000902",
     history,
   })) {
     if (ev.type === "text_delta") text += ev.text

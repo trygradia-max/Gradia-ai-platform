@@ -1,5 +1,6 @@
 "use server"
 
+import { z } from "zod"
 import { revalidatePath } from "next/cache"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -19,6 +20,20 @@ export async function savePolicyDraft(input: unknown): Promise<{ ok: true; revis
   })
   if (error) return { ok: false, error: error.code === "PT409" ? "This draft changed in another session. Reload the page before saving." : "Draft was not saved. Reload and verify your owner access." }
   if (!Number.isSafeInteger(data) || data < 1) return { ok: false, error: "The save result could not be verified. Reload to check the draft revision before retrying." }
+  revalidatePath("/control-center")
+  return { ok: true, revision: data }
+}
+
+const activationSchema = z.object({ shopId: z.string().uuid(), revision: z.number().int().positive(), expectedActive: z.number().int().positive().nullable() }).strict()
+export async function activatePolicyDraft(input: unknown): Promise<{ ok: true; revision: number } | { ok: false; error: string }> {
+  const parsed = activationSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: "Reload and review the saved revision before activating." }
+  await requireUser()
+  const shop = await requireShop()
+  if (shop.id !== parsed.data.shopId) return { ok: false, error: "This workspace is not available." }
+  const db = await createClient()
+  const { data, error } = await db.rpc("activate_control_policy", { p_shop: shop.id, p_revision: parsed.data.revision, p_expected_active: parsed.data.expectedActive })
+  if (error || data !== parsed.data.revision) return { ok: false, error: "Activation could not be confirmed. Reload to check the active revision and your owner access." }
   revalidatePath("/control-center")
   return { ok: true, revision: data }
 }

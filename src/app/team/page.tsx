@@ -88,6 +88,7 @@ export default async function TeamPage({
           </Link>
         ))}
       </nav>
+      {workspace ? <Link className="underline" href={`/conversations?shop=${workspace.id}`}>Open Whisper conversations</Link> : null}
       {workspace && team ? (
         <TeamPanel key={workspace.id} workspace={workspace} data={team} />
       ) : (
@@ -103,6 +104,7 @@ export default async function TeamPage({
           </Link>
         </div>
       )}
+      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))) ? <Link href={`/intake?shop=${workspace.id}`} className="block underline">Review unresolved intake</Link> : null}
       <AcceptInvitation />
     </main>
   )

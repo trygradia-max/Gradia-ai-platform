@@ -126,7 +126,8 @@ function mockDb(opts: {
     payload: opts.payload ?? quotePayload(),
   }
   return {
-    rpc: () => {
+    rpc: (fn: string) => {
+      if (fn === "claim_control_action") return Promise.resolve({ data: claimed, error: null })
       if (opts.rpcResult instanceof Error) {
         return Promise.resolve({ data: null, error: { message: opts.rpcResult.message } })
       }
