@@ -475,3 +475,26 @@ and 4 skipped; lint, offline build, and post-build types passed. A fictional
 static fixture was checked at 320, 390, 768, and 1280. Authenticated browser
 sessions were not run. See docs/qa/WHISPER_UI_ACCEPTANCE.md. Local commit only;
 no push, merge, deployment, shared database, or provider activity.
+
+
+[AI: codex] [DATE: 2026-10-07] [AREA: platform] [STATUS: done]
+Consolidated committed policy, intake/vehicle, Whisper, threaded email, disabled
+manager notification and Cursor polish work on codex/mvp-consolidation-2026-10-07
+(PR #51), with current documentation and historical PR branches. Resolved doc
+conflicts without restoring the superseded voice-first scope. Updated email reply
+wording to reflect trusted-thread requirements. Added docs/HANDOFF_CURRENT.md for
+separate Cursor UI and Claude Code backend lanes. User explicitly authorized
+push/merge. Git automatic deployment is disabled in vercel.json; this entry does
+not claim deployment or pilot acceptance. Original founder and backend dirty trees
+are untouched; snapshot branches preserve both for UI follow-up. Billing PR #38
+remains separate because its free trial/tier assumptions need reconciliation.
+
+Node 22 isolated verification: 1,232 unit passes with four existing live skips,
+362 integration passes with zero skips, lint, offline webpack production build and
+post-build typecheck passed. All 87 migrations initialized from zero on the unlinked
+gradia-record-fresh disposable stack with four test-only fixtures. Whisper/intake
+catalog and atomic-record rollback probes passed. The final copy-only correction
+passed all 11 Whisper UI tests. Credential-pattern scans of new commit diffs passed.
+GitHub required checks must pass before merge; no shared database, real provider,
+production write guard or live channel was changed. Historical source ledgers retain
+their original dates; the new handoff identifies the assembled baseline.
