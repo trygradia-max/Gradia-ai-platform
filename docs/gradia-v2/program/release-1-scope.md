@@ -1,6 +1,6 @@
 # Release 1 — "Nothing gets missed"
 
-> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+> **HISTORICAL.** Sellable MVP authority is the five September 11, 2026 documents named in `CLAUDE.md`. This file is evidence only. `CONTEXT.md` does not outrank those documents; see `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md`. Do not resurrect payments, full work orders, or E04–E10 scope from this file.
 
 
 _Founder scope decision, 2026-09-03. This file is the **scope authority** for Release 1. It outranks `10-roadmap.md` phase ordering for what ships next; the roadmap remains the authority for what comes after. Every decision an implementing session might need is pre-answered below — if a session finds a question this file does not answer, that is a HARD STOP and a line in `decision-queue.md`, not a guess._

@@ -1,3 +1,9 @@
+> **APPROVED FLOW 2026-09-24.** The September 11 onboarding journey replaces this file’s target where they conflict. One workspace model covers solo and staffed shops and one active location or mobile service area. Connection does not activate a channel. Trial length and prices are unresolved. The audited wizard below is historical behavior, not the target.
+
+Approved order: authenticate and create or join a workspace; business identity, one location or service area, time zone, and hours; services, prices, durations, vehicle-size modifiers, and booking restrictions; calendar, staff capacity, and authority; invite staff only when delivery works; bounded import with dedupe; connect channels individually with honest readiness; carrier verification and consent before customer messaging; keep the shop’s existing number and verify forwarding before voice; review approval-first policy; run a test lead; explicitly activate accepted channels.
+
+PR #41 already merged services, vehicle-size pricing, and hours. Reuse it. Housecall Pro import is removed (D-052). Email transport via Aurinko is not in-thread reply.
+
 # 07 — Onboarding and Imports
 
 _Created 2026-07-25 by the Organizer. Governs first-run onboarding, trial start, and every data-import path. Binding standard: D-022 (staging → mapping → preview → validation → error reporting → rollback) and D-005/D-006 (full operational trial; real CRM + calendar data may be imported during setup/trial). Flow specs: `ui/flows/onboarding.md`, `ui/flows/crm-import.md`, `ui/flows/calendar-connection.md`, `ui/flows/trial-to-paid.md`._

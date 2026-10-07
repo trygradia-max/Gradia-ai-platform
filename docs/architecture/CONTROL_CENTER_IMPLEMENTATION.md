@@ -209,6 +209,17 @@ checkout remains on `main` with only its original `CONTEXT.md` modification and 
 No push, merge, deployment, production migration, provider activation or write-guard
 change is included. These test results do not claim runtime Control Center enforcement.
 
+## Later status — 2026-09-24 documentation recheck
+
+The draft-only limit in this ledger still holds after merge. PR #48 merged to
+`main` as `247bb5056002b97b57bbafd503655f51a498e199`. The implementation commit
+recorded above remains `543e3c1702abd04c80556b021d2e48a6cefd011c`. Both required
+GitHub checks had succeeded. Saving a policy draft still does not activate
+executor enforcement. Scoped manager approval execution and full runtime command
+authority remain incomplete. This documentation pass did not rerun the 1,014
+unit or 194 integration results, and it did not deploy.
+
+
 ## Activated policy at the approval claim
 
 September 27, 2026, local branch `codex/mvp-policy-execution` only. This slice uses

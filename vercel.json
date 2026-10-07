@@ -1,12 +1,6 @@
 {
   "git": {
-    "deploymentEnabled": {
-      "fix/p0-tenant-policy-safety": false,
-      "feat/mvp-team-permissions": false,
-      "codex/mvp-control-center": false,
-      "codex/mvp-policy-execution": false,
-      "codex/mvp-lead-intake": false
-    }
+    "deploymentEnabled": false
   },
   "crons": [
     {
