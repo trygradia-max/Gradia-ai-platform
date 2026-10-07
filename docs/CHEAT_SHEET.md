@@ -1,5 +1,9 @@
 # Gradia cheat sheet
 
+> October 7: start with [the current handoff](HANDOFF_CURRENT.md) for folders,
+> integrated work and remaining gates. Implementation statements below are the
+> historical September 24 snapshot.
+
 For Harry, and for every AI session. Read this before editing. Append
 `docs/AI_WORK_LOG.md` before you finish.
 

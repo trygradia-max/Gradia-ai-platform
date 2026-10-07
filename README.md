@@ -1,3 +1,5 @@
+> **Current development handoff:** [folders, agent lanes and build state](docs/HANDOFF_CURRENT.md).
+
 # Gradia platform
 
 This directory is the only product repo: `trygradia-max/Gradia-ai-platform`.

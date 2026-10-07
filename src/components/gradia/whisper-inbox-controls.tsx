@@ -329,8 +329,8 @@ export function WhisperInboxControls({
           <p id={replyHintId} className="max-w-prose text-sm text-muted-foreground">
             {body.length} / {replyLimit} characters. Queues through the existing
             approval and send checks. Marketing consent is required; this composer
-            cannot assert a service-purpose exemption. Email is a new outbound draft,
-            not yet a provider-threaded reply.
+            cannot assert a service-purpose exemption. Email replies require verified
+            mailbox thread context; missing or changed context holds the reply.
           </p>
           <button disabled={busy || !destination} type="submit" className={primaryButtonClass} aria-describedby={describedBy([recipientId, replyHintId])}>Queue draft in Approvals</button>
         </form>

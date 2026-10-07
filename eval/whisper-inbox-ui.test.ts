@@ -84,7 +84,7 @@ describe("Whisper role-aware controls", () => {
     const html = render({ channel: "email" })
     expect(html).toContain("Subject")
     expect(html).toContain("Marketing consent is required")
-    expect(html).toContain("not yet a provider-threaded reply")
+    expect(html).toContain("mailbox thread context; missing or changed context holds the reply.")
     expect(html).toContain("Completion does not mean a message was delivered")
     expect(html).toContain("do not pause or cancel queued actions")
     expect(html).toContain("focus-visible:ring-3")
