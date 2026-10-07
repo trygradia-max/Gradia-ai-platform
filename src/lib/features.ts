@@ -48,7 +48,7 @@ export const FEATURES = {
   freeformPlanner: true, // Phase 2 — executor + guardrails landed
   biChat: true, // Ask Gradia engine — kept; the standalone page is gated below
   workflowBuilder: false, // FOCUS spec §1: hide self-serve scheduled-agent builder for alpha
-  askGradiaPage: true, // Ask Gradia surface inside /conversations (/chat is a redirect)
+  askGradiaPage: true, // Ask Gradia engine stays on; the ask itself is the ⌘K command bar, not a page
   paywall: true, // Phase 3 — subscription gate + metering live
   customerRecovery: true, // import→extract pipeline surfaced as "Import your customers";
   // review queue + acceptance shipped — verify a CSV import end-to-end before prod deploy

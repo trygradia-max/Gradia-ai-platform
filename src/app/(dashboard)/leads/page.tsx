@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation"
 
-/** Leads folded into Customers (redesign spec §8-A4) — a lead is a
- *  customer state, not a separate place. */
+/** Leads are pipeline cards, not a separate list. */
 export default function LegacyLeadsPage() {
-  redirect("/customers")
+  redirect("/pipeline")
 }

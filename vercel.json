@@ -36,5 +36,8 @@
       "path": "/api/cron/provider-events-prune",
       "schedule": "30 4 * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": false
+  }
 }

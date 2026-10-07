@@ -140,9 +140,25 @@ export const STRINGS = {
       leadFeedSeeAll: (total: number) => `See all ${total} in Customers`,
     },
     customers: {
+      eyebrow: "Customers",
+      title: "People on file",
+      subtitle:
+        "Search by name, phone, or email. Each file holds their vehicles, quotes, and conversations.",
+      quotes: "Quotes",
       /** PERF-001: a pipeline column past its cap says how many older cards
        *  it is not drawing — the count is real, the rows are one search away. */
       pipelineOlder: (n: number) => `${n} older — search in Customers`,
+    },
+    pipeline: {
+      eyebrow: "Pipeline",
+      title: "From first call to booked",
+      subtitle:
+        "Drag a card when the lead moves. Marking one lost always asks for a reason.",
+    },
+    quotes: {
+      eyebrow: "Quotes",
+      title: "Prices sent and waiting",
+      subtitle: "Drafts, sent quotes, and accepted work. New prices start from a customer or a pipeline card.",
     },
     approvals: {
       eyebrow: "Approvals",
@@ -191,17 +207,14 @@ export const STRINGS = {
       receptionist: "Receptionist",
     },
     conversations: {
-      eyebrow: "Conversations",
-      title: "Calls, texts, and questions",
-      subtitle:
-        "Customer threads on one side, straight answers about the shop on the other.",
-      threadsHeading: "Threads",
+      eyebrow: "Inbox",
+      title: "Calls and texts",
+      subtitle: "Every customer conversation, newest first.",
       /** Honest interim copy while the thread list ships (L4): shown
        *  when the shop already HAS call/text history. */
       threadsInterim:
         "Call and text threads land here next. Until then, every conversation lives on the customer's file.",
       threadsInterimCta: "View customers",
-      askHeading: "Ask Gradia",
     },
     receptionist: {
       eyebrow: "Receptionist",

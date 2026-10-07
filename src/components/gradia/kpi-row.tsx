@@ -90,7 +90,7 @@ export function KpiRow({ kpis }: { kpis: HomeKpis }) {
         <KpiCard
           label={s.kpiNeedsReview}
           value={kpis.needsReview}
-          href="/approvals"
+          href="/dashboard#needs-you"
           warn
         />
       </div>

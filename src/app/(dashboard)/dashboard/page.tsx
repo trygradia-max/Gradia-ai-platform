@@ -16,9 +16,8 @@ import { STRINGS } from "@/lib/strings"
  * B-03 — Chief of Staff. REPLACES the old Home outright (U-01: 14 stacked
  * components, four money surfaces, three feeds). This page is exactly four
  * things, top to bottom: one hero line, one small KPI row, one needs-you
- * queue, one activity stream. `/approvals` and `/activity` still exist as
- * standalone routes (nav cut is B-14) but their data now renders here too —
- * this IS the "what do I do now" answer (§4d U-03).
+ * queue, one activity stream. `/approvals` and `/activity` redirect here
+ * (B-14); this page is the "what do I do now" answer (§4d U-03).
  */
 export default async function DashboardPage() {
   const shop = await requireShop()
@@ -36,7 +35,7 @@ export default async function DashboardPage() {
   const v = STRINGS.pages.activity
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-16">
+    <div className="mx-auto w-full max-w-6xl space-y-10">
       <DashboardHero
         shopName={shop.name}
         liveChannelCount={connectedCount}
@@ -47,7 +46,7 @@ export default async function DashboardPage() {
 
       <KpiRow kpis={kpis} />
 
-      <section className="space-y-5">
+      <section id="needs-you" className="scroll-mt-20 space-y-5">
         <SectionHeader
           eyebrow={STRINGS.chrome.waitingOnYou}
           title={approvals.length === 0 ? `${a.titleAllClear}.` : `${a.titleWaiting}.`}
@@ -60,7 +59,7 @@ export default async function DashboardPage() {
         <ApprovalsList items={approvals} />
       </section>
 
-      <section className="space-y-5">
+      <section id="activity" className="scroll-mt-20 space-y-5">
         <SectionHeader eyebrow={v.eyebrow} title={v.title} subhead={v.subtitle} />
         <ActivityFeed items={activity} />
       </section>
