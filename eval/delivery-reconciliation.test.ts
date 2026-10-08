@@ -8,6 +8,7 @@ vi.mock('next/cache', () => ({revalidatePath: mocks.revalidate}))
 vi.mock('@/components/gradia/delivery-reconciliation-form', () => ({DeliveryReconciliationForm: () => 'owner-review-form'}))
 import {recordDeliveryReconciliation} from '@/app/actions/delivery-reconciliation'
 import {DeliveryReconciliationHistory} from '@/components/gradia/delivery-reconciliation-history'
+import {teamCommandSchema} from '@/lib/team-permissions'
 const id='00000000-0000-4000-8000-000000000001'
 const input={shopId:id,actionId:id,commandId:id,revision:0,completedAt:null,outcome:'unknown',note:'Checked fictional provider evidence.'}
 beforeEach(() => {vi.clearAllMocks();mocks.client.mockResolvedValue({rpc:mocks.rpc})})
@@ -39,8 +40,30 @@ it('hides the form when history is malformed or unavailable and validates pagina
  expect(html).toContain('unavailable');expect(html).not.toContain('owner-review-form')
 })
 it('renders bounded escaped human reports, distinct from delivery receipts, with history paging',async()=>{
- const items=Array.from({length:21},(_,i)=>({command_id:id,revision:21-i,actor_id:id,actor_label:'Fictional Owner',outcome:'unknown',note:'<script>private evidence</script>',created_at:'2026-10-06T00:00:00Z',reviewed_completed_at:null}))
- const db={rpc:vi.fn(async()=>({data:{revision:21,completed_at:null,items},error:null}))} as unknown as SupabaseClient
+ const items=Array.from({length:21},(_,i)=>({command_id:id,revision:21-i,actor_id:id,actor_label:'Fictional Owner',outcome:'unknown',note:'<script>private evidence</script>',actor_role:'owner',created_at:'2026-10-06T00:00:00Z',reviewed_completed_at:null}))
+ const db={rpc:vi.fn(async()=>({data:{revision:21,completed_at:null,viewer_role:'owner',items},error:null}))} as unknown as SupabaseClient
  const html=renderToStaticMarkup(await DeliveryReconciliationHistory({db,shopId:id,actionId:id}))
  expect(html).toContain('&lt;script&gt;');expect(html).not.toContain('<script>');expect(html).toContain('Still uncertain');expect(html).toContain('reviewOffset=20');expect(html.match(/<li /g)).toHaveLength(20);expect(html).toContain('owner-review-form')
+})
+it('attributes each review to its recorded role and keeps a delegated reviewer on their own page',async()=>{
+ const item=(revision:number,actor_role:string,actor_label:string)=>({command_id:`00000000-0000-4000-8000-0000000000${10+revision}`,revision,actor_id:id,actor_label,actor_role,outcome:'delivered',note:'Checked fictional provider evidence.',created_at:'2026-10-08T00:00:00Z',reviewed_completed_at:null})
+ const items=[...Array.from({length:19},(_,i)=>item(22-i,'owner','Fictional Owner')),item(3,'manager','Fictional Manager'),item(2,'owner','Fictional Owner')]
+ const db={rpc:vi.fn(async()=>({data:{revision:22,completed_at:null,viewer_role:'manager',items},error:null}))} as unknown as SupabaseClient
+ const html=renderToStaticMarkup(await DeliveryReconciliationHistory({db,shopId:id,actionId:id,page:'20',pageHref:offset=>`/team/delivery-reviews?shop=${id}&action=${id}&reviewOffset=${offset}`}))
+ expect(html).toContain('Fictional Manager (delegated manager)');expect(html).toContain('Fictional Owner (shop owner)');expect(html).toContain('Reported delivered')
+ expect(html).not.toContain('Owner reports');expect(html).not.toContain('/approvals/')
+ expect(html).toContain('reviewOffset=0');expect(html).toContain('reviewOffset=40')
+})
+it('fails closed when a review lacks a recognised reviewer role',async()=>{
+ const items=[{command_id:id,revision:1,actor_id:id,actor_label:'Fictional',actor_role:'staff',outcome:'unknown',note:'Checked fictional provider evidence.',created_at:'2026-10-08T00:00:00Z',reviewed_completed_at:null}]
+ const db={rpc:vi.fn(async()=>({data:{revision:1,completed_at:null,viewer_role:'owner',items},error:null}))} as unknown as SupabaseClient
+ const html=renderToStaticMarkup(await DeliveryReconciliationHistory({db,shopId:id,actionId:id}))
+ expect(html).toContain('unavailable');expect(html).not.toContain('owner-review-form')
+})
+it('requires the customer view grant alongside delegated delivery review and never offers it to staff',()=>{
+ const member={operation:'member',shopId:id,memberId:id,active:true}
+ expect(teamCommandSchema.safeParse({...member,role:'manager',capabilities:['crm.read','delivery.reconcile']}).success).toBe(true)
+ expect(teamCommandSchema.safeParse({...member,role:'manager',capabilities:['delivery.reconcile']}).success).toBe(false)
+ expect(teamCommandSchema.safeParse({...member,role:'staff',capabilities:['crm.read','delivery.reconcile']}).success).toBe(false)
+ expect(teamCommandSchema.safeParse({operation:'invite',shopId:id,email:'manager@example.test',name:'Fictional Manager',role:'manager',capabilities:['delivery.reconcile','assignments.manage']}).success).toBe(false)
 })

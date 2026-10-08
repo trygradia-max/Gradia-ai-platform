@@ -134,11 +134,68 @@ customer merge or provider executor is changed. Retention/pruning remains disabl
   is claimed. In-app notifications require a refresh; there is no realtime feed.
 - Provider thread/message identity and true in-thread email reply integration.
 - Provider-evidence lookup tooling and separately authorized replacement handling.
-  Owner assessments are persisted, but do not verify a provider receipt, clear the
-  execution hold or authorize a resend. Delegated manager reconciliation is not added.
+  Assessments are persisted, but do not verify a provider receipt, clear the
+  execution hold or authorize a resend. Delegated manager review is described below;
+  delegated approval or replacement authority is not added.
 - Search/filtering, bounded related-record paging and a browsable handoff-audit
   timeline. Related intake/approval references currently return all matching records.
 - Full responsive/accessibility acceptance and live-provider pilot acceptance.
+
+## Delegated manager delivery review — October 8, 2026
+
+This is the first delegated manager operation. It supersedes the owner-only limit on
+recording delivery assessments, and nothing else. Branch `codex/claude-backend-next`.
+
+An owner can grant a manager `delivery.reconcile` in the existing team settings.
+The grant is valid only together with `crm.read` and only on a manager membership;
+both tables that carry grants enforce this with constraints, and the team command
+schema explains it before the database refuses. Membership or `crm.read` alone
+grants nothing. Existing members and invitations are unchanged by the migration.
+
+Migration `20261008120000_delegated_delivery_reconciliation.sql` is migration 88.
+A private fixed-search-path helper resolves the caller's live reviewing role (actual
+owner, or active manager holding both grants). `record_delivery_reconciliation` and
+`read_delivery_reconciliation` keep their signatures and session-only grants and now
+use that helper under the same shop lock, so grant removal or revocation applies to
+the next command, including an exact retry. Each review stores `actor_role`; all
+earlier rows are owner reviews. History shows the recorded role and name snapshot.
+
+`list_delivery_holds` is a new session-only, stable read for the owner or a delegated
+manager. It returns pages of 20 consumed sends that are still held, using the inbox
+hold definition, with presentation fields only: action, channel, customer name,
+message body, claim and provider-response times, and the latest review. Proof
+identifiers, signed claims and destinations are not returned. Reading changes nothing.
+
+`/team/delivery-reviews?shop=...` is a minimal surface for this, linked from the team
+page for owners and delegated managers. It reuses the existing history and form
+components. The owner approval record is unchanged apart from role-neutral wording
+("Reported delivered", "delegated manager").
+
+Unchanged on purpose: a manager review cannot approve, edit, reject or stage an
+action, read `pending_actions` or proof rows directly, release a proof, clear a hold,
+authorize a replacement, grant consent or change policy. `claim_control_action`
+still denies every non-owner. Managers still cannot stage replies. No notification,
+provider lookup or transport is involved.
+
+Verification, Node 22.23.2, isolated runner, unlinked `gradia-record-fresh` only:
+1,235 unit passes (four existing live skips, 109 files); 369 integration passes
+(zero skips, 35 files); lint, offline production build and post-build typecheck
+passed. All 88 migrations applied from zero and matched the ledger; Whisper, intake,
+agent-record, team, control-policy and control-execution catalog probes, all 26
+tenant relationship definitions and the tenant/photo refusal probes passed. Seven new
+integration cases cover attributed manager reviews, no approval or direct-table
+access, both-grant and live-membership checks, grant removal and revocation,
+command binding across reviewers and shops, competing owner/manager decisions,
+bounded hold listing with zero mutation, and invitation grants. Three new unit cases
+cover role attribution, unknown-role refusal and the grant dependency. One test
+fixture was corrected (a mixed-key bulk insert nulled `status`); no assertion,
+constraint or permission was weakened.
+
+Limits: the new page was compiled and statically rendered in tests, not exercised in
+an authenticated browser; responsive and accessibility acceptance belongs to the UI
+lane. The hold list has no search or filter. A review is still not assigned to, or
+required from, the conversation's current assignee. Uncommitted local work: no push,
+merge, deployment, shared database or provider activity.
 
 Manager delivery setup and any provider activation require separate authorization.
 No pricing, trial, payments, work orders, campaigns, win-back, review-text or mobile
