@@ -521,6 +521,7 @@ with four existing live skips; 369 integration passes, zero skips; lint, offline
 build and post-build types passed; 88 migrations from zero with exact ledger; all
 existing catalog, relationship and refusal probes passed. The new page was not run
 in an authenticated browser. Details and limits are in
-`docs/architecture/WHISPER_INBOX.md`. Changes are uncommitted in the worktree. No
-push, merge, deployment, shared database or provider activity. This worktree's
+`docs/architecture/WHISPER_INBOX.md`. Committed as `23f2932` and pushed for review
+as a pull request at the founder's request. No merge, deployment, shared database
+or provider activity. This worktree's
 dependencies were installed with `npm ci`, and the disposable stack was reset.

@@ -194,8 +194,9 @@ constraint or permission was weakened.
 Limits: the new page was compiled and statically rendered in tests, not exercised in
 an authenticated browser; responsive and accessibility acceptance belongs to the UI
 lane. The hold list has no search or filter. A review is still not assigned to, or
-required from, the conversation's current assignee. Uncommitted local work: no push,
-merge, deployment, shared database or provider activity.
+required from, the conversation's current assignee. Committed as `23f2932` and
+pushed for review as a pull request; no merge, deployment, shared database or
+provider activity.
 
 Manager delivery setup and any provider activation require separate authorization.
 No pricing, trial, payments, work orders, campaigns, win-back, review-text or mobile
