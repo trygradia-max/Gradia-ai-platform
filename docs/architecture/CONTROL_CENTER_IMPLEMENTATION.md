@@ -655,12 +655,15 @@ A manager cannot reclassify a message's purpose; that stays an owner review.
 
 ### Verification and limits
 
-Node 22.23.2, isolated runner, unlinked `gradia-record-fresh` only: 1,248 unit passes
-(four existing live skips, 110 files); 390 integration passes (zero skips, 36 files);
-lint, offline production build and post-build typecheck passed. All 89 migrations
-applied from zero and matched the ledger. A new catalog probe,
-`scripts/verify-delegated-approval-migration.py`, and every existing probe passed,
-including claim/audit rollback and all 26 tenant relationship definitions.
+Node 22.23.2, isolated runner, unlinked `gradia-record-fresh` only, rerun in full after
+merging `main` (which now contains the delivery-review slice and public form intake):
+1,262 unit passes (four existing live skips, 111 files); 397 integration passes (zero
+skips, 37 files); lint, offline production build and post-build typecheck passed. All
+90 migrations applied from zero and matched the ledger. A new catalog probe,
+`scripts/verify-delegated-approval-migration.py`, and the existing Whisper, intake,
+agent-record, team, tenant, photo, control-policy and control-execution probes
+passed, including claim/audit rollback and all 26 tenant relationship definitions.
+The public-form probe targets its own separate stack and was not rerun here.
 
 Twenty-one new integration cases cover the audited manager claim, stale, malformed
 and mid-edit reviews, eight owner-only action types, the owner entry point and
