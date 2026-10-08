@@ -500,6 +500,36 @@ production write guard or live channel was changed. Historical source ledgers re
 their original dates; the new handoff identifies the assembled baseline.
 
 
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Built the public website intake backend on codex/public-form-intake, independently
+of Cursor's layouts and Claude Code's delegated reconciliation. Owner-session form
+configuration binds an immutable public form UUID to one shop and exact HTTPS origin.
+The public JSON route bounds streamed bodies, rejects caller tenancy/thread/consent,
+and returns only generic acceptance. Database submission rechecks enabled binding,
+serializes owner changes and shop-wide rolling quotas, dedupes exact retries and
+refuses changed content. Inquiry evidence enters existing identity review; no CRM
+identity, consent, outbound action or provider effect is inferred. No setup UI was
+added; its contract and remaining activation/browser/anti-bot gates are documented
+in docs/architecture/PUBLIC_FORM_INTAKE.md. All original worktrees are untouched.
+
+Node 22: 1,246 unit passes (four existing intentional live skips), 369 integration
+passes (zero skips), lint, offline production build and post-build typecheck passed.
+All 88 migrations initialized on the new unlinked gradia-public-form-tests stack at
+57331; this deliberately avoids the other agents' disposable stacks. Form catalog,
+RPC ACL/fixed-search-path, three new relationships and injected intake rollback
+probes passed. The existing 26 tenant definitions, inconsistent tenant/photo refusal
+and team audit rollback probes also passed on that dedicated stack. Network guards
+permit only its exact loopback origin and sentinel when explicitly selected with
+--forms. Service-role importer inventory records the new database-bound public route.
+
+Initial verification caught a missing local test-port allowlist, the required
+service-importer inventory entry, a test-only TypeScript inference issue and a fixture
+that incorrectly tried to deactivate an owner (forbidden by an existing invariant).
+Fixed the harness/type issue, reviewed/registered the importer, and tested manager
+revocation plus form disablement without relaxing owner protection. No production
+migration, deployment, provider activation, real visitor or live model call occurred.
+
+
 [AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
 Added the first delegated manager operation on `codex/claude-backend-next`: an owner
 can grant a manager `delivery.reconcile` (valid only with `crm.read`) to record
@@ -525,3 +555,16 @@ in an authenticated browser. Details and limits are in
 as a pull request at the founder's request. No merge, deployment, shared database
 or provider activity. This worktree's
 dependencies were installed with `npm ci`, and the disposable stack was reset.
+
+
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Reviewed Claude Code's delegated delivery review PR #54 and merged it after both
+required checks passed (one database-startup failure passed on retry). Integrated
+that main into public form PR #55; the only source conflict was the append-only work
+log, and both histories were retained. Combined Node 22 verification: 1,249 unit
+passes (four existing live skips), 376 integration passes (zero skips), lint,
+offline build and post-build types passed. All 89 migrations initialized from zero
+on the dedicated form stack. Public form and updated Whisper permission/relationship
+probes passed together. Updated the current handoff with the public form backend
+and remaining setup UI. No Cursor/Claude checkout, shared database or production
+configuration was modified; Git deployments remain disabled.

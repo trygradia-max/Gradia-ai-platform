@@ -24,7 +24,8 @@ export const INTEGRATION_WITH_SESSION = INTEGRATION && Boolean(ANON)
 
 export function assertDisposableTarget(): void {
   const allowed = (URL === "http://127.0.0.1:56531" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-isolated-tests") ||
-    (URL === "http://127.0.0.1:56731" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-record-fresh")
+    (URL === "http://127.0.0.1:56731" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-record-fresh") ||
+    (URL === "http://127.0.0.1:57331" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-public-form-tests")
   if (!allowed) {
     throw new Error("Integration target is not the isolated disposable stack")
   }
