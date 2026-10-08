@@ -83,6 +83,8 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // A body shop_id that does not match is refused before the write.
     // record_lead_intake is service-role only and rechecks the shop row.
     "src/app/api/intake/website-form/route.ts",
+  // Tenant comes only from the owner-configured form; RPC rechecks binding atomically.
+  "src/app/api/intake/public-form/[formId]/route.ts",
     "src/app/api/cron/agents/route.ts",
     "src/app/api/cron/automations/route.ts",
     "src/app/api/cron/no-show-ladder/route.ts",

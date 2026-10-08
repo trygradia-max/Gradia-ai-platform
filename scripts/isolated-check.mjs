@@ -5,7 +5,11 @@ import { readFileSync, readdirSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 const mode = process.argv[2]
 const fresh = mode === "integration" && process.argv.includes("--fresh")
-const extraArgs = process.argv.slice(3).filter(arg => arg !== "--fresh")
+const forms = mode === "integration" && process.argv.includes("--forms")
+if (fresh && forms) throw new Error("Choose one disposable target")
+const extraArgs = process.argv.slice(3).filter(arg => !["--fresh", "--forms"].includes(arg))
+const port = forms ? 57331 : fresh ? 56731 : 56531
+const target = forms ? "gradia-public-form-tests" : fresh ? "gradia-record-fresh" : "gradia-isolated-tests"
 const commands = {
   unit: ["node_modules/vitest/vitest.mjs", "run", "--exclude", "**/*.eval.test.ts", "--exclude", "**/integration/**"],
   integration: ["node_modules/vitest/vitest.mjs", "run", "--fileParallelism=false", "eval/integration"],
@@ -19,10 +23,10 @@ const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`
 if (mode === "build") env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = resolve("scripts/offline-fonts.cjs")
 let allow = ""
 if (mode === "integration") {
-  const db = JSON.parse(readFileSync(fresh ? ".local-tools/record-fresh-db.json" : ".local-tools/test-db.json", "utf8"))
-  if (db.API_URL !== (fresh ? "http://127.0.0.1:56731" : "http://127.0.0.1:56531") || !db.SERVICE_ROLE_KEY || !db.ANON_KEY) throw new Error("Invalid isolated DB configuration")
-  Object.assign(env, { INTEGRATION: "1", GRADIA_DISPOSABLE_TEST: fresh ? "gradia-record-fresh" : "gradia-isolated-tests", SUPABASE_TEST_URL: db.API_URL, SUPABASE_TEST_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY: db.ANON_KEY })
-  allow = `(allow network-outbound (remote ip "localhost:${fresh ? 56731 : 56531}"))`
+  const db = JSON.parse(readFileSync(forms ? ".local-tools/public-form-db.json" : fresh ? ".local-tools/record-fresh-db.json" : ".local-tools/test-db.json", "utf8"))
+  if (db.API_URL !== `http://127.0.0.1:${port}` || !db.SERVICE_ROLE_KEY || !db.ANON_KEY) throw new Error("Invalid isolated DB configuration")
+  Object.assign(env, { INTEGRATION: "1", GRADIA_DISPOSABLE_TEST: target, SUPABASE_TEST_URL: db.API_URL, SUPABASE_TEST_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_SERVICE_ROLE_KEY: db.SERVICE_ROLE_KEY, SUPABASE_TEST_ANON_KEY: db.ANON_KEY })
+  allow = `(allow network-outbound (remote ip "localhost:${port}"))`
 }
 if (mode === "integration" && extraArgs.some(arg => arg.endsWith(".test.ts"))) commands.integration.pop()
 const policy = `(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote unix-socket))${allow}`
