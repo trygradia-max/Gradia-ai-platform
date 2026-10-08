@@ -594,3 +594,14 @@ The wider voice/alert/cron adapters, granular message purposes and delegated man
 approval are still unfinished. Tool schema changes require live evaluation before
 release activation; no real provider/model was contacted here. No push, merge,
 deployment, shared database change or founder-file change is included.
+
+## Delegated manager authority — October 8 status
+
+The first explicit delegated manager grant now exists: `delivery.reconcile`, limited
+to recording human delivery assessments on consumed sends. See
+`docs/architecture/WHISPER_INBOX.md`. It does not touch `claim_control_action`:
+queued approvals, edits, rejections and staging remain owner-only, and the policy's
+manager role ceiling is still not consulted at execution. Delegated approval
+execution remains the open part of item 2 above. It needs a decision on which action
+families a manager may approve and an executor path that does not depend on
+owner-only row access; neither is started here.

@@ -16,7 +16,8 @@ export async function recordDeliveryReconciliation(input: unknown): Promise<{ok:
     })
     if (error || data !== c.commandId) return {ok: false, message: 'Review not confirmed. Refresh and check history, current access and execution state before trying again.'}
     revalidatePath(`/approvals/${c.actionId}`)
-    return {ok: true, message: 'Owner review recorded. Nothing was sent and sending authority remains consumed.'}
+    revalidatePath('/team/delivery-reviews')
+    return {ok: true, message: 'Review recorded. Nothing was sent and sending authority remains consumed.'}
   } catch {
     return {ok: false, message: 'Result uncertain. Refresh and check history before recording another review.'}
   }

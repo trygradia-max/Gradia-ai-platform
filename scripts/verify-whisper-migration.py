@@ -40,6 +40,17 @@ for signature in ['record_delivery_reconciliation(uuid,uuid,uuid,integer,timesta
 assert sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.delivery_reconciliations'::regclass AND contype='f'") == 'FOREIGN KEY (shop_id, action_id) REFERENCES service_proof_consumptions(shop_id, action_id) ON DELETE CASCADE'
 print('PASS: delivery reviews deny direct access; owner-session RPCs and tenant-bound durable proof relationship verified')
 
+signature='list_delivery_holds(uuid,integer)'
+assert sql(f"SELECT prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=\"\"'] AND has_function_privilege('authenticated',oid,'EXECUTE') AND NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('service_role',oid,'EXECUTE') FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
+for role in ['anon','authenticated','service_role']:
+    assert sql(f"SELECT has_function_privilege('{role}','public.delivery_review_role(uuid)','EXECUTE')") == 'f'
+for table in ['shop_memberships','shop_invitations']:
+    checks = sql(f"SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.{table}'::regclass AND contype='c' AND conname IN ('{table}_capabilities_known','{table}_delivery_review_needs_read') ORDER BY conname").splitlines()
+    assert len(checks) == 2 and "'delivery.reconcile'" in checks[0] and "'crm.read'" in checks[1], f'Capability constraints mismatch: {table}'
+    assert sql(f"SELECT count(*) FROM pg_constraint WHERE conrelid='public.{table}'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%assignments.manage%'") == '1'
+assert sql("SELECT is_nullable='NO' AND column_default IS NULL FROM information_schema.columns WHERE table_schema='public' AND table_name='delivery_reconciliations' AND column_name='actor_role'") == 't'
+print('PASS: delegated delivery review requires an explicit constrained grant; private role helper; session-only hold queue; reviewer role is mandatory')
+
 for table in ['manager_notification_settings','manager_notification_settings_audit','manager_notification_deliveries','manager_notification_items']:
     assert sql(f"SELECT relrowsecurity FROM pg_class WHERE oid='public.{table}'::regclass") == 't'
     for role in ['anon','authenticated','service_role']:
