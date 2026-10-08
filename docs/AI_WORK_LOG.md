@@ -568,3 +568,22 @@ on the dedicated form stack. Public form and updated Whisper permission/relation
 probes passed together. Updated the current handoff with the public form backend
 and remaining setup UI. No Cursor/Claude checkout, shared database or production
 configuration was modified; Git deployments remain disabled.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Fixed a schema gap on `fix/create-quote-action-type`: no migration added
+`create_quote` to `pending_action_type`, so the voice receptionist's draft-quote
+proposals failed at staging on any database built from the repository, while the
+executor and policy adapter already handled the type. Added
+`20261008170000_create_quote_action_type.sql` (one idempotent `ADD VALUE IF NOT
+EXISTS`) and three integration cases: staging as the voice tool does, owner approval
+producing a menu-priced draft that is never sent, and no automatic claim even under
+a policy that grants quote autonomy. No application code changed.
+
+Whether production already carries the value by hand was not checked; the
+migration is safe either way. Node 22.23.2 isolated runner on unlinked
+`gradia-record-fresh`: 1,249 unit passes with four existing live skips; 379
+integration passes, zero skips; lint, offline build and post-build types passed; 90
+migrations from zero with exact ledger. Its timestamp follows PR #56's migration, so
+merge #56 first to keep ledger order. Pushed as a pull request; no merge,
+deployment, shared database or provider activity.
