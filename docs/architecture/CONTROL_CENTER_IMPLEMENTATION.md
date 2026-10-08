@@ -617,7 +617,8 @@ An owner grants a manager `approvals.messages` in the existing team settings. It
 valid only together with `crm.read` and only on a manager membership; constraints on
 memberships and invitations enforce that. No grant is added to any existing member.
 
-Migration `20261008150000_delegated_message_approval.sql` is migration 89. The claim
+Migration `20261008160000_delegated_message_approval.sql` is migration 90 (renumbered
+after public form intake took the earlier timestamp on `main`). The claim
 body moves, unchanged for owners and automatic callers, into a private
 `control_claim` function that no API role can execute. `claim_control_action` keeps
 its signature and grants and calls it with no review binding, so it can never
