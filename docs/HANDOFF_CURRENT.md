@@ -82,8 +82,9 @@ Coordinate shared component/action contracts with Cursor before changing them.
 - `docs/architecture/WHISPER_INBOX.md`
 - `docs/AI_WORK_LOG.md`
 
-Current known limits include delegated manager approvals (delivery review is
-delegable as of October 8; approval execution is not), public
+Current known limits include delegated manager approvals beyond queued messages
+(delivery review and message approval are delegable as of October 8; bookings,
+quotes, edits and rejection are not), public
 website forms, Meta Graph contact retrieval/connect UI, channel acceptance,
 notification sender/delivery acceptance, qualification/nurture, complete guarded
 quote-book-pipeline flow and reviewed memory publication. Full browser/a11y and

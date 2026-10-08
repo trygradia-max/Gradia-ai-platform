@@ -481,6 +481,14 @@ export type ExecuteApprovalOptions = {
    * blocks conflicts, and any override metadata on the payload is IGNORED.
    */
   context?: ConflictPolicyContext
+  /**
+   * Delegated manager approval of a queued message. The claim runs on the
+   * manager's own session, so SQL proves who is approving and binds the claim
+   * to the exact message reviewed. Only after that claim succeeds is the
+   * execution client used; the executors need shop credentials and owner-
+   * only rows a manager session cannot read. It is never used to authorize.
+   */
+  delegated?: { expectedReview: string; executionClient: SupabaseClient }
 }
 
 export async function executeApproval(
@@ -495,10 +503,14 @@ export async function executeApproval(
   try {
     // Policy, current membership, audit and action claim share one transaction.
     // No read-then-update authorization window and no legacy fallback on errors.
-    const { data, error } = await supabase.rpc("claim_control_action", {
-      p_shop: shopId, p_action: pendingId, p_actor: decider.userId ?? null,
-      p_context: context,
-    })
+    const { data, error } = options?.delegated
+      ? await supabase.rpc("claim_delegated_message", {
+          p_shop: shopId, p_action: pendingId, p_expected: options.delegated.expectedReview,
+        })
+      : await supabase.rpc("claim_control_action", {
+          p_shop: shopId, p_action: pendingId, p_actor: decider.userId ?? null,
+          p_context: context,
+        })
     if (error) return { ok: false, error: "Execution status could not be verified. Review action history before retrying." }
     if (data?.denied) {
       const reasons: Record<string, string> = {
@@ -508,6 +520,8 @@ export async function executeApproval(
         human_approval_required: "This action requires owner approval.",
         autonomy_entitlement_required: "Autonomous execution is not available for this workspace.",
         location_unavailable: "The workspace location could not be verified.",
+        owner_approval_required: "Only the shop owner can approve this kind of action.",
+        review_changed: "This message changed or is being edited. Refresh and review it again before approving.",
       }
       return { ok: false, error: reasons[String(data.denied)] ?? "Execution status could not be verified. Review action history before retrying." }
     }
@@ -531,6 +545,16 @@ export async function executeApproval(
     } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
     await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
+  }
+
+  if (options?.delegated) {
+    // The claim above is the authorization; from here the shop-scoped executors
+    // run exactly as they do for an owner. Anything but a message is released.
+    supabase = options.delegated.executionClient
+    if (claimed.action_type !== "send_sms" && claimed.action_type !== "send_email") {
+      await rollbackClaim(supabase, claimed)
+      return { ok: false, error: "Only the shop owner can approve this kind of action." }
+    }
   }
 
   // Record commands commit validation, audit, domain write and claim atomically.

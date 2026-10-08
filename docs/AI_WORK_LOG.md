@@ -525,3 +525,32 @@ in an authenticated browser. Details and limits are in
 as a pull request at the founder's request. No merge, deployment, shared database
 or provider activity. This worktree's
 dependencies were installed with `npm ci`, and the disposable stack was reset.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Added delegated manager approval of queued texts and emails on
+`codex/claude-delegated-message-approval`, stacked on PR #54. The founder chose
+messages only for this slice. Migration 89 adds the `approvals.messages` grant (valid
+only with `crm.read`), moves the claim body into a private `control_claim`, adds a
+session-only `claim_delegated_message` bound to the reviewed payload hash, records
+`actor_role` on every execution decision, and adds a session-only
+`list_delegated_message_approvals` read. `executeApproval` gained a delegated option
+that claims on the manager's session and then runs the unchanged send executors with
+shop-scoped service access. Added `/team/approvals` and `approveDelegatedMessage`.
+Shared contract changes Cursor should know: `TEAM_CAPABILITIES` has a sixth entry,
+and the team grant help text now describes message approval truthfully.
+
+Left alone: the owner claim path and its grants, send policy, consent, proof and
+purpose review, and every non-message action type. Managers cannot edit, reject or
+stage. `eval/tenant-scoping.test.ts` gained one reviewed service-client importer
+with its justification; no locking test was weakened.
+
+Node 22.23.2 isolated runner on unlinked `gradia-record-fresh`: 1,248 unit passes
+with four existing live skips; 390 integration passes, zero skips; lint, offline
+build and post-build types passed; 89 migrations from zero with exact ledger; new
+and existing catalog, rollback and refusal probes passed. Transports were mocked;
+the page was not run in an authenticated browser. Found and left for a separate
+task: no migration adds `create_quote` to `pending_action_type`. Details and limits
+are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed for review as a
+pull request at the founder's request; no merge, deployment, shared database or
+provider activity.

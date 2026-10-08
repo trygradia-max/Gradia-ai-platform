@@ -65,6 +65,13 @@ describe("service-role importer inventory (sweep visibility)", () => {
   // where it fits) and add the file here in the same PR.
   const REVIEWED_IMPORTERS = new Set([
     "src/app/actions/a2p.ts",
+    // Delegated manager message approval. The service client is handed to
+    // executeApproval only as the execution client: the claim runs first on
+    // the manager's own session (claim_delegated_message proves the live
+    // grant in that shop and binds the reviewed message), and the executors
+    // scope every query to the shop id returned by that claim. The client is
+    // never used to authorize, and a refused claim never touches it.
+    "src/app/actions/delegated-approvals.ts",
     "src/app/actions/jobs.ts",
     "src/app/actions/payments.ts",
     "src/app/actions/quote-response.ts",
