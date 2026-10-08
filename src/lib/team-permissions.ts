@@ -34,7 +34,7 @@ export const CAPABILITY_LABELS: Record<TeamCapability, string> = {
   "delivery.reconcile":
     "Record delivery reviews for held messages (needs customer view; never resends)",
   "approvals.messages":
-    "Approve queued texts and emails (needs customer view; consent and delivery checks still apply)",
+    "Approve or reject queued texts and emails (needs customer view; consent and delivery checks still apply)",
 }
 const id = z.string().uuid()
 const grants = z.array(z.enum(TEAM_CAPABILITIES)).max(TEAM_CAPABILITIES.length)

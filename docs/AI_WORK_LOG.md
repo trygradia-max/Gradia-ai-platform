@@ -598,3 +598,25 @@ task: no migration adds `create_quote` to `pending_action_type`. Details and lim
 are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed for review as a
 pull request at the founder's request; no merge, deployment, shared database or
 provider activity.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Added delegated manager rejection of queued texts and emails on
+`codex/claude-delegated-message-rejection`, stacked on PR #56. The existing
+`approvals.messages` grant now covers declining as well as approving. One migration
+adds a session-only `reject_delegated_message` bound to the reviewed payload hash;
+it audits the reviewer, sends nothing, consumes no authority and refuses messages
+whose sending was already claimed. Added `rejectDelegatedMessage` and a reject
+button beside approve on `/team/approvals`; the grant label and help text now say
+"approve or reject".
+
+Left alone: the owner reject and undo paths, the executor, send policy and every
+non-message action type. No service client is used for rejection.
+
+Node 22.23.2 isolated runner on unlinked `gradia-record-fresh`: 1,271 unit passes
+with four existing live skips; 402 integration passes, zero skips; lint, offline
+build and post-build types passed; 91 migrations from zero with exact ledger; all
+catalog, rollback and refusal probes passed. Not run in an authenticated browser.
+Details are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed as a
+pull request; no merge, deployment, shared database or provider activity. The
+`create_quote` enum fix is separate, in PR #57.
