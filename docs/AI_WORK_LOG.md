@@ -555,3 +555,16 @@ in an authenticated browser. Details and limits are in
 as a pull request at the founder's request. No merge, deployment, shared database
 or provider activity. This worktree's
 dependencies were installed with `npm ci`, and the disposable stack was reset.
+
+
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Reviewed Claude Code's delegated delivery review PR #54 and merged it after both
+required checks passed (one database-startup failure passed on retry). Integrated
+that main into public form PR #55; the only source conflict was the append-only work
+log, and both histories were retained. Combined Node 22 verification: 1,249 unit
+passes (four existing live skips), 376 integration passes (zero skips), lint,
+offline build and post-build types passed. All 89 migrations initialized from zero
+on the dedicated form stack. Public form and updated Whisper permission/relationship
+probes passed together. Updated the current handoff with the public form backend
+and remaining setup UI. No Cursor/Claude checkout, shared database or production
+configuration was modified; Git deployments remain disabled.

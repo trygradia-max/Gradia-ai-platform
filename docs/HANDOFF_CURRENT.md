@@ -1,4 +1,4 @@
-# Current Gradia handoff — October 7, 2026
+# Current Gradia handoff — October 8, 2026
 
 ## Start here
 
@@ -80,11 +80,12 @@ Coordinate shared component/action contracts with Cursor before changing them.
 - `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`
 - `docs/architecture/LEAD_INTAKE_REVIEW.md`
 - `docs/architecture/WHISPER_INBOX.md`
+- `docs/architecture/PUBLIC_FORM_INTAKE.md`
 - `docs/AI_WORK_LOG.md`
 
 Current known limits include delegated manager approvals (delivery review is
 delegable as of October 8; approval execution is not), public
-website forms, Meta Graph contact retrieval/connect UI, channel acceptance,
+form setup/embed UI and browser/anti-bot acceptance, Meta Graph contact retrieval/connect UI, channel acceptance,
 notification sender/delivery acceptance, qualification/nurture, complete guarded
 quote-book-pipeline flow and reviewed memory publication. Full browser/a11y and
 live model/provider evaluations are not replaced by deterministic tests.
@@ -92,8 +93,13 @@ live model/provider evaluations are not replaced by deterministic tests.
 `vercel.json` has `git.deploymentEnabled: false` so these merges do not deploy.
 Do not re-enable deployment, apply shared/production migrations, activate providers,
 remove production write guards or send real messages as part of a UI/backend task.
-Those require their own release work. The consolidation includes 87 migrations;
+Those require their own release work. The current code includes 89 migrations;
 the production ledger must be inspected separately before any release.
+
+Public website intake now has an owner-configured backend and anonymous JSON endpoint
+that records inquiry evidence for identity review. Its setup UI is still pending;
+see `docs/architecture/PUBLIC_FORM_INTAKE.md` before building it. The implementation
+lives in `worktrees/public-form-intake/` on `codex/public-form-intake`.
 
 ## Work intentionally not merged
 
