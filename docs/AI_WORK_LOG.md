@@ -528,3 +528,30 @@ that incorrectly tried to deactivate an owner (forbidden by an existing invarian
 Fixed the harness/type issue, reviewed/registered the importer, and tested manager
 revocation plus form disablement without relaxing owner protection. No production
 migration, deployment, provider activation, real visitor or live model call occurred.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Added the first delegated manager operation on `codex/claude-backend-next`: an owner
+can grant a manager `delivery.reconcile` (valid only with `crm.read`) to record
+delivery assessments on held sends. Migration 88 adds the constrained grant, a
+reviewer-role column, a private live-authority helper, delegated authority in the two
+existing reconciliation RPCs and a session-only `list_delivery_holds` read. Added
+`/team/delivery-reviews` as a minimal surface reusing the existing history and form.
+Shared contract changes Cursor should know: `TEAM_CAPABILITIES` has a fifth entry (it
+appears in the team grant checkboxes), `DeliveryReconciliationHistory` takes an
+optional `pageHref`, history items carry `actor_role`, and outcome labels are now
+role-neutral.
+
+Left alone: `claim_control_action` and all approval, edit, reject and reply staging
+remain owner-only. Reviews still release no proof, clear no hold and authorize no
+resend. No notification, provider or transport code changed.
+
+Node 22.23.2 isolated runner on unlinked `gradia-record-fresh`: 1,235 unit passes
+with four existing live skips; 369 integration passes, zero skips; lint, offline
+build and post-build types passed; 88 migrations from zero with exact ledger; all
+existing catalog, relationship and refusal probes passed. The new page was not run
+in an authenticated browser. Details and limits are in
+`docs/architecture/WHISPER_INBOX.md`. Committed as `23f2932` and pushed for review
+as a pull request at the founder's request. No merge, deployment, shared database
+or provider activity. This worktree's
+dependencies were installed with `npm ci`, and the disposable stack was reset.

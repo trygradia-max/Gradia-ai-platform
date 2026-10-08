@@ -86,4 +86,96 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)('Owner delivery reconciliation',()=>{
   expect((await read(c.p_action)).data.items[0].command_id).toBe(c.p_command)
   expect((await db.from('service_proof_consumptions').select('proof_id').eq('action_id',c.p_action)).data).toHaveLength(1)
  })
+ describe('explicitly delegated manager review',()=>{
+  const grant=(capabilities:string[],role='manager',active=true)=>db.from('shop_memberships').update({active,role,capabilities}).eq('shop_id',shop.shopId).eq('user_id',other.ownerId)
+  const delegated=['crm.read','delivery.reconcile']
+  const holds=(client=owner,offset=0)=>client.rpc('list_delivery_holds',{p_shop:shop.shopId,p_offset:offset})
+  it('records a manager-attributed review that changes only the review history',async()=>{
+   expect((await grant(delegated)).error).toBeNull();const c=await fixture()
+   const before=await db.from('service_proof_consumptions').select('*').eq('action_id',c.p_action).single()
+   expect((await record(c,manager)).data).toBe(c.p_command)
+   expect((await record({...c,p_command:randomUUID(),p_revision:1,p_outcome:'delivered'})).error).toBeNull()
+   for(const client of [owner,manager]){
+    const r=await read(c.p_action,client);expect(r.error).toBeNull();expect(r.data.viewer_role).toBe(client===owner?'owner':'manager')
+    expect(r.data.items.map((x:{actor_role:string;actor_label:string;actor_id:string})=>[x.actor_role,x.actor_label,x.actor_id])).toEqual([['owner','Owner',shop.ownerId],['manager','Fictional Manager',other.ownerId]])
+   }
+   expect((await db.from('service_proof_consumptions').select('*').eq('action_id',c.p_action).single()).data).toEqual(before.data)
+   expect((await db.from('pending_actions').select('status,result_id,payload,decided_by_user').eq('id',c.p_action).single()).data).toEqual({status:'pending',result_id:null,payload:{body:'Fictional held message'},decided_by_user:null})
+  })
+  it('gives the manager no approval, proof, pending-action or direct review-table access',async()=>{
+   expect((await grant(delegated)).error).toBeNull();const c=await fixture();expect((await record(c,manager)).error).toBeNull()
+   const claim=await manager.rpc('claim_control_action',{p_shop:shop.shopId,p_action:c.p_action,p_actor:other.ownerId,p_context:'hitl'})
+   expect(claim.data).toEqual({denied:'actor_not_authorized'})
+   expect((await manager.from('pending_actions').select('id').eq('id',c.p_action)).data??[]).toEqual([])
+   expect((await manager.from('service_proof_consumptions').select('proof_id').eq('action_id',c.p_action)).data??[]).toEqual([])
+   expect((await manager.from('delivery_reconciliations').select('*')).error).not.toBeNull()
+   expect((await db.from('pending_actions').select('status').eq('id',c.p_action).single()).data).toEqual({status:'pending'})
+  })
+  it('requires both grants, the manager role and live membership at the moment of each command',async()=>{
+   const c=await fixture()
+   for(const capabilities of [[],['crm.read'],['crm.read','assignments.manage','notes.write','jobs.progress']]){
+    expect((await grant(capabilities)).error).toBeNull()
+    expect((await record(c,manager)).error?.code).toBe('42501');expect((await read(c.p_action,manager)).error?.code).toBe('42501');expect((await holds(manager)).error?.code).toBe('42501')
+   }
+   // The grant cannot exist without customer read access, or on a staff membership.
+   expect((await grant(['delivery.reconcile'])).error).not.toBeNull()
+   expect((await grant(delegated,'staff')).error).not.toBeNull()
+   const member=await db.from('shop_memberships').select('id').eq('shop_id',shop.shopId).eq('user_id',other.ownerId).single()
+   expect((await owner.rpc('team_set_member',{p_shop:shop.shopId,p_member:member.data!.id,p_role:'manager',p_active:true,p_capabilities:['delivery.reconcile']})).error).not.toBeNull()
+   expect((await owner.rpc('team_set_member',{p_shop:shop.shopId,p_member:member.data!.id,p_role:'manager',p_active:true,p_capabilities:delegated})).error).toBeNull()
+   expect((await record(c,manager)).data).toBe(c.p_command)
+   // Removal and revocation take effect on the next command, including an exact retry.
+   expect((await owner.rpc('team_set_member',{p_shop:shop.shopId,p_member:member.data!.id,p_role:'manager',p_active:true,p_capabilities:['crm.read']})).error).toBeNull()
+   expect((await record(c,manager)).error?.code).toBe('42501')
+   expect((await grant(delegated,'manager',false)).error).toBeNull()
+   for(const attempt of [record(c,manager),record({...c,p_command:randomUUID(),p_revision:1},manager),read(c.p_action,manager),holds(manager)])expect((await attempt).error?.code).toBe('42501')
+   expect((await read(c.p_action)).data.revision).toBe(1)
+  })
+  it('binds commands to their reviewer and to this shop',async()=>{
+   expect((await grant(delegated)).error).toBeNull();const c=await fixture()
+   expect((await record(c,manager)).data).toBe(c.p_command);expect((await record(c,manager)).data).toBe(c.p_command)
+   // The owner cannot replay or overwrite the manager's command identity.
+   expect((await record(c)).error?.code).toBe('PT409')
+   const foreign=randomUUID()
+   expect((await db.from('pending_actions').insert({id:foreign,shop_id:other.shopId,requested_by:other.ownerId,action_type:'send_sms',payload:{body:'Fictional foreign message'}})).error).toBeNull()
+   expect((await db.from('service_proof_consumptions').insert({shop_id:other.shopId,action_id:foreign,proof_id:randomUUID(),claims:{synthetic:true}})).error).toBeNull()
+   // A grant in one shop is not authority over another shop's evidence, in either direction.
+   expect((await record({...c,p_command:randomUUID(),p_action:foreign,p_revision:0},manager)).error?.code).toBe('42501')
+   expect((await owner.rpc('read_delivery_reconciliation',{p_shop:other.shopId,p_action:foreign,p_offset:0})).error?.code).toBe('42501')
+   expect((await owner.rpc('list_delivery_holds',{p_shop:other.shopId,p_offset:0})).error?.code).toBe('42501')
+   expect((await read(c.p_action)).data.revision).toBe(1)
+  })
+  it('competing owner and manager decisions have exactly one winner',async()=>{
+   expect((await grant(delegated)).error).toBeNull();const c=await fixture()
+   const results=await Promise.all([record(c),record({...c,p_command:randomUUID(),p_outcome:'delivered'},manager)])
+   expect(results.filter(r=>!r.error)).toHaveLength(1);expect(results.find(r=>r.error)?.error?.code).toBe('PT409');expect((await read(c.p_action)).data.revision).toBe(1)
+  })
+  it('lists only held sends with presentation fields, the same for owner and delegated manager',async()=>{
+   expect((await grant(delegated)).error).toBeNull()
+   const customer=await db.from('customers').insert({shop_id:shop.shopId,name:'Fictional Held Customer'}).select('id').single();expect(customer.error).toBeNull()
+   const held=randomUUID(),settled=randomUUID(),now=new Date().toISOString()
+   expect((await db.from('pending_actions').insert([{id:held,shop_id:shop.shopId,requested_by:shop.ownerId,action_type:'send_sms',status:'pending',result_id:null,payload:{body:'Fictional uncertain text',customer_id:customer.data!.id}},{id:settled,shop_id:shop.shopId,requested_by:shop.ownerId,action_type:'send_email',status:'approved',result_id:randomUUID(),payload:{body:'Fictional settled email',customer_id:customer.data!.id}}])).error).toBeNull()
+   expect((await db.from('service_proof_consumptions').insert([{shop_id:shop.shopId,action_id:held,proof_id:randomUUID(),claims:{synthetic:true,destination:'+15555550100'},completed_at:null},{shop_id:shop.shopId,action_id:settled,proof_id:randomUUID(),claims:{synthetic:true},completed_at:now}])).error).toBeNull()
+   expect((await record({p_shop:shop.shopId,p_action:held,p_command:randomUUID(),p_revision:0,p_completed_at:null,p_outcome:'not_delivered',p_note:'Fictional provider log shows no attempt.'},manager)).error).toBeNull()
+   const snapshot=async()=>JSON.stringify([(await db.from('pending_actions').select('*').eq('shop_id',shop.shopId).order('id')).data,(await db.from('service_proof_consumptions').select('*').eq('shop_id',shop.shopId).order('action_id')).data])
+   const before=await snapshot()
+   for(const client of [owner,manager]){
+    const page=await holds(client);expect(page.error).toBeNull();expect(page.data.viewer_role).toBe(client===owner?'owner':'manager')
+    const ids=page.data.items.map((x:{action_id:string})=>x.action_id);expect(ids).toContain(held);expect(ids).not.toContain(settled);expect(page.data.items.length).toBeLessThanOrEqual(21)
+    const row=page.data.items.find((x:{action_id:string})=>x.action_id===held)
+    expect(row).toMatchObject({action_type:'send_sms',customer_id:customer.data!.id,customer_name:'Fictional Held Customer',body:'Fictional uncertain text',completed_at:null,review_revision:1,latest_outcome:'not_delivered'})
+    expect(Object.keys(row).sort()).toEqual(['action_id','action_type','body','claimed_at','completed_at','customer_id','customer_name','latest_outcome','review_revision'])
+    expect(JSON.stringify(page.data)).not.toContain('+15555550100')
+   }
+   expect(await snapshot()).toBe(before)
+   for(const client of [anonClient(),db])expect((await holds(client)).error).not.toBeNull()
+   for(const offset of [-1,100001])expect((await holds(owner,offset)).error?.code).toBe('22023')
+   expect((await holds(owner,100000)).data.items).toEqual([])
+  })
+  it('invitations carry the delegated grant only together with customer read access',async()=>{
+   const invite=(capabilities:string[])=>owner.rpc('team_invite',{p_shop:shop.shopId,p_email:`delegate-${randomUUID()}@example.test`,p_name:'Fictional Delegate',p_role:'manager',p_capabilities:capabilities})
+   expect((await invite(['delivery.reconcile'])).error).not.toBeNull();expect((await invite(['delivery.reconcile','approvals.execute'])).error).not.toBeNull()
+   expect((await invite(delegated)).error).toBeNull()
+  })
+ })
 })

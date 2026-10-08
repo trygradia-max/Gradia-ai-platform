@@ -6,6 +6,7 @@ export const TEAM_CAPABILITIES = [
   "notes.write",
   "jobs.progress",
   "assignments.manage",
+  "delivery.reconcile",
 ] as const
 export type TeamCapability = (typeof TEAM_CAPABILITIES)[number]
 export type TeamRole = "owner" | "manager" | "staff"
@@ -29,6 +30,8 @@ export const CAPABILITY_LABELS: Record<TeamCapability, string> = {
   "notes.write": "Add customer notes",
   "jobs.progress": "Update job progress",
   "assignments.manage": "Assign visible customers and jobs to staff",
+  "delivery.reconcile":
+    "Record delivery reviews for held messages (needs customer view; never resends)",
 }
 const id = z.string().uuid()
 const grants = z.array(z.enum(TEAM_CAPABILITIES)).max(TEAM_CAPABILITIES.length)
@@ -87,6 +90,16 @@ export const teamCommandSchema = z
       ctx.addIssue({
         code: "custom",
         message: "Staff cannot receive manager grants",
+      })
+    // Mirrors the database constraint: a reviewer must be able to read the evidence.
+    if (
+      (command.operation === "invite" || command.operation === "member") &&
+      command.capabilities.includes("delivery.reconcile") &&
+      !command.capabilities.includes("crm.read")
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Delivery review also needs the customer view grant",
       })
     if (
       command.operation === "assign" &&

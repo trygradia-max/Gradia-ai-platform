@@ -105,6 +105,7 @@ export default async function TeamPage({
         </div>
       )}
       {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))) ? <Link href={`/intake?shop=${workspace.id}`} className="block underline">Review unresolved intake</Link> : null}
+      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("delivery.reconcile"))) ? <Link href={`/team/delivery-reviews?shop=${workspace.id}`} className="block underline">Review held message delivery</Link> : null}
       <AcceptInvitation />
     </main>
   )
