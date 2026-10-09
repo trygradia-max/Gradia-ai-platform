@@ -1,6 +1,6 @@
 /**
  * Whisper customer summary (C6b) — "3 jobs, $1,840 LTV, coating Aug 2025,
- * prefers text." The FACT PACK is pure code over DB rows (fixture-tested);
+ * 9 inbound text messages." The FACT PACK is pure code over DB rows (fixture-tested);
  * the single-turn worker may only rephrase the listed facts — and when the
  * model is unavailable the deterministic fact line ships as-is, so the
  * surface never fabricates and never blocks.
@@ -22,7 +22,7 @@ export type CustomerFactInput = {
   upcomingAppointmentAt: string | null
   outstandingQuotesCount: number
   outstandingQuotesCents: number
-  /** Inbound message counts per channel — preference evidence. */
+  /** Observed inbound counts only; neither stated preference nor permission. */
   inboundByChannel: Record<string, number>
   lastInboundAt: string | null
   doNotContact: boolean
@@ -64,10 +64,21 @@ export function buildCustomerFacts(input: CustomerFactInput): string[] {
       `${input.outstandingQuotesCount} open quote${input.outstandingQuotesCount === 1 ? "" : "s"} worth ${formatPriceUsd(input.outstandingQuotesCents)}`
     )
   }
-  const channels = Object.entries(input.inboundByChannel).filter(([, n]) => n > 0)
-  if (channels.length > 0) {
-    const top = channels.sort((a, b) => b[1] - a[1])[0][0]
-    facts.push(`prefers ${top === "sms" ? "text" : top}`)
+  // Use a fixed vocabulary and report all observed channels. Frequency and ties
+  // must never become a stated preference or authority to contact the customer.
+  const channelLabels = [
+    ["sms", "text message", "text messages"],
+    ["email", "email", "emails"],
+    ["voice", "call", "calls"],
+  ] as const
+  const activity = channelLabels.flatMap(([channel, singular, plural]) => {
+    const count = input.inboundByChannel[channel]
+    return Number.isSafeInteger(count) && count > 0
+      ? [`${count} ${count === 1 ? singular : plural}`]
+      : []
+  })
+  if (activity.length > 0) {
+    facts.push(`recorded inbound activity: ${activity.join(", ")}`)
   }
   if (input.lastInboundAt) {
     facts.push(`last heard from them ${monthYear(input.lastInboundAt)}`)
@@ -88,7 +99,7 @@ export function deterministicSummary(facts: string[]): string {
 const prompt = ChatPromptTemplate.fromMessages([
   [
     "system",
-    "You compress customer facts for a busy detail-shop owner. Rules: use ONLY the facts listed — never add, infer, estimate, or embellish anything (no numbers, dates, names, or preferences that are not in the list). One or two short sentences, plain English, no greeting.",
+    "You compress customer facts for a busy detail-shop owner. Rules: use ONLY the facts listed — never add, infer, estimate, or embellish anything (no numbers, dates, names, or preferences that are not in the list). Channel counts describe observed inbound activity only. Never convert them into a customer preference, consent, permission, or a recommendation to contact. Preserve do-not-contact when present. One or two short sentences, plain English, no greeting.",
   ],
   ["human", "FACTS:\n{facts}\n\nWrite the summary."],
 ])
