@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { publicFormOriginSchema, publicFormSubmissionSchema, readPublicFormBody, FormBodyTooLarge } from "@/lib/public-form-intake"
 const rpc = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({ rpc }) }))
@@ -10,6 +10,7 @@ const formId = randomUUID(), origin = "https://shop.example.test"
 const context = () => ({ params: Promise.resolve({ formId }) })
 const payload = () => ({ submission_id: randomUUID(), email: "visitor@example.test", message: "Ceramic coating inquiry" })
 const request = (body: unknown = payload(), headers: Record<string, string> = {}) => new Request(`https://app.example.test/api/intake/public-form/${formId}`, { method: "POST", headers: { origin, "content-type": "application/json", ...headers }, body: JSON.stringify(body) })
+afterEach(() => vi.useRealTimers())
 beforeEach(() => { rpc.mockReset(); rpc.mockImplementation(async (name: string) => ({ data: name === "public_intake_form_origin" ? true : { accepted: true }, error: null })) })
 describe("public website form boundary", () => {
   it("accepts only canonical HTTPS origins, without paths, credentials or wildcard", () => {
@@ -23,6 +24,17 @@ describe("public website form boundary", () => {
   it("bounds streamed bytes independently of Content-Length", async () => {
     for (const headers of [{}, { "content-length": "1" }] as Record<string, string>[]) await expect(readPublicFormBody(request({ message: "x".repeat(17000) }, headers))).rejects.toBeInstanceOf(FormBodyTooLarge)
     await expect(readPublicFormBody(request(payload(), { "content-length": "17000" }))).rejects.toBeInstanceOf(FormBodyTooLarge)
+  })
+  it("returns a retry-safe timeout without recording a stalled upload", async () => {
+    vi.useFakeTimers()
+    const req = new Request("https://app.test", { method: "POST", headers: { origin, "content-type": "application/json" }, body: new ReadableStream(), duplex: "half" } as RequestInit)
+    const pending = POST(req, context())
+    await vi.advanceTimersByTimeAsync(10_000)
+    const response = await pending
+    expect(response.status).toBe(408)
+    expect(response.headers.get("access-control-allow-origin")).toBe(origin)
+    expect(await response.text()).toContain("same submission id")
+    expect(rpc.mock.calls.every(c => c[0] === "public_intake_form_origin")).toBe(true)
   })
   it("accepts without returning internal identifiers or customer existence", async () => {
     const body = payload(), response = await POST(request(body), context())
