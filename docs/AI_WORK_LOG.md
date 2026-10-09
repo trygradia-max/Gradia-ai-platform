@@ -631,16 +631,19 @@ Preserved Cursor's uncommitted inbox-shell reconciliation in the separate
 `worktrees/oct8-integration` checkout. The Cursor and stale platform checkouts
 remain unchanged. Reviewed the list/thread pagination, permission boundaries,
 delivery-hold copy and unchanged reply controls. Fixed two React createElement
-test calls to provide required children through props; the initial typecheck
-caught this despite the unit tests passing. On main including PR #56: 1,264 unit
+test calls with a required children default and positional rendered children;
+the initial typecheck caught missing props despite the unit tests passing. CI
+then caught a lint conflict in the first fix; targeted tests, lint and types
+passed again after correcting it. On main including PR #56: 1,264 unit
 passes (four existing skips), 13 targeted inbox tests, full lint, offline Node 22
 build and typecheck passed. Keep this UI PR draft pending signed-in owner/manager/
 staff browser acceptance and real keyboard focus/skip-link testing; Cursor's
 fixture-only responsive checks do not cover the usage/setup pills.
 
 Read-only service inspection: both Supabase projects report INACTIVE. Vercel's
-platform overview shows a Ready production deployment dated September 24; the
-public URL returns HTTP 403 and automatic Git deployments remain disabled in
+platform overview shows a Ready production deployment dated September 24. Project
+settings offer Pause Project, confirming it is not paused. The public URL returns
+HTTP 403 and automatic Git deployments remain disabled in
 vercel.json. The CLI API returned 403; deployment evidence came from the signed-in
 Vercel dashboard. No service was resumed, production migration run, provider
 activated or deployment created. Database ledger and write-guard inspection must

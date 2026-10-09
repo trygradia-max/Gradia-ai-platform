@@ -196,6 +196,8 @@ describe("Whisper conversation list presentation", () => {
 
   it("keeps the list beside an open thread and hides that list on a narrow screen", () => {
     const props = {
+      // React's positional child replaces this required-prop default.
+      children: null,
       shops: [{ id: shopId, name: "North" }],
       shopId,
       page: 1,
@@ -208,12 +210,12 @@ describe("Whisper conversation list presentation", () => {
           ...props,
           activeCustomerId: id,
           activeChannel: "sms",
-          children: "Thread body",
-        }
+        },
+        "Thread body"
       )
     )
     const closed = renderToStaticMarkup(
-      createElement(InboxFrame, { ...props, children: "Choose a conversation" })
+      createElement(InboxFrame, props, "Choose a conversation")
     )
     expect(open).toContain('data-whisper-layout="two-pane"')
     expect(open).toContain("hidden lg:flex")
