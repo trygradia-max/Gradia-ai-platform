@@ -41,9 +41,9 @@ export default async function DelegatedApprovalsPage({
       <Link href={`/team?shop=${workspace.id}`} className="underline">Your workspaces</Link>
       <h1 className="text-2xl font-semibold">{workspace.name} · Messages awaiting approval</h1>
       <p>
-        You can approve queued texts and emails for this shop. Approving sends the message exactly as shown, if the
-        customer’s consent, opt-out status and quiet hours allow it. You cannot edit or reject here; bookings, quotes
-        and record changes stay with the shop owner.
+        You can approve or reject queued texts and emails for this shop. Approving sends the message exactly as shown,
+        if the customer’s consent, opt-out status and quiet hours allow it. Rejecting sends nothing, and the shop owner
+        can restore it. You cannot edit here; bookings, quotes and record changes stay with the shop owner.
       </p>
       {!queue?.success ? (
         <p role="alert">Messages could not be loaded. Nothing is assumed to be clear; refresh to try again.</p>

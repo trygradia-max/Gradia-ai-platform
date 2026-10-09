@@ -19,7 +19,7 @@ for signature in ['control_claim(uuid,uuid,uuid,text,text)', 'control_review_has
     assert grants(signature) == ['f', 'f', 'f'], f'Internal function exposed: {signature}'
 assert sql(f"SELECT {definer} FROM pg_proc WHERE oid='public.control_claim(uuid,uuid,uuid,text,text)'::regprocedure") == 't'
 # Delegated entry points are session-only; the owner entry point keeps its original grants.
-for signature in ['claim_delegated_message(uuid,uuid,text)', 'list_delegated_message_approvals(uuid,integer)']:
+for signature in ['claim_delegated_message(uuid,uuid,text)', 'reject_delegated_message(uuid,uuid,text)', 'list_delegated_message_approvals(uuid,integer)']:
     assert grants(signature) == ['f', 't', 'f'], f'Unexpected grants: {signature}'
     assert sql(f"SELECT {definer} FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 't'
 assert grants('claim_control_action(uuid,uuid,uuid,text)') == ['f', 't', 't']
@@ -31,4 +31,4 @@ for table in ['shop_memberships', 'shop_invitations']:
 assert sql("SELECT is_nullable='NO' AND column_default IS NULL FROM information_schema.columns WHERE table_schema='public' AND table_name='control_execution_decisions' AND column_name='actor_role'") == 't'
 for role in ['anon', 'authenticated', 'service_role']:
     assert sql(f"SELECT has_table_privilege('{role}','public.control_execution_decisions','INSERT,UPDATE,DELETE')") == 'f'
-print(f'PASS: exact {len(versions)} migrations; one private claim body; session-only delegated claim and queue; owner entry point grants unchanged; constrained grant; decision role mandatory and not client-writable')
+print(f'PASS: exact {len(versions)} migrations; one private claim body; session-only delegated claim, rejection and queue; owner entry point grants unchanged; constrained grant; decision role mandatory and not client-writable')

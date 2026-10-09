@@ -186,4 +186,54 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("Delegated manager message approval",
    expect((await status(id))?.status).toBe("pending");expect((await status(note))?.status).toBe("pending");expect(sendOutboundSms).not.toHaveBeenCalled()
   })
  })
+ describe("delegated rejection",()=>{
+  const reject=(id:string,expected:string|null,client=manager,shopId=shop.shopId)=>client.rpc("reject_delegated_message",{p_shop:shopId,p_action:id,p_expected:expected})
+  it("rejects exactly the reviewed message, attributed and audited, and sends nothing",async()=>{
+   expect((await grant(delegated)).error).toBeNull();const id=await message(),reviewed=await hash(id)
+   expect((await reject(id,reviewed)).data).toEqual({id,shop_id:shop.shopId,action_type:"send_sms"})
+   expect(await status(id)).toEqual({status:"rejected",decided_by_user:other.ownerId,result_id:null})
+   expect(await decisions(id)).toEqual([{actor_id:other.ownerId,actor_role:"manager",allowed:false,reason:"rejected_by_reviewer",mode:"approval",context:"hitl"}])
+   expect((await reject(id,reviewed)).data).toEqual({already_decided:true});expect((await claim(id,reviewed)).data).toEqual({already_decided:true})
+   expect(await decisions(id)).toHaveLength(1)
+   expect((await db.from("service_proof_consumptions").select("proof_id").eq("action_id",id)).data).toEqual([])
+   expect(sendOutboundSms).not.toHaveBeenCalled();expect(sendEmailMessage).not.toHaveBeenCalled()
+  })
+  it("the owner can restore a manager rejection, after which a fresh review can approve it",async()=>{
+   const id=await message(),reviewed=await hash(id);expect((await reject(id,reviewed)).data.id).toBe(id)
+   expect((await owner.from("pending_actions").update({status:"pending",decided_at:null,decided_by_user:null,resolution:null}).eq("id",id).eq("shop_id",shop.shopId).eq("status","rejected")).error).toBeNull()
+   expect((await status(id))?.status).toBe("pending");expect((await claim(id,await hash(id))).data.id).toBe(id)
+  })
+  it("refuses stale, malformed and mid-edit reviews, other action types and already claimed sends",async()=>{
+   const id=await message(),reviewed=await hash(id)
+   for(const expected of [null,"","0".repeat(64),reviewed.toUpperCase()])expect((await reject(id,expected)).data?.denied).toMatch(/review_changed|actor_not_authorized/)
+   expect((await db.from("pending_actions").update({status:"edit_requested"}).eq("id",id)).error).toBeNull()
+   expect((await reject(id,reviewed)).data).toEqual({denied:"review_changed"});expect((await status(id))?.status).toBe("edit_requested")
+   const note=await stagePending(db,shop.shopId,shop.ownerId,"add_note",{content:"Fictional note"})
+   expect((await reject(note,"a".repeat(64))).data).toEqual({denied:"owner_approval_required"});expect((await status(note))?.status).toBe("pending")
+   const spent=await message("Fictional claimed text")
+   const spentReview=await hash(spent)
+   expect((await db.from("service_proof_consumptions").insert({shop_id:shop.shopId,action_id:spent,proof_id:randomUUID(),claims:{synthetic:true}})).error).toBeNull()
+   expect((await reject(spent,spentReview)).data).toEqual({denied:"delivery_review_required"});expect((await status(spent))?.status).toBe("pending")
+   for(const action of [id,note,spent])expect(await decisions(action)).toEqual([])
+  })
+  it("requires the same grant, role, live membership and shop as approval",async()=>{
+   const id=await message(),reviewed=await hash(id)
+   for(const capabilities of [[],["crm.read"],["crm.read","delivery.reconcile"]]){expect((await grant(capabilities)).error).toBeNull();expect((await reject(id,reviewed)).data).toEqual({denied:"actor_not_authorized"})}
+   expect((await grant(delegated,"manager",false)).error).toBeNull();expect((await reject(id,reviewed)).data).toEqual({denied:"actor_not_authorized"})
+   expect((await grant(delegated)).error).toBeNull()
+   for(const client of [db,anonClient()])expect((await reject(id,reviewed,client)).error).not.toBeNull()
+   expect((await reject(id,reviewed,owner,other.shopId)).data).toEqual({denied:"actor_not_authorized"})
+   const foreign=await stagePending(db,other.shopId,other.ownerId,"send_sms",{to_phone:"+15555550125",body:"Fictional foreign text",category:"marketing"})
+   expect((await reject(foreign,reviewed)).data).toEqual({already_decided:true});expect((await status(foreign))?.status).toBe("pending")
+   expect((await status(id))?.status).toBe("pending");expect(await decisions(id)).toEqual([])
+  })
+  it("approve and reject racing for one message have exactly one outcome and at most one send",async()=>{
+   const id=await message(),f={id,reviewed:await hash(id)}
+   const [approved,rejected]=await Promise.all([executeApproval(manager,f.id,shop.shopId,{userId:other.ownerId},{delegated:{expectedReview:f.reviewed,executionClient:serviceClient()}}),reject(f.id,f.reviewed)])
+   const final=(await status(f.id))?.status
+   if(rejected.data?.id===f.id){expect(final).toBe("rejected");expect(approved).toEqual({ok:true,status:"already_decided"});expect(sendOutboundSms).not.toHaveBeenCalled()}
+   else{expect(rejected.data).toEqual({already_decided:true});expect(final).not.toBe("rejected")}
+   expect((await decisions(f.id))!.length).toBe(1)
+  })
+ })
 })
