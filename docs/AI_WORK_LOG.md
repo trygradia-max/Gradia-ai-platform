@@ -571,6 +571,58 @@ configuration was modified; Git deployments remain disabled.
 
 
 [AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Added delegated manager approval of queued texts and emails on
+`codex/claude-delegated-message-approval`, stacked on PR #54. The founder chose
+messages only for this slice. Migration 90 adds the `approvals.messages` grant (valid
+only with `crm.read`), moves the claim body into a private `control_claim`, adds a
+session-only `claim_delegated_message` bound to the reviewed payload hash, records
+`actor_role` on every execution decision, and adds a session-only
+`list_delegated_message_approvals` read. `executeApproval` gained a delegated option
+that claims on the manager's session and then runs the unchanged send executors with
+shop-scoped service access. Added `/team/approvals` and `approveDelegatedMessage`.
+Shared contract changes Cursor should know: `TEAM_CAPABILITIES` has a sixth entry,
+and the team grant help text now describes message approval truthfully.
+
+Left alone: the owner claim path and its grants, send policy, consent, proof and
+purpose review, and every non-message action type. Managers cannot edit, reject or
+stage. `eval/tenant-scoping.test.ts` gained one reviewed service-client importer
+with its justification; no locking test was weakened.
+
+Node 22.23.2 isolated runner on unlinked `gradia-record-fresh`: 1,248 unit passes
+with four existing live skips; 390 integration passes, zero skips; lint, offline
+build and post-build types passed; migrations from zero with exact ledger; new
+and existing catalog, rollback and refusal probes passed (final counts after the
+main merge are in the Control Center ledger). Transports were mocked;
+the page was not run in an authenticated browser. Found and left for a separate
+task: no migration adds `create_quote` to `pending_action_type`. Details and limits
+are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed for review as a
+pull request at the founder's request; no merge, deployment, shared database or
+provider activity.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Added delegated manager rejection of queued texts and emails on
+`codex/claude-delegated-message-rejection`, stacked on PR #56. The existing
+`approvals.messages` grant now covers declining as well as approving. One migration
+adds a session-only `reject_delegated_message` bound to the reviewed payload hash;
+it audits the reviewer, sends nothing, consumes no authority and refuses messages
+whose sending was already claimed. Added `rejectDelegatedMessage` and a reject
+button beside approve on `/team/approvals`; the grant label and help text now say
+"approve or reject".
+
+Left alone: the owner reject and undo paths, the executor, send policy and every
+non-message action type. No service client is used for rejection.
+
+Node 22.23.2 isolated runner on unlinked `gradia-record-fresh`: 1,271 unit passes
+with four existing live skips; 402 integration passes, zero skips; lint, offline
+build and post-build types passed; 91 migrations from zero with exact ledger; all
+catalog, rollback and refusal probes passed. Not run in an authenticated browser.
+Details are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed as a
+pull request; no merge, deployment, shared database or provider activity. The
+`create_quote` enum fix is separate, in PR #57.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
 Fixed a schema gap on `fix/create-quote-action-type`: no migration added
 `create_quote` to `pending_action_type`, so the voice receptionist's draft-quote
 proposals failed at staging on any database built from the repository, while the

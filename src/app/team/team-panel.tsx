@@ -141,7 +141,9 @@ function RoleFields({ member }: { member?: TeamMember }) {
           ))}
           <p className="text-xs text-muted-foreground">
             No grants are enabled by default. These never allow membership,
-            connectors, autonomy changes, exports, merging or message delivery.
+            connectors, autonomy changes, exports or merging. Message approval
+            covers approving or rejecting queued texts and emails only, and every consent, opt-out
+            and delivery check still applies.
           </p>
         </fieldset>
       )}
