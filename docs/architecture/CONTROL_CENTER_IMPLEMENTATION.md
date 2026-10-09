@@ -680,9 +680,47 @@ refusal is `actor_not_authorized`. And `create_quote` is not in the
 `pending_action_type` enum in any migration, so it cannot be queued on a database
 built from this repository; that is pre-existing and left for a separate fix.
 
-Limits: managers can approve but not edit or reject; rejection still uses the
-owner-only pending-action update. The page was compiled, not exercised in an
+Limits: managers can approve but not edit; rejection was added in the next slice
+(see below). The page was compiled, not exercised in an
 authenticated browser. A manager approval does not stamp the trust resolution used
 for autonomy recommendations, so it cannot influence them. No manager notification
 is sent when messages are waiting. Live provider behaviour was mocked. No merge,
 deployment, shared database or provider activity.
+
+## Delegated manager message rejection — October 8
+
+Branch `codex/claude-delegated-message-rejection`, stacked on the approval slice
+(PR #56). The same `approvals.messages` grant now covers declining a queued text or
+email; no new grant and no new table.
+
+Migration `20261008180000_delegated_message_rejection.sql` adds one session-only
+`reject_delegated_message`. Under the shared shop lock it requires the live grant,
+a message action still `pending`, and the reviewed payload hash; marks the action
+rejected with the reviewer as decider; and writes a decision row with the reviewer's
+role and reason `rejected_by_reviewer` in the same transaction. It sends nothing and
+consumes no sending authority. A message whose authority was already claimed is
+refused with `delivery_review_required`: that is an uncertain delivery to reconcile,
+not a draft to drop. Other action types are refused with `owner_approval_required`.
+The owner's existing undo restores a rejected action, after which the payload hash
+is unchanged and a fresh review can decide it again.
+
+`rejectDelegatedMessage` calls that RPC on the manager's session only; it uses no
+service client and never reaches the executor. `/team/approvals` offers approve and
+reject side by side. Like a manager approval, a manager rejection does not stamp the
+trust resolution used for autonomy recommendations.
+
+Verification, Node 22.23.2, isolated runner, unlinked `gradia-record-fresh`: 1,271
+unit passes (four existing live skips, 111 files); 402 integration passes (zero
+skips, 37 files); lint, offline production build and post-build typecheck passed.
+All 91 migrations on this branch applied from zero and matched the ledger; the
+delegated-approval probe (extended for the new function) and the Whisper, intake,
+agent-record, team, tenant, photo, control-policy and control-execution probes
+passed. Five new integration cases cover attributed and audited rejection with no
+send, owner restore followed by approval, stale/mid-edit/other-type/claimed-send
+refusals, grant, role, revocation and cross-shop boundaries, and an approve/reject
+race with exactly one outcome. Nine new unit cases cover the action.
+
+Limits: managers still cannot edit a message. No reason text is captured with a
+rejection. The buttons were compiled, not exercised in an authenticated browser.
+Delegation still covers messages only. No merge, deployment, shared database or
+provider activity.

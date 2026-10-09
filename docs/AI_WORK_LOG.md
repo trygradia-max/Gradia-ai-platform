@@ -599,6 +599,47 @@ are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed for review a
 pull request at the founder's request; no merge, deployment, shared database or
 provider activity.
 
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Added delegated manager rejection of queued texts and emails on
+`codex/claude-delegated-message-rejection`, stacked on PR #56. The existing
+`approvals.messages` grant now covers declining as well as approving. One migration
+adds a session-only `reject_delegated_message` bound to the reviewed payload hash;
+it audits the reviewer, sends nothing, consumes no authority and refuses messages
+whose sending was already claimed. Added `rejectDelegatedMessage` and a reject
+button beside approve on `/team/approvals`; the grant label and help text now say
+"approve or reject".
+
+Left alone: the owner reject and undo paths, the executor, send policy and every
+non-message action type. No service client is used for rejection.
+
+Node 22.23.2 isolated runner on unlinked `gradia-record-fresh`: 1,271 unit passes
+with four existing live skips; 402 integration passes, zero skips; lint, offline
+build and post-build types passed; 91 migrations from zero with exact ledger; all
+catalog, rollback and refusal probes passed. Not run in an authenticated browser.
+Details are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed as a
+pull request; no merge, deployment, shared database or provider activity. The
+`create_quote` enum fix is separate, in PR #57.
+
+
+[AI: claude-code] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Fixed a schema gap on `fix/create-quote-action-type`: no migration added
+`create_quote` to `pending_action_type`, so the voice receptionist's draft-quote
+proposals failed at staging on any database built from the repository, while the
+executor and policy adapter already handled the type. Added
+`20261008170000_create_quote_action_type.sql` (one idempotent `ADD VALUE IF NOT
+EXISTS`) and three integration cases: staging as the voice tool does, owner approval
+producing a menu-priced draft that is never sent, and no automatic claim even under
+a policy that grants quote autonomy. No application code changed.
+
+Whether production already carries the value by hand was not checked; the
+migration is safe either way. Node 22.23.2 isolated runner on unlinked
+`gradia-record-fresh`: 1,249 unit passes with four existing live skips; 379
+integration passes, zero skips; lint, offline build and post-build types passed; 90
+migrations from zero with exact ledger. Its timestamp follows PR #56's migration, so
+merge #56 first to keep ledger order. Pushed as a pull request; no merge,
+deployment, shared database or provider activity.
+
 [AI: cursor] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
 Reconciled the saved app-shell and two-pane inbox from
 `codex/wip-inbox-layout-2026-10-07` onto `codex/cursor-ui-next` without
@@ -648,3 +689,13 @@ vercel.json. The CLI API returned 403; deployment evidence came from the signed-
 Vercel dashboard. No service was resumed, production migration run, provider
 activated or deployment created. Database ledger and write-guard inspection must
 precede a separately planned production release.
+
+
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Reviewed and merged Claude Code PRs #56, #58 and #57 in that order, waiting for
+both protected checks at each merge. Retargeted #58 to main and updated both
+remaining branches to the latest main before CI. Preserved both sides of the
+append-only work-log conflicts. Main now contains 92 migrations and the quote
+enum fix together with manager message approval/rejection. No shared database
+migrations or deployments occurred. Updated draft UI PR #59 to this main; its
+authenticated browser and keyboard acceptance remain outstanding.

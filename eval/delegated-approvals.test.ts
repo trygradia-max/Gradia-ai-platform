@@ -7,7 +7,7 @@ vi.mock("@/lib/supabase/service", () => ({ createServiceClient: mocks.service })
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }))
 vi.mock("@/lib/twilio", () => ({ sendOutboundSms: vi.fn() }))
 vi.mock("@/lib/aurinko", () => ({ sendEmailMessage: vi.fn(), getAccessTokenForShop: vi.fn(), createCalendarEvent: vi.fn() }))
-import { approveDelegatedMessage } from "@/app/actions/delegated-approvals"
+import { approveDelegatedMessage, rejectDelegatedMessage } from "@/app/actions/delegated-approvals"
 import * as approvals from "@/lib/approvals"
 import { sendOutboundSms } from "@/lib/twilio"
 import { sendEmailMessage } from "@/lib/aurinko"
@@ -94,4 +94,38 @@ it("message approval is a manager-only grant that requires the customer view gra
  expect(teamCommandSchema.safeParse({ ...member, role: "manager", capabilities: ["approvals.messages"] }).success).toBe(false)
  expect(teamCommandSchema.safeParse({ ...member, role: "staff", capabilities: ["crm.read", "approvals.messages"] }).success).toBe(false)
  expect(teamCommandSchema.safeParse({ ...member, role: "manager", capabilities: ["crm.read", "approvals.bookings"] }).success).toBe(false)
+})
+
+describe("delegated message rejection action", () => {
+ const rpc = vi.fn()
+ beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); rpc.mockReset(); mocks.user.mockResolvedValue({ id: "manager" }); mocks.session.mockResolvedValue({ rpc }) })
+ it("validates before any session work and never touches the service client, executor or a provider", async () => {
+  const execute = vi.spyOn(approvals, "executeApproval")
+  for (const patch of [{ actionId: "bad" }, { reviewHash: "z".repeat(64) }, { reviewHash: null }, { actorId: id }, { reason: "extra" }])
+   expect((await rejectDelegatedMessage({ ...input, ...patch })).ok).toBe(false)
+  expect(mocks.user).not.toHaveBeenCalled(); expect(rpc).not.toHaveBeenCalled()
+  rpc.mockResolvedValue({ data: { id, shop_id: id, action_type: "send_sms" }, error: null })
+  const result = await rejectDelegatedMessage(input)
+  expect(result.ok).toBe(true); expect(result.message).toContain("Nothing was sent")
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("reject_delegated_message", { p_shop: id, p_action: id, p_expected: reviewHash })
+  expect(mocks.service).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled(); expect(sendOutboundSms).not.toHaveBeenCalled(); expect(sendEmailMessage).not.toHaveBeenCalled()
+ })
+ it.each([
+  [{ data: { denied: "actor_not_authorized" }, error: null }, false, "not delegated"],
+  [{ data: { denied: "owner_approval_required" }, error: null }, false, "Only the shop owner"],
+  [{ data: { denied: "review_changed" }, error: null }, false, "Refresh and review"],
+  [{ data: { denied: "delivery_review_required" }, error: null }, false, "delivery review"],
+  [{ data: { already_decided: true }, error: null }, true, "already decided"],
+  [{ data: { id: "other", shop_id: id }, error: null }, false, "not confirmed"],
+  [{ data: null, error: { message: "private database detail" } }, false, "not confirmed"],
+ ])("reports each outcome honestly without leaking internals %#", async (result, ok, text) => {
+  rpc.mockResolvedValue(result)
+  const outcome = await rejectDelegatedMessage(input)
+  expect(outcome.ok).toBe(ok); expect(outcome.message).toContain(text); expect(outcome.message).not.toContain("private")
+ })
+ it("never retries an uncertain result", async () => {
+  rpc.mockRejectedValue(new Error("private detail"))
+  const outcome = await rejectDelegatedMessage(input)
+  expect(outcome).toMatchObject({ ok: false, message: expect.stringContaining("Result uncertain") }); expect(rpc).toHaveBeenCalledTimes(1)
+ })
 })
