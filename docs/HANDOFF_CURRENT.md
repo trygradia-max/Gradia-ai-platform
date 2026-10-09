@@ -94,7 +94,7 @@ live model/provider evaluations are not replaced by deterministic tests.
 `vercel.json` has `git.deploymentEnabled: false` so these merges do not deploy.
 Do not re-enable deployment, apply shared/production migrations, activate providers,
 remove production write guards or send real messages as part of a UI/backend task.
-Those require their own release work. The current code includes 91 migrations;
+Those require their own release work. The current code includes 92 migrations;
 the production ledger must be inspected separately before any release.
 
 Public website intake now has an owner-configured backend and anonymous JSON endpoint
