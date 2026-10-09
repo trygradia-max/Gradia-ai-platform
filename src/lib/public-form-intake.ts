@@ -34,6 +34,8 @@ export const publicFormResultSchema = z.object({
 }).strict()
 
 export class FormBodyTooLarge extends Error {}
+export class FormBodyTimeout extends Error {}
+export const PUBLIC_FORM_BODY_TIMEOUT_MS = 10_000
 
 /** Enforce the byte limit even when Content-Length is absent or forged. */
 export async function readPublicFormBody(request: Request): Promise<unknown> {
@@ -44,15 +46,26 @@ export async function readPublicFormBody(request: Request): Promise<unknown> {
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
+  let rejectDeadline: (error: Error) => void = () => {}
+  const deadline = new Promise<never>((_, reject) => { rejectDeadline = reject })
+  const cancel = () => { void reader.cancel().catch(() => {}) }
+  const expire = () => { rejectDeadline(new FormBodyTimeout()); cancel() }
+  const timer = setTimeout(expire, PUBLIC_FORM_BODY_TIMEOUT_MS)
+  request.signal.addEventListener("abort", expire, { once: true })
+  if (request.signal.aborted) expire()
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      const { done, value } = await Promise.race([deadline, reader.read()])
       if (done) break
       size += value.byteLength
-      if (size > limit) { await reader.cancel(); throw new FormBodyTooLarge() }
+      if (size > limit) { cancel(); throw new FormBodyTooLarge() }
       chunks.push(value)
     }
-  } finally { reader.releaseLock() }
+  } finally {
+    clearTimeout(timer)
+    request.signal.removeEventListener("abort", expire)
+    reader.releaseLock()
+  }
   const bytes = new Uint8Array(size)
   let offset = 0
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }

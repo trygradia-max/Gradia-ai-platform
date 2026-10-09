@@ -86,3 +86,52 @@ of CRM/consent/delivery effects. See `docs/AI_WORK_LOG.md` for completed results
 Automatic deployments remain disabled. No shared/production migration, provider
 activation or real visitor submission is included. Release requires owner setup UI,
 public-origin browser acceptance and an explicit operational rollout.
+
+## Upload deadline and browser retry helper — October 9
+
+The HTTP body reader now permits at most ten seconds total after reading begins,
+including slow streams that keep sending small chunks. Caller abort also ends the
+read. Timeout returns 408 with retry instructions and the configured CORS origin;
+no submit RPC is called. Oversize, timeout and abort cancel the stream without
+waiting indefinitely for its cancellation hook. This bounds application body
+reading, not binding/database/network infrastructure time or distributed abuse.
+
+`src/lib/public-form-client.ts` provides `preparePublicFormSubmission` for a future
+form/embed UI. Configuration uses the exact canonical HTTPS app origin and form
+UUID. The returned handle owns one validated, immutable payload and generated
+submission UUID. It makes no request until `submit()` is called.
+
+```ts
+const inquiry = preparePublicFormSubmission({
+  appOrigin: "https://gradia-ai-platform.vercel.app",
+  formId: configuredFormId,
+  fields: { email, message },
+})
+const result = await inquiry.submit()
+// Keep this same handle for an explicit user retry:
+// const retryResult = await inquiry.submit()
+```
+
+Keep the handle in component state/ref across renders and button clicks. Never
+create a new handle per retry. The helper snapshots normalized fields, so subsequent
+edits to the input object cannot change the submitted bytes. Concurrent calls
+share one request; a confirmed acceptance is cached. It sends no cookies, refuses
+redirects, and leaves Origin to the browser. The whole attempt, including parsing
+a response body, has a 20-second deadline. There are no automatic retries.
+
+Result contract:
+- `accepted`: the endpoint returned 202 with `accepted: true`; inquiry evidence
+  was received, not a booking, consent grant or permission to send.
+- `rejected`: 400/403/409/413/415. Show correction/access/conflict guidance, without
+  presenting raw server details. A 409 needs investigation/new content, not a blind
+  retry with a newly generated id.
+- `retryable`: 408/429. Retain this handle and offer a manual retry; for 429 wait
+  at least 60 seconds and explain that daily limits can require longer.
+- `uncertain`: network failure, timeout, malformed success or other status. State
+  that acceptance could not be confirmed; retry only this same handle/content.
+
+No request data is written to browser storage. A reload loses the handle; the UI
+must warn before abandoning an uncertain inquiry. Do not automatically create a
+replacement inquiry after reload, edits or timeout. Persistent recovery, an actual
+embed, browser-origin acceptance and anti-bot controls remain separate tasks.
+This helper neither configures/enables a form nor changes the database contract.
