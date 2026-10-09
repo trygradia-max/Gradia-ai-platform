@@ -299,3 +299,14 @@ usability/acceptance and the approved Whisper operational-handoff milestone, bef
 bounded qualification. The history commit and this vehicle slice remain local;
 no additional push, merge, deployment or provider activation occurred. Founder
 checkout and CONTEXT.md remained unchanged; no shared database was modified.
+
+
+## Qualification continuation — October 9, 2026
+
+The "qualification has not started" boundary above now has a backend to continue
+into. A linked workflow can carry one durable, human-reviewed qualification record;
+see `docs/architecture/LEAD_QUALIFICATION.md`. Intake review itself is unchanged:
+no function, state, transition reason or screen in this ledger was modified, and a
+workflow in identity review still cannot be qualified. New evidence, a changed
+customer or a changed vehicle link marks an existing qualification as needing
+review; it is never carried forward silently.

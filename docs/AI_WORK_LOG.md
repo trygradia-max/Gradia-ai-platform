@@ -639,3 +639,45 @@ integration passes, zero skips; lint, offline build and post-build types passed;
 migrations from zero with exact ledger. Its timestamp follows PR #56's migration, so
 merge #56 first to keep ledger order. Pushed as a pull request; no merge,
 deployment, shared database or provider activity.
+
+
+[AI: claude-code] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+Built durable lead qualification persistence on `codex/claude-qualification`, per
+`docs/handoffs/CLAUDE_QUALIFICATION_2026-10-09.md`. Inspected first: no existing
+structure held structured, reviewed qualification (`lead_workflows` carries identity
+only; `leads` carries a stage and free text). Migration 93,
+`20261009100000_lead_qualification.sql`, adds one record per intake workflow and an
+append-only audit, reachable only through four session-only RPCs (read, list,
+history, update). The record stores requested service, reported vehicle condition,
+timing, location, constraints and open questions with explicit unknown/reported/
+confirmed status and per-field provenance. It stores no customer or vehicle of its
+own: saves are bound to the workflow's reviewed links and evidence, and reads report
+`needs_review` when any of those change. Added the owner-granted `leads.qualify`
+capability (off by default, valid only with `crm.read`); reading reuses `crm.read`.
+Added `src/lib/lead-qualification.ts`, read helpers, the `updateLeadQualification`
+action, a catalog probe and the UI contract in
+`docs/architecture/LEAD_QUALIFICATION.md`.
+
+Left alone: intake functions, workflow states and transition reasons, the customer
+merge, the executor, policy, globals.css, shared UI components, whisper-summary.ts
+and Codex's preview. No UI, no model or provider call, no nurture or scheduling.
+Shared contract change Cursor should know: `TEAM_CAPABILITIES` has a seventh entry,
+so the team grant checkboxes show it.
+
+Node 22.23.2, isolated runner, unlinked `gradia-record-fresh` only; the public-form
+stack at 57331 was not touched. 1,302 unit passes with four existing live skips
+(112 files; 31 new); 424 integration passes, zero skips (39 files; 19 new); lint,
+offline production build and post-build typecheck passed. All 93 migrations applied
+from zero with exact ledger. The new probe and the Whisper, delegated-approval,
+intake-vehicle, agent-record, team, tenant (26 relationships), photo,
+control-policy and control-execution probes passed. New integration coverage: two-
+shop isolation and foreign customer/vehicle/service references; owner, delegated
+manager, read-only manager, assigned staff, revoked, foreign, anonymous and service
+callers; 39 malformed documents each refused with its path; unknown versus reviewed
+completeness; evidence reopen, vehicle edit, merge and customer deletion; concurrent
+edits, exact replay and changed-command refusal; injected audit failure rolling back
+first save and later edit; and zero change to customers, vehicles, leads, quotes,
+appointments, pending actions, interactions, consent, intake or usage tables. One
+test-only type error was fixed after the first post-build typecheck; no assertion
+changed. Not applied to any shared database; no deployment setting changed. This is
+persistence, not a working nurture-to-book loop.
