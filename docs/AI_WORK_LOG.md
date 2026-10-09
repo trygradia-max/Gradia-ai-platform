@@ -700,5 +700,18 @@ edits, exact replay and changed-command refusal; injected audit failure rolling 
 first save and later edit; and zero change to customers, vehicles, leads, quotes,
 appointments, pending actions, interactions, consent, intake or usage tables. One
 test-only type error was fixed after the first post-build typecheck; no assertion
-changed. Not applied to any shared database; no deployment setting changed. This is
+changed.
+
+After merging `main` (PR #60, no migrations) the full gate was rerun: 1,306 unit
+passes, lint, offline build and post-build types passed. The full integration suite
+then passed once (424 of 424) and failed in four further runs with one to three
+failures each, in different files every time (booking, conflict, intake, quote,
+team). Every failing run logged local gateway 502s ("invalid response from the
+upstream server"; Kong reported connection resets from the API container), and each
+affected file, and the new qualification file, passed when run on its own. The
+Docker VM was at about 6.5 of 7.75 GiB across 64 containers, with another stack's
+analytics container being OOM-killed in a loop. This is recorded as an unresolved
+local-environment instability, not as a clean repeated pass; GitHub's `integration`
+check is the clean-environment run for this PR. Only this stack's own API container
+was restarted; no other stack was stopped or reset. Not applied to any shared database; no deployment setting changed. This is
 persistence, not a working nurture-to-book loop.

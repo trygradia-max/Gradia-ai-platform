@@ -250,7 +250,8 @@ Migration `20261009100000_lead_qualification.sql`, migration 93.
 Node 22.23.2, isolated runner with outbound network denied, unlinked disposable
 `gradia-record-fresh` stack only. The public-form stack was not touched.
 
-Results are recorded in the October 9 entry of `docs/AI_WORK_LOG.md`.
+Results, including an unresolved local-stack instability seen after the final merge
+of `main`, are recorded in the October 9 entry of `docs/AI_WORK_LOG.md`.
 
 Commands: `supabase --workdir .local-tools/record-fresh db reset --local --no-seed`;
 install the five fixtures in `tests/sql/`; `node scripts/isolated-check.mjs unit`,
