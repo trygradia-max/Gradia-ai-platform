@@ -639,3 +639,63 @@ integration passes, zero skips; lint, offline build and post-build types passed;
 migrations from zero with exact ledger. Its timestamp follows PR #56's migration, so
 merge #56 first to keep ledger order. Pushed as a pull request; no merge,
 deployment, shared database or provider activity.
+
+[AI: cursor] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Reconciled the saved app-shell and two-pane inbox from
+`codex/wip-inbox-layout-2026-10-07` onto `codex/cursor-ui-next` without
+bulk-copying that snapshot. Conversations now use the shared shell in a
+flush layout: at the large breakpoint the list stays beside the open
+thread, and on a narrow screen the list hides while a thread is open.
+Ask Gradia sits in the center of the top bar from that breakpoint up so
+it does not share a cluster with help. The list query lives in
+`src/app/conversations/load-inbox.ts`. Message history still uses `page`;
+the list window uses `list`, so older messages do not page the list.
+Deliberately not copied: the WIP nav regroup and Inbox rename (the
+documented order stays Home, Approvals, Activity, Conversations), the
+dense list with color-only unread and local times, client-side channel
+filters, the WIP control rewrite, and its older email wording. Permissions,
+exact reply context, durable command IDs, uncertain-delivery holds, and
+the mailbox-thread hold sentence stay on the current controls. A skip
+link rule was added because utility order was keeping the link off-screen
+when focused. Node v24.15.0 vitest: `eval/whisper-inbox-ui.test.ts`, 13
+passed. Browser acceptance used a disposable local dev server and fictional
+fixtures, not a signed-in shop: desktop 1920, phone 390 and 320; list,
+thread, hold, email, staff, failed load, empty page, and unavailable
+thread. A reply was typed and not submitted. The embedded browser did not
+move focus on Tab; click focus and the Back link navigation did work.
+Missing Supabase env blocked a real owner session on `/conversations`.
+No shared action contract changed. `vercel.json` deployment stays disabled.
+Nothing committed, pushed, or deployed.
+
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: review]
+Preserved Cursor's uncommitted inbox-shell reconciliation in the separate
+`worktrees/oct8-integration` checkout. The Cursor and stale platform checkouts
+remain unchanged. Reviewed the list/thread pagination, permission boundaries,
+delivery-hold copy and unchanged reply controls. Fixed two React createElement
+test calls with a required children default and positional rendered children;
+the initial typecheck caught missing props despite the unit tests passing. CI
+then caught a lint conflict in the first fix; targeted tests, lint and types
+passed again after correcting it. On main including PR #56: 1,264 unit
+passes (four existing skips), 13 targeted inbox tests, full lint, offline Node 22
+build and typecheck passed. Keep this UI PR draft pending signed-in owner/manager/
+staff browser acceptance and real keyboard focus/skip-link testing; Cursor's
+fixture-only responsive checks do not cover the usage/setup pills.
+
+Read-only service inspection: both Supabase projects report INACTIVE. Vercel's
+platform overview shows a Ready production deployment dated September 24. Project
+settings offer Pause Project, confirming it is not paused. The public URL returns
+HTTP 403 and automatic Git deployments remain disabled in
+vercel.json. The CLI API returned 403; deployment evidence came from the signed-in
+Vercel dashboard. No service was resumed, production migration run, provider
+activated or deployment created. Database ledger and write-guard inspection must
+precede a separately planned production release.
+
+
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Reviewed and merged Claude Code PRs #56, #58 and #57 in that order, waiting for
+both protected checks at each merge. Retargeted #58 to main and updated both
+remaining branches to the latest main before CI. Preserved both sides of the
+append-only work-log conflicts. Main now contains 92 migrations and the quote
+enum fix together with manager message approval/rejection. No shared database
+migrations or deployments occurred. Updated draft UI PR #59 to this main; its
+authenticated browser and keyboard acceptance remain outstanding.
