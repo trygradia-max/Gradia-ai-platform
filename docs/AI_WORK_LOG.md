@@ -640,6 +640,27 @@ migrations from zero with exact ledger. Its timestamp follows PR #56's migration
 merge #56 first to keep ledger order. Pushed as a pull request; no merge,
 deployment, shared database or provider activity.
 
+[AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+Prepared the founder-requested UI/component handoff for Cursor, with a charcoal,
+silver and violet semantic palette, source links to 21st.dev/shadcn/Base UI/Origin
+UI, route inventory requirements and staged browser acceptance. These are fit-based
+references, not a claimed global ratings ranking. Created the separate
+cursor-component-polish worktree from PR #59, and claude-qualification from main;
+the latter has a bounded durable-qualification backend brief. Original agent
+checkouts and the running local preview remain untouched. Briefs are in docs/handoffs.
+They are ready for the founder to pass to those external agents; no external agent
+was started or messaged by this change.
+
+Completed the independent channel-evidence fix in whisper-summary.ts: recorded
+inbound counts now produce a neutral fixed-vocabulary activity fact instead of
+inventing a stated customer preference. Ties retain all channels, invalid counts
+and unknown labels are omitted, and the model prompt explicitly forbids converting
+history into preference or contact permission. Deterministic do-not-contact output
+is preserved. Nine focused tests and 1,275 full unit tests pass (four intentional
+live skips), along with targeted lint and TypeScript. No provider call, schema,
+permission, deployment or shared-database change. Live-model fidelity remains an
+evaluation requirement; prompt wording is not a deterministic output guarantee.
+
 
 [AI: claude-code] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
 Built durable lead qualification persistence on `codex/claude-qualification`, per
