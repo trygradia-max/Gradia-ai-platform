@@ -660,3 +660,23 @@ is preserved. Nine focused tests and 1,275 full unit tests pass (four intentiona
 live skips), along with targeted lint and TypeScript. No provider call, schema,
 permission, deployment or shared-database change. Live-model fidelity remains an
 evaluation requirement; prompt wording is not a deterministic output guarantee.
+
+[AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+Completed two bounded public-intake tasks, isolated from Cursor's component pass
+and Claude's qualification backend. First, the anonymous form body reader now has
+a ten-second total deadline and abort handling, returning a generic CORS-compatible
+408 before any submission RPC. Oversize and stalled streams no longer wait for an
+uncooperative cancellation hook. Second, added an immutable browser inquiry helper
+that snapshots validated content with one UUID, shares concurrent attempts, keeps
+manual retry bytes identical, caches confirmed acceptance and labels unconfirmed
+outcomes honestly. It omits credentials, refuses redirects, has a twenty-second
+whole-attempt deadline and never retries automatically. The UI integration contract
+and reload/uncertainty limits are documented in PUBLIC_FORM_INTAKE.md.
+
+Node 22 verification: 1,295 unit passes (four existing live skips), full lint,
+offline build and post-build typecheck; seven public-form integration passes on
+the unlinked local form stack, using test-owned records without resetting it.
+No migrations, production configuration, live provider calls or UI changes.
+The local preview and other agent worktrees remain unchanged. This does not replace
+public-origin browser/anti-bot acceptance or implement the pending form setup UI.
+Also merged PR #60 after both required GitHub checks passed.
