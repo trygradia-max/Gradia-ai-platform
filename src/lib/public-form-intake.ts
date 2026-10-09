@@ -46,12 +46,11 @@ export async function readPublicFormBody(request: Request): Promise<unknown> {
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
-  let timer: ReturnType<typeof setTimeout> | undefined
   let rejectDeadline: (error: Error) => void = () => {}
   const deadline = new Promise<never>((_, reject) => { rejectDeadline = reject })
   const cancel = () => { void reader.cancel().catch(() => {}) }
   const expire = () => { rejectDeadline(new FormBodyTimeout()); cancel() }
-  timer = setTimeout(expire, PUBLIC_FORM_BODY_TIMEOUT_MS)
+  const timer = setTimeout(expire, PUBLIC_FORM_BODY_TIMEOUT_MS)
   request.signal.addEventListener("abort", expire, { once: true })
   if (request.signal.aborted) expire()
   try {

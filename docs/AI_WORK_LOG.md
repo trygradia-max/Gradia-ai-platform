@@ -680,3 +680,9 @@ No migrations, production configuration, live provider calls or UI changes.
 The local preview and other agent worktrees remain unchanged. This does not replace
 public-origin browser/anti-bot acceptance or implement the pending form setup UI.
 Also merged PR #60 after both required GitHub checks passed.
+
+[AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+PR #61's remote checks exposed a prefer-const lint failure for the body deadline
+timer despite the prior local lint result. Changed the single-assignment timer to
+const; targeted lint and the 34 public-form unit tests pass. Pushed the correction
+for fresh CI. No runtime contract or other agent checkout changed.
