@@ -38,6 +38,10 @@ The existing owner/manager/staff model governs access:
 |---|---|---|---|
 | Active owner | Owned shop | Yes | Yes |
 | Active manager with CRM read | Granted shop | Only with assignments.manage | No |
+
+Since October 8 a manager holding the explicit `approvals.messages` grant can approve
+an already queued text or email; staging a reply is still owner-only. See
+`CONTROL_CENTER_IMPLEMENTATION.md`.
 | Active assigned staff | Assigned customers only | No | No |
 | Revoked / foreign / anonymous / sessionless service caller | Denied | Denied | Denied |
 

@@ -605,3 +605,84 @@ manager role ceiling is still not consulted at execution. Delegated approval
 execution remains the open part of item 2 above. It needs a decision on which action
 families a manager may approve and an executor path that does not depend on
 owner-only row access; neither is started here.
+
+## Delegated manager message approval — October 8
+
+Branch `codex/claude-delegated-message-approval`, stacked on the delivery-review
+slice. Founder decision recorded this session: the first delegated approval family
+is **queued customer messages only** (`send_sms`, `send_email`). Bookings, quotes,
+captures, record edits and identity resolution stay owner-only.
+
+An owner grants a manager `approvals.messages` in the existing team settings. It is
+valid only together with `crm.read` and only on a manager membership; constraints on
+memberships and invitations enforce that. No grant is added to any existing member.
+
+Migration `20261008160000_delegated_message_approval.sql` is migration 90 (renumbered
+after public form intake took the earlier timestamp on `main`). The claim
+body moves, unchanged for owners and automatic callers, into a private
+`control_claim` function that no API role can execute. `claim_control_action` keeps
+its signature and grants and calls it with no review binding, so it can never
+authorize a manager. A new session-only `claim_delegated_message` always uses the
+signed-in caller as the actor. For a manager the claim requires, inside the same
+shop-locked transaction as the audit and the status change:
+
+- an active manager membership holding both grants, on the caller's own session;
+  a service caller can never act as a manager and a manager is never automatic;
+- a message action that is still `pending` (not mid-edit) and whose payload hash
+  equals the hash the manager was shown, so any edit forces a fresh review;
+- the existing MCP token recheck and the activated policy, further tightened by
+  the policy's manager role ceiling when one is set.
+
+Every decision row now records `actor_role`. A manager attempting any other action
+type is refused with an audited `owner_approval_required` decision.
+
+`list_delegated_message_approvals` is a session-only read for the owner or a
+delegated manager: pages of 20 pending, unspent messages with recipient, subject,
+body, purpose, reason and the review hash. Proofs, tokens and internal references
+are not returned. Managers still have no direct access to `pending_actions`.
+
+Execution reuses the one executor. `executeApproval` takes an optional delegated
+option: the claim runs on the manager's session, and only after it succeeds do the
+unchanged send executors run with a service client scoped to the shop id the claim
+returned. They need shop credentials and owner-only rows a manager session cannot
+read. A refused claim never touches that client. `approveDelegatedMessage` is the
+only new service-client importer and is registered in the reviewed inventory test.
+Send policy is untouched: consent, STOP, DNC, quiet hours, channel readiness,
+exact-context proof and at-most-once claims all still decide whether anything sends.
+A manager cannot reclassify a message's purpose; that stays an owner review.
+
+`/team/approvals?shop=...` is a minimal manager surface linked from the team page.
+
+### Verification and limits
+
+Node 22.23.2, isolated runner, unlinked `gradia-record-fresh` only, rerun in full after
+merging `main` (which now contains the delivery-review slice and public form intake):
+1,262 unit passes (four existing live skips, 111 files); 397 integration passes (zero
+skips, 37 files); lint, offline production build and post-build typecheck passed. All
+90 migrations applied from zero and matched the ledger. A new catalog probe,
+`scripts/verify-delegated-approval-migration.py`, and the existing Whisper, intake,
+agent-record, team, tenant, photo, control-policy and control-execution probes
+passed, including claim/audit rollback and all 26 tenant relationship definitions.
+The public-form probe targets its own separate stack and was not rerun here.
+
+Twenty-one new integration cases cover the audited manager claim, stale, malformed
+and mid-edit reviews, eight owner-only action types, the owner entry point and
+service callers, grant, role, revocation and cross-shop boundaries, an owner/manager
+race, the bounded queue with zero mutation, the manager ceiling and connector
+switches, and end-to-end SMS and email execution with mocked transports: sent
+exactly once under concurrent approval, not sent without owner purpose review or
+consent, and blocked by STOP and do-not-contact. Thirteen new unit cases cover the
+action and the executor's delegated path.
+
+Two test-run findings: a granted manager calling the owner entry point was first
+refused as `review_changed`; the role check now requires the review binding, so the
+refusal is `actor_not_authorized`. And `create_quote` is not in the
+`pending_action_type` enum in any migration, so it cannot be queued on a database
+built from this repository; that is pre-existing and left for a separate fix.
+
+Limits: managers can approve but not edit or reject; rejection still uses the
+owner-only pending-action update. The page was compiled, not exercised in an
+authenticated browser. A manager approval does not stamp the trust resolution used
+for autonomy recommendations, so it cannot influence them. No manager notification
+is sent when messages are waiting. Live provider behaviour was mocked. No merge,
+deployment, shared database or provider activity.

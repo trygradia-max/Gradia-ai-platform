@@ -83,8 +83,9 @@ Coordinate shared component/action contracts with Cursor before changing them.
 - `docs/architecture/PUBLIC_FORM_INTAKE.md`
 - `docs/AI_WORK_LOG.md`
 
-Current known limits include delegated manager approvals (delivery review is
-delegable as of October 8; approval execution is not), public
+Current known limits include delegated manager approvals beyond queued messages
+(delivery review and message approval are delegable as of October 8; bookings,
+quotes, edits and rejection are not), public
 form setup/embed UI and browser/anti-bot acceptance, Meta Graph contact retrieval/connect UI, channel acceptance,
 notification sender/delivery acceptance, qualification/nurture, complete guarded
 quote-book-pipeline flow and reviewed memory publication. Full browser/a11y and
@@ -93,7 +94,7 @@ live model/provider evaluations are not replaced by deterministic tests.
 `vercel.json` has `git.deploymentEnabled: false` so these merges do not deploy.
 Do not re-enable deployment, apply shared/production migrations, activate providers,
 remove production write guards or send real messages as part of a UI/backend task.
-Those require their own release work. The current code includes 89 migrations;
+Those require their own release work. The current code includes 90 migrations;
 the production ledger must be inspected separately before any release.
 
 Public website intake now has an owner-configured backend and anonymous JSON endpoint
