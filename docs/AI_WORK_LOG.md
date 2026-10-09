@@ -598,3 +598,50 @@ task: no migration adds `create_quote` to `pending_action_type`. Details and lim
 are in `docs/architecture/CONTROL_CENTER_IMPLEMENTATION.md`. Pushed for review as a
 pull request at the founder's request; no merge, deployment, shared database or
 provider activity.
+
+[AI: cursor] [DATE: 2026-10-08] [AREA: platform] [STATUS: done]
+Reconciled the saved app-shell and two-pane inbox from
+`codex/wip-inbox-layout-2026-10-07` onto `codex/cursor-ui-next` without
+bulk-copying that snapshot. Conversations now use the shared shell in a
+flush layout: at the large breakpoint the list stays beside the open
+thread, and on a narrow screen the list hides while a thread is open.
+Ask Gradia sits in the center of the top bar from that breakpoint up so
+it does not share a cluster with help. The list query lives in
+`src/app/conversations/load-inbox.ts`. Message history still uses `page`;
+the list window uses `list`, so older messages do not page the list.
+Deliberately not copied: the WIP nav regroup and Inbox rename (the
+documented order stays Home, Approvals, Activity, Conversations), the
+dense list with color-only unread and local times, client-side channel
+filters, the WIP control rewrite, and its older email wording. Permissions,
+exact reply context, durable command IDs, uncertain-delivery holds, and
+the mailbox-thread hold sentence stay on the current controls. A skip
+link rule was added because utility order was keeping the link off-screen
+when focused. Node v24.15.0 vitest: `eval/whisper-inbox-ui.test.ts`, 13
+passed. Browser acceptance used a disposable local dev server and fictional
+fixtures, not a signed-in shop: desktop 1920, phone 390 and 320; list,
+thread, hold, email, staff, failed load, empty page, and unavailable
+thread. A reply was typed and not submitted. The embedded browser did not
+move focus on Tab; click focus and the Back link navigation did work.
+Missing Supabase env blocked a real owner session on `/conversations`.
+No shared action contract changed. `vercel.json` deployment stays disabled.
+Nothing committed, pushed, or deployed.
+
+[AI: codex] [DATE: 2026-10-08] [AREA: platform] [STATUS: review]
+Preserved Cursor's uncommitted inbox-shell reconciliation in the separate
+`worktrees/oct8-integration` checkout. The Cursor and stale platform checkouts
+remain unchanged. Reviewed the list/thread pagination, permission boundaries,
+delivery-hold copy and unchanged reply controls. Fixed two React createElement
+test calls to provide required children through props; the initial typecheck
+caught this despite the unit tests passing. On main including PR #56: 1,264 unit
+passes (four existing skips), 13 targeted inbox tests, full lint, offline Node 22
+build and typecheck passed. Keep this UI PR draft pending signed-in owner/manager/
+staff browser acceptance and real keyboard focus/skip-link testing; Cursor's
+fixture-only responsive checks do not cover the usage/setup pills.
+
+Read-only service inspection: both Supabase projects report INACTIVE. Vercel's
+platform overview shows a Ready production deployment dated September 24; the
+public URL returns HTTP 403 and automatic Git deployments remain disabled in
+vercel.json. The CLI API returned 403; deployment evidence came from the signed-in
+Vercel dashboard. No service was resumed, production migration run, provider
+activated or deployment created. Database ledger and write-guard inspection must
+precede a separately planned production release.
