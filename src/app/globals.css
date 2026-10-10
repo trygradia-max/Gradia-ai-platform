@@ -345,7 +345,8 @@
   line-height: 1.25rem;
 }
 
-.whisper-skip:focus {
+.whisper-skip:focus,
+.whisper-skip:focus-visible {
   position: fixed;
   top: 1rem;
   left: 1rem;

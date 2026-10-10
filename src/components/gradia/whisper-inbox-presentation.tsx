@@ -202,7 +202,11 @@ export function WhisperConversationList({
       </Link>
       <header className="space-y-2">
         <p className="label-eyebrow text-muted-foreground/70">Whisper</p>
-        <Heading className="font-display text-2xl text-balance text-foreground">
+        <Heading
+          id="whisper-list-title"
+          tabIndex={-1}
+          className="rounded-sm font-display text-2xl text-balance text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
           Whisper conversations
         </Heading>
         <p className="max-w-prose text-sm text-muted-foreground">
@@ -298,8 +302,10 @@ export function WhisperThreadView({
 }) {
   const visible = thread?.items.slice(0, 20) ?? []
   const hasOlder = Boolean(thread && thread.items.length > 20)
+  // The column itself scrolls only when the panes' minimum heights do not
+  // fit, so a short desktop window never clips the refresh link.
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:overflow-y-auto">
       <div className="relative shrink-0 space-y-3 border-b border-border/70 px-4 py-4 sm:px-5">
       <SkipLink href="#whisper-messages">Skip to conversation</SkipLink>
       <Link href={listHref} className={textLink}>
@@ -307,7 +313,15 @@ export function WhisperThreadView({
       </Link>
       <header className="space-y-3">
         <p className="label-eyebrow text-muted-foreground/70">Whisper</p>
-        <h1 className={cn("font-display text-2xl text-balance text-foreground", wrap)} style={anywhere}>
+        <h1
+          id="whisper-thread-title"
+          tabIndex={-1}
+          className={cn(
+            "rounded-sm font-display text-2xl text-balance text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            wrap
+          )}
+          style={anywhere}
+        >
           {thread?.customer.name ?? "Conversation"}
         </h1>
         {thread ? (
@@ -327,7 +341,7 @@ export function WhisperThreadView({
         id="whisper-messages"
         tabIndex={-1}
         data-whisper-pane="messages"
-        className="min-h-0 flex-1 scroll-mt-6 space-y-6 px-4 py-4 outline-none sm:px-5 lg:overflow-y-auto"
+        className="min-h-0 flex-1 scroll-mt-6 space-y-6 px-4 py-4 outline-none sm:px-5 lg:min-h-[14rem] lg:overflow-y-auto"
       >
       {!thread ? (
         <p role="alert" className="max-w-prose rounded-md bg-status-danger-bg px-4 py-3 text-sm text-status-danger-fg">
@@ -460,10 +474,12 @@ export function WhisperThreadView({
         </>
       )}
       </div>
+      {/* Capped so the message history keeps at least 14rem on a 900px
+          laptop window; the controls scroll inside their own pane. */}
       {controls ? (
         <div
           data-whisper-pane="controls"
-          className="shrink-0 border-t border-border/70 lg:max-h-[min(46%,32rem)] lg:overflow-y-auto"
+          className="shrink-0 border-t border-border/70 lg:max-h-[min(38%,30rem)] lg:overflow-y-auto"
         >
           {controls}
         </div>

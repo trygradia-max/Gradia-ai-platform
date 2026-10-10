@@ -699,3 +699,20 @@ append-only work-log conflicts. Main now contains 92 migrations and the quote
 enum fix together with manager message approval/rejection. No shared database
 migrations or deployments occurred. Updated draft UI PR #59 to this main; its
 authenticated browser and keyboard acceptance remain outstanding.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Closed draft PR #59's signed-in owner/manager/staff/revoked keyboard gap on
+`codex/cursor-component-polish` using the existing disposable preview
+(launcher 3128, app 3127). Did not start a second Next server and did not
+touch Codex 3109/3110. Presentation-only: shell skip link, `:focus-visible`
+on skip links, labelled handoff selects, focusable list/thread headings,
+`RouteFocus` after in-app navigation, and a scrollable thread column so
+Refresh is not clipped. Extended `eval/whisper-inbox-ui.test.ts`. Wrote
+`docs/design/ROUTE_INVENTORY_2026-10-09.md` (every `src/app/` route still
+`pending` for the later component slice) and a 2026-10-09 section in
+`docs/qa/WHISPER_UI_ACCEPTANCE.md`. Screenshots under
+`docs/qa/screenshots/2026-10-09/`. No server actions, RPCs, migrations, or
+query semantics. No push or new PR. Remaining: live Tab paint in a focused
+OS window, Jordan email thread read still unavailable, sidebar hydration
+warning, team chrome without the shell skip link, contrast/200% zoom, and
+the token/component pass.

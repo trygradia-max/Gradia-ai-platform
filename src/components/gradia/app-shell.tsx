@@ -62,6 +62,12 @@ export async function AppShell({
 
   return (
     <SidebarProvider className={flush ? "lg:h-svh lg:overflow-hidden" : undefined}>
+      {/* First focusable on every shell page. Keyboard users otherwise tab
+          through ten nav links and the top bar before reaching content
+          (2026-10-09 signed-in keyboard pass). */}
+      <a href="#main-content" className="whisper-skip">
+        Skip to main content
+      </a>
       <AppSidebar
         shops={shops}
         activeShopId={active?.id}
@@ -106,11 +112,14 @@ export async function AppShell({
             covers the last card. Flush inbox pages scroll inside their panes
             from the lg breakpoint up. */}
         <div
-          className={
+          id="main-content"
+          tabIndex={-1}
+          className={cn(
+            "outline-none",
             flush
               ? "flex min-h-0 flex-1 flex-col overflow-x-hidden pb-28 lg:overflow-hidden lg:pb-0"
               : "flex flex-1 flex-col gap-8 p-6 pb-28 sm:pb-6"
-          }
+          )}
         >
           {children}
         </div>
