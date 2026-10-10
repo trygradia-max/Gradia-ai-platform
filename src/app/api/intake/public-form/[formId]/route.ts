@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { FormBodyTooLarge, publicFormOriginSchema, publicFormSubmissionSchema, readPublicFormBody } from "@/lib/public-form-intake"
+import { FormBodyTooLarge, FormBodyTimeout, publicFormOriginSchema, publicFormSubmissionSchema, readPublicFormBody } from "@/lib/public-form-intake"
 import { createServiceClient } from "@/lib/supabase/service"
 
 export const runtime = "nodejs"
@@ -17,7 +17,8 @@ function response(status: number, origin?: string): Response {
   if (status === 204) return new Response(null, { status, headers })
   return Response.json(status === 202 ? { accepted: true } : {
     accepted: false,
-    error: status === 429 ? "Submission limit reached. Try again later." :
+    error: status === 408 ? "Upload timed out. Retry the same submission id and content." :
+      status === 429 ? "Submission limit reached. Try again later." :
       status === 409 ? "Submission changed. Use a new submission id." :
       status === 503 ? "Submission could not be confirmed. Retry the same submission id and content." :
       "Submission not accepted.",
@@ -51,7 +52,7 @@ export async function POST(request: Request, context: Context) {
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") return response(415, bound.origin)
   let body: unknown
   try { body = await readPublicFormBody(request) } catch (error) {
-    return response(error instanceof FormBodyTooLarge ? 413 : 400, bound.origin)
+    return response(error instanceof FormBodyTooLarge ? 413 : error instanceof FormBodyTimeout ? 408 : 400, bound.origin)
   }
   const parsed = publicFormSubmissionSchema.safeParse(body)
   if (!parsed.success) return response(400, bound.origin)
