@@ -841,3 +841,24 @@ PR #61's remote checks exposed a prefer-const lint failure for the body deadline
 timer despite the prior local lint result. Changed the single-assignment timer to
 const; targeted lint and the 34 public-form unit tests pass. Pushed the correction
 for fresh CI. No runtime contract or other agent checkout changed.
+
+
+[AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Integrated PR #59 with main 3487600 in a separate detached worktree. Only the
+append-only work log conflicted; both sides were retained. Reconciled head edc3259
+passed 1,328 unit tests (four intentional live skips), lint, offline Node 22 build,
+post-build typecheck and both required GitHub checks. Merged #59 as fd46f24.
+Integrated Cursor PR #63 with that baseline in another separate worktree; only
+the append-only log conflicted. Its combined application tree passed 1,331 unit
+tests (four intentional live skips), full lint, offline production build and
+post-build typecheck. The final main merge had no file changes. Retargeting #63
+to main for required CI before merge. No original agent checkout was modified.
+
+Local Cursor owner preview loads the styled Home and inbox. Its recorded
+owner/manager/staff/revoked and responsive checks remain supporting evidence;
+live keyboard-focus paint, 200% zoom/contrast and the reported hydration warning
+remain acceptance follow-ups, not claimed passes. Email fixture thread read and
+Activity labeling an unconfirmed execution as handled are existing data-path
+issues outside these presentation diffs; they remain open backend follow-ups.
+No full pilot acceptance, shared migration, deployment or provider activation.
+Git deployments remain disabled.
