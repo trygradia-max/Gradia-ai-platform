@@ -917,3 +917,25 @@ Activity labeling an unconfirmed execution as handled are existing data-path
 issues outside these presentation diffs; they remain open backend follow-ups.
 No full pilot acceptance, shared migration, deployment or provider activation.
 Git deployments remain disabled.
+
+[AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Completed the bounded inbox load-error follow-up while integrating #64–#67 in
+separate checkouts. Only SQL permission refusal 42501 renders access guidance;
+other read failures and malformed responses offer a refresh without claiming
+an empty thread or a permission problem. Invalid identifiers still skip the RPC,
+raw error details stay hidden, and failed loads expose no mutation controls.
+Seven new route-level regressions cover these cases; combined unit suite passed
+1,364 tests (four intentional live skips), lint, offline Node 22 production build
+and post-build typecheck. The build caught an accidental extra presentation prop
+on the controls component; it was removed and the build/types passed afterward.
+
+A separate local production-build preview at 3130 uses only the existing disposable
+Cursor database at 58331, with provider egress denied. Browser review confirmed the
+unknown-delivery fixture now reads Not confirmed with its review link; Jordan's
+email thread rendered its message and reply-context hold wording. No action was
+submitted; no fixture/schema reset or other agent checkout change. No browser
+errors were captured on those loads. Added next-lane briefs for Cursor's usable
+qualification review UI and Claude's read-only next-question proposal. These briefs
+have not been sent to either agent. Deployment requested by founder but currently
+blocked by invalid Vercel CLI authorization and inactive Supabase; no production
+migration, write-guard removal, provider activation or deployment was performed.

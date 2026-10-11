@@ -264,3 +264,12 @@ Not changed here: the thread page and its presentation component are being
 rewritten in the open UI PR. The honest wording is to keep "unavailable, check
 access" for a permission refusal (`42501`) and say "could not be loaded, refresh"
 for any other failure.
+
+### Thread-load presentation (October 10 follow-up)
+
+The thread page now reserves “Check access” for SQL permission refusal `42501`.
+Other RPC failures and malformed replies show “Conversation could not be loaded.
+Refresh to try again.” The existing refresh link remains available, with no
+automatic retry or mutation controls on a failed read. Raw database/gateway error
+messages are not rendered. Invalid identifiers still skip the thread RPC. This
+changes presentation only; authorization and the thread contract are unchanged.
