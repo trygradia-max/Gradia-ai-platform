@@ -243,7 +243,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   html {
     @apply font-sans;
@@ -334,6 +334,18 @@
 /* Skip links sit off-screen until focused. A dedicated rule avoids Tailwind
    utility order, where `absolute` and `-left-[10000px]` were overriding
    the focus position. */
+/* Unlayered so utility `outline-none` cannot hide keyboard focus. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+:focus-visible {
+  outline-style: solid;
+  outline-width: 3px;
+  outline-color: var(--ring);
+  outline-offset: 2px;
+}
+
 .whisper-skip {
   position: absolute;
   left: -10000px;
@@ -341,7 +353,8 @@
   width: 1px;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: var(--background);
+  background: var(--bg-raised);
+  color: var(--text-primary);
   padding-inline: 0.75rem;
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -357,6 +370,11 @@
   width: auto;
   overflow: visible;
   padding-block: 0.5rem;
-  outline: 3px solid color-mix(in oklab, var(--ring) 50%, transparent);
+  border: 1px solid var(--border-control);
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  outline-style: solid;
+  outline-width: 3px;
+  outline-color: var(--ring);
   outline-offset: 2px;
 }

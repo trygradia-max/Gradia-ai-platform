@@ -187,3 +187,44 @@ direct navigation to the same href opened the thread.
   not part of this close-out.
 - In-app notifications still appear only after refresh. Manager email
   delivery is still disabled. Email replies are still not provider-threaded.
+
+## 2026-10-10 skip / focus / zoom / contrast
+
+Branch: `codex/cursor-ui-a11y`. Same disposable preview (3128 / 3127).
+Codex 3109/3110 left alone. Presentation only.
+
+### Hydration
+
+The NavRow mismatch was not locale/time. Framer Motion `layoutId` /
+`useReducedMotion` changed the active-rail markup between server and
+client. The rail is now a static span. After a full reload, the Next.js
+hydration overlay did not return on Home.
+
+### Keyboard
+
+Tab events in this pane still do not move `document.activeElement`.
+`element.focus()` on the skip link made it `position: fixed; top/left 16px;
+height 36px` with a 3px outline. First focusable on Home, Conversations,
+and Team is Skip to main content. Team uses `TeamChrome` (own chrome, same
+skip + `#main-content`). Command bar remembers the opener and focuses it
+on close. Ask Gradia click in this pane hit a zero-size (hidden `lg`)
+instance; the visible 44px control is the compact top-bar button.
+
+### 200% zoom
+
+`Emulation.setDeviceMetricsOverride` width 960 / deviceScaleFactor 2
+(1920 CSS px at 200%). Home and Conversations: `scrollWidth === clientWidth`,
+no clipped primary actions. Customers table is a labelled, focusable
+overflow region.
+
+### Contrast
+
+See `docs/qa/CONTRAST_2026-10-10.md`. Opaque text/status pairs pass.
+Live compiled skip outline was still `ring/50` (2.62:1); source now uses
+a solid `#A78BFA` ring (6.88:1).
+
+### Still blocked
+
+Jordan Lee email `read_whisper_thread` still shows the unavailable card.
+List row is present. Not a presentation-only gap; no backend contract was
+invented.

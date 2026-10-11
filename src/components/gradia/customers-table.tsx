@@ -127,6 +127,7 @@ export function CustomersTable({
         <div
           role="region"
           aria-label="Customer list"
+          tabIndex={0}
           className="overflow-x-auto rounded-md bg-card ring-1 ring-border"
         >
           <Table>

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 
 import "./globals.css"
 
+import { FocusStyles } from "@/components/gradia/focus-styles"
 import { Providers } from "@/components/providers"
 
 // One UI family (§8-A2): Geist for everything, Geist Mono for data
@@ -41,6 +42,7 @@ export default function RootLayout({
       {/* GrainOverlay moved out of the root: the cinematic layer is
           public-pages-only (§8-A1) — each public page mounts its own. */}
       <body className="min-h-full bg-background font-sans text-foreground flex flex-col">
+        <FocusStyles />
         <Providers>{children}</Providers>
       </body>
     </html>

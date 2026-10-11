@@ -739,6 +739,17 @@ passed. No server actions, RPCs, migrations, or query changes.
 SkipLink hydration warning, Jordan email thread read, live Tab paint in
 a focused OS window, 200% zoom / measured contrast, team chrome without
 the shell skip link.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: review]
+Closed the first-slice leftovers on `codex/cursor-ui-a11y` (stacked on
+#63). NavRow dropped the Framer Motion rail morph that mismatched
+server/client markup. Team pages share the shell skip link via TeamChrome.
+Skip link becomes visible on `element.focus()`. Command bar restores
+focus to the opener. Measured contrast is in
+`docs/qa/CONTRAST_2026-10-10.md`; 200% (960 CSS px) Home and Conversations
+had no page overflow. Jordan email thread read stays a fixture/backend
+block. Reused 3128/3127; did not touch 3109/3110. No server actions,
+RPCs, migrations, or query changes.
 [AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
 Prepared the founder-requested UI/component handoff for Cursor, with a charcoal,
 silver and violet semantic palette, source links to 21st.dev/shadcn/Base UI/Origin

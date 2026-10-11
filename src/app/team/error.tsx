@@ -1,15 +1,23 @@
 "use client"
+
+import { ErrorState } from "@/components/gradia/error-state"
+import { TeamChrome } from "@/components/gradia/team-chrome"
+
 export default function TeamError({ reset }: { reset: () => void }) {
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
-      <h1 className="text-xl font-semibold">Team access unavailable</h1>
-      <p role="alert">
-        We could not verify your current access or load the records. No changes
-        were made by this page.
-      </p>
-      <button className="rounded border px-4 py-2" onClick={reset}>
-        Try again
-      </button>
-    </main>
+    <TeamChrome className="space-y-4">
+      <ErrorState
+        title="Team access unavailable"
+        description="We could not verify your current access or load the records. No changes were made by this page."
+        action={
+          <button
+            className="inline-flex min-h-11 items-center rounded-sm border border-border-control px-4 text-sm"
+            onClick={reset}
+          >
+            Try again
+          </button>
+        }
+      />
+    </TeamChrome>
   )
 }

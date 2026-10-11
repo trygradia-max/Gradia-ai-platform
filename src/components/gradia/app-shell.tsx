@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/gradia/app-sidebar"
 import { AskGradiaButton } from "@/components/gradia/ask-gradia-button"
+import { SkipLink } from "@/components/gradia/skip-link"
 import { CommandBar } from "@/components/gradia/command-bar"
 import { MobileComposer } from "@/components/gradia/mobile-composer"
 import { PageTitle } from "@/components/gradia/page-title"
@@ -65,9 +66,7 @@ export async function AppShell({
       {/* First focusable on every shell page. Keyboard users otherwise tab
           through ten nav links and the top bar before reaching content
           (2026-10-09 signed-in keyboard pass). */}
-      <a href="#main-content" className="whisper-skip">
-        Skip to main content
-      </a>
+      <SkipLink href="#main-content">Skip to main content</SkipLink>
       <AppSidebar
         shops={shops}
         activeShopId={active?.id}
