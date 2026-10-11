@@ -328,3 +328,32 @@
     0 0 0 1px color-mix(in oklab, var(--primary) 50%, transparent),
     0 8px 32px -8px color-mix(in oklab, var(--primary) 35%, transparent);
 }
+
+/* Skip links sit off-screen until focused. A dedicated rule avoids Tailwind
+   utility order, where `absolute` and `-left-[10000px]` were overriding
+   the focus position. */
+.whisper-skip {
+  position: absolute;
+  left: -10000px;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  padding-inline: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.whisper-skip:focus {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 50;
+  height: auto;
+  width: auto;
+  overflow: visible;
+  padding-block: 0.5rem;
+  outline: 3px solid color-mix(in oklab, var(--ring) 50%, transparent);
+  outline-offset: 2px;
+}

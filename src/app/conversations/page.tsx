@@ -1,17 +1,13 @@
 import { requireUser, getOptionalShop } from "@/lib/shop"
-import { createClient } from "@/lib/supabase/server"
-import { threadListSchema } from "@/lib/whisper-inbox"
-import type { TeamWorkspace } from "@/lib/team-permissions"
 import { BiChat } from "@/components/gradia/bi-chat"
-import {
-  WhisperConversationList,
-  WhisperWorkspaceUnavailable,
-} from "@/components/gradia/whisper-inbox-presentation"
+import { InboxFrame } from "@/components/gradia/inbox-frame"
+import { WhisperWorkspaceUnavailable } from "@/components/gradia/whisper-inbox-presentation"
 import { FEATURES } from "@/lib/features"
 import {
   getLatestConversationWithMessages,
   getConversationByIdWithMessages,
 } from "@/lib/data/bi-conversations"
+import { loadInboxIndex } from "./load-inbox"
 
 export const dynamic = "force-dynamic"
 export const metadata = { title: "Whisper conversations" }
@@ -26,21 +22,10 @@ export default async function ConversationsPage({
   }>
 }) {
   await requireUser()
-  const db = await createClient(),
-    params = await searchParams
-  const workspaces = await db.rpc("team_workspaces")
-  if (workspaces.error) throw new Error("Workspace access could not be verified.")
-  const shops = (workspaces.data ?? []) as TeamWorkspace[],
-    shop = params.shop ? shops.find((s) => s.id === params.shop) : shops[0]
-  if (!shop) return <WhisperWorkspaceUnavailable />
-  const n = Number(params.page ?? 1),
-    page = Number.isSafeInteger(n) && n > 0 && n < 100000 ? n : 1
-  const r = await db.rpc("list_whisper_threads", {
-      p_shop: shop.id,
-      p_offset: (page - 1) * 20,
-    }),
-    parsed = r.error ? null : threadListSchema.safeParse(r.data)
-  const data = parsed?.success ? parsed.data : null
+  const params = await searchParams
+  const index = await loadInboxIndex(params.shop, params.page)
+  if (!index.shop) return <WhisperWorkspaceUnavailable />
+  const shop = index.shop
   const active = await getOptionalShop()
   const loaded =
     FEATURES.askGradiaPage && active?.id === shop.id
@@ -49,32 +34,40 @@ export default async function ConversationsPage({
         : await getLatestConversationWithMessages()
       : null
   return (
-    <WhisperConversationList shops={shops} shopId={shop.id} page={page} data={data}>
-      {FEATURES.askGradiaPage && active?.id === shop.id ? (
-        <section aria-labelledby="ask-gradia-heading" className="space-y-3 border-t border-border/60 pt-6">
-          <h2 id="ask-gradia-heading" className="font-display text-xl text-foreground">
-            Ask Gradia
-          </h2>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Shop questions stay separate from customer messages. This chat does not
-            send SMS, email or call anyone.
+    <InboxFrame shops={index.shops} shopId={shop.id} page={index.page} data={index.data}>
+      <div className="flex min-h-0 flex-1 flex-col lg:overflow-y-auto">
+        <div className="hidden flex-1 flex-col items-center justify-center px-6 py-16 text-center lg:flex">
+          <p className="font-display text-xl tracking-tight text-foreground">Choose a conversation</p>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            The list stays on the left. Opening a thread does not send, mark it
+            read, or grant consent.
           </p>
-          <BiChat
-            key={loaded?.conversation.id ?? "fresh"}
-            initial={
-              loaded
-                ? {
-                    conversationId: loaded.conversation.id,
-                    messages: loaded.messages.map((message) => ({
-                      role: message.role,
-                      content: message.content,
-                    })),
-                  }
-                : { conversationId: null, messages: [] }
-            }
-          />
-        </section>
-      ) : null}
-    </WhisperConversationList>
+        </div>
+        {FEATURES.askGradiaPage && active?.id === shop.id ? (
+          <section aria-labelledby="ask-gradia-heading" className="space-y-3 border-t border-border/60 px-4 py-6 sm:px-5">
+            <h2 id="ask-gradia-heading" className="font-display text-xl text-foreground">
+              Ask Gradia
+            </h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Shop questions stay separate from customer messages. This chat does not send SMS, email or call anyone.
+            </p>
+            <BiChat
+              key={loaded?.conversation.id ?? "fresh"}
+              initial={
+                loaded
+                  ? {
+                      conversationId: loaded.conversation.id,
+                      messages: loaded.messages.map((message) => ({
+                        role: message.role,
+                        content: message.content,
+                      })),
+                    }
+                  : { conversationId: null, messages: [] }
+              }
+            />
+          </section>
+        ) : null}
+      </div>
+    </InboxFrame>
   )
 }

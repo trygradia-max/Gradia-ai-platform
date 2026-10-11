@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, it, expect, vi } from "vitest"
 import { WhisperInboxControls } from "@/components/gradia/whisper-inbox-controls"
+import { InboxFrame } from "@/components/gradia/inbox-frame"
 import {
   WhisperConversationList,
   WhisperThreadView,
@@ -85,6 +86,8 @@ describe("Whisper role-aware controls", () => {
     expect(html).toContain("Subject")
     expect(html).toContain("Marketing consent is required")
     expect(html).toContain("mailbox thread context; missing or changed context holds the reply.")
+    expect(html).not.toContain("not a threaded reply")
+    expect(html).not.toContain("not yet a provider-threaded")
     expect(html).toContain("Completion does not mean a message was delivered")
     expect(html).toContain("do not pause or cancel queued actions")
     expect(html).toContain("focus-visible:ring-3")
@@ -136,6 +139,7 @@ describe("Whisper conversation list presentation", () => {
     expect(html).not.toContain("<script>")
     expect(html).toContain("overflow-wrap:anywhere")
     expect(html).toContain("Skip to conversations")
+    expect(html).toContain("whisper-skip")
     expect(html).toContain('aria-current="page"')
     expect(html).toContain("New handoff")
     expect(html).toContain("Unread")
@@ -164,6 +168,64 @@ describe("Whisper conversation list presentation", () => {
     expect(empty).toContain("Page 2")
     expect(empty).toContain("Previous")
     expect(empty).not.toContain("Next")
+  })
+
+  it("names the open thread in text and keeps list paging off the message page", () => {
+    const html = list({ unidentified: 0, notifications: 0, items: [item] }, 2)
+    const open = renderToStaticMarkup(
+      createElement(WhisperConversationList, {
+        shops: [{ id: shopId, name: "North" }],
+        shopId,
+        page: 2,
+        data: { unidentified: 0, notifications: 0, items: [item] },
+        activeCustomerId: id,
+        activeChannel: "sms",
+      })
+    )
+    expect(html).toContain(`href="/conversations/${id}?shop=${shopId}&amp;channel=sms&amp;list=2"`)
+    expect(html).toContain(`href="/conversations?shop=${shopId}&amp;page=1"`)
+    expect(html).not.toContain("channel=sms&amp;page=")
+    expect(open).toContain("Current conversation")
+    expect(open).toContain(">Current<")
+    expect(open).toContain('aria-current="page"')
+    expect(open).toContain("Skip to open conversation")
+    expect(open).toContain(`href="/conversations/${id}?shop=${shopId}&amp;channel=sms&amp;list=2"`)
+    expect(open).toContain(`href="/conversations/${id}?shop=${shopId}&amp;channel=sms">`)
+    expect(open).not.toContain("channel=sms&amp;page=")
+  })
+
+  it("keeps the list beside an open thread and hides that list on a narrow screen", () => {
+    const props = {
+      // React's positional child replaces this required-prop default.
+      children: null,
+      shops: [{ id: shopId, name: "North" }],
+      shopId,
+      page: 1,
+      data: { unidentified: 0, notifications: 0, items: [item] },
+    }
+    const open = renderToStaticMarkup(
+      createElement(
+        InboxFrame,
+        {
+          ...props,
+          activeCustomerId: id,
+          activeChannel: "sms",
+        },
+        "Thread body"
+      )
+    )
+    const closed = renderToStaticMarkup(
+      createElement(InboxFrame, props, "Choose a conversation")
+    )
+    expect(open).toContain('data-whisper-layout="two-pane"')
+    expect(open).toContain("hidden lg:flex")
+    expect(open).toContain('aria-label="Conversation list"')
+    expect(open).toContain('aria-label="Open conversation"')
+    expect(open).toContain("Thread body")
+    expect(open).toContain("Whisper conversations")
+    expect(closed).not.toContain("hidden lg:flex")
+    expect(closed).toContain('aria-label="Conversation"')
+    expect(closed).not.toContain('aria-label="Open conversation"')
   })
 
   it("states when the workspace itself is unavailable", () => {
@@ -229,6 +291,15 @@ describe("Whisper thread presentation", () => {
     expect(html).toContain("Vehicle reference")
     expect(html).toContain("Skip to conversation")
     expect(html.indexOf("Skip to conversation")).toBeLessThan(html.indexOf("Message history"))
+    const withControls = view({ items: [message] }, 1, "controls-slot")
+    expect(withControls).toContain('data-whisper-pane="messages"')
+    expect(withControls).toContain('data-whisper-pane="controls"')
+    expect(withControls).toContain("lg:overflow-y-auto")
+    expect(withControls).toContain("controls-slot")
+    expect(withControls.indexOf("data-whisper-pane=\"messages\"")).toBeLessThan(
+      withControls.indexOf("data-whisper-pane=\"controls\"")
+    )
+    expect(view({ items: [message] })).not.toContain('data-whisper-pane="controls"')
   })
 
   it("keeps held, empty, unavailable, and older-page states distinct", () => {
@@ -282,19 +353,38 @@ describe("Whisper loading and server boundaries", () => {
   it("leaves queries, revisions, and command identity in the server pages", () => {
     const list = readFileSync("src/app/conversations/page.tsx", "utf8")
     const threadPage = readFileSync("src/app/conversations/[customerId]/page.tsx", "utf8")
+    const index = readFileSync("src/app/conversations/load-inbox.ts", "utf8")
     const controls = readFileSync("src/components/gradia/whisper-inbox-controls.tsx", "utf8")
-    expect(list).toContain('db.rpc("list_whisper_threads"')
-    expect(list).toContain("p_offset: (page - 1) * 20")
+    const dashboard = readFileSync("src/app/(dashboard)/layout.tsx", "utf8")
+    const conversations = readFileSync("src/app/conversations/layout.tsx", "utf8")
+    const shell = readFileSync("src/components/gradia/app-shell.tsx", "utf8")
+    const sidebar = readFileSync("src/components/gradia/app-sidebar.tsx", "utf8")
+    const css = readFileSync("src/app/globals.css", "utf8")
+    expect(index).toContain('db.rpc("list_whisper_threads"')
+    expect(index).toContain("p_offset: (page - 1) * 20")
+    expect(index).toContain("Workspace access could not be verified.")
+    expect(list).toContain("loadInboxIndex")
     expect(list).toContain("FEATURES.askGradiaPage && active?.id === shop.id")
+    expect(list).toContain("does not send SMS, email or call anyone.")
+    expect(threadPage).toContain("loadInboxIndex(q.shop, q.list)")
+    expect(threadPage).not.toContain("loadInboxIndex(q.shop, q.page)")
     expect(threadPage).toContain('db.rpc("read_whisper_thread"')
     expect(threadPage).toContain("p_offset: (page - 1) * 20")
     expect(threadPage).toContain("t && page === 1")
     expect(threadPage).toContain("randomUUID()")
     expect(threadPage).toContain('createHash("sha256")')
+    expect(dashboard).toContain("<AppShell>{children}</AppShell>")
+    expect(conversations).toContain("<AppShell flush>{children}</AppShell>")
+    expect(shell).toContain("<AskGradiaButton wide />")
+    expect(shell).toContain("lg:hidden")
+    expect(sidebar).toContain('label: "Conversations"')
+    expect(sidebar).not.toContain('label: "Inbox"')
+    expect(css).toContain(".whisper-skip:focus")
     expect(controls).not.toContain("randomUUID")
     expect(controls).toContain("commandId: commands[operation]")
     expect(controls).toContain("assignee_id: assignee || null")
     expect(controls).toContain("run(\"reply\", { body, subject, destination })")
     expect(controls).toContain('run("read", {})')
+    expect(controls).toContain("mailbox thread context; missing or changed context holds the reply.")
   })
 })

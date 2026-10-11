@@ -22,7 +22,7 @@ export function PageTitle() {
   const pathname = usePathname()
   const match = TITLES.find(([prefix]) => pathname.startsWith(prefix))
   return (
-    <span className="text-sm font-medium text-foreground">
+    <span className="block truncate text-sm font-medium text-foreground">
       {match ? match[1] : "Gradia"}
     </span>
   )
