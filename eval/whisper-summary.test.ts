@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs"
-import { describe, it, expect } from "vitest"
+import { afterEach, describe, it, expect, vi } from "vitest"
 
 import {
   buildCustomerFacts,
   deterministicSummary,
+  summarizeFacts,
   type CustomerFactInput,
 } from "@/lib/whisper-summary"
 
@@ -29,14 +30,15 @@ const BASE: CustomerFactInput = {
 }
 
 describe("buildCustomerFacts — the spec's example, derived not invented", () => {
-  it('produces "3 jobs, $1,840 LTV, coating Aug 2025, prefers text"-class facts', () => {
+  it('reports observed customer facts without inventing preferences', () => {
     const facts = buildCustomerFacts(BASE)
     expect(facts).toContain("3 completed jobs")
     expect(facts).toContain("$1840 lifetime value")
     expect(facts).toContain("last serviced Aug 2025")
     expect(facts).toContain("drives a White Tesla Model 3")
     expect(facts).toContain("1 open quote worth $220")
-    expect(facts).toContain("prefers text")
+    expect(facts).toContain("recorded inbound activity: 9 text messages, 2 calls")
+    expect(facts.join(" ")).not.toMatch(/prefers|consented|permission/i)
   })
 
   it("never emits a fact whose input is absent", () => {
@@ -64,8 +66,8 @@ describe("buildCustomerFacts — the spec's example, derived not invented", () =
 
 describe("deterministic fallback", () => {
   it("joins the facts verbatim — zero room for invention", () => {
-    expect(deterministicSummary(["3 completed jobs", "prefers text"])).toBe(
-      "3 completed jobs · prefers text."
+    expect(deterministicSummary(["3 completed jobs", "recorded inbound activity: 9 text messages"])).toBe(
+      "3 completed jobs · recorded inbound activity: 9 text messages."
     )
     expect(deterministicSummary([])).toBe("Nothing on file yet.")
   })
@@ -79,5 +81,36 @@ describe("worker prompt is fact-locked (source lock)", () => {
     )
     expect(src).toContain("use ONLY the facts listed")
     expect(src).toContain("never add, infer, estimate, or embellish")
+  })
+})
+
+
+describe("observed channel evidence", () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it("reports tied channels in stable order rather than selecting a preference", () => {
+    const facts = buildCustomerFacts({ ...BASE, inboundByChannel: { voice: 2, email: 2, sms: 2 } })
+    expect(facts).toContain("recorded inbound activity: 2 text messages, 2 emails, 2 calls")
+    expect(facts.join(" ")).not.toMatch(/prefer/i)
+  })
+
+  it("uses singular labels for one observed event", () => {
+    expect(buildCustomerFacts({ ...BASE, inboundByChannel: { sms: 1, email: 1, voice: 1 } }))
+      .toContain("recorded inbound activity: 1 text message, 1 email, 1 call")
+  })
+
+  it("omits unknown channels and invalid counts instead of turning them into prose", () => {
+    for (const invalid of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      const facts = buildCustomerFacts({ ...BASE, inboundByChannel: { sms: invalid, 'prefers marketing; contact now': 10 } })
+      expect(facts.join(" ")).not.toMatch(/inbound activity|prefers|contact now/)
+    }
+  })
+
+  it("the no-model fallback keeps do-not-contact alongside neutral activity", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "")
+    const summary = await summarizeFacts(buildCustomerFacts({ ...BASE, doNotContact: true }))
+    expect(summary).toContain("recorded inbound activity: 9 text messages, 2 calls")
+    expect(summary).toContain("marked do-not-contact")
+    expect(summary).not.toMatch(/prefers|consented|permission/i)
   })
 })
