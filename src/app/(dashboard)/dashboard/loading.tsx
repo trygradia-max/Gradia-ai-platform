@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 export default function HomeLoading() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-12">
-      <div className="rounded-md border border-border/60 px-6 py-6 sm:px-8 sm:py-7">
+      <div className="rounded-md px-6 py-6 ring-1 ring-border sm:px-8 sm:py-7">
         <div className="space-y-4">
           <Skeleton className="h-3 w-52" />
           <Skeleton className="h-8 w-72 max-w-full" />
@@ -19,7 +19,7 @@ export default function HomeLoading() {
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="space-y-2 rounded-md border border-border/60 px-4 py-3.5"
+            className="space-y-2 rounded-md px-4 py-3.5 ring-1 ring-border"
           >
             <Skeleton className="h-3 w-24" />
             <Skeleton className="h-7 w-12" />

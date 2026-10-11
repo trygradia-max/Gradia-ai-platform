@@ -62,6 +62,12 @@ export async function AppShell({
 
   return (
     <SidebarProvider className={flush ? "lg:h-svh lg:overflow-hidden" : undefined}>
+      {/* First focusable on every shell page. Keyboard users otherwise tab
+          through ten nav links and the top bar before reaching content
+          (2026-10-09 signed-in keyboard pass). */}
+      <a href="#main-content" className="whisper-skip">
+        Skip to main content
+      </a>
       <AppSidebar
         shops={shops}
         activeShopId={active?.id}
@@ -77,7 +83,7 @@ export async function AppShell({
             pill in human units · help. The composer sits in the center
             from the lg breakpoint up so it does not share a cluster with
             usage, setup, and help. */}
-        <header className="sticky top-0 z-10 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 bg-background/85 px-3 backdrop-blur-md transition-colors duration-200 supports-[backdrop-filter]:bg-background/65 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)_minmax(0,1fr)]">
+        <header className="sticky top-0 z-10 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-background px-3 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)_minmax(0,1fr)]">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger className="size-11 shrink-0" />
             <div className="min-w-0">
@@ -106,11 +112,14 @@ export async function AppShell({
             covers the last card. Flush inbox pages scroll inside their panes
             from the lg breakpoint up. */}
         <div
-          className={
+          id="main-content"
+          tabIndex={-1}
+          className={cn(
+            "outline-none",
             flush
               ? "flex min-h-0 flex-1 flex-col overflow-x-hidden pb-28 lg:overflow-hidden lg:pb-0"
               : "flex flex-1 flex-col gap-8 p-6 pb-28 sm:pb-6"
-          }
+          )}
         >
           {children}
         </div>

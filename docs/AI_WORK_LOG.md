@@ -699,6 +699,46 @@ append-only work-log conflicts. Main now contains 92 migrations and the quote
 enum fix together with manager message approval/rejection. No shared database
 migrations or deployments occurred. Updated draft UI PR #59 to this main; its
 authenticated browser and keyboard acceptance remain outstanding.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Closed draft PR #59's signed-in owner/manager/staff/revoked keyboard gap on
+`codex/cursor-component-polish` using the existing disposable preview
+(launcher 3128, app 3127). Did not start a second Next server and did not
+touch Codex 3109/3110. Presentation-only: shell skip link, `:focus-visible`
+on skip links, labelled handoff selects, focusable list/thread headings,
+`RouteFocus` after in-app navigation, and a scrollable thread column so
+Refresh is not clipped. Extended `eval/whisper-inbox-ui.test.ts`. Wrote
+`docs/design/ROUTE_INVENTORY_2026-10-09.md` (every `src/app/` route still
+`pending` for the later component slice) and a 2026-10-09 section in
+`docs/qa/WHISPER_UI_ACCEPTANCE.md`. Screenshots under
+`docs/qa/screenshots/2026-10-09/`. No server actions, RPCs, migrations, or
+query semantics. No push or new PR. Remaining: live Tab paint in a focused
+OS window, Jordan email thread read still unavailable, sidebar hydration
+warning, team chrome without the shell skip link, contrast/200% zoom, and
+the token/component pass.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: review]
+Finished the first visual slice on `codex/cursor-component-polish` without
+starting over. Semantic tokens in `globals.css` now match the founder
+charcoal / silver / violet table. Shared wrappers added: ErrorState,
+ListToolbar, Pagination, FormField, DetailSection. Reused SectionHeader
+(action slot), EmptyState, StatusPill, Skeleton, AppShell, inbox frame,
+and existing Base UI / shadcn buttons. No community installer. Home now
+states channel readiness with StatusPills and drops “agents watching”;
+KPI sparklines stay off. Conversations keep #59 panes, reply context,
+command IDs, holds, and disabled submissions — restyle only. Customers
+is presentation: labelled shop search, quiet card edges, DetailSection
+on the record. Disposable preview reused launcher 3128 / app 3127; Codex
+3109/3110 left alone. Owner demo: Home, Conversations list + Alex SMS
+thread (typed a reply, did not queue), Customers list + Alex detail.
+No page overflow at 320/390/768/1440/1920. After shots in
+`docs/qa/screenshots/2026-10-09/`. Touched tests: 27 passed
+(`design-tokens-2026-10-09`, `whisper-inbox-ui`, `perf-001`). Full lint
+passed. No server actions, RPCs, migrations, or query changes.
+`vercel.json` deployment stays disabled. Remaining: later inventory PRs,
+SkipLink hydration warning, Jordan email thread read, live Tab paint in
+a focused OS window, 200% zoom / measured contrast, team chrome without
+the shell skip link.
 [AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
 Prepared the founder-requested UI/component handoff for Cursor, with a charcoal,
 silver and violet semantic palette, source links to 21st.dev/shadcn/Base UI/Origin
@@ -801,3 +841,24 @@ PR #61's remote checks exposed a prefer-const lint failure for the body deadline
 timer despite the prior local lint result. Changed the single-assignment timer to
 const; targeted lint and the 34 public-form unit tests pass. Pushed the correction
 for fresh CI. No runtime contract or other agent checkout changed.
+
+
+[AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Integrated PR #59 with main 3487600 in a separate detached worktree. Only the
+append-only work log conflicted; both sides were retained. Reconciled head edc3259
+passed 1,328 unit tests (four intentional live skips), lint, offline Node 22 build,
+post-build typecheck and both required GitHub checks. Merged #59 as fd46f24.
+Integrated Cursor PR #63 with that baseline in another separate worktree; only
+the append-only log conflicted. Its combined application tree passed 1,331 unit
+tests (four intentional live skips), full lint, offline production build and
+post-build typecheck. The final main merge had no file changes. Retargeting #63
+to main for required CI before merge. No original agent checkout was modified.
+
+Local Cursor owner preview loads the styled Home and inbox. Its recorded
+owner/manager/staff/revoked and responsive checks remain supporting evidence;
+live keyboard-focus paint, 200% zoom/contrast and the reported hydration warning
+remain acceptance follow-ups, not claimed passes. Email fixture thread read and
+Activity labeling an unconfirmed execution as handled are existing data-path
+issues outside these presentation diffs; they remain open backend follow-ups.
+No full pilot acceptance, shared migration, deployment or provider activation.
+Git deployments remain disabled.

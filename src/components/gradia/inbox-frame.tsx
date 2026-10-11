@@ -1,3 +1,4 @@
+import { RouteFocus } from "@/components/gradia/route-focus"
 import {
   WhisperConversationList,
   type WhisperThreadList,
@@ -27,10 +28,16 @@ export function InboxFrame({
       data-whisper-layout="two-pane"
       className="flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden"
     >
+      {/* After Enter on a row, land on the opened thread's heading; after
+          Back, land on the list heading. Full page loads are left alone. */}
+      <RouteFocus
+        targetId={open ? "whisper-thread-title" : "whisper-list-title"}
+        routeKey={open ? `${activeCustomerId}:${activeChannel ?? ""}` : `list:${page}`}
+      />
       <aside
         aria-label="Conversation list"
         className={cn(
-          "min-h-0 w-full min-w-0 flex-col border-border/70 lg:flex lg:w-[24rem] lg:shrink-0 lg:overflow-hidden lg:border-r",
+          "min-h-0 w-full min-w-0 flex-col border-border lg:flex lg:w-[24rem] lg:shrink-0 lg:overflow-hidden lg:border-r",
           open ? "hidden lg:flex" : "flex"
         )}
       >

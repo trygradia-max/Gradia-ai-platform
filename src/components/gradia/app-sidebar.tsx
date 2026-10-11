@@ -180,7 +180,7 @@ function NavRow({
           <motion.span
             layoutId={ACTIVE_RAIL_LAYOUT_ID}
             transition={reduce ? { duration: 0 } : ACTIVE_TWEEN}
-            className="pointer-events-none absolute left-0 top-1/2 z-20 h-5 w-[2px] -translate-y-1/2 rounded-full bg-primary shadow-[0_0_8px_0_var(--color-primary)]"
+            className="pointer-events-none absolute left-0 top-1/2 z-20 h-5 w-[2px] -translate-y-1/2 rounded-full bg-ring"
             aria-hidden
           />
         ) : null}

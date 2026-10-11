@@ -185,8 +185,13 @@ export function WhisperInboxControls({
             selected below. Awaiting approval stays visible until the approval itself
             changes, and this form does not pause queued delivery.
           </p>
-          <label htmlFor={assigneeId} className="block text-sm font-medium">
-            Responsible operator
+          {/* Selects sit beside their labels, not inside them, so the
+              accessible name is "Responsible operator" rather than the label
+              plus every option's text (2026-10-09 signed-in pass). */}
+          <div>
+            <label htmlFor={assigneeId} className="block text-sm font-medium">
+              Responsible operator
+            </label>
             <select
               id={assigneeId}
               className={selectClass}
@@ -201,9 +206,11 @@ export function WhisperInboxControls({
                 </option>
               ))}
             </select>
-          </label>
-          <label htmlFor={stateId} className="block text-sm font-medium">
-            Work state
+          </div>
+          <div>
+            <label htmlFor={stateId} className="block text-sm font-medium">
+              Work state
+            </label>
             <select
               id={stateId}
               className={selectClass}
@@ -222,7 +229,7 @@ export function WhisperInboxControls({
               <option value="held">Held for review</option>
               <option value="completed">Completed by operator</option>
             </select>
-          </label>
+          </div>
           <label htmlFor={reasonId} className="block text-sm font-medium">
             Handoff reason
             <Textarea
