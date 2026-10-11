@@ -180,8 +180,9 @@ export const STRINGS = {
       escalatedUnavailable:
         "Escalation tracking arrives with call transfers — nothing to filter yet.",
       whyLabel: "Why",
-      outcome: { handled: "Handled", needsYou: "Needs you", dropped: "Dropped" },
+      outcome: { handled: "Handled", needsYou: "Needs you", dropped: "Dropped", unresolved: "Not confirmed" },
       viewCall: "View call",
+      reviewResult: "Review what happened",
     },
     call: {
       eyebrow: "Call record",
