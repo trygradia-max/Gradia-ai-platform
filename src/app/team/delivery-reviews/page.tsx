@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { z } from "zod"
+import { TeamChrome } from "@/components/gradia/team-chrome"
 import { DeliveryReconciliationHistory } from "@/components/gradia/delivery-reconciliation-history"
 import { deliveryHoldsSchema, deliveryOutcomes } from "@/lib/delivery-reconciliation"
 import { requireUser } from "@/lib/shop"
@@ -28,17 +29,17 @@ export default async function DeliveryReviewsPage({
   const workspace = params.shop ? allowed.find((w) => w.id === params.shop) : allowed[0]
   if (!workspace)
     return (
-      <main className="mx-auto max-w-3xl space-y-4 p-6">
+      <TeamChrome className="space-y-4">
         <h1 className="text-2xl font-semibold">Delivery reviews</h1>
         <p>Delivery review for this shop has not been delegated to your account.</p>
         <Link href="/team" className="underline">Back to your workspaces</Link>
-      </main>
+      </TeamChrome>
     )
   const base = `/team/delivery-reviews?shop=${workspace.id}`
   const actionId = z.string().uuid().safeParse(params.action)
   if (params.action !== undefined) {
     return (
-      <main className="mx-auto max-w-3xl space-y-6 p-6">
+      <TeamChrome className="space-y-6">
         <Link href={base} className="underline">Held messages</Link>
         <h1 className="text-2xl font-semibold">{workspace.name} · Delivery review</h1>
         {actionId.success ? (
@@ -52,7 +53,7 @@ export default async function DeliveryReviewsPage({
         ) : (
           <p role="alert">This delivery review link is not valid. Return to the held messages.</p>
         )}
-      </main>
+      </TeamChrome>
     )
   }
   const rawPage = Number(params.page ?? "1")
@@ -60,7 +61,7 @@ export default async function DeliveryReviewsPage({
   const result = await db.rpc("list_delivery_holds", { p_shop: workspace.id, p_offset: (page - 1) * 20 })
   const holds = result.error ? null : deliveryHoldsSchema.safeParse(result.data)
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-6">
+    <TeamChrome className="space-y-6">
       <Link href={`/team?shop=${workspace.id}`} className="underline">Your workspaces</Link>
       <h1 className="text-2xl font-semibold">{workspace.name} · Held messages</h1>
       <p>
@@ -96,6 +97,6 @@ export default async function DeliveryReviewsPage({
         {page > 1 ? <Link href={`${base}&page=${page - 1}`} className="underline">Previous</Link> : null}
         {holds?.success && holds.data.items.length > 20 ? <Link href={`${base}&page=${page + 1}`} className="underline">Next</Link> : null}
       </nav>
-    </main>
+    </TeamChrome>
   )
 }

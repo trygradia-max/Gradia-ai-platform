@@ -1,7 +1,9 @@
+import { TeamChrome } from "@/components/gradia/team-chrome"
+
 export default function Loading() {
   return (
-    <main className="mx-auto max-w-3xl p-6" role="status">
-      Loading your team and permitted work…
-    </main>
+    <TeamChrome className="space-y-0">
+      <p role="status">Loading your team and permitted work…</p>
+    </TeamChrome>
   )
 }

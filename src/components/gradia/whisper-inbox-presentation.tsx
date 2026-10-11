@@ -4,6 +4,7 @@ import Link from "next/link"
 import { EmptyState } from "@/components/gradia/empty-state"
 import { ErrorState } from "@/components/gradia/error-state"
 import { Pagination } from "@/components/gradia/pagination"
+import { SkipLink } from "@/components/gradia/skip-link"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import {
   threadStateLabels,
@@ -43,14 +44,6 @@ function sameInstant(left: string, right: string): boolean {
   const b = Date.parse(right)
   if (Number.isNaN(a) || Number.isNaN(b)) return left === right
   return a === b
-}
-
-function SkipLink({ href, children }: { href: string; children: string }) {
-  return (
-    <a href={href} className="whisper-skip">
-      {children}
-    </a>
-  )
 }
 
 export function WhisperWorkspaceUnavailable() {
@@ -204,7 +197,7 @@ export function WhisperConversationList({
         Your workspaces
       </Link>
       <header className="space-y-2">
-        <p className="label-eyebrow text-muted-foreground/70">Whisper</p>
+        <p className="label-eyebrow text-muted-foreground">Whisper</p>
         <Heading
           id="whisper-list-title"
           tabIndex={-1}
@@ -310,7 +303,7 @@ export function WhisperThreadView({
         Back to conversations
       </Link>
       <header className="space-y-3">
-        <p className="label-eyebrow text-muted-foreground/70">Whisper</p>
+        <p className="label-eyebrow text-muted-foreground">Whisper</p>
         <h1
           id="whisper-thread-title"
           tabIndex={-1}

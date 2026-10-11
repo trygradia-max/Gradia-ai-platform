@@ -45,15 +45,25 @@ export function CommandBar() {
   // Remount the box each time we open so it starts fresh (the agent is a verb —
   // every invocation is "what should we get done now," not a resumed thread).
   const [sessionKey, setSessionKey] = React.useState(0)
+  const restoreFocus = React.useRef<HTMLElement | null>(null)
+
+  const rememberFocus = React.useCallback(() => {
+    const el = document.activeElement
+    restoreFocus.current = el instanceof HTMLElement ? el : null
+  }, [])
 
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
-        setOpen((prev) => !prev)
+        setOpen((prev) => {
+          if (!prev) rememberFocus()
+          return !prev
+        })
       }
     }
     function onOpen() {
+      rememberFocus()
       setSessionKey((k) => k + 1)
       setOpen(true)
     }
@@ -63,10 +73,20 @@ export function CommandBar() {
       window.removeEventListener("keydown", onKey)
       window.removeEventListener(OPEN_EVENT, onOpen)
     }
-  }, [])
+  }, [rememberFocus])
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) {
+          const node = restoreFocus.current
+          restoreFocus.current = null
+          if (node) window.requestAnimationFrame(() => node.focus())
+        }
+      }}
+    >
       <DialogContent
         showCloseButton={false}
         className="top-[8%] w-full max-w-2xl translate-y-0 gap-0 border-border/60 bg-transparent p-0 shadow-2xl sm:max-w-2xl"

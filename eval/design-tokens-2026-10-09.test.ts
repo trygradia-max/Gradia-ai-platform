@@ -36,4 +36,35 @@ describe("2026-10-09 token and first-slice locks", () => {
     expect(kpis).not.toContain("kpi-spark")
     expect(kpis).not.toContain("dynamic(")
   })
+
+  it("opaque token pairs meet WCAG text and UI contrast floors", () => {
+    const ratio = (fg: string, bg: string) => {
+      const hex = (h: string) => {
+        const n = parseInt(h.slice(1), 16)
+        return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+      }
+      const lin = (c: number) => {
+        const s = c / 255
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+      }
+      const lum = (h: string) => {
+        const { r, g, b } = hex(h)
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+      }
+      const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a)
+      return (hi + 0.05) / (lo + 0.05)
+    }
+    expect(ratio("#f4f5f7", "#101217")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#f4f5f7", "#181b22")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#f4f5f7", "#222630")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#a5adba", "#101217")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#a5adba", "#181b22")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#a5adba", "#222630")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#ffffff", "#7c3aed")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#a78bfa", "#101217")).toBeGreaterThanOrEqual(3)
+    expect(ratio("#64748b", "#222630")).toBeGreaterThanOrEqual(3)
+    expect(ratio("#4ade80", "#181b22")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#fbbf24", "#181b22")).toBeGreaterThanOrEqual(4.5)
+    expect(ratio("#fb7185", "#181b22")).toBeGreaterThanOrEqual(4.5)
+  })
 })

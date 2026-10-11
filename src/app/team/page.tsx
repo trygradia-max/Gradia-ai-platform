@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { TeamChrome } from "@/components/gradia/team-chrome"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { TeamWorkspace } from "@/lib/team-permissions"
@@ -76,7 +77,7 @@ export default async function TeamPage({
     ) as TeamData
   }
   return (
-    <main className="mx-auto min-h-screen max-w-3xl space-y-8 p-6">
+    <TeamChrome>
       <nav className="flex flex-wrap gap-4" aria-label="Your shops">
         {workspaces.map((w) => (
           <Link
@@ -108,6 +109,6 @@ export default async function TeamPage({
       {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("delivery.reconcile"))) ? <Link href={`/team/delivery-reviews?shop=${workspace.id}`} className="block underline">Review held message delivery</Link> : null}
       {workspace && workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("approvals.messages") ? <Link href={`/team/approvals?shop=${workspace.id}`} className="block underline">Approve queued messages</Link> : null}
       <AcceptInvitation />
-    </main>
+    </TeamChrome>
   )
 }

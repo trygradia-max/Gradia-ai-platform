@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { TeamChrome } from "@/components/gradia/team-chrome"
 import { delegatedApprovalsSchema } from "@/lib/delegated-approvals"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -25,11 +26,11 @@ export default async function DelegatedApprovalsPage({
   const workspace = params.shop ? allowed.find((w) => w.id === params.shop) : allowed[0]
   if (!workspace)
     return (
-      <main className="mx-auto max-w-3xl space-y-4 p-6">
+      <TeamChrome className="space-y-4">
         <h1 className="text-2xl font-semibold">Message approvals</h1>
         <p>Message approval for this shop has not been delegated to your account.</p>
         <Link href="/team" className="underline">Back to your workspaces</Link>
-      </main>
+      </TeamChrome>
     )
   const base = `/team/approvals?shop=${workspace.id}`
   const rawPage = Number(params.page ?? "1")
@@ -37,7 +38,7 @@ export default async function DelegatedApprovalsPage({
   const result = await db.rpc("list_delegated_message_approvals", { p_shop: workspace.id, p_offset: (page - 1) * 20 })
   const queue = result.error ? null : delegatedApprovalsSchema.safeParse(result.data)
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-6">
+    <TeamChrome className="space-y-6">
       <Link href={`/team?shop=${workspace.id}`} className="underline">Your workspaces</Link>
       <h1 className="text-2xl font-semibold">{workspace.name} · Messages awaiting approval</h1>
       <p>
@@ -72,6 +73,6 @@ export default async function DelegatedApprovalsPage({
         {page > 1 ? <Link href={`${base}&page=${page - 1}`} className="underline">Previous</Link> : null}
         {queue?.success && queue.data.items.length > 20 ? <Link href={`${base}&page=${page + 1}`} className="underline">Next</Link> : null}
       </nav>
-    </main>
+    </TeamChrome>
   )
 }
