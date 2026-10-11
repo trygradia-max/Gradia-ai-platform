@@ -10,7 +10,7 @@ export default function ConversationsLoading() {
     >
       <p className="sr-only">Loading conversations</p>
       <div aria-hidden="true" className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="space-y-3 border-border/70 p-4 lg:w-[24rem] lg:shrink-0 lg:border-r">
+        <div className="space-y-3 border-border p-4 lg:w-[24rem] lg:shrink-0 lg:border-r">
           <Skeleton className="h-3 w-24 max-w-full" />
           <Skeleton className="h-8 w-48 max-w-full" />
           <Skeleton className="h-4 w-full max-w-xs" />
@@ -18,7 +18,7 @@ export default function ConversationsLoading() {
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
-                className="space-y-3 rounded-md bg-card p-4 ring-1 ring-foreground/10"
+                className="space-y-3 rounded-md bg-card p-4 ring-1 ring-border"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1 space-y-2">

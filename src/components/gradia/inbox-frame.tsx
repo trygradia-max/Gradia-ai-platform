@@ -37,7 +37,7 @@ export function InboxFrame({
       <aside
         aria-label="Conversation list"
         className={cn(
-          "min-h-0 w-full min-w-0 flex-col border-border/70 lg:flex lg:w-[24rem] lg:shrink-0 lg:overflow-hidden lg:border-r",
+          "min-h-0 w-full min-w-0 flex-col border-border lg:flex lg:w-[24rem] lg:shrink-0 lg:overflow-hidden lg:border-r",
           open ? "hidden lg:flex" : "flex"
         )}
       >

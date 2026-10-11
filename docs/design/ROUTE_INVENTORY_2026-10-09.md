@@ -1,9 +1,9 @@
 # Route inventory — 2026-10-09
 
-Branch: `codex/cursor-component-polish`. Status for every `src/app/` route in
-this pass is `pending`. Keyboard/signed-in acceptance for Whisper lives in
-`docs/qa/WHISPER_UI_ACCEPTANCE.md` (2026-10-09 section) and does not mark a
-route updated for the later token/component slice.
+Branch: `codex/cursor-component-polish`. First visual slice (tokens + Home /
+Conversations / Customers) is marked below. Remaining inventory stays
+`pending` for later PRs. Keyboard/signed-in Whisper notes live in
+`docs/qa/WHISPER_UI_ACCEPTANCE.md`.
 
 `src/app/actions/` is server actions, not a route table.
 
@@ -15,15 +15,15 @@ route updated for the later token/component slice.
 | `/login` | `src/app/login/page.tsx` | Public sign-in. | pending |
 | `/onboarding` | `src/app/onboarding/page.tsx` | First-run wizard; outside dashboard gate. | pending |
 | `/how-it-works` | `src/app/how-it-works/page.tsx` | Help article. | pending |
-| `/dashboard` | `src/app/(dashboard)/dashboard/page.tsx` | Home. Loading: `dashboard/loading.tsx`. | pending |
+| `/dashboard` | `src/app/(dashboard)/dashboard/page.tsx` | Home. Loading: `dashboard/loading.tsx`. | updated |
 | `/approvals` | `src/app/(dashboard)/approvals/page.tsx` | Owner queue. Loading: `approvals/loading.tsx`. | pending |
 | `/approvals/[id]` | `src/app/(dashboard)/approvals/[id]/page.tsx` | Proposal detail. Loading: `approvals/[id]/loading.tsx`. | pending |
 | `/activity` | `src/app/(dashboard)/activity/page.tsx` | Loading: `activity/loading.tsx`. | pending |
-| `/conversations` | `src/app/conversations/page.tsx` | Whisper list. Layout flush shell; `loading.tsx`, `error.tsx`. | pending |
-| `/conversations/[customerId]` | `src/app/conversations/[customerId]/page.tsx` | Thread. Same layout/loading/error. | pending |
-| `/customers` | `src/app/(dashboard)/customers/page.tsx` | Loading: `customers/loading.tsx`. | pending |
-| `/customers/[id]` | `src/app/(dashboard)/customers/[id]/page.tsx` | Loading: `customers/[id]/loading.tsx`. | pending |
-| `/customers/quotes/new` | `src/app/(dashboard)/customers/quotes/new/page.tsx` | Loading: `customers/quotes/new/loading.tsx`. | pending |
+| `/conversations` | `src/app/conversations/page.tsx` | Whisper list. Layout flush shell; `loading.tsx`, `error.tsx`. | updated |
+| `/conversations/[customerId]` | `src/app/conversations/[customerId]/page.tsx` | Thread. Same layout/loading/error. | updated |
+| `/customers` | `src/app/(dashboard)/customers/page.tsx` | Loading: `customers/loading.tsx`. | updated |
+| `/customers/[id]` | `src/app/(dashboard)/customers/[id]/page.tsx` | Loading: `customers/[id]/loading.tsx`. | updated |
+| `/customers/quotes/new` | `src/app/(dashboard)/customers/quotes/new/page.tsx` | Header only this slice. Loading: `customers/quotes/new/loading.tsx`. | updated |
 | `/customers/recovery` | `src/app/(dashboard)/customers/recovery/page.tsx` | Feature-flagged; else `/dashboard`. Loading: `customers/recovery/loading.tsx`. | pending |
 | `/calendar` | `src/app/(dashboard)/calendar/page.tsx` | Loading: `calendar/loading.tsx`. | pending |
 | `/receptionist` | `src/app/(dashboard)/receptionist/page.tsx` | Loading: `receptionist/loading.tsx`. | pending |
@@ -59,12 +59,12 @@ route updated for the later token/component slice.
 | `src/app/error.tsx` | Root error. | pending |
 | `src/app/global-error.tsx` | Root fatal. | pending |
 | `src/app/not-found.tsx` | Root 404. | pending |
-| `src/app/(dashboard)/layout.tsx` | Owner desk `AppShell`. | pending |
-| `src/app/(dashboard)/error.tsx` | Dashboard error. | pending |
+| `src/app/(dashboard)/layout.tsx` | Owner desk `AppShell`. | updated |
+| `src/app/(dashboard)/error.tsx` | Dashboard error. | updated |
 | `src/app/(dashboard)/not-found.tsx` | Dashboard 404. | pending |
-| `src/app/conversations/layout.tsx` | Flush `AppShell`. | pending |
-| `src/app/conversations/loading.tsx` | “Loading conversations”. | pending |
-| `src/app/conversations/error.tsx` | List/thread error card. | pending |
+| `src/app/conversations/layout.tsx` | Flush `AppShell`. | updated |
+| `src/app/conversations/loading.tsx` | “Loading conversations”. | updated |
+| `src/app/conversations/error.tsx` | List/thread error card. | updated |
 | `src/app/control-center/loading.tsx` | Control Center loading. | pending |
 | `src/app/control-center/error.tsx` | Control Center error. | pending |
 | `src/app/team/loading.tsx` | Team loading. | pending |
@@ -111,7 +111,7 @@ route updated for the later token/component slice.
 | `/api/vapi/webhook` | `src/app/api/vapi/webhook/route.ts` | pending |
 | `/api/whisper/process` | `src/app/api/whisper/process/route.ts` | pending |
 
-## First reviewable slice (later)
+## First reviewable slice (this PR)
 
 Home (`/dashboard`), Conversations, and Customers after tokens and shared
-components. Do not treat this inventory as approval to redesign in one PR.
+components. Remaining inventory stays pending for separate PRs.

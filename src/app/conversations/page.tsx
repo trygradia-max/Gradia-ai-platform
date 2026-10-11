@@ -1,5 +1,6 @@
 import { requireUser, getOptionalShop } from "@/lib/shop"
 import { BiChat } from "@/components/gradia/bi-chat"
+import { EmptyState } from "@/components/gradia/empty-state"
 import { InboxFrame } from "@/components/gradia/inbox-frame"
 import { WhisperWorkspaceUnavailable } from "@/components/gradia/whisper-inbox-presentation"
 import { FEATURES } from "@/lib/features"
@@ -37,14 +38,14 @@ export default async function ConversationsPage({
     <InboxFrame shops={index.shops} shopId={shop.id} page={index.page} data={index.data}>
       <div className="flex min-h-0 flex-1 flex-col lg:overflow-y-auto">
         <div className="hidden flex-1 flex-col items-center justify-center px-6 py-16 text-center lg:flex">
-          <p className="font-display text-xl tracking-tight text-foreground">Choose a conversation</p>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            The list stays on the left. Opening a thread does not send, mark it
-            read, or grant consent.
-          </p>
+          <EmptyState
+            className="border-0 bg-transparent ring-0"
+            title="Choose a conversation"
+            description="The list stays on the left. Opening a thread does not send, mark it read, or grant consent."
+          />
         </div>
         {FEATURES.askGradiaPage && active?.id === shop.id ? (
-          <section aria-labelledby="ask-gradia-heading" className="space-y-3 border-t border-border/60 px-4 py-6 sm:px-5">
+          <section aria-labelledby="ask-gradia-heading" className="space-y-3 border-t border-border px-4 py-6 sm:px-5">
             <h2 id="ask-gradia-heading" className="font-display text-xl text-foreground">
               Ask Gradia
             </h2>

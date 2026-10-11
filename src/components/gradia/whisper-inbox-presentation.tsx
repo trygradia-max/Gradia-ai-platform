@@ -1,6 +1,9 @@
 import { useId, type ReactNode } from "react"
 import Link from "next/link"
 
+import { EmptyState } from "@/components/gradia/empty-state"
+import { ErrorState } from "@/components/gradia/error-state"
+import { Pagination } from "@/components/gradia/pagination"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import {
   threadStateLabels,
@@ -121,8 +124,8 @@ function WhisperThreadCard({
         aria-describedby={detailId}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "block min-w-0 rounded-md bg-card p-4 text-foreground ring-1 ring-foreground/10 outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50",
-          active && "ring-2 ring-primary"
+          "block min-w-0 rounded-md bg-card p-4 text-foreground ring-1 ring-border outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
+          active && "bg-popover ring-2 ring-ring"
         )}
       >
         <span className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -217,9 +220,10 @@ export function WhisperConversationList({
       <WorkspaceNav shops={shops} shopId={shopId} />
       <div id="whisper-threads" tabIndex={-1} className="scroll-mt-6 space-y-4 outline-none">
         {!data ? (
-          <p role="alert" className="max-w-prose rounded-md bg-status-danger-bg px-4 py-3 text-sm text-status-danger-fg">
-            Conversations could not be loaded. This is not an empty inbox.
-          </p>
+          <ErrorState
+            compact
+            title="Conversations could not be loaded. This is not an empty inbox."
+          />
         ) : (
           <>
             <p
@@ -251,23 +255,17 @@ export function WhisperConversationList({
                 ))}
               </ul>
             ) : (
-              <p className="rounded-md bg-muted/40 px-4 py-6 text-sm text-muted-foreground">
-                No visible conversations on this page.
-              </p>
+              <EmptyState
+                className="px-4 py-6"
+                title="No visible conversations on this page."
+              />
             )}
-            <nav aria-label="Conversation pages" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <p className="text-sm text-muted-foreground">Page {page}</p>
-              {page > 1 ? (
-                <Link className={textLink} href={listHref(page - 1)}>
-                  Previous
-                </Link>
-              ) : null}
-              {hasNext ? (
-                <Link className={textLink} href={listHref(page + 1)}>
-                  Next
-                </Link>
-              ) : null}
-            </nav>
+            <Pagination
+              label="Conversation pages"
+              status={`Page ${page}`}
+              previous={page > 1 ? { href: listHref(page - 1) } : null}
+              next={hasNext ? { href: listHref(page + 1) } : null}
+            />
           </>
         )}
       </div>
@@ -306,7 +304,7 @@ export function WhisperThreadView({
   // fit, so a short desktop window never clips the refresh link.
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:overflow-y-auto">
-      <div className="relative shrink-0 space-y-3 border-b border-border/70 px-4 py-4 sm:px-5">
+      <div className="relative shrink-0 space-y-3 border-b border-border px-4 py-4 sm:px-5">
       <SkipLink href="#whisper-messages">Skip to conversation</SkipLink>
       <Link href={listHref} className={textLink}>
         Back to conversations
@@ -344,9 +342,10 @@ export function WhisperThreadView({
         className="min-h-0 flex-1 scroll-mt-6 space-y-6 px-4 py-4 outline-none sm:px-5 lg:min-h-[14rem] lg:overflow-y-auto"
       >
       {!thread ? (
-        <p role="alert" className="max-w-prose rounded-md bg-status-danger-bg px-4 py-3 text-sm text-status-danger-fg">
-          Conversation unavailable. Check access and refresh.
-        </p>
+        <ErrorState
+          compact
+          title="Conversation unavailable. Check access and refresh."
+        />
       ) : (
         <>
           {thread.state === "held" ? (
@@ -398,7 +397,7 @@ export function WhisperThreadView({
                     <li key={message.id} className={cn("flex min-w-0", align)}>
                       <article
                         className={cn(
-                          "min-w-0 space-y-2 rounded-md p-4 ring-1 ring-foreground/10",
+                          "min-w-0 space-y-2 rounded-md p-4 ring-1 ring-border",
                           message.role === "system"
                             ? "w-full max-w-full bg-muted/40"
                             : "max-w-full bg-card sm:max-w-[85%]"
@@ -429,24 +428,26 @@ export function WhisperThreadView({
                 })}
               </ol>
             ) : (
-              <p className="rounded-md bg-muted/40 px-4 py-6 text-sm text-muted-foreground">
-                No messages on this page.
-              </p>
+              <EmptyState
+                className="px-4 py-6"
+                title="No messages on this page."
+              />
             )}
           </div>
-          <nav aria-label="Message pages" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="text-sm text-muted-foreground">Page {page}</p>
-            {page > 1 ? (
-              <Link className={textLink} href={`${refreshHref}&page=${page - 1}`}>
-                Newer messages
-              </Link>
-            ) : null}
-            {hasOlder ? (
-              <Link className={textLink} href={`${refreshHref}&page=${page + 1}`}>
-                Older messages
-              </Link>
-            ) : null}
-          </nav>
+          <Pagination
+            label="Message pages"
+            status={`Page ${page}`}
+            previous={
+              page > 1
+                ? { href: `${refreshHref}&page=${page - 1}`, label: "Newer messages" }
+                : null
+            }
+            next={
+              hasOlder
+                ? { href: `${refreshHref}&page=${page + 1}`, label: "Older messages" }
+                : null
+            }
+          />
           {page !== 1 ? (
             <p className="max-w-prose text-sm text-muted-foreground">
               Read, handoff and draft controls stay on the newest messages.
@@ -479,7 +480,7 @@ export function WhisperThreadView({
       {controls ? (
         <div
           data-whisper-pane="controls"
-          className="shrink-0 border-t border-border/70 lg:max-h-[min(38%,30rem)] lg:overflow-y-auto"
+          className="shrink-0 border-t border-border lg:max-h-[min(38%,30rem)] lg:overflow-y-auto"
         >
           {controls}
         </div>

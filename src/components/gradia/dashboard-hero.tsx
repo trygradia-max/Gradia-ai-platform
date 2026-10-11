@@ -1,70 +1,75 @@
-"use client"
+import type { ReactNode } from "react"
+import Link from "next/link"
 
-import * as React from "react"
+import { SectionHeader } from "@/components/gradia/section-header"
+import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
+import type { ChannelSummary } from "@/lib/data/channels"
 
-import {
-  PageStagger,
-  StaggerItem,
-} from "@/components/gradia/motion/page-stagger"
-import { PulseDot } from "@/components/gradia/motion/pulse-dot"
+function channelTone(status: ChannelSummary["status"]): StatusPillTone {
+  if (status === "connected") return "good"
+  if (status === "partial") return "warn"
+  return "muted"
+}
+
+function channelLabel(status: ChannelSummary["status"]): string {
+  if (status === "connected") return "Connected"
+  if (status === "partial") return "Needs setup"
+  return "Not connected"
+}
 
 export function DashboardHero({
   shopName,
-  liveChannelCount,
-  totalChannels,
+  channels,
   eyebrow,
   rightSlot,
 }: {
   shopName: string
-  liveChannelCount: number
-  totalChannels: number
+  channels: ChannelSummary[]
   /** Pre-computed on the server so SSR + first paint agree. */
   eyebrow: string
   /** Right-aligned action area (e.g. Add lead button). */
-  rightSlot?: React.ReactNode
+  rightSlot?: ReactNode
 }) {
-  const allLive = liveChannelCount === totalChannels
+  const live = channels.filter((channel) => channel.status === "connected").length
+  const allLive = live === channels.length && channels.length > 0
   const channelLine = allLive
-    ? `All ${totalChannels} channels live`
-    : `${liveChannelCount} of ${totalChannels} channels live`
+    ? `All ${channels.length} channels connected`
+    : `${live} of ${channels.length} channels connected`
 
   return (
-    <section className="relative rounded-md border border-border/60 bg-card px-6 py-6 sm:px-8 sm:py-7">
-      <PageStagger className="relative flex flex-col gap-4">
-        <StaggerItem>
-          <p className="label-eyebrow text-muted-foreground/80">
-            {eyebrow}
-          </p>
-        </StaggerItem>
-
-        <StaggerItem>
-          <h1 className="font-display text-2xl text-foreground">
+    <section className="space-y-5 rounded-md bg-card px-6 py-6 ring-1 ring-border sm:px-8 sm:py-7">
+      <SectionHeader
+        level={1}
+        eyebrow={eyebrow}
+        title={
+          <>
             Today at <span className="text-muted-foreground">{shopName}</span>
-          </h1>
-        </StaggerItem>
+          </>
+        }
+        subhead={channelLine}
+        action={rightSlot}
+      />
 
-        <StaggerItem>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex items-center gap-2.5">
-              <PulseDot
-                tone={allLive ? "good" : "accent"}
-                size={8}
-              />
-              <p className="text-sm text-muted-foreground">
-                <span className="text-foreground">{channelLine}</span>
-                <span className="hidden text-muted-foreground/60 sm:inline">
-                  {" "}— agents watching every inbox.
-                </span>
-              </p>
-            </div>
-            {rightSlot ? (
-              <div className="flex shrink-0 items-center gap-2">
-                {rightSlot}
-              </div>
-            ) : null}
-          </div>
-        </StaggerItem>
-      </PageStagger>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {channels.map((channel) => (
+          <li key={channel.id}>
+            <Link
+              href={channel.href}
+              className="flex min-h-11 items-center justify-between gap-3 rounded-md px-3 py-2 ring-1 ring-border outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm text-foreground">{channel.label}</span>
+                {channel.hint ? (
+                  <span className="block text-xs text-muted-foreground">{channel.hint}</span>
+                ) : null}
+              </span>
+              <StatusPill tone={channelTone(channel.status)}>
+                {channelLabel(channel.status)}
+              </StatusPill>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

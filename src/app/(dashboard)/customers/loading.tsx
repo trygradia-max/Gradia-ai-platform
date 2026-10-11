@@ -11,14 +11,14 @@ export default function CustomersLoading() {
         <Skeleton className="h-7 w-64" />
         <Skeleton className="h-4 w-96 max-w-full" />
       </div>
-      <div className="flex gap-1 border-b border-border/60 pb-2">
+      <div className="flex gap-1 border-b border-border pb-2">
         <Skeleton className="h-8 w-20" />
         <Skeleton className="h-8 w-24" />
         <Skeleton className="h-8 w-20" />
       </div>
       <div className="grid gap-3 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-md border border-border/60 p-4">
+          <div key={i} className="rounded-md p-4 ring-1 ring-border">
             <div className="space-y-2">
               <Skeleton className="h-4 w-32" />
               <Skeleton className="h-3 w-24" />

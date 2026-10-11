@@ -7,6 +7,7 @@ import { CrmCleanupCard } from "@/components/gradia/crm-cleanup-card"
 import { CustomersTable } from "@/components/gradia/customers-table"
 import { PipelineBoard } from "@/components/gradia/pipeline-board"
 import { QuotesList } from "@/components/gradia/quotes-list"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { buttonVariants } from "@/components/ui/button"
 import { listCustomersForCurrentShop } from "@/lib/data/customers"
 import { listPipelineForCurrentShop } from "@/lib/data/pipeline"
@@ -40,40 +41,33 @@ export default async function CustomersPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-2">
-          <p className="label-eyebrow text-muted-foreground/70">Customers</p>
-          <h1 className="font-display text-2xl text-foreground">
-            The people and the <span className="italic">money</span>.
-          </h1>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Every lead as a card, every person as a file, every quote in one
-            list — from first call to booked job without leaving this page.
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          {tab === "quotes" ? (
+      <SectionHeader
+        level={1}
+        eyebrow="Customers"
+        title="People, pipeline, and quotes."
+        subhead="Every lead as a card, every person as a file, every quote in one list — from first call to booked job without leaving this page."
+        action={
+          tab === "quotes" ? (
             <Link
               href="/customers/quotes/new"
-              className={cn(buttonVariants({ size: "lg" }), "h-11 gap-2")}
+              className={cn(buttonVariants({ size: "lg" }), "min-h-11 gap-2")}
             >
               <FileText className="size-4" aria-hidden />
               New quote
             </Link>
-          ) : null}
-          {tab === "customers" && FEATURES.customerRecovery ? (
+          ) : tab === "customers" && FEATURES.customerRecovery ? (
             <Link
               href="/customers/recovery"
-              className={cn(buttonVariants({ size: "lg" }), "h-11 gap-2")}
+              className={cn(buttonVariants({ size: "lg" }), "min-h-11 gap-2")}
             >
               <Users className="size-4" aria-hidden />
               Import customers
             </Link>
-          ) : null}
-        </div>
-      </header>
+          ) : undefined
+        }
+      />
 
-      <nav className="flex gap-1 border-b border-border/60" aria-label="Customer views">
+      <nav className="flex gap-1 border-b border-border" aria-label="Customer views">
         {TABS.map((t) => (
           <Link
             key={t.key}
@@ -82,7 +76,7 @@ export default async function CustomersPage({
             className={cn(
               "-mb-px border-b-2 px-3.5 py-2 text-sm transition-colors",
               tab === t.key
-                ? "border-primary font-medium text-foreground"
+                ? "border-ring font-medium text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >

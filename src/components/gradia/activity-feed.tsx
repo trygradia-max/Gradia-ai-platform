@@ -74,17 +74,19 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
         >
           {s.filters.needsReview}
         </Link>
+        <span className="text-xs text-muted-foreground">On this page</span>
         {(["all", "handled"] as const).map((f) => (
           <button
             key={f}
             type="button"
             onClick={() => setFilter(f)}
+            aria-pressed={filter === f}
             className={cn(
               chipClass,
-              "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              "min-h-11 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               filter === f
-                ? "border-border-strong bg-card text-foreground"
-                : "border-border/60 text-muted-foreground hover:text-foreground"
+                ? "border-input bg-card text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground"
             )}
           >
             {f === "all" ? s.filters.all : s.filters.handled}
@@ -105,7 +107,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
           description={STRINGS.empty.activityFirstUse}
         />
       ) : (
-        <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-card">
+        <ul className="divide-y divide-border rounded-md bg-card ring-1 ring-border">
           {visible.map((item) => {
             const Icon = itemIcon(item)
             return (

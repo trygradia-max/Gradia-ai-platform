@@ -716,3 +716,26 @@ query semantics. No push or new PR. Remaining: live Tab paint in a focused
 OS window, Jordan email thread read still unavailable, sidebar hydration
 warning, team chrome without the shell skip link, contrast/200% zoom, and
 the token/component pass.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: review]
+Finished the first visual slice on `codex/cursor-component-polish` without
+starting over. Semantic tokens in `globals.css` now match the founder
+charcoal / silver / violet table. Shared wrappers added: ErrorState,
+ListToolbar, Pagination, FormField, DetailSection. Reused SectionHeader
+(action slot), EmptyState, StatusPill, Skeleton, AppShell, inbox frame,
+and existing Base UI / shadcn buttons. No community installer. Home now
+states channel readiness with StatusPills and drops “agents watching”;
+KPI sparklines stay off. Conversations keep #59 panes, reply context,
+command IDs, holds, and disabled submissions — restyle only. Customers
+is presentation: labelled shop search, quiet card edges, DetailSection
+on the record. Disposable preview reused launcher 3128 / app 3127; Codex
+3109/3110 left alone. Owner demo: Home, Conversations list + Alex SMS
+thread (typed a reply, did not queue), Customers list + Alex detail.
+No page overflow at 320/390/768/1440/1920. After shots in
+`docs/qa/screenshots/2026-10-09/`. Touched tests: 27 passed
+(`design-tokens-2026-10-09`, `whisper-inbox-ui`, `perf-001`). Full lint
+passed. No server actions, RPCs, migrations, or query changes.
+`vercel.json` deployment stays disabled. Remaining: later inventory PRs,
+SkipLink hydration warning, Jordan email thread read, live Tab paint in
+a focused OS window, 200% zoom / measured contrast, team chrome without
+the shell skip link.
