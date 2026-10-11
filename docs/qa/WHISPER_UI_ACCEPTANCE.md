@@ -106,3 +106,84 @@ the control `focus-visible` utilities) rather than by a keyboard screenshot.
 - An untouched save on an awaiting-approval thread still submits Needs reply.
   The copy says this does not pause the queued approval. The server remains
   the authority for whether that write is accepted.
+
+## 2026-10-09 signed-in keyboard pass
+
+Branch: `codex/cursor-component-polish`. Disposable Cursor preview only:
+launcher `http://localhost:3128`, app `http://localhost:3127`. Codex demo
+`3109`/`3110` was not used. Scope stayed presentation (markup, ARIA, focus,
+CSS). No server actions, RPCs, migrations, or query semantics.
+
+### Runtime
+
+Reused the already-running preview (launcher PID listening on 3128, Next on
+3127). `3128` returned 200; `3127` returned 307 then the signed-in inbox after
+`/demo?role=…`. No second Next server was started.
+
+### Roles
+
+| Role | Inbox | Thread | Notes |
+| --- | --- | --- | --- |
+| Owner | Full list, unidentified alert, usage/setup pills, Ask Gradia pane | Alex: customer link, mark read, handoff, queue draft. Priya: long name, operator-hold alert, held select + required reason. Casey: queue disabled, no phone. Taylor: no composer, voice copy. Sam: unconfirmed-execution alert and approval link. Jordan email read returned the existing unavailable card (list still shows the row). | First focusable is Skip to main content. Combobox names are “Responsible operator” and “Work state”. |
+| Manager | Full list. No unidentified alert, usage/setup pills, or Ask Gradia pane. Approvals nav has no owner count. | Alex: mark read + handoff. No queue draft, no customer record link. | `assignments.manage` / `crm.read` only. |
+| Staff | Alex only. | Mark read only. No handoff, reply, or customer link. | Assignment fixture. |
+| Revoked | Alert: “Conversation workspace unavailable.” Link to `/team`. | n/a | Shell skip link still first. |
+
+Nothing was submitted. No command IDs were consumed.
+
+### Keyboard and viewports
+
+Tab/Shift-Tab DOM events in the embedded pane do not move `document.activeElement`
+(same limit as the 2026-10-08 fixture pass). Order was confirmed from the
+accessibility tree: Skip to main content, sidebar, top bar, inbox skip links,
+then content. Skip-link CSS now matches `:focus` and `:focus-visible`; the
+focused appearance is `position: fixed; top/left 1rem` with a 3px ring. The
+unfocused embedded window still does not paint `:focus`, so the 2026-10-09
+skip-link screenshot remains the visual proof.
+
+Skip-to-main-content targets `#main-content` (`tabIndex={-1}`). After client
+navigation, `RouteFocus` moves focus to `#whisper-thread-title` or
+`#whisper-list-title`. Full page loads keep the browser start position.
+
+Escape closed the Ask Gradia dialog and returned to the thread. Enter on a
+conversation row did not navigate in this pane (click focused the link only);
+direct navigation to the same href opened the thread.
+
+| Width | Thread open | Overflow | Notes |
+| --- | --- | --- | --- |
+| 320 | List hidden | none | Title and long tokens wrap. Back link 44px. |
+| 390 | List hidden | none | Back link 44px. Off-screen skip links are the only “clipped” hit. |
+| 768 | List hidden (lg is 1024) | none | |
+| 1440 | Two-pane | none | Existing list, skip-link, and Alex screenshots. |
+| 1920 | Two-pane | none | |
+| 200% zoom | not re-measured in this pane | — | Left for a focused-window pass. |
+
+### Screenshots
+
+`docs/qa/screenshots/2026-10-09/`
+
+- `owner-1440-list.png`
+- `owner-1440-skip-link-focused.png`
+- `owner-1440-thread-sms-alex.png`
+- `revoked-1440-unavailable.png`
+
+### Presentation fixes in this slice
+
+- Shell skip link to `#main-content`.
+- Skip-link `:focus-visible` alongside `:focus`.
+- Handoff selects sit beside their labels so the accessible name is the label,
+  not the label plus every option.
+- Focusable list/thread headings and `RouteFocus` after in-app navigation.
+- Thread column scrolls when the controls pane would clip Refresh.
+
+### Still open
+
+- Live Tab/Shift-Tab paint of `:focus` needs a focused OS window.
+- Jordan email `read_whisper_thread` still renders the unavailable card.
+  Presentation is honest; the read is a server/fixture issue.
+- Next.js hydration warning on `app-sidebar.tsx` `NavRow` (locale/time).
+- Team pages still use their own chrome without the shell skip link.
+- Contrast measurement, 200% zoom, and the later token/component slice are
+  not part of this close-out.
+- In-app notifications still appear only after refresh. Manager email
+  delivery is still disabled. Email replies are still not provider-threaded.

@@ -67,6 +67,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-border-control: var(--border-control);
+  --color-primary-hover: var(--accent-hover);
   --color-accent-text: var(--accent-text);
   --color-destructive: var(--destructive);
   /* NOTE the naming split: Tailwind's `accent` utilities (bg-accent …)
@@ -113,28 +115,27 @@
 }
 
 :root {
-  /* ── Gradia semantic tokens — the DARK theme ships (§8-A1).
-        Neutral values carried over from the existing dark palette;
-        purple + silver mapping per spec §2.2. ── */
-  --bg-canvas: oklch(0.06 0 0);
-  --bg-surface: oklch(0.1 0 0);
-  --bg-raised: oklch(0.12 0 0);
-  --bg-sunken: oklch(0.07 0 0);
-  --bg-hover: oklch(0.14 0 0);
-  --border-default: oklch(0.18 0 0);
-  --border-strong: oklch(0.26 0 0);
-  --text-primary: oklch(0.985 0 0);
-  --text-secondary: oklch(0.7 0 0); /* AA on near-black (UX spec Part 5) */
-  --text-tertiary: oklch(0.55 0 0);
+  /* ── Gradia semantic tokens — charcoal / silver / violet (2026-10-09).
+        Hex values are the founder brief. Components use these names only. ── */
+  --bg-canvas: #101217;
+  --bg-surface: #181b22;
+  --bg-raised: #222630;
+  --bg-sunken: #101217;
+  --bg-hover: #2a303c;
+  --border-default: #303642;
+  --border-strong: #303642;
+  --border-control: #64748b;
+  --text-primary: #f4f5f7;
+  --text-secondary: #a5adba;
+  --text-tertiary: color-mix(in oklab, #a5adba 72%, #101217);
 
-  /* ONE accent (§8-A1): brand purple, verified against the marketing
-     repo. #7C3AED on white text = 5.7:1 (AA ✓) for filled buttons;
-     as colored TEXT on the dark canvas it fails AA, so text/links use
-     --accent-text (violet-400 from the same palette family). */
+  /* ONE accent: filled primary #7C3AED + white (5.70:1). Text/links/focus
+     use --accent-text. Control edges use --border-control; cards use the
+     quieter --border-default hairline. */
   --accent: #7c3aed;
-  --accent-hover: #6d28d9; /* one shade darker (violet-700) */
+  --accent-hover: #6d28d9;
   --accent-subtle: color-mix(in oklab, #7c3aed 12%, transparent);
-  --accent-text: #a78bfa; /* violet-400 — AA as text on dark */
+  --accent-text: #a78bfa;
 
   /* Status (spec §2.3) — base hexes from the spec (Vibe positive /
      negative); -fg are dark-canvas text variants from the Tailwind
@@ -168,7 +169,7 @@
 
   /* primary = THE accent. White text on purple (AA ✓). */
   --primary: var(--accent);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: #ffffff;
 
   --secondary: var(--bg-hover);
   --secondary-foreground: var(--text-primary);
@@ -184,8 +185,8 @@
   --destructive: var(--status-danger);
 
   --border: var(--border-default);
-  --input: var(--border-default);
-  --ring: var(--accent);
+  --input: var(--border-control);
+  --ring: var(--accent-text);
 
   /* Charts — accent + neutral silvers only. */
   --chart-1: var(--accent);
@@ -196,14 +197,14 @@
 
   --radius: 0.625rem;
 
-  --sidebar: var(--bg-sunken);
+  --sidebar: var(--bg-surface);
   --sidebar-foreground: var(--text-primary);
   --sidebar-primary: var(--accent);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: var(--bg-hover);
   --sidebar-accent-foreground: var(--text-primary);
-  --sidebar-border: oklch(0.16 0 0);
-  --sidebar-ring: var(--accent);
+  --sidebar-border: var(--border-default);
+  --sidebar-ring: var(--accent-text);
 }
 
 /* The html element carries .dark permanently (dark ships, §8-A1);
@@ -221,6 +222,7 @@
   --bg-hover: #f0f1f3;
   --border-default: #e4e5e9;
   --border-strong: #c9cbd1;
+  --border-control: #64748b;
   --text-primary: #1a1b1e;
   --text-secondary: #6b6d76;
   --text-tertiary: #9a9ca5;
@@ -327,4 +329,34 @@
   box-shadow:
     0 0 0 1px color-mix(in oklab, var(--primary) 50%, transparent),
     0 8px 32px -8px color-mix(in oklab, var(--primary) 35%, transparent);
+}
+
+/* Skip links sit off-screen until focused. A dedicated rule avoids Tailwind
+   utility order, where `absolute` and `-left-[10000px]` were overriding
+   the focus position. */
+.whisper-skip {
+  position: absolute;
+  left: -10000px;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  padding-inline: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.whisper-skip:focus,
+.whisper-skip:focus-visible {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 50;
+  height: auto;
+  width: auto;
+  overflow: visible;
+  padding-block: 0.5rem;
+  outline: 3px solid color-mix(in oklab, var(--ring) 50%, transparent);
+  outline-offset: 2px;
 }

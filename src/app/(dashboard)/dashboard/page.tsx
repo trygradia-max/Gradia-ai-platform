@@ -34,7 +34,6 @@ export default async function DashboardPage() {
     loadIntakeReview(db, shop.id, 0, 5),
   ])
 
-  const connectedCount = channels.filter((c) => c.status === "connected").length
   const editCount = approvals.filter((a) => a.status === "edit_requested").length
   const pendingCount = approvals.length - editCount
   const a = STRINGS.pages.approvals
@@ -44,8 +43,7 @@ export default async function DashboardPage() {
     <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-16">
       <DashboardHero
         shopName={shop.name}
-        liveChannelCount={connectedCount}
-        totalChannels={channels.length}
+        channels={channels}
         eyebrow={dashboardEyebrow()}
         rightSlot={<AddLeadDialog />}
       />
