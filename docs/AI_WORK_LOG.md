@@ -750,3 +750,10 @@ focus to the opener. Measured contrast is in
 had no page overflow. Jordan email thread read stays a fixture/backend
 block. Reused 3128/3127; did not touch 3109/3110. No server actions,
 RPCs, migrations, or query changes.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: review]
+Approvals and Activity presentation on `codex/cursor-ui-approvals`.
+Owner queue keeps Send / Tweak / Drop at equal weight and the same
+actions. Delegated `/team/approvals` uses ReviewCard with approve-and-send
+as the one filled primary and reject as outline. Activity chips say they
+filter the loaded page only. No server actions, RPCs, or query changes.

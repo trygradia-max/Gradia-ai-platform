@@ -8,7 +8,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 
+import { EmptyState } from "@/components/gradia/empty-state"
 import { PendingProposalEditor } from "@/components/gradia/pending-proposal-editor"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
 import { buttonVariants } from "@/components/ui/button"
 import { normalizePhone } from "@/lib/customers"
@@ -103,28 +105,25 @@ export default async function PendingProposalPage({
     return (
       <div className="mx-auto w-full max-w-3xl space-y-8">
         <BackLink />
-        <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center">
-          <p className="label-eyebrow mb-2 text-muted-foreground/70">
-            {pending.status === "approved" ? "Approved" : "Dropped"}
-          </p>
-          <p className="font-display text-2xl text-foreground">
-            <span className="italic">Already</span>{" "}decided.
-          </p>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-            {pending.status === "approved"
+        <EmptyState
+          title="Already decided."
+          description={
+            pending.status === "approved"
               ? "This one's been approved — nothing more for us to do here."
-              : "This one's been dropped — gone for good."}
-          </p>
-          <Link
-            href="/approvals"
-            className={cn(
-              buttonVariants({ size: "lg" }),
-              "mt-6 inline-flex h-11 gap-2"
-            )}
-          >
-            Back to the queue
-          </Link>
-        </div>
+              : "This one's been dropped — gone for good."
+          }
+          action={
+            <Link
+              href="/approvals"
+              className={cn(
+                buttonVariants({ size: "lg" }),
+                "inline-flex h-11 gap-2"
+              )}
+            >
+              Back to the queue
+            </Link>
+          }
+        />
       </div>
     )
   }
@@ -142,18 +141,16 @@ export default async function PendingProposalPage({
     <div className="mx-auto w-full max-w-3xl space-y-8">
       <header className="space-y-3">
         <BackLink />
-        <div className="space-y-2">
-          <p className="label-eyebrow text-muted-foreground/70">
-            Review proposal
-          </p>
-          <h1 className="font-display text-2xl text-foreground">
-            One pass, then it&apos;s <span className="italic">live</span>.
-          </h1>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Tweak whatever&apos;s off, then save — or drop it if it&apos;s
-            noise. Either way it comes off the queue.
-          </p>
-        </div>
+        <SectionHeader
+          level={1}
+          eyebrow="Review proposal"
+          title={
+            <>
+              One pass, then it&apos;s <span className="italic">live</span>.
+            </>
+          }
+          subhead="Tweak whatever's off, then save — or drop it if it's noise. Either way it comes off the queue."
+        />
       </header>
 
       {isMessage?<WhisperReplyEvidence db={supabase} shopId={shop.id} actionId={pending.id}/>:null}

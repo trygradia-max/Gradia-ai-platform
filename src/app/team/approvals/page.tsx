@@ -1,5 +1,11 @@
 import Link from "next/link"
+import { EmptyState } from "@/components/gradia/empty-state"
+import { ErrorState } from "@/components/gradia/error-state"
+import { Pagination } from "@/components/gradia/pagination"
+import { ReviewCard } from "@/components/gradia/review-card"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { TeamChrome } from "@/components/gradia/team-chrome"
+import { StatusPill } from "@/components/ui/status-pill"
 import { delegatedApprovalsSchema } from "@/lib/delegated-approvals"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -27,9 +33,15 @@ export default async function DelegatedApprovalsPage({
   if (!workspace)
     return (
       <TeamChrome className="space-y-4">
-        <h1 className="text-2xl font-semibold">Message approvals</h1>
-        <p>Message approval for this shop has not been delegated to your account.</p>
-        <Link href="/team" className="underline">Back to your workspaces</Link>
+        <SectionHeader
+          level={1}
+          eyebrow="Delegated review"
+          title="Message approvals"
+          subhead="Message approval for this shop has not been delegated to your account."
+        />
+        <Link href="/team" className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline">
+          Back to your workspaces
+        </Link>
       </TeamChrome>
     )
   const base = `/team/approvals?shop=${workspace.id}`
@@ -39,40 +51,57 @@ export default async function DelegatedApprovalsPage({
   const queue = result.error ? null : delegatedApprovalsSchema.safeParse(result.data)
   return (
     <TeamChrome className="space-y-6">
-      <Link href={`/team?shop=${workspace.id}`} className="underline">Your workspaces</Link>
-      <h1 className="text-2xl font-semibold">{workspace.name} · Messages awaiting approval</h1>
-      <p>
-        You can approve or reject queued texts and emails for this shop. Approving sends the message exactly as shown,
-        if the customer’s consent, opt-out status and quiet hours allow it. Rejecting sends nothing, and the shop owner
-        can restore it. You cannot edit here; bookings, quotes and record changes stay with the shop owner.
-      </p>
+      <Link href={`/team?shop=${workspace.id}`} className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline">
+        Your workspaces
+      </Link>
+      <SectionHeader
+        level={1}
+        eyebrow="Delegated review"
+        title={`${workspace.name} · Messages awaiting approval`}
+        subhead="Approving sends the message exactly as shown if consent, opt-out status and quiet hours allow it. Rejecting sends nothing. You cannot edit here."
+      />
       {!queue?.success ? (
-        <p role="alert">Messages could not be loaded. Nothing is assumed to be clear; refresh to try again.</p>
+        <ErrorState compact title="Messages could not be loaded. Nothing is assumed to be clear; refresh to try again." />
       ) : queue.data.items.length === 0 ? (
-        <p>No messages are waiting on this page.</p>
+        <EmptyState title="No messages are waiting on this page." />
       ) : (
         <ol className="space-y-4">
           {queue.data.items.slice(0, 20).map((item) => (
-            <li key={item.action_id} className="space-y-2 rounded border p-3">
-              <p className="font-medium">
-                {channels[item.action_type]} to {item.customer_name ?? "an unlinked recipient"}
-              </p>
-              <p>
-                Recipient: {item.destination ?? "missing"} · Queued {item.created_at} ·{" "}
-                {item.purpose === "service" ? "Owner-reviewed service reply" : "Marketing rules apply"}
-              </p>
-              {item.subject ? <p>Subject: {item.subject}</p> : null}
-              <p className="whitespace-pre-wrap break-words rounded border p-2">{item.body ?? "Message content is missing."}</p>
-              {item.reason ? <p>Why it was drafted: {item.reason}</p> : null}
-              <DelegatedApproveButton shopId={workspace.id} actionId={item.action_id} reviewHash={item.review_hash} />
+            <li key={item.action_id}>
+              <ReviewCard
+                eyebrow={channels[item.action_type]}
+                title={`To ${item.customer_name ?? "an unlinked recipient"}`}
+                status={<StatusPill tone="warn">Pending</StatusPill>}
+                evidence={
+                  <>
+                    <p>
+                      Recipient: {item.destination ?? "missing"} · Queued {item.created_at} ·{" "}
+                      {item.purpose === "service" ? "Owner-reviewed service reply" : "Marketing rules apply"}
+                    </p>
+                    {item.subject ? <p>Subject: {item.subject}</p> : null}
+                    <p className="whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-foreground ring-1 ring-border">
+                      {item.body ?? "Message content is missing."}
+                    </p>
+                    {item.reason ? <p>Why it was drafted: {item.reason}</p> : null}
+                  </>
+                }
+                actions={
+                  <DelegatedApproveButton
+                    shopId={workspace.id}
+                    actionId={item.action_id}
+                    reviewHash={item.review_hash}
+                  />
+                }
+              />
             </li>
           ))}
         </ol>
       )}
-      <nav aria-label="Message approval pages" className="flex gap-4">
-        {page > 1 ? <Link href={`${base}&page=${page - 1}`} className="underline">Previous</Link> : null}
-        {queue?.success && queue.data.items.length > 20 ? <Link href={`${base}&page=${page + 1}`} className="underline">Next</Link> : null}
-      </nav>
+      <Pagination
+        label="Message approval pages"
+        previous={page > 1 ? { href: `${base}&page=${page - 1}` } : null}
+        next={queue?.success && queue.data.items.length > 20 ? { href: `${base}&page=${page + 1}` } : null}
+      />
     </TeamChrome>
   )
 }

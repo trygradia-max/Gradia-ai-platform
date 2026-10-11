@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import { EmptyState } from "@/components/gradia/empty-state"
+import { ListToolbar } from "@/components/gradia/list-toolbar"
 import { StatusPill } from "@/components/ui/status-pill"
 import type { ActivityFeedItem } from "@/lib/data/activity"
 import { STRINGS } from "@/lib/strings"
@@ -60,11 +61,18 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
     filter === "handled" ? items.filter((i) => i.outcome === "handled") : items
 
   const chipClass =
-    "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150"
+    "inline-flex min-h-11 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150"
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
+      <ListToolbar
+        label="Activity on this page"
+        status={
+          <p className="text-sm text-muted-foreground">
+            {`Filters apply to the ${items.length} ${items.length === 1 ? "event" : "events"} loaded here, not the whole history.`}
+          </p>
+        }
+      >
         <Link
           href="/approvals"
           className={cn(
@@ -74,7 +82,6 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
         >
           {s.filters.needsReview}
         </Link>
-        <span className="text-xs text-muted-foreground">On this page</span>
         {(["all", "handled"] as const).map((f) => (
           <button
             key={f}
@@ -83,7 +90,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
             aria-pressed={filter === f}
             className={cn(
               chipClass,
-              "min-h-11 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               filter === f
                 ? "border-input bg-card text-foreground"
                 : "border-border text-muted-foreground hover:text-foreground"
@@ -95,11 +102,11 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
         <span
           aria-disabled
           title={s.escalatedUnavailable}
-          className={cn(chipClass, "cursor-not-allowed border-border/40 text-muted-foreground/50")}
+          className={cn(chipClass, "cursor-not-allowed border-border text-muted-foreground")}
         >
           {s.filters.escalated}
         </span>
-      </div>
+      </ListToolbar>
 
       {visible.length === 0 ? (
         <EmptyState
@@ -132,7 +139,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
                   {/* The decision log line (spec §5.1) — data, not decoration. */}
                   {item.because ? (
                     <p className="border-l-2 border-border pl-2.5 text-xs text-muted-foreground">
-                      <span className="font-medium text-muted-foreground/80">
+                      <span className="font-medium text-muted-foreground">
                         {s.whyLabel}:
                       </span>{" "}
                       {item.because}

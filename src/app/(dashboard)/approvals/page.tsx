@@ -1,5 +1,6 @@
 import { ActivityEvent } from "@/components/gradia/activity-event"
 import { ApprovalsList } from "@/components/gradia/approvals-list"
+import { SectionHeader } from "@/components/gradia/section-header"
 import {
   listOpenApprovalsForCurrentShop,
   listRecentAgentActivity,
@@ -18,29 +19,30 @@ export default async function ApprovalsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-10">
-      <header className="space-y-2">
-        <p className="label-eyebrow text-muted-foreground/70">
-          {STRINGS.pages.approvals.eyebrow}
-        </p>
-        <h1 className="font-display text-2xl text-foreground">
-          {items.length === 0
+      <SectionHeader
+        level={1}
+        eyebrow={STRINGS.pages.approvals.eyebrow}
+        title={
+          items.length === 0
             ? `${STRINGS.pages.approvals.titleAllClear}.`
-            : `${STRINGS.pages.approvals.titleWaiting}.`}
-        </h1>
-        <p className="max-w-prose text-sm text-muted-foreground">
-          {items.length === 0
+            : `${STRINGS.pages.approvals.titleWaiting}.`
+        }
+        subhead={
+          items.length === 0
             ? STRINGS.pages.approvals.subtitleEmpty
-            : STRINGS.pages.approvals.subtitleWaiting(pendingCount, editCount)}
-        </p>
-      </header>
+            : STRINGS.pages.approvals.subtitleWaiting(pendingCount, editCount)
+        }
+      />
 
       <ApprovalsList items={items} />
 
       {activity.length > 0 ? (
         <section className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground/70">
-            {STRINGS.chrome.handledByReceptionist}
-          </p>
+          <SectionHeader
+            eyebrow={STRINGS.chrome.handledByReceptionist}
+            title="Already handled"
+            subhead="These are logged events from this shop, not a second approval queue."
+          />
           <div className="space-y-2">
             {activity.map((a) => (
               <ActivityEvent key={a.id} item={a} />
