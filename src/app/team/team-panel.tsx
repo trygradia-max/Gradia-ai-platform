@@ -43,8 +43,9 @@ export type TeamData = {
     created_at: string
   }[]
 }
-const field = "block w-full rounded-md border bg-background px-3 py-2 text-sm"
-const box = "space-y-4 rounded-xl border bg-card p-5"
+const field =
+  "block min-h-11 w-full rounded-sm border border-border-control bg-background px-3 py-2 text-sm"
+const box = "space-y-4 rounded-md bg-card p-5 ring-1 ring-border"
 const value = (data: FormData, name: string) => String(data.get(name) ?? "")
 
 function ActionForm({
@@ -77,7 +78,7 @@ function ActionForm({
       <fieldset disabled={pending} className="space-y-3">
         {children}
         <button
-          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+          className="inline-flex min-h-11 items-center rounded-sm bg-primary px-4 text-sm text-primary-foreground disabled:opacity-50"
           type="submit"
         >
           {pending ? "Saving…" : label}
@@ -171,16 +172,17 @@ export function TeamPanel({
         "Assigned job")
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold">{workspace.name}</h1>
-        <p className="text-muted-foreground">
+      <header className="space-y-2">
+        <p className="label-eyebrow text-muted-foreground">Team</p>
+        <h1 className="font-display text-2xl text-foreground">{workspace.name}</h1>
+        <p className="text-sm text-muted-foreground">
           {owner
             ? "Your team and assigned work"
             : `${workspace.role === "manager" ? "Manager" : "Staff"} workspace`}{" "}
           · One shop location
         </p>
         {owner && (
-          <Link className="text-sm underline" href="/dashboard">
+          <Link className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline" href="/dashboard">
             Back to dashboard
           </Link>
         )}

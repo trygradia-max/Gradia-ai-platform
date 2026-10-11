@@ -26,15 +26,15 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `/customers/quotes/new` | `src/app/(dashboard)/customers/quotes/new/page.tsx` | Header only this slice. Loading: `customers/quotes/new/loading.tsx`. | updated |
 | `/customers/recovery` | `src/app/(dashboard)/customers/recovery/page.tsx` | Feature-flagged; else `/dashboard`. Loading: `customers/recovery/loading.tsx`. | pending |
 | `/calendar` | `src/app/(dashboard)/calendar/page.tsx` | Loading: `calendar/loading.tsx`. | pending |
-| `/receptionist` | `src/app/(dashboard)/receptionist/page.tsx` | Loading: `receptionist/loading.tsx`. | pending |
+| `/receptionist` | `src/app/(dashboard)/receptionist/page.tsx` | Loading: `receptionist/loading.tsx`. | updated |
 | `/receptionist/build` | `src/app/(dashboard)/receptionist/build/page.tsx` | Feature-flagged; else `/agents`. Loading: `receptionist/build/loading.tsx`. | pending |
-| `/settings` | `src/app/(dashboard)/settings/page.tsx` | Loading: `settings/loading.tsx`. | pending |
-| `/billing` | `src/app/billing/page.tsx` | Layout-only later; no price/plan changes. | pending |
-| `/control-center` | `src/app/control-center/page.tsx` | Loading/error siblings. | pending |
+| `/settings` | `src/app/(dashboard)/settings/page.tsx` | Loading: `settings/loading.tsx`. | updated |
+| `/billing` | `src/app/billing/page.tsx` | Layout-only; no price/plan changes. | updated |
+| `/control-center` | `src/app/control-center/page.tsx` | Loading/error siblings. | updated |
 | `/calls/[callId]` | `src/app/(dashboard)/calls/[callId]/page.tsx` | Loading: `calls/[callId]/loading.tsx`. | pending |
-| `/team` | `src/app/team/page.tsx` | Own chrome, not AppShell. Loading/error siblings. | pending |
+| `/team` | `src/app/team/page.tsx` | Own chrome, not AppShell. Loading/error siblings. | updated |
 | `/team/approvals` | `src/app/team/approvals/page.tsx` | Delegated message approve/reject. | updated |
-| `/team/delivery-reviews` | `src/app/team/delivery-reviews/page.tsx` | Delegated delivery review. | pending |
+| `/team/delivery-reviews` | `src/app/team/delivery-reviews/page.tsx` | Delegated delivery review. | updated |
 | `/intake` | `src/app/intake/page.tsx` | Unresolved identity review. | pending |
 | `/intake/[workflowId]` | `src/app/intake/[workflowId]/page.tsx` | Intake history. | pending |
 | `/q/[token]` | `src/app/q/[token]/page.tsx` | Public quote. `not-found.tsx`. | pending |
@@ -65,10 +65,10 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `src/app/conversations/layout.tsx` | Flush `AppShell`. | updated |
 | `src/app/conversations/loading.tsx` | “Loading conversations”. | updated |
 | `src/app/conversations/error.tsx` | List/thread error card. | updated |
-| `src/app/control-center/loading.tsx` | Control Center loading. | pending |
-| `src/app/control-center/error.tsx` | Control Center error. | pending |
-| `src/app/team/loading.tsx` | Team loading. | pending |
-| `src/app/team/error.tsx` | Team error. | pending |
+| `src/app/control-center/loading.tsx` | Control Center loading. | updated |
+| `src/app/control-center/error.tsx` | Control Center error. | updated |
+| `src/app/team/loading.tsx` | Team loading. | updated |
+| `src/app/team/error.tsx` | Team error. | updated |
 | `src/app/q/[token]/not-found.tsx` | Public quote 404. | pending |
 | `src/app/auth/callback/route.ts` | Auth code exchange. | pending |
 
@@ -115,4 +115,6 @@ Conversations / Customers) is marked below. Remaining inventory stays
 
 1. Home, Conversations, Customers (tokens + shared wrappers).
 2. Approvals, Activity, and delegated `/team/approvals` (ReviewCard +
-   honest page-local activity filters). Remaining inventory stays pending.
+   honest page-local activity filters).
+3. Team, delivery reviews, Settings, Control Center, receptionist, and
+   billing layout-only. Remaining inventory stays pending.

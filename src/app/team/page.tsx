@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { TeamChrome } from "@/components/gradia/team-chrome"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -82,32 +83,36 @@ export default async function TeamPage({
         {workspaces.map((w) => (
           <Link
             key={w.id}
-            className="text-sm underline"
+            className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline"
             href={`/team?shop=${w.id}`}
           >
             {w.name} ({w.role})
           </Link>
         ))}
       </nav>
-      {workspace ? <Link className="underline" href={`/conversations?shop=${workspace.id}`}>Open Whisper conversations</Link> : null}
+      {workspace ? <Link className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline" href={`/conversations?shop=${workspace.id}`}>Open Whisper conversations</Link> : null}
       {workspace && team ? (
         <TeamPanel key={workspace.id} workspace={workspace} data={team} />
       ) : (
-        <div>
-          <h1 className="text-2xl font-semibold">Your team</h1>
-          <p>
-            {shop
-              ? "This shop is not available to your account."
-              : "No active shop membership yet. Accept an invitation below, or create your own shop."}
-          </p>
-          <Link href="/onboarding?new=1" className="underline">
+        <div className="space-y-3">
+          <SectionHeader
+            level={1}
+            eyebrow="Team"
+            title="Your team"
+            subhead={
+              shop
+                ? "This shop is not available to your account."
+                : "No active shop membership yet. Accept an invitation below, or create your own shop."
+            }
+          />
+          <Link href="/onboarding?new=1" className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline">
             Set up your own shop
           </Link>
         </div>
       )}
-      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))) ? <Link href={`/intake?shop=${workspace.id}`} className="block underline">Review unresolved intake</Link> : null}
-      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("delivery.reconcile"))) ? <Link href={`/team/delivery-reviews?shop=${workspace.id}`} className="block underline">Review held message delivery</Link> : null}
-      {workspace && workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("approvals.messages") ? <Link href={`/team/approvals?shop=${workspace.id}`} className="block underline">Approve queued messages</Link> : null}
+      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))) ? <Link href={`/intake?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Review unresolved intake</Link> : null}
+      {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("delivery.reconcile"))) ? <Link href={`/team/delivery-reviews?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Review held message delivery</Link> : null}
+      {workspace && workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("approvals.messages") ? <Link href={`/team/approvals?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Approve queued messages</Link> : null}
       <AcceptInvitation />
     </TeamChrome>
   )
