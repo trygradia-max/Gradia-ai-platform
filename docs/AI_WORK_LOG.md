@@ -742,3 +742,33 @@ PR #61's remote checks exposed a prefer-const lint failure for the body deadline
 timer despite the prior local lint result. Changed the single-assignment timer to
 const; targeted lint and the 34 public-form unit tests pass. Pushed the correction
 for fresh CI. No runtime contract or other agent checkout changed.
+
+
+[AI: claude-code] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Fixed the activity feed reporting unconfirmed work as done, on
+`fix/unresolved-delivery-visibility`. Reproduced on the Cursor preview fixture
+(read-only): a `send_sms` action with status approved, no result and no claim was
+shown on Home as "Texted a customer — Handled". `src/lib/data/activity.ts` now
+derives each action's outcome from `result_id` and the consumed sending claim, with
+a new `unresolved` outcome titled "… — delivery not confirmed" that links to the
+action's approval record. A failed claim lookup leaves messages unresolved. The
+Approvals "completed agent actions" list applies the same rule. `activity-feed.tsx`
+gained the "Not confirmed" pill and no longer falls back to "Handled" for an
+outcome it does not recognise; `strings.ts` gained two labels.
+
+Investigated the Jordan email thread that rendered "unavailable". The read is
+correct for owner and manager and renders on every repeat load. The preview gateway
+logged one `502` on that read during the acceptance session; the page presents any
+failed read as an access problem. No code change for this: the thread page is being
+rewritten in the open UI PR. Finding and suggested wording are in
+`docs/architecture/WHISPER_INBOX.md`.
+
+Shared contract changes Cursor should know: `ActivityOutcome` has a fourth value,
+`unresolved`; `STRINGS.pages.activity` gained `outcome.unresolved` and
+`reviewResult`; `activity-feed.tsx` changed in the pill and link label only.
+
+Node 22.23.2 isolated runner: 1,348 unit passes with four existing live skips
+(22 new); lint, offline production build and post-build typecheck passed. No
+migration, RPC or executor change, so the database integration suite was not rerun.
+Not viewed in a browser. The preview database was only read, inside read-only
+transactions and through its own sign-in helper; nothing was written or reset.

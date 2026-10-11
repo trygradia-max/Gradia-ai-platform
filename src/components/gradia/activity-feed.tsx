@@ -14,8 +14,8 @@ import {
 } from "lucide-react"
 
 import { EmptyState } from "@/components/gradia/empty-state"
-import { StatusPill } from "@/components/ui/status-pill"
-import type { ActivityFeedItem } from "@/lib/data/activity"
+import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
+import type { ActivityFeedItem, ActivityOutcome } from "@/lib/data/activity"
 import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 
@@ -43,6 +43,19 @@ function itemIcon(item: ActivityFeedItem) {
 }
 
 type Filter = "all" | "handled"
+
+const OUTCOME_TONE: Record<ActivityOutcome, StatusPillTone> = {
+  handled: "good",
+  "needs-you": "warn",
+  dropped: "muted",
+  unresolved: "bad",
+}
+const OUTCOME_LABEL: Record<ActivityOutcome, string> = {
+  handled: STRINGS.pages.activity.outcome.handled,
+  "needs-you": STRINGS.pages.activity.outcome.needsYou,
+  dropped: STRINGS.pages.activity.outcome.dropped,
+  unresolved: STRINGS.pages.activity.outcome.unresolved,
+}
 
 /**
  * The glass box (spec §5.1): reverse-chron feed of what the agent did.
@@ -138,26 +151,21 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
                   ) : null}
                   <div className="flex items-center gap-2 pt-0.5">
                     <StatusPill
-                      tone={
-                        item.outcome === "needs-you"
-                          ? "warn"
-                          : item.outcome === "dropped"
-                            ? "muted"
-                            : "good"
-                      }
+                      tone={OUTCOME_TONE[item.outcome] ?? "bad"}
                     >
-                      {item.outcome === "needs-you"
-                        ? s.outcome.needsYou
-                        : item.outcome === "dropped"
-                          ? s.outcome.dropped
-                          : s.outcome.handled}
+                      {/* An outcome this build does not know is never shown as handled. */}
+                      {OUTCOME_LABEL[item.outcome] ?? s.outcome.unresolved}
                     </StatusPill>
                     {item.href ? (
                       <Link
                         href={item.href}
                         className="inline-flex items-center gap-1 text-xs font-medium text-accent-text hover:underline"
                       >
-                        {item.kind === "call" ? s.viewCall : s.filters.needsReview}
+                        {item.kind === "call"
+                          ? s.viewCall
+                          : item.outcome === "unresolved"
+                            ? s.reviewResult
+                            : s.filters.needsReview}
                         <ArrowRight className="size-3" aria-hidden />
                       </Link>
                     ) : null}
