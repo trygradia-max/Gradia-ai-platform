@@ -53,7 +53,7 @@ function StepShell({
         <p className="text-sm text-muted-foreground">{blurb}</p>
       </div>
       {children}
-      <div className="flex items-center justify-between gap-3 border-t border-border/40 pt-4">
+      <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border pt-4">
         {footer}
       </div>
     </div>
@@ -66,7 +66,7 @@ function LaterButton({ onClick }: { onClick: () => void }) {
       type="button"
       variant="ghost"
       onClick={onClick}
-      className="text-muted-foreground hover:text-foreground"
+      className="min-h-11 text-muted-foreground hover:text-foreground"
     >
       Do this later
     </Button>
@@ -86,6 +86,7 @@ export function HoursStep({
 }) {
   const [hours, setHours] = React.useState<WorkingHours>(initialHours)
   const [saving, setSaving] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
 
   function setDay(
     day: (typeof WEEKDAYS)[number],
@@ -106,9 +107,11 @@ export function HoursStep({
 
   async function saveAndContinue() {
     setSaving(true)
+    setError(null)
     const result = await saveWorkingHours(hours)
     setSaving(false)
     if (!result.ok) {
+      setError(result.error)
       toast.error(result.error)
       return
     }
@@ -121,14 +124,14 @@ export function HoursStep({
       blurb="When we're open — the calendar warns about overbooking on these days, and the receptionist only proposes times inside these hours."
       footer={
         <>
-          <Button type="button" variant="ghost" onClick={onBack}>
+          <Button type="button" variant="ghost" className="min-h-11" onClick={onBack}>
             Back
           </Button>
           <Button
             type="button"
             onClick={saveAndContinue}
             disabled={saving}
-            className="gap-2"
+            className="min-h-11 gap-2"
           >
             {saving ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
             Continue
@@ -140,11 +143,11 @@ export function HoursStep({
         {WEEKDAYS.map((day) => {
           const h = hours[day]
           return (
-            <div key={day} className="flex items-center gap-3">
+            <div key={day} className="flex min-h-11 flex-wrap items-center gap-3">
               <span className="w-24 shrink-0 text-sm text-muted-foreground">
                 {WEEKDAY_LABELS[day]}
               </span>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <label className="flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={h === null}
@@ -176,6 +179,11 @@ export function HoursStep({
           )
         })}
       </div>
+      {error ? (
+        <p role="alert" className="text-sm text-status-danger-fg">
+          {error}
+        </p>
+      ) : null}
     </StepShell>
   )
 }
@@ -201,12 +209,12 @@ export function InboxStep({
       blurb="One button. Inbound emails get drafted replies waiting on your yes, and your calendar comes with it for bookings."
       footer={
         <>
-          <Button type="button" variant="ghost" onClick={onBack}>
+          <Button type="button" variant="ghost" className="min-h-11" onClick={onBack}>
             Back
           </Button>
           <div className="flex items-center gap-2">
             {!connected ? <LaterButton onClick={onContinue} /> : null}
-            <Button type="button" onClick={onContinue} disabled={!connected}>
+            <Button type="button" className="min-h-11" onClick={onContinue} disabled={!connected}>
               Continue
             </Button>
           </div>
@@ -219,7 +227,7 @@ export function InboxStep({
             <BadgeCheck className="size-4" aria-hidden />
           </div>
           <div className="min-w-0">
-            <p className="label-eyebrow text-muted-foreground/70">
+            <p className="label-eyebrow text-muted-foreground">
               {STRINGS.connections.connected}
             </p>
             <p className="truncate text-sm text-foreground">
@@ -231,7 +239,7 @@ export function InboxStep({
         <div className="flex items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 px-6 py-10">
           <a
             href="/api/aurinko/auth/start?next=/onboarding?step=5"
-            className={cn(buttonVariants({ size: "lg" }), "gap-2")}
+            className={cn(buttonVariants({ size: "lg" }), "min-h-11 gap-2")}
           >
             <Mail className="size-4" aria-hidden />
             Connect Gmail
@@ -267,12 +275,12 @@ export function NumberStep({
       blurb="A business line customers call and text. Carriers verify every business that texts — two minutes now, 1–3 days for their approval. Calls work right away."
       footer={
         <>
-          <Button type="button" variant="ghost" onClick={onBack}>
+          <Button type="button" variant="ghost" className="min-h-11" onClick={onBack}>
             Back
           </Button>
           <div className="flex items-center gap-2">
             {!hasNumber ? <LaterButton onClick={onContinue} /> : null}
-            <Button type="button" onClick={onContinue} disabled={!hasNumber}>
+            <Button type="button" className="min-h-11" onClick={onContinue} disabled={!hasNumber}>
               Continue
             </Button>
           </div>
@@ -285,7 +293,7 @@ export function NumberStep({
             <Phone className="size-4" aria-hidden />
           </div>
           <div className="min-w-0">
-            <p className="label-eyebrow text-muted-foreground/70">Your business number</p>
+            <p className="label-eyebrow text-muted-foreground">Your business number</p>
             <p className="text-sm tabular-nums text-foreground">
               {shop.twilio_phone_number}
             </p>
@@ -295,7 +303,7 @@ export function NumberStep({
         <TwilioNumberPicker onCancel={() => setPicking(false)} />
       ) : (
         <div className="flex items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 px-6 py-10">
-          <Button type="button" size="lg" className="gap-2" onClick={() => setPicking(true)}>
+          <Button type="button" size="lg" className="min-h-11 gap-2" onClick={() => setPicking(true)}>
             <Phone className="size-4" aria-hidden />
             Pick a number
           </Button>
@@ -325,13 +333,16 @@ export function ReceptionistStep({
 }) {
   const router = useRouter()
   const [finishing, setFinishing] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
 
   async function finish() {
     if (finishing) return
     setFinishing(true)
+    setError(null)
     const result = await completeOnboarding()
     setFinishing(false)
     if (!result.ok) {
+      setError(result.error)
       toast.error(result.error)
       return
     }
@@ -348,14 +359,14 @@ export function ReceptionistStep({
       }
       footer={
         <>
-          <Button type="button" variant="ghost" onClick={onBack}>
+          <Button type="button" variant="ghost" className="min-h-11" onClick={onBack}>
             Back
           </Button>
           <div className="flex items-center gap-2">
             {!shop.voice_live ? (
               <LaterButton onClick={finish} />
             ) : null}
-            <Button type="button" onClick={finish} disabled={finishing} className="gap-2">
+            <Button type="button" onClick={finish} disabled={finishing} className="min-h-11 gap-2">
               {finishing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
               {shop.voice_live ? "Open the dashboard" : "Finish setup"}
             </Button>
@@ -379,11 +390,16 @@ export function ReceptionistStep({
             proposes bookings — business number and ~20 answered calls
             included.
           </p>
-          <Link href="/billing" className={cn(buttonVariants(), "mt-1")}>
+          <Link href="/billing" className={cn(buttonVariants(), "mt-1 min-h-11")}>
             Add it in Billing
           </Link>
         </div>
       )}
+      {error ? (
+        <p role="alert" className="text-sm text-status-danger-fg">
+          {error}
+        </p>
+      ) : null}
     </StepShell>
   )
 }

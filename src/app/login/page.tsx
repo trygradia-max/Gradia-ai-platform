@@ -47,7 +47,7 @@ export default function LoginPage() {
 
       <Link
         href="/how-it-works"
-        className="group relative inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="group relative inline-flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         New here? See how Gradia works
         <ArrowRight
