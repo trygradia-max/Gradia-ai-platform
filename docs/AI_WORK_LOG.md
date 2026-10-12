@@ -757,6 +757,15 @@ Owner queue keeps Send / Tweak / Drop at equal weight and the same
 actions. Delegated `/team/approvals` uses ReviewCard with approve-and-send
 as the one filled primary and reject as outline. Activity chips say they
 filter the loaded page only. No server actions, RPCs, or query changes.
+
+[AI: cursor] [DATE: 2026-10-10] [AREA: platform] [STATUS: review]
+Team and Settings presentation on `codex/cursor-ui-settings`. Team workspace
+selector, member/grant forms, assigned list, and delivery-review evidence use
+the shared tokens and wrappers. Settings, Control Center, and receptionist
+use SectionHeader / StatusPill / skip; billing is layout-only with the same
+$20 / +$29 copy. Owner + manager spot-check on 3128/3127. Touched tests 44
+passed. No server actions, RPCs, migrations, or query changes. vercel.json
+deployment stays disabled. Codex 3109/3110 left alone.
 [AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
 Prepared the founder-requested UI/component handoff for Cursor, with a charcoal,
 silver and violet semantic palette, source links to 21st.dev/shadcn/Base UI/Origin

@@ -228,3 +228,25 @@ a solid `#A78BFA` ring (6.88:1).
 Jordan Lee email `read_whisper_thread` still shows the unavailable card.
 List row is present. Not a presentation-only gap; no backend contract was
 invented.
+
+## 2026-10-10 Team / Settings presentation
+
+Branch: `codex/cursor-ui-settings`. Same disposable preview (3128 / 3127).
+Owner then manager spot-check. Nothing submitted. Billing copy still
+`$20` / `+$29`.
+
+| Surface | Result |
+| --- | --- |
+| Team (owner) | Skip link first. Workspace selector. Member/grant forms, assignments, delivery/intake links. |
+| Team (manager) | Skip link. Manager workspace, assignments only. No owner membership editor. |
+| `/team/approvals` (manager) | Honest “not been delegated” card. Same grant gate. |
+| Delivery reviews (owner) | SectionHeader + empty “No held messages on this page.” |
+| Settings | Control Center card, Channels/Your business without `/70`. |
+| Control Center | Skip + StatusPill + 44px Save draft / Activate. |
+| Receptionist | Shared SectionHeader. Compact Ask Gradia 44px. |
+| Billing | Layout only. Prices unchanged. |
+
+320 and 960 CSS px: Settings, Team, Receptionist had `scrollWidth === clientWidth`.
+`browser_take_screenshot` timed out; verification is a11y snapshots + measured
+overflow. Live `team-panel` client bundle stayed on the previous button classes
+until the 3127 HMR cache is cleared; source already uses `min-h-11`.

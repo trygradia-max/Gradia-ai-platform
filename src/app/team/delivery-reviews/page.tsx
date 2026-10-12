@@ -1,7 +1,13 @@
 import Link from "next/link"
 import { z } from "zod"
+import { EmptyState } from "@/components/gradia/empty-state"
+import { ErrorState } from "@/components/gradia/error-state"
+import { Pagination } from "@/components/gradia/pagination"
+import { ReviewCard } from "@/components/gradia/review-card"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { TeamChrome } from "@/components/gradia/team-chrome"
 import { DeliveryReconciliationHistory } from "@/components/gradia/delivery-reconciliation-history"
+import { StatusPill } from "@/components/ui/status-pill"
 import { deliveryHoldsSchema, deliveryOutcomes } from "@/lib/delivery-reconciliation"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -9,6 +15,8 @@ import type { TeamWorkspace } from "@/lib/team-permissions"
 
 export const dynamic = "force-dynamic"
 const channels: Record<string, string> = { send_sms: "Text message", send_email: "Email" }
+const backLink =
+  "inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline"
 
 /** Delegated delivery review. Selectors in the address are never authorization;
  *  every read and write rechecks live membership and the explicit grant in SQL. */
@@ -30,9 +38,13 @@ export default async function DeliveryReviewsPage({
   if (!workspace)
     return (
       <TeamChrome className="space-y-4">
-        <h1 className="text-2xl font-semibold">Delivery reviews</h1>
-        <p>Delivery review for this shop has not been delegated to your account.</p>
-        <Link href="/team" className="underline">Back to your workspaces</Link>
+        <SectionHeader
+          level={1}
+          eyebrow="Delivery evidence"
+          title="Delivery reviews"
+          subhead="Delivery review for this shop has not been delegated to your account."
+        />
+        <Link href="/team" className={backLink}>Back to your workspaces</Link>
       </TeamChrome>
     )
   const base = `/team/delivery-reviews?shop=${workspace.id}`
@@ -40,8 +52,13 @@ export default async function DeliveryReviewsPage({
   if (params.action !== undefined) {
     return (
       <TeamChrome className="space-y-6">
-        <Link href={base} className="underline">Held messages</Link>
-        <h1 className="text-2xl font-semibold">{workspace.name} · Delivery review</h1>
+        <Link href={base} className={backLink}>Held messages</Link>
+        <SectionHeader
+          level={1}
+          eyebrow="Delivery evidence"
+          title={`${workspace.name} · Delivery review`}
+          subhead="A review records what you checked. It never resends, releases the message or clears the hold."
+        />
         {actionId.success ? (
           <DeliveryReconciliationHistory
             db={db}
@@ -51,7 +68,7 @@ export default async function DeliveryReviewsPage({
             pageHref={(offset) => `${base}&action=${actionId.data}&reviewOffset=${offset}`}
           />
         ) : (
-          <p role="alert">This delivery review link is not valid. Return to the held messages.</p>
+          <ErrorState compact title="This delivery review link is not valid. Return to the held messages." />
         )}
       </TeamChrome>
     )
@@ -62,41 +79,61 @@ export default async function DeliveryReviewsPage({
   const holds = result.error ? null : deliveryHoldsSchema.safeParse(result.data)
   return (
     <TeamChrome className="space-y-6">
-      <Link href={`/team?shop=${workspace.id}`} className="underline">Your workspaces</Link>
-      <h1 className="text-2xl font-semibold">{workspace.name} · Held messages</h1>
-      <p>
-        These messages were claimed for sending and their outcome is not confirmed. A review records what you
-        checked. It never resends, releases the message or clears the hold.
-      </p>
+      <Link href={`/team?shop=${workspace.id}`} className={backLink}>Your workspaces</Link>
+      <SectionHeader
+        level={1}
+        eyebrow="Delivery evidence"
+        title={`${workspace.name} · Held messages`}
+        subhead="These messages were claimed for sending and their outcome is not confirmed. A review records what you checked. It never resends, releases the message or clears the hold."
+      />
       {!holds?.success ? (
-        <p role="alert">Held messages could not be loaded. Nothing is assumed to be clear; refresh to try again.</p>
+        <ErrorState compact title="Held messages could not be loaded. Nothing is assumed to be clear; refresh to try again." />
       ) : holds.data.items.length === 0 ? (
-        <p>No held messages on this page.</p>
+        <EmptyState title="No held messages on this page." />
       ) : (
         <ol className="space-y-3">
           {holds.data.items.slice(0, 20).map((hold) => (
-            <li key={hold.action_id} className="space-y-1 rounded border p-3">
-              <p className="font-medium">
-                {(hold.action_type && channels[hold.action_type]) ?? "Message"} · {hold.customer_name ?? "Customer record unavailable"}
-              </p>
-              <p>
-                Claimed {hold.claimed_at} · {hold.completed_at ? `provider accepted ${hold.completed_at}` : "no provider response recorded"}
-              </p>
-              {hold.body ? <p className="whitespace-pre-wrap break-words">{hold.body}</p> : <p>Message content is no longer available.</p>}
-              <p>
-                {hold.latest_outcome
-                  ? `Latest review (${hold.review_revision}): ${deliveryOutcomes[hold.latest_outcome]}`
-                  : "Not reviewed yet"}
-              </p>
-              <Link href={`${base}&action=${hold.action_id}`} className="underline">Review delivery</Link>
+            <li key={hold.action_id}>
+              <ReviewCard
+                eyebrow={(hold.action_type && channels[hold.action_type]) ?? "Message"}
+                title={hold.customer_name ?? "Customer record unavailable"}
+                status={
+                  <StatusPill tone={hold.latest_outcome ? "good" : "warn"}>
+                    {hold.latest_outcome ? "Reviewed" : "Not reviewed yet"}
+                  </StatusPill>
+                }
+                evidence={
+                  <>
+                    <p>
+                      Claimed {hold.claimed_at} · {hold.completed_at ? `provider accepted ${hold.completed_at}` : "no provider response recorded"}
+                    </p>
+                    {hold.body ? (
+                      <p className="whitespace-pre-wrap break-words text-foreground">{hold.body}</p>
+                    ) : (
+                      <p>Message content is no longer available.</p>
+                    )}
+                    {hold.latest_outcome ? (
+                      <p>
+                        Latest review ({hold.review_revision}): {deliveryOutcomes[hold.latest_outcome]}
+                      </p>
+                    ) : null}
+                  </>
+                }
+                actions={
+                  <Link href={`${base}&action=${hold.action_id}`} className={backLink}>
+                    Review delivery
+                  </Link>
+                }
+              />
             </li>
           ))}
         </ol>
       )}
-      <nav aria-label="Held message pages" className="flex gap-4">
-        {page > 1 ? <Link href={`${base}&page=${page - 1}`} className="underline">Previous</Link> : null}
-        {holds?.success && holds.data.items.length > 20 ? <Link href={`${base}&page=${page + 1}`} className="underline">Next</Link> : null}
-      </nav>
+      <Pagination
+        label="Held message pages"
+        previous={page > 1 ? { href: `${base}&page=${page - 1}` } : null}
+        next={holds?.success && holds.data.items.length > 20 ? { href: `${base}&page=${page + 1}` } : null}
+      />
     </TeamChrome>
   )
 }

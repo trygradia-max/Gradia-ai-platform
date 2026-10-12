@@ -6,7 +6,6 @@ import {
   VoiceAddonToggle,
 } from "@/components/gradia/billing-subscribe"
 import { UsageMeters } from "@/components/gradia/usage-meters"
-import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const dynamic = "force-dynamic"
@@ -27,12 +26,12 @@ export default async function BillingPage() {
         </span>
         <Link
           href="/dashboard"
-          className={buttonVariants({ variant: "ghost", size: "sm" })}
+          className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline"
         >
           Back to dashboard
         </Link>
       </div>
-      <Card className="border-border/70">
+      <Card className="ring-1 ring-border">
         <CardHeader className="space-y-1">
           <CardTitle className="font-display text-2xl tracking-tight">
             {active ? "Your Gradia plan" : "Activate Gradia"}
@@ -56,7 +55,7 @@ export default async function BillingPage() {
                 .
               </p>
               <UsageMeters usage={usage} />
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
                 <VoiceAddonToggle active={usage.voiceAddon} />
               </div>
             </>

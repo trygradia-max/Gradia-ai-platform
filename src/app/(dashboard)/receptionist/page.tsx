@@ -12,6 +12,7 @@ import { AgentCard } from "@/components/gradia/agent-card"
 import { AutonomyOffers } from "@/components/gradia/autonomy-offers"
 import { CapabilityRow } from "@/components/gradia/capability-row"
 import { CustomAgentCard } from "@/components/gradia/custom-agent-card"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { buttonVariants } from "@/components/ui/button"
 import { readAutonomy } from "@/lib/autonomy"
 import { FEATURES } from "@/lib/features"
@@ -114,32 +115,27 @@ export default async function AgentsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-2">
-          <p className="label-eyebrow text-muted-foreground/70">
-            {STRINGS.pages.receptionist.eyebrow}
-          </p>
-          <h1 className="font-display text-2xl text-foreground">
-            {STRINGS.pages.receptionist.title}
-          </h1>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            {`${activeCount} of ${agents.length} built-ins live`}
-            {customAgents.length > 0
-              ? ` · ${enabledCustom} of ${customAgents.length} custom on`
-              : ""}
-            . Open a row to tune it, or plan something new from scratch.
-          </p>
-        </div>
-        {FEATURES.workflowBuilder && (
-          <Link
-            href="/receptionist/build"
-            className={cn(buttonVariants({ size: "lg" }), "h-11 gap-2 shrink-0")}
-          >
-            <Wand2 className="size-4" aria-hidden />
-            Build a new agent
-          </Link>
-        )}
-      </header>
+      <SectionHeader
+        level={1}
+        eyebrow={STRINGS.pages.receptionist.eyebrow}
+        title={STRINGS.pages.receptionist.title}
+        subhead={`${activeCount} of ${agents.length} built-ins live${
+          customAgents.length > 0
+            ? ` · ${enabledCustom} of ${customAgents.length} custom on`
+            : ""
+        }. Open a row to tune it, or plan something new from scratch.`}
+        action={
+          FEATURES.workflowBuilder ? (
+            <Link
+              href="/receptionist/build"
+              className={cn(buttonVariants({ size: "lg" }), "h-11 shrink-0 gap-2")}
+            >
+              <Wand2 className="size-4" aria-hidden />
+              Build a new agent
+            </Link>
+          ) : null
+        }
+      />
 
       <AutonomyOffers recommendations={autonomyOffers} />
 

@@ -206,7 +206,7 @@ export default async function SettingsPage({
       />
 
       <div className="space-y-8 pt-2">
-        <Link href="/control-center" className="block rounded-md border p-4">
+        <Link href="/control-center" className="block rounded-md bg-card p-4 ring-1 ring-border">
           <span className="font-medium">Control Center policy drafts</span>
           <span className="mt-1 block text-sm text-muted-foreground">Review and save future operation rules. Drafts do not change active behavior.</span>
         </Link>
@@ -214,7 +214,7 @@ export default async function SettingsPage({
             pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
         <Link
           href="/receptionist"
-          className="group flex items-center gap-4 rounded-2xl border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
+          className="group flex items-center gap-4 rounded-md bg-card px-5 py-4 ring-1 ring-border transition-colors hover:bg-raised"
         >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">
             <Bot className="size-[18px]" aria-hidden />
@@ -234,7 +234,7 @@ export default async function SettingsPage({
         </Link>
 
         <div className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground/70">Channels</p>
+          <p className="label-eyebrow text-muted-foreground">Channels</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <ConnectionTile
               icon={Phone}
@@ -283,7 +283,7 @@ export default async function SettingsPage({
         </div>
 
         <div className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground/70">
+          <p className="label-eyebrow text-muted-foreground">
             Your business
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -328,7 +328,7 @@ export default async function SettingsPage({
       </div>
 
       <details className="pt-10">
-        <summary className="label-eyebrow cursor-pointer select-none text-muted-foreground/70 transition-colors hover:text-foreground">
+        <summary className="label-eyebrow cursor-pointer select-none text-muted-foreground transition-colors hover:text-foreground">
           Manage individual connections
         </summary>
         <SettingsSectionNav sections={sections} />
