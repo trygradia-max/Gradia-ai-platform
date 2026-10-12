@@ -949,3 +949,12 @@ The Activity reconciliation retains both Cursor's toolbar and Claude's unresolve
 outcome rendering. Vercel CLI login has been restored and verified; the Supabase
 project zfxkzciumhrrgfeacwds remains INACTIVE. No deployment or shared migration.
 The next-lane handoff now reflects this remaining blocker.
+
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Finished integrating #64, #65, #66 and #67 with both protected checks green before
+each merge. Latest main is 1cacb18 (merge #67). Each integration check passed all
+424 database tests. The combined application source matches the already-validated
+local production build. No other agent worktree was changed. Preparing the separate
+thread-load error PR from this merged baseline; deployment remains unperformed
+while Supabase is inactive.
