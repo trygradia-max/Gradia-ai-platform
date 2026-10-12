@@ -934,6 +934,45 @@ capability or screen. Contract: "Next question suggestion" in
 
 Isolated runner on Node 24.15.0 (not the usual Node 22): 1,367 unit passes with four
 existing live skips (10 new), lint and typecheck passed. Build and the database
-integration suite were not run: no migration, RPC or route changed. Uncommitted and
-unpushed; not viewed in a browser, since no screen uses it yet.
+integration suite were not run: no migration, RPC or route changed. Committed as b76ca4d; not viewed in a browser, since no screen uses it yet.
 The stale `platform` checkout and every other worktree were left alone.
+[AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Completed the bounded inbox load-error follow-up while integrating #64–#67 in
+separate checkouts. Only SQL permission refusal 42501 renders access guidance;
+other read failures and malformed responses offer a refresh without claiming
+an empty thread or a permission problem. Invalid identifiers still skip the RPC,
+raw error details stay hidden, and failed loads expose no mutation controls.
+Seven new route-level regressions cover these cases; combined unit suite passed
+1,364 tests (four intentional live skips), lint, offline Node 22 production build
+and post-build typecheck. The build caught an accidental extra presentation prop
+on the controls component; it was removed and the build/types passed afterward.
+
+A separate local production-build preview at 3130 uses only the existing disposable
+Cursor database at 58331, with provider egress denied. Browser review confirmed the
+unknown-delivery fixture now reads Not confirmed with its review link; Jordan's
+email thread rendered its message and reply-context hold wording. No action was
+submitted; no fixture/schema reset or other agent checkout change. No browser
+errors were captured on those loads. Added next-lane briefs for Cursor's usable
+qualification review UI and Claude's read-only next-question proposal. These briefs
+have not been sent to either agent. Deployment requested by founder but currently
+blocked by invalid Vercel CLI authorization and inactive Supabase; no production
+migration, write-guard removal, provider activation or deployment was performed.
+
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: in-progress]
+Resumed integration after the founder status request. PRs #64 and #65 were merged;
+#66 passed both required checks and merged as 8b31c47. Retargeted #67 to main and
+pushed its reconciled head for fresh CI; only the append-only work log conflicted.
+The Activity reconciliation retains both Cursor's toolbar and Claude's unresolved
+outcome rendering. Vercel CLI login has been restored and verified; the Supabase
+project zfxkzciumhrrgfeacwds remains INACTIVE. No deployment or shared migration.
+The next-lane handoff now reflects this remaining blocker.
+
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Finished integrating #64, #65, #66 and #67 with both protected checks green before
+each merge. Latest main is 1cacb18 (merge #67). Each integration check passed all
+424 database tests. The combined application source matches the already-validated
+local production build. No other agent worktree was changed. Preparing the separate
+thread-load error PR from this merged baseline; deployment remains unperformed
+while Supabase is inactive.
