@@ -939,3 +939,13 @@ qualification review UI and Claude's read-only next-question proposal. These bri
 have not been sent to either agent. Deployment requested by founder but currently
 blocked by invalid Vercel CLI authorization and inactive Supabase; no production
 migration, write-guard removal, provider activation or deployment was performed.
+
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: in-progress]
+Resumed integration after the founder status request. PRs #64 and #65 were merged;
+#66 passed both required checks and merged as 8b31c47. Retargeted #67 to main and
+pushed its reconciled head for fresh CI; only the append-only work log conflicted.
+The Activity reconciliation retains both Cursor's toolbar and Claude's unresolved
+outcome rendering. Vercel CLI login has been restored and verified; the Supabase
+project zfxkzciumhrrgfeacwds remains INACTIVE. No deployment or shared migration.
+The next-lane handoff now reflects this remaining blocker.

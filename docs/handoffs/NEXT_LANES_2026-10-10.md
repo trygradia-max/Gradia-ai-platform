@@ -61,8 +61,8 @@ external call. Deliver the response contract and exact verification evidence.
 
 Merge reviewed PRs with required checks, preserve unresolved-delivery semantics,
 and distinguish thread read failures from SQL permission refusals. Deployment is
-requested, but the saved Vercel CLI token is invalid and the existing Supabase
-project is inactive at the October 10 inspection. After access is restored,
+requested. Vercel CLI access was restored; the existing Supabase project remains
+inactive at the October 12 inspection. After the database is restored,
 inspect the production migration ledger, guards, environment and recovery plan
 before applying the 93-migration baseline or deploying code that depends on it.
 Do not equate a deployment with provider activation or completed pilot acceptance.
