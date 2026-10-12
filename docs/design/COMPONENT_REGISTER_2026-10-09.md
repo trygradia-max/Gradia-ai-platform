@@ -26,7 +26,7 @@ vs `asChild` APIs.
 | FormField | `src/components/gradia/form-field.tsx` | Thin label + hint + error wrapper over existing Input/Label. Informed by Linear create-team and Attio inline error ([SaaSUI linear](https://www.saasui.design/application/linear), [Attio onboarding](https://www.saasui.design/pattern/onboarding/attio)). Also [Origin UI forms](https://originui.com/) (MIT, browsed, not copied) and [shadcn theming](https://ui.shadcn.com/docs/theming) (MIT). | Original Gradia | Always-visible label; error on the field. |
 | DetailSection | `src/components/gradia/detail-section.tsx` | SectionHeader + quiet card. Cal.com event-type detail and Attio settings blocks. | Original Gradia | Customer identity / pipeline blocks. |
 
-ReviewCard was not extracted. Approvals stay on the later inventory pass.
+ReviewCard was extracted in the Approvals / Activity slice (`src/components/gradia/review-card.tsx`) for delegated message evidence. Owner queue cards stay on `ApprovalsList` / `MotionCard` so equal-weight Send / Tweak / Drop is unchanged.
 
 ## Third-party sources consulted (not installed)
 

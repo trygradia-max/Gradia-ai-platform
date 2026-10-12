@@ -16,9 +16,9 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `/onboarding` | `src/app/onboarding/page.tsx` | First-run wizard; outside dashboard gate. | pending |
 | `/how-it-works` | `src/app/how-it-works/page.tsx` | Help article. | pending |
 | `/dashboard` | `src/app/(dashboard)/dashboard/page.tsx` | Home. Loading: `dashboard/loading.tsx`. | updated |
-| `/approvals` | `src/app/(dashboard)/approvals/page.tsx` | Owner queue. Loading: `approvals/loading.tsx`. | pending |
-| `/approvals/[id]` | `src/app/(dashboard)/approvals/[id]/page.tsx` | Proposal detail. Loading: `approvals/[id]/loading.tsx`. | pending |
-| `/activity` | `src/app/(dashboard)/activity/page.tsx` | Loading: `activity/loading.tsx`. | pending |
+| `/approvals` | `src/app/(dashboard)/approvals/page.tsx` | Owner queue. Loading: `approvals/loading.tsx`. | updated |
+| `/approvals/[id]` | `src/app/(dashboard)/approvals/[id]/page.tsx` | Proposal detail. Loading: `approvals/[id]/loading.tsx`. | updated |
+| `/activity` | `src/app/(dashboard)/activity/page.tsx` | Loading: `activity/loading.tsx`. | updated |
 | `/conversations` | `src/app/conversations/page.tsx` | Whisper list. Layout flush shell; `loading.tsx`, `error.tsx`. | updated |
 | `/conversations/[customerId]` | `src/app/conversations/[customerId]/page.tsx` | Thread. Same layout/loading/error. | updated |
 | `/customers` | `src/app/(dashboard)/customers/page.tsx` | Loading: `customers/loading.tsx`. | updated |
@@ -33,7 +33,7 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `/control-center` | `src/app/control-center/page.tsx` | Loading/error siblings. | pending |
 | `/calls/[callId]` | `src/app/(dashboard)/calls/[callId]/page.tsx` | Loading: `calls/[callId]/loading.tsx`. | pending |
 | `/team` | `src/app/team/page.tsx` | Own chrome, not AppShell. Loading/error siblings. | pending |
-| `/team/approvals` | `src/app/team/approvals/page.tsx` | Delegated message approve/reject. | pending |
+| `/team/approvals` | `src/app/team/approvals/page.tsx` | Delegated message approve/reject. | updated |
 | `/team/delivery-reviews` | `src/app/team/delivery-reviews/page.tsx` | Delegated delivery review. | pending |
 | `/intake` | `src/app/intake/page.tsx` | Unresolved identity review. | pending |
 | `/intake/[workflowId]` | `src/app/intake/[workflowId]/page.tsx` | Intake history. | pending |
@@ -111,7 +111,8 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `/api/vapi/webhook` | `src/app/api/vapi/webhook/route.ts` | pending |
 | `/api/whisper/process` | `src/app/api/whisper/process/route.ts` | pending |
 
-## First reviewable slice (this PR)
+## Reviewable slices
 
-Home (`/dashboard`), Conversations, and Customers after tokens and shared
-components. Remaining inventory stays pending for separate PRs.
+1. Home, Conversations, Customers (tokens + shared wrappers).
+2. Approvals, Activity, and delegated `/team/approvals` (ReviewCard +
+   honest page-local activity filters). Remaining inventory stays pending.

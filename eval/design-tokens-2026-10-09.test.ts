@@ -67,4 +67,11 @@ describe("2026-10-09 token and first-slice locks", () => {
     expect(ratio("#fbbf24", "#181b22")).toBeGreaterThanOrEqual(4.5)
     expect(ratio("#fb7185", "#181b22")).toBeGreaterThanOrEqual(4.5)
   })
+
+  it("activity filters are labelled as this-page display, not a database query", () => {
+    const feed = read("src/components/gradia/activity-feed.tsx")
+    expect(feed).toContain("ListToolbar")
+    expect(feed).toContain("not the whole history")
+    expect(feed).toContain('aria-pressed={filter === f}')
+  })
 })

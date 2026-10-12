@@ -9,6 +9,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { StatusPill } from "@/components/ui/status-pill"
 import type { AgentActivityItem } from "@/lib/data/pending-actions"
 
 /**
@@ -41,23 +42,20 @@ export function ActivityEvent({ item }: { item: AgentActivityItem }) {
     ? `/customers/${item.customerId}`
     : `/approvals/${item.id}`
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border/50 bg-card/30 px-4 py-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+    <div className="flex items-center gap-3 rounded-md bg-card px-4 py-3 ring-1 ring-border">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground">
         <Icon className="size-4" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-foreground">{item.summary}</p>
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Check
-            className="size-3 text-status-success-fg"
-            aria-hidden
-          />
-          Done · {ago(item.at)}
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <StatusPill tone="good">Done</StatusPill>
+          <span>{ago(item.at)}</span>
         </p>
       </div>
       <Link
         href={href}
-        className="shrink-0 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-accent-text underline-offset-4 hover:underline"
       >
         View
       </Link>

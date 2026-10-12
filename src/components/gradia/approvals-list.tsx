@@ -435,7 +435,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
             <Icon className="size-[18px]" aria-hidden />
           </div>
           <div className="min-w-0 space-y-0.5">
-            <p className="label-eyebrow flex items-center gap-1.5 text-muted-foreground/70">
+            <p className="label-eyebrow flex items-center gap-1.5 text-muted-foreground">
               {meta.label}
               <HelpTip
                 label={meta.label}
@@ -457,7 +457,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
       <div className="space-y-3 pl-[52px] sm:pl-[52px]">
         <ActionBody item={item} />
         {availability ? <ConflictWarning availability={availability} /> : null}
-        <p className="text-xs text-muted-foreground/80">
+        <p className="text-xs text-muted-foreground">
           Caught {formatRelative(item.created_at)}
         </p>
       </div>
@@ -472,7 +472,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
             onClick={() => setOverrideOpen((v) => !v)}
             disabled={anyBusy}
             variant="outline"
-            className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:h-10 sm:px-5"
+            className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:px-5"
           >
             <TriangleAlert className="size-4 text-status-warning-fg" aria-hidden />
             {item.action_type === "reschedule_appointment"
@@ -484,7 +484,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
             onClick={() => onDecision(item.id, "approve")}
             disabled={anyBusy}
             variant="outline"
-            className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:h-10 sm:px-5"
+            className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.98] sm:px-5"
           >
             {approveBusy ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -498,7 +498,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
             aria-disabled={anyBusy}
             className={cn(
               buttonVariants({ variant: "outline" }),
-              "h-11 gap-2 sm:h-10"
+              "h-11 gap-2"
             )}
           >
             <Pencil className="size-4" aria-hidden />
@@ -508,7 +508,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
             onClick={() => onDecision(item.id, "reject")}
             disabled={anyBusy}
             variant="outline"
-            className="h-11 gap-2 transition-colors duration-(--duration-fast) hover:text-status-danger-fg sm:h-10"
+            className="h-11 gap-2 transition-colors duration-(--duration-fast) hover:text-status-danger-fg"
           >
             {rejectBusy ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
