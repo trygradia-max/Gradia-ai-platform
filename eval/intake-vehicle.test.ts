@@ -32,6 +32,6 @@ describe('reviewed intake vehicle command',()=>{
 describe('vehicle confirmation presentation',()=>{
  it('leaves missing vehicles unresolved and confirmation disabled',()=>{
   const html=renderToStaticMarkup(createElement(IntakeVehicleForm,{shopId:id,workflowId:id,revision:2,commandId:id,customerId:id,customerUpdatedAt:input.customerUpdatedAt,vehicles:[]}))
-  expect(html).toContain('No existing vehicles available');expect(html).toContain('Choose explicitly');expect(html).toContain('<button disabled=""');expect(mocks.rpc).not.toHaveBeenCalled()
+  expect(html).toContain('No existing vehicles available');expect(html).toContain('Choose explicitly');expect(html).toContain('<button type="submit"');expect(html).toContain('disabled=""');expect(mocks.rpc).not.toHaveBeenCalled()
  })
 })

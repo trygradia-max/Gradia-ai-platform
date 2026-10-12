@@ -24,10 +24,10 @@ import {
   ReceptionistStep,
 } from "@/components/gradia/onboarding-launch-steps"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
+import { FormField } from "@/components/gradia/form-field"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { connectionStatus } from "@/lib/data/connections"
@@ -172,23 +172,33 @@ function StepIndicator({
 }) {
   const steps: Step[] = [1, 2, 3, 4, 5, 6]
   return (
-    <div className="space-y-3.5">
+    <nav
+      className="space-y-3.5"
+      aria-label={`Onboarding progress, step ${current} of 6: ${STEP_LABELS[current]}`}
+    >
       <div className="flex items-center justify-between gap-3">
-        <p className="label-eyebrow text-muted-foreground/70">
+        <p className="label-eyebrow text-muted-foreground">
           Step {current} of 6
         </p>
         <p className="text-xs font-medium tracking-tight text-foreground">
           {STEP_LABELS[current]}
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      <ol className="flex list-none items-center gap-2 p-0">
         {steps.map((id, i) => {
           const isActive = id === current
           const isComplete = id < current
           return (
-            <React.Fragment key={id}>
+            <li
+              key={id}
+              className={cn(
+                "flex items-center gap-2",
+                i < steps.length - 1 ? "min-w-0 flex-1" : "shrink-0"
+              )}
+            >
               <StepDot
                 id={id}
+                label={STEP_LABELS[id]}
                 isActive={isActive}
                 isComplete={isComplete}
                 reduce={reduce}
@@ -199,21 +209,23 @@ function StepIndicator({
                   reduce={reduce}
                 />
               ) : null}
-            </React.Fragment>
+            </li>
           )
         })}
-      </div>
-    </div>
+      </ol>
+    </nav>
   )
 }
 
 function StepDot({
   id,
+  label,
   isActive,
   isComplete,
   reduce,
 }: {
   id: Step
+  label: string
   isActive: boolean
   isComplete: boolean
   reduce: boolean
@@ -231,6 +243,7 @@ function StepDot({
             : "bg-muted/60 text-muted-foreground"
       )}
       aria-current={isActive ? "step" : undefined}
+      aria-label={`${label}${isComplete ? ", complete" : isActive ? ", current" : ""}`}
     >
       {/* Active halo — pulses softly while the operator's on this step. */}
       {isActive && !reduce ? (
@@ -310,10 +323,12 @@ function ShopStep({
 }) {
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({})
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
+    setFieldErrors({})
     const fd = new FormData(e.currentTarget)
     const name = String(fd.get("name") ?? "").trim()
     const location = String(fd.get("location") ?? "").trim() || null
@@ -330,6 +345,7 @@ function ShopStep({
 
     if (!result.ok) {
       setError(result.error)
+      setFieldErrors(result.fieldErrors ?? {})
       return
     }
 
@@ -344,49 +360,60 @@ function ShopStep({
           Just the basics so we can quote, book, and follow up correctly.
         </p>
       </div>
-      <div className="grid gap-2">
-        <Label htmlFor="shop-name">Shop name</Label>
+      <FormField
+        id="shop-name"
+        label="Shop name"
+        hint="Shown on quotes and the receptionist greeting."
+        error={fieldErrors.name?.[0]}
+      >
         <Input
-          id="shop-name"
           name="name"
           required
           maxLength={120}
           defaultValue={shop?.name ?? ""}
           placeholder="North Shore Auto Studio"
           autoComplete="organization"
+          className="h-11"
         />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="shop-location">Location</Label>
+      </FormField>
+      <FormField
+        id="shop-location"
+        label="Location"
+        hint="City, region, or ‘mobile’ is enough."
+        error={fieldErrors.location?.[0]}
+      >
         <Input
-          id="shop-location"
           name="location"
           maxLength={200}
           defaultValue={shop?.location ?? ""}
           placeholder="Boston, MA — or 'Mobile across Greater Boston'"
+          className="h-11"
         />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="shop-phone">Phone</Label>
+      </FormField>
+      <FormField
+        id="shop-phone"
+        label="Phone"
+        error={fieldErrors.phone?.[0]}
+      >
         <Input
-          id="shop-phone"
           name="phone"
           type="tel"
           maxLength={40}
           defaultValue={shop?.phone ?? ""}
           placeholder="+1 (555) 010-2030"
           autoComplete="tel"
+          className="h-11"
         />
-      </div>
+      </FormField>
       {error ? (
-        <p className="text-sm text-destructive" role="alert">
+        <p className="text-sm text-status-danger-fg" role="alert">
           {error}
         </p>
       ) : null}
       <Button
         type="submit"
         disabled={pending}
-        className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
+        className="min-h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
       >
         {pending ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -440,7 +467,7 @@ function ServicesStep({
           type="button"
           variant="outline"
           onClick={onBack}
-          className="h-11 gap-2"
+          className="min-h-11 gap-2"
         >
           <ArrowLeft className="size-4" aria-hidden />
           Back
@@ -448,7 +475,7 @@ function ServicesStep({
         <Button
           type="button"
           onClick={onContinue}
-          className="h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
+          className="min-h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
         >
           Continue
           <ArrowRight className="size-4" aria-hidden />
