@@ -917,3 +917,23 @@ Activity labeling an unconfirmed execution as handled are existing data-path
 issues outside these presentation diffs; they remain open backend follow-ups.
 No full pilot acceptance, shared migration, deployment or provider activation.
 Git deployments remain disabled.
+
+[AI: claude-code] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Added a read-only "next qualification question" suggestion on
+`auto/qualification-next-question` (from main 1cacb18), in the
+`claude-qualification` worktree. `proposeNextQualificationQuestion` in
+`src/lib/lead-qualification.ts` picks the first missing item in a fixed order
+(service, vehicle link, timing, condition, location, constraints, then the
+reviewer's own open question) and returns fixed wording with the record revision it
+was derived from; `loadNextQualificationQuestion` in
+`src/lib/data/lead-qualification.ts` derives it from one `read_lead_qualification`
+call. A record in identity review or no longer current yields no suggestion. Nothing
+is stored, staged as an approval or sent; no model, provider, migration, RPC,
+capability or screen. Contract: "Next question suggestion" in
+`docs/architecture/LEAD_QUALIFICATION.md`.
+
+Isolated runner on Node 24.15.0 (not the usual Node 22): 1,367 unit passes with four
+existing live skips (10 new), lint and typecheck passed. Build and the database
+integration suite were not run: no migration, RPC or route changed. Uncommitted and
+unpushed; not viewed in a browser, since no screen uses it yet.
+The stale `platform` checkout and every other worktree were left alone.

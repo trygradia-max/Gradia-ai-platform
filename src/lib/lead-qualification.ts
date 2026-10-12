@@ -140,3 +140,46 @@ export function unknownQualificationFields(): QualificationFields {
     constraints: { ...base, items: [] },
   }
 }
+
+/** The order missing information is asked for. One question at a time. */
+const QUESTION_ORDER = ["service", "vehicle", "timing", "vehicle_condition", "location", "constraints"] as const
+export type QualificationQuestionTarget = (typeof QUESTION_ORDER)[number]
+/** Fixed wording. No model writes it, and it names no service, price or time the shop has not set. */
+const QUESTION_TEXT: Record<QualificationQuestionTarget, string> = {
+  service: "Which service are you interested in?",
+  vehicle: "What vehicle is this for? Year, make and model, please.",
+  timing: "When would you like to bring it in?",
+  vehicle_condition: "How would you describe the vehicle's current condition?",
+  location: "Will you be bringing the vehicle to the shop?",
+  constraints: "Is there anything we should plan around, such as a deadline or access to the vehicle?",
+}
+
+/**
+ * A suggestion for a reviewer to read, edit or ignore. It is not a message, a
+ * draft or an approval: nothing is stored, staged or sent, and `delivery` is
+ * always `none`. `basis` is the record the suggestion was derived from; a
+ * screen must discard it once the record's revision or evidence moves on.
+ */
+export type NextQualificationQuestion =
+  | {
+      kind: "question"; delivery: "none"; text: string
+      basis: { workflow_id: string; revision: number; evidence_revision: number | null }
+    } & ({ target: QualificationQuestionTarget; question_id: null } | { target: "open_question"; question_id: string })
+  | { kind: "none"; reason: "identity_review_required" | "needs_review" | "complete" }
+
+/**
+ * Picks the next thing to ask from what the record says is missing. Pure and
+ * deterministic. A record that is in identity review or no longer current
+ * yields no question: its answers must be re-reviewed before they drive one.
+ * An open question the reviewer wrote is offered verbatim, after the fields.
+ */
+export function proposeNextQualificationQuestion(q: LeadQualification): NextQualificationQuestion {
+  if (q.identity.state !== "identity_linked" || q.identity.customer_id === null) return { kind: "none", reason: "identity_review_required" }
+  if (q.review_state === "needs_review" || q.review_reasons.length > 0) return { kind: "none", reason: "needs_review" }
+  const basis = { workflow_id: q.workflow_id, revision: q.revision, evidence_revision: q.identity.evidence_revision }
+  const target = QUESTION_ORDER.find((t) => (t === "vehicle" ? q.identity.vehicle_status !== "confirmed" : q.fields[t].status === "unknown"))
+  if (target) return { kind: "question", delivery: "none", target, question_id: null, text: QUESTION_TEXT[target], basis }
+  const open = q.open_questions.find((item) => item.status === "open")
+  if (open) return { kind: "question", delivery: "none", target: "open_question", question_id: open.id, text: open.text, basis }
+  return { kind: "none", reason: "complete" }
+}
