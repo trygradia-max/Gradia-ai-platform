@@ -945,6 +945,24 @@ issues outside these presentation diffs; they remain open backend follow-ups.
 No full pilot acceptance, shared migration, deployment or provider activation.
 Git deployments remain disabled.
 
+[AI: claude-code] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Added a read-only "next qualification question" suggestion on
+`auto/qualification-next-question` (from main 1cacb18), in the
+`claude-qualification` worktree. `proposeNextQualificationQuestion` in
+`src/lib/lead-qualification.ts` picks the first missing item in a fixed order
+(service, vehicle link, timing, condition, location, constraints, then the
+reviewer's own open question) and returns fixed wording with the record revision it
+was derived from; `loadNextQualificationQuestion` in
+`src/lib/data/lead-qualification.ts` derives it from one `read_lead_qualification`
+call. A record in identity review or no longer current yields no suggestion. Nothing
+is stored, staged as an approval or sent; no model, provider, migration, RPC,
+capability or screen. Contract: "Next question suggestion" in
+`docs/architecture/LEAD_QUALIFICATION.md`.
+
+Isolated runner on Node 24.15.0 (not the usual Node 22): 1,367 unit passes with four
+existing live skips (10 new), lint and typecheck passed. Build and the database
+integration suite were not run: no migration, RPC or route changed. Committed as b76ca4d; not viewed in a browser, since no screen uses it yet.
+The stale `platform` checkout and every other worktree were left alone.
 [AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
 Completed the bounded inbox load-error follow-up while integrating #64–#67 in
 separate checkouts. Only SQL permission refusal 42501 renders access guidance;
@@ -985,3 +1003,18 @@ each merge. Latest main is 1cacb18 (merge #67). Each integration check passed al
 local production build. No other agent worktree was changed. Preparing the separate
 thread-load error PR from this merged baseline; deployment remains unperformed
 while Supabase is inactive.
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Reviewed Cursor #69 and Claude commit b76ca4d in separate worktrees. Reconciled
+both with current main while preserving append-only work-log entries. #69 merged
+as 711f00c after both required checks passed; its Node 22 unit run passed 1,368
+tests (four live skips). Persisted qualification has existed since #62; Cursor's
+old checkout was missing it. A populated qualification review screen remains
+unimplemented, and the supplied intake browser fixture was empty. Updated #69's
+PR description to correct that dependency and retain the acceptance limitation.
+
+Published Claude's read-only question proposal as #70 on
+codex/qualification-next-question, corrected its stale uncommitted status, and
+verified 1,374 units on Node 22. Both initial CI checks passed. Reconciled the
+branch with merged #69 for a fresh combined CI run before merge. Original agent
+checkouts remain untouched. No migration, provider send or deployment performed.
