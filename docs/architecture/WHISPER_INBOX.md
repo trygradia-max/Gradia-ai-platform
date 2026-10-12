@@ -224,3 +224,52 @@ Fresh initialization: `supabase --workdir .local-tools/record-fresh db reset --l
 `python3 scripts/verify-agent-record-migration.py --fresh`, original tenant/photo
 refusal probes redirected in memory to this same unlinked disposable stack, and
 `git diff --check`. Runtime artifacts and generated credentials stay ignored.
+
+## Unconfirmed execution in the activity feed — October 10, 2026
+
+Home and `/activity` reported any approved action as done: an approved text with no
+execution result read "Texted a customer — Handled". The feed now decides the
+outcome from stored evidence, using the same hold definition as the inbox:
+
+- **Handled** needs a recorded result, and for a message whose sending was claimed,
+  a completed claim.
+- **Not confirmed** (new `unresolved` outcome) covers an approved action with no
+  result, a claim that never completed, a claimed action that was returned to
+  pending or rejected, and any message when the claim lookup itself fails. The row
+  reads "Text to … — delivery not confirmed", never the past tense, and links to
+  that action's approval record, where delivery review lives.
+- An outcome the feed does not recognise is drawn as not confirmed, not as handled.
+
+The "completed agent actions" list on Approvals applies the same rule and omits
+anything unconfirmed. No schema, RPC, executor or send-policy change; the feed only
+reads `result_id` and the existing consumed-claim rows through the owner session.
+
+### The Jordan email thread that rendered "unavailable"
+
+Investigated against the Cursor preview stack, read-only. The thread read is
+correct: for the fixture owner and the CRM-read manager, `read_whisper_thread`
+returns a payload the application schema accepts, and the page renders the message
+on every repeat load. Staff and the revoked member are refused, as designed, and a
+request for Jordan's non-existent SMS thread is refused, as designed.
+
+The preview gateway's log shows 37 successful thread reads and exactly one failure
+that was not a permission refusal: a `502` on `read_whisper_thread` at
+2026-10-10 20:40:45 UTC, during the acceptance session that recorded the card. The
+same local Docker memory pressure produced 502s on the test stack the day before.
+The page treats every failed read the same way and says "Conversation unavailable.
+Check access and refresh", so a transient gateway failure was presented as an
+access problem. It is not a fixture or server defect in the thread read.
+
+Not changed here: the thread page and its presentation component are being
+rewritten in the open UI PR. The honest wording is to keep "unavailable, check
+access" for a permission refusal (`42501`) and say "could not be loaded, refresh"
+for any other failure.
+
+### Thread-load presentation (October 10 follow-up)
+
+The thread page now reserves “Check access” for SQL permission refusal `42501`.
+Other RPC failures and malformed replies show “Conversation could not be loaded.
+Refresh to try again.” The existing refresh link remains available, with no
+automatic retry or mutation controls on a failed read. Raw database/gateway error
+messages are not rendered. Invalid identifiers still skip the thread RPC. This
+changes presentation only; authorization and the thread contract are unchanged.

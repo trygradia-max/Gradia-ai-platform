@@ -98,6 +98,8 @@ export async function listRecentAgentActivity(
     .select("id, action_type, payload, decided_at, created_at")
     .eq("shop_id", shop.id)
     .eq("status", "approved")
+    // An approval without a recorded result is not a completed action.
+    .not("result_id", "is", null)
     .in("payload->>source", ["custom_agent", "custom_agent_event"])
     .order("decided_at", { ascending: false })
     .limit(limit)
@@ -112,7 +114,37 @@ export async function listRecentAgentActivity(
     decided_at: string | null
     created_at: string
   }
-  return ((data as Row[] | null) ?? []).map((r) => ({
+  const rows = (data as Row[] | null) ?? []
+  // A claimed send is only "done" once its claim completed. If the claims
+  // cannot be read, messages are left out instead of being reported as sent.
+  const unconfirmed = new Set<string>()
+  let claimsReadable = true
+  if (rows.length > 0) {
+    const { data: claims, error: claimsError } = await supabase
+      .from("service_proof_consumptions")
+      .select("action_id, completed_at")
+      .eq("shop_id", shop.id)
+      .in(
+        "action_id",
+        rows.map((r) => r.id)
+      )
+    if (claimsError) {
+      claimsReadable = false
+      console.error("[pending-actions] claims query failed:", claimsError)
+    }
+    for (const c of (claims as
+      | { action_id: string; completed_at: string | null }[]
+      | null) ?? []) {
+      if (!c.completed_at) unconfirmed.add(c.action_id)
+    }
+  }
+  const confirmed = rows.filter(
+    (r) =>
+      !unconfirmed.has(r.id) &&
+      (claimsReadable ||
+        (r.action_type !== "send_sms" && r.action_type !== "send_email"))
+  )
+  return confirmed.map((r) => ({
     id: r.id,
     actionType: r.action_type,
     summary: activitySummary(r.action_type, r.payload ?? {}),

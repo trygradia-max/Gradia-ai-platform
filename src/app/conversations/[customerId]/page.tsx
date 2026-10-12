@@ -73,6 +73,7 @@ export default async function ThreadPage({
         refreshHref={refreshHref}
         page={page}
         thread={t}
+        loadError={r?.error?.code === "42501" ? "access" : "load"}
         shopId={q.shop ?? ""}
         customerId={customerId}
         controls={

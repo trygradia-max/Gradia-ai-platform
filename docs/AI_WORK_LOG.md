@@ -793,3 +793,195 @@ Viewports 320/390/768/1440/1920: no page overflow. Signed-in `/login`
 redirected to `/dashboard` (unchanged). Touched tests 49 passed; lint on
 touched files passed. Screenshots in `docs/qa/screenshots/2026-10-12/`.
 `vercel.json` deployment stays disabled. SkipLink hydration warning remains.
+[AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+Prepared the founder-requested UI/component handoff for Cursor, with a charcoal,
+silver and violet semantic palette, source links to 21st.dev/shadcn/Base UI/Origin
+UI, route inventory requirements and staged browser acceptance. These are fit-based
+references, not a claimed global ratings ranking. Created the separate
+cursor-component-polish worktree from PR #59, and claude-qualification from main;
+the latter has a bounded durable-qualification backend brief. Original agent
+checkouts and the running local preview remain untouched. Briefs are in docs/handoffs.
+They are ready for the founder to pass to those external agents; no external agent
+was started or messaged by this change.
+
+Completed the independent channel-evidence fix in whisper-summary.ts: recorded
+inbound counts now produce a neutral fixed-vocabulary activity fact instead of
+inventing a stated customer preference. Ties retain all channels, invalid counts
+and unknown labels are omitted, and the model prompt explicitly forbids converting
+history into preference or contact permission. Deterministic do-not-contact output
+is preserved. Nine focused tests and 1,275 full unit tests pass (four intentional
+live skips), along with targeted lint and TypeScript. No provider call, schema,
+permission, deployment or shared-database change. Live-model fidelity remains an
+evaluation requirement; prompt wording is not a deterministic output guarantee.
+
+
+[AI: claude-code] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+Built durable lead qualification persistence on `codex/claude-qualification`, per
+`docs/handoffs/CLAUDE_QUALIFICATION_2026-10-09.md`. Inspected first: no existing
+structure held structured, reviewed qualification (`lead_workflows` carries identity
+only; `leads` carries a stage and free text). Migration 93,
+`20261009100000_lead_qualification.sql`, adds one record per intake workflow and an
+append-only audit, reachable only through four session-only RPCs (read, list,
+history, update). The record stores requested service, reported vehicle condition,
+timing, location, constraints and open questions with explicit unknown/reported/
+confirmed status and per-field provenance. It stores no customer or vehicle of its
+own: saves are bound to the workflow's reviewed links and evidence, and reads report
+`needs_review` when any of those change. Added the owner-granted `leads.qualify`
+capability (off by default, valid only with `crm.read`); reading reuses `crm.read`.
+Added `src/lib/lead-qualification.ts`, read helpers, the `updateLeadQualification`
+action, a catalog probe and the UI contract in
+`docs/architecture/LEAD_QUALIFICATION.md`.
+
+Left alone: intake functions, workflow states and transition reasons, the customer
+merge, the executor, policy, globals.css, shared UI components, whisper-summary.ts
+and Codex's preview. No UI, no model or provider call, no nurture or scheduling.
+Shared contract change Cursor should know: `TEAM_CAPABILITIES` has a seventh entry,
+so the team grant checkboxes show it.
+
+Node 22.23.2, isolated runner, unlinked `gradia-record-fresh` only; the public-form
+stack at 57331 was not touched. 1,302 unit passes with four existing live skips
+(112 files; 31 new); 424 integration passes, zero skips (39 files; 19 new); lint,
+offline production build and post-build typecheck passed. All 93 migrations applied
+from zero with exact ledger. The new probe and the Whisper, delegated-approval,
+intake-vehicle, agent-record, team, tenant (26 relationships), photo,
+control-policy and control-execution probes passed. New integration coverage: two-
+shop isolation and foreign customer/vehicle/service references; owner, delegated
+manager, read-only manager, assigned staff, revoked, foreign, anonymous and service
+callers; 39 malformed documents each refused with its path; unknown versus reviewed
+completeness; evidence reopen, vehicle edit, merge and customer deletion; concurrent
+edits, exact replay and changed-command refusal; injected audit failure rolling back
+first save and later edit; and zero change to customers, vehicles, leads, quotes,
+appointments, pending actions, interactions, consent, intake or usage tables. One
+test-only type error was fixed after the first post-build typecheck; no assertion
+changed.
+
+After merging `main` (PR #60, no migrations) the full gate was rerun: 1,306 unit
+passes, lint, offline build and post-build types passed. The full integration suite
+then passed once (424 of 424) and failed in four further runs with one to three
+failures each, in different files every time (booking, conflict, intake, quote,
+team). Every failing run logged local gateway 502s ("invalid response from the
+upstream server"; Kong reported connection resets from the API container), and each
+affected file, and the new qualification file, passed when run on its own. The
+Docker VM was at about 6.5 of 7.75 GiB across 64 containers, with another stack's
+analytics container being OOM-killed in a loop. This is recorded as an unresolved
+local-environment instability, not as a clean repeated pass; GitHub's `integration`
+check is the clean-environment run for this PR. Only this stack's own API container
+was restarted; no other stack was stopped or reset. Not applied to any shared database; no deployment setting changed. This is
+persistence, not a working nurture-to-book loop.
+
+
+[AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+Completed two bounded public-intake tasks, isolated from Cursor's component pass
+and Claude's qualification backend. First, the anonymous form body reader now has
+a ten-second total deadline and abort handling, returning a generic CORS-compatible
+408 before any submission RPC. Oversize and stalled streams no longer wait for an
+uncooperative cancellation hook. Second, added an immutable browser inquiry helper
+that snapshots validated content with one UUID, shares concurrent attempts, keeps
+manual retry bytes identical, caches confirmed acceptance and labels unconfirmed
+outcomes honestly. It omits credentials, refuses redirects, has a twenty-second
+whole-attempt deadline and never retries automatically. The UI integration contract
+and reload/uncertainty limits are documented in PUBLIC_FORM_INTAKE.md.
+
+Node 22 verification: 1,295 unit passes (four existing live skips), full lint,
+offline build and post-build typecheck; seven public-form integration passes on
+the unlinked local form stack, using test-owned records without resetting it.
+No migrations, production configuration, live provider calls or UI changes.
+The local preview and other agent worktrees remain unchanged. This does not replace
+public-origin browser/anti-bot acceptance or implement the pending form setup UI.
+Also merged PR #60 after both required GitHub checks passed.
+
+[AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
+PR #61's remote checks exposed a prefer-const lint failure for the body deadline
+timer despite the prior local lint result. Changed the single-assignment timer to
+const; targeted lint and the 34 public-form unit tests pass. Pushed the correction
+for fresh CI. No runtime contract or other agent checkout changed.
+
+
+[AI: claude-code] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Fixed the activity feed reporting unconfirmed work as done, on
+`fix/unresolved-delivery-visibility`. Reproduced on the Cursor preview fixture
+(read-only): a `send_sms` action with status approved, no result and no claim was
+shown on Home as "Texted a customer — Handled". `src/lib/data/activity.ts` now
+derives each action's outcome from `result_id` and the consumed sending claim, with
+a new `unresolved` outcome titled "… — delivery not confirmed" that links to the
+action's approval record. A failed claim lookup leaves messages unresolved. The
+Approvals "completed agent actions" list applies the same rule. `activity-feed.tsx`
+gained the "Not confirmed" pill and no longer falls back to "Handled" for an
+outcome it does not recognise; `strings.ts` gained two labels.
+
+Investigated the Jordan email thread that rendered "unavailable". The read is
+correct for owner and manager and renders on every repeat load. The preview gateway
+logged one `502` on that read during the acceptance session; the page presents any
+failed read as an access problem. No code change for this: the thread page is being
+rewritten in the open UI PR. Finding and suggested wording are in
+`docs/architecture/WHISPER_INBOX.md`.
+
+Shared contract changes Cursor should know: `ActivityOutcome` has a fourth value,
+`unresolved`; `STRINGS.pages.activity` gained `outcome.unresolved` and
+`reviewResult`; `activity-feed.tsx` changed in the pill and link label only.
+
+Node 22.23.2 isolated runner: 1,348 unit passes with four existing live skips
+(22 new); lint, offline production build and post-build typecheck passed. No
+migration, RPC or executor change, so the database integration suite was not rerun.
+Not viewed in a browser. The preview database was only read, inside read-only
+transactions and through its own sign-in helper; nothing was written or reset.
+[AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Integrated PR #59 with main 3487600 in a separate detached worktree. Only the
+append-only work log conflicted; both sides were retained. Reconciled head edc3259
+passed 1,328 unit tests (four intentional live skips), lint, offline Node 22 build,
+post-build typecheck and both required GitHub checks. Merged #59 as fd46f24.
+Integrated Cursor PR #63 with that baseline in another separate worktree; only
+the append-only log conflicted. Its combined application tree passed 1,331 unit
+tests (four intentional live skips), full lint, offline production build and
+post-build typecheck. The final main merge had no file changes. Retargeting #63
+to main for required CI before merge. No original agent checkout was modified.
+
+Local Cursor owner preview loads the styled Home and inbox. Its recorded
+owner/manager/staff/revoked and responsive checks remain supporting evidence;
+live keyboard-focus paint, 200% zoom/contrast and the reported hydration warning
+remain acceptance follow-ups, not claimed passes. Email fixture thread read and
+Activity labeling an unconfirmed execution as handled are existing data-path
+issues outside these presentation diffs; they remain open backend follow-ups.
+No full pilot acceptance, shared migration, deployment or provider activation.
+Git deployments remain disabled.
+
+[AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
+Completed the bounded inbox load-error follow-up while integrating #64–#67 in
+separate checkouts. Only SQL permission refusal 42501 renders access guidance;
+other read failures and malformed responses offer a refresh without claiming
+an empty thread or a permission problem. Invalid identifiers still skip the RPC,
+raw error details stay hidden, and failed loads expose no mutation controls.
+Seven new route-level regressions cover these cases; combined unit suite passed
+1,364 tests (four intentional live skips), lint, offline Node 22 production build
+and post-build typecheck. The build caught an accidental extra presentation prop
+on the controls component; it was removed and the build/types passed afterward.
+
+A separate local production-build preview at 3130 uses only the existing disposable
+Cursor database at 58331, with provider egress denied. Browser review confirmed the
+unknown-delivery fixture now reads Not confirmed with its review link; Jordan's
+email thread rendered its message and reply-context hold wording. No action was
+submitted; no fixture/schema reset or other agent checkout change. No browser
+errors were captured on those loads. Added next-lane briefs for Cursor's usable
+qualification review UI and Claude's read-only next-question proposal. These briefs
+have not been sent to either agent. Deployment requested by founder but currently
+blocked by invalid Vercel CLI authorization and inactive Supabase; no production
+migration, write-guard removal, provider activation or deployment was performed.
+
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: in-progress]
+Resumed integration after the founder status request. PRs #64 and #65 were merged;
+#66 passed both required checks and merged as 8b31c47. Retargeted #67 to main and
+pushed its reconciled head for fresh CI; only the append-only work log conflicted.
+The Activity reconciliation retains both Cursor's toolbar and Claude's unresolved
+outcome rendering. Vercel CLI login has been restored and verified; the Supabase
+project zfxkzciumhrrgfeacwds remains INACTIVE. No deployment or shared migration.
+The next-lane handoff now reflects this remaining blocker.
+
+
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Finished integrating #64, #65, #66 and #67 with both protected checks green before
+each merge. Latest main is 1cacb18 (merge #67). Each integration check passed all
+424 database tests. The combined application source matches the already-validated
+local production build. No other agent worktree was changed. Preparing the separate
+thread-load error PR from this merged baseline; deployment remains unperformed
+while Supabase is inactive.
