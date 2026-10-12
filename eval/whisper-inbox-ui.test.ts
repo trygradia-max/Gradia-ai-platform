@@ -314,7 +314,7 @@ describe("Whisper thread presentation", () => {
     )
     expect(held).toContain("No messages on this page.")
     const unavailable = view(null)
-    expect(unavailable).toContain("Conversation unavailable. Check access and refresh.")
+    expect(unavailable).toContain("Conversation could not be loaded. Refresh to try again.")
     expect(unavailable).not.toContain("No messages on this page.")
     expect(unavailable).toContain("Refresh conversation")
     const staff = view({ can_reply: false, can_manage: false, actions: [], intakes: [] })

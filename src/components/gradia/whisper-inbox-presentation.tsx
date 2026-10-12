@@ -282,6 +282,7 @@ export function WhisperThreadView({
   shopId,
   customerId,
   controls,
+  loadError = "load",
 }: {
   listHref: string
   refreshHref: string
@@ -290,6 +291,7 @@ export function WhisperThreadView({
   shopId: string
   customerId: string
   controls?: ReactNode
+  loadError?: "access" | "load"
 }) {
   const visible = thread?.items.slice(0, 20) ?? []
   const hasOlder = Boolean(thread && thread.items.length > 20)
@@ -337,7 +339,9 @@ export function WhisperThreadView({
       {!thread ? (
         <ErrorState
           compact
-          title="Conversation unavailable. Check access and refresh."
+          title={loadError === "access"
+            ? "Conversation unavailable. Check access and refresh."
+            : "Conversation could not be loaded. Refresh to try again."}
         />
       ) : (
         <>
