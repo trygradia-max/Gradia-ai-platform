@@ -221,6 +221,76 @@ characters. Dates are `YYYY-MM-DD` and `latest` cannot precede `earliest`.
 
 No database message text reaches the caller.
 
+## Next question proposal
+
+October 12, 2026. Branch `auto/qualification-next-question`. Read-only. No migration,
+RPC, capability, action or screen was added, and no model or provider is called.
+
+`loadNextQualificationQuestion(db, shopId, workflowId)` reads one record through
+`read_lead_qualification` and returns the single next thing to ask, for a reviewer to
+read, edit or ignore. `proposeNextQualificationQuestion(record)` is the same rule as a
+pure function, for a screen that already holds the record. Both are in the files
+listed under Operations.
+
+Three replies are possible. Every one carries `basis`: the workflow, qualification
+`revision` and `evidence_revision` it was derived from.
+
+```json
+{
+  "kind": "question",
+  "delivery": "none",
+  "target": "timing",
+  "question_id": null,
+  "text": "When would you like to bring it in?",
+  "basis": { "workflow_id": "7b1f0c9e-2a44-4d0b-9a55-0c5d1e2f3a41", "revision": 1, "evidence_revision": 1 }
+}
+```
+
+```json
+{ "kind": "review_required", "reasons": ["new_evidence"], "basis": { "…": "…" } }
+```
+
+```json
+{ "kind": "none", "reason": "complete", "basis": { "…": "…" } }
+```
+
+Selection, in this order:
+
+1. **Review first.** A workflow in identity review, or a record that is
+   `needs_review`, returns `review_required` with the read's `review_reasons`
+   (`identity_in_review`, `customer_changed`, `vehicle_changed`, `new_evidence`). No
+   customer-facing question is offered, even if fields are unknown or questions open.
+2. **Existing open questions.** The first question with status `open`, verbatim, with
+   `target` `open_question` and its `question_id`. `answered` and `dropped` questions
+   are skipped. No field question is proposed while one is open.
+3. **Unknown fields**, first match of `service`, `vehicle_condition`, `timing`,
+   `location`, `constraints`. Only status `unknown` counts. A `reported` or
+   `confirmed` field is never re-asked, and a known empty constraint list is an answer.
+4. **Vehicle link.** If nothing above applies and the vehicle link is not confirmed,
+   `review_required` with `vehicle_unlinked`. A vehicle is linked in intake review; the
+   customer is never asked for it here.
+5. **Complete.** `none` / `complete`. This says nothing is missing from the record. It
+   does not say the lead can be quoted or booked.
+
+What a proposal is not:
+
+- **Not a message.** Nothing is stored, enqueued, staged as an approval or sent.
+  `delivery` is always `none`. It leaves no audit row.
+- **Not permission to send.** Authority is the read's (`crm.read`). Being able to read
+  a qualification is not permission to message the customer.
+- **Not an inference.** Field wording is fixed text. It states no price, service
+  availability, consent, identity or answer.
+
+Any later step that stages a question for sending must independently recheck, at that
+moment: the current qualification `revision` and `evidence_revision` against `basis`,
+the channel, the recipient, the customer's consent and opt-out state, and the existing
+policy and approval rules. It must use the existing approval executor. None of that is
+built here.
+
+`{ ok: false }` from the loader means the read failed or was refused. It never means
+there is nothing to ask. A reviewer who wants to keep a proposal records it as an open
+question with the existing save.
+
 ## Schema
 
 Migration `20261009100000_lead_qualification.sql`, migration 93.
