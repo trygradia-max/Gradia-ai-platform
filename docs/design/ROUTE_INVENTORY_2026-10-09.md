@@ -35,8 +35,8 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `/team` | `src/app/team/page.tsx` | Own chrome, not AppShell. Loading/error siblings. | updated |
 | `/team/approvals` | `src/app/team/approvals/page.tsx` | Delegated message approve/reject. | updated |
 | `/team/delivery-reviews` | `src/app/team/delivery-reviews/page.tsx` | Delegated delivery review. | updated |
-| `/intake` | `src/app/intake/page.tsx` | Unresolved identity review. TeamChrome, ReviewCard, honest customer search, Pagination. Loading/error siblings. | updated |
-| `/intake/[workflowId]` | `src/app/intake/[workflowId]/page.tsx` | Intake history + existing vehicle link. Same chrome. | updated |
+| `/intake` | `src/app/intake/page.tsx` | Unresolved identity review plus qualification list (`loadLeadQualifications`). TeamChrome, ReviewCard, honest customer search, Pagination. Loading/error siblings. Staff/revoked unavailable. | updated |
+| `/intake/[workflowId]` | `src/app/intake/[workflowId]/page.tsx` | Intake history, existing vehicle link, and qualification review/edit (`loadLeadQualification`, `updateLeadQualification`). Same chrome. | updated |
 | `/q/[token]` | `src/app/q/[token]/page.tsx` | Public quote. `not-found.tsx`. | pending |
 
 ## Redirects (legacy aliases)

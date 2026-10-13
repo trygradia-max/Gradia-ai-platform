@@ -985,3 +985,39 @@ Viewports 320/390/768/1440/1920: no page overflow. Signed-in `/login`
 redirected to `/dashboard` (unchanged). Touched tests 49 passed; lint on
 touched files passed. Screenshots in `docs/qa/screenshots/2026-10-12/`.
 `vercel.json` deployment stays disabled. SkipLink hydration warning remains.
+
+[AI: cursor] [DATE: 2026-10-12] [AREA: platform] [STATUS: review]
+Qualification review UI on `codex/cursor-ui-qualification` after merging
+`origin/main` so the existing backend is in this checkout. Wired only
+`loadLeadQualifications`, `loadLeadQualification`,
+`loadLeadQualificationHistory`, and `updateLeadQualification`. Extended
+`/intake` (list) and `/intake/[workflowId]#qualification` (review/edit)
+with intake chrome. Owners and `crm.read` managers can read; save follows
+`can_update` (owner or manager with `leads.qualify`). Staff/revoked get the
+same unavailable state as intake.
+
+Unknown fields render as **Unknown** with no source, not yes/no or empty
+defaults; known-empty constraints stay distinct. Provenance (source and
+intake evidence revision) is shown per field. Stale records use
+`needs_review` plus `review_reasons`. `revision_conflict` and other
+reload-required outcomes lock saving until a fresh load. Uncertain saves
+retry the same command id. `updateLeadQualification` now revalidates
+`/intake` and `/intake/[workflowId]` after an accepted save (the contract
+said to add that when a screen exists). No new migrations, RPCs, or
+nurture/message/consent/identity actions.
+
+Did not copy Claude’s next-question helper — it is not in this checkout
+(`proposeNextQualificationQuestion` remains Claude’s lane). Missing fields
+come from the record’s `missing` array. Login/onboarding were already
+labelled with 44px targets and field errors; no further auth polish.
+
+Local-only preview: applied existing `20261009100000_lead_qualification.sql`
+to the disposable 58331 stack and seeded unknown + stale workflows with
+`scripts/cursor-preview-qualification-fixture.mjs`. The running 3127
+process has a dead file watcher (EMFILE) and kept serving the pre-change
+intake compile; screenshots of the new qualification section were not
+captured from that process. Targeted tests: 43 passed
+(`qualification-review-ui`, `intake-review-ui`, `lead-qualification`,
+`login-onboarding-ui`). Lint on touched files passed after removing an
+unused helper. `vercel.json` deployment stays disabled. Codex 3109/3110
+left alone.

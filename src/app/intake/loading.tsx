@@ -6,7 +6,7 @@ export default function Loading() {
     <TeamChrome className="space-y-4">
       <div aria-busy="true" className="space-y-4">
         <p role="status" className="text-sm text-muted-foreground">
-          Loading intake review…
+          Loading intake and qualification…
         </p>
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-5 w-80 max-w-full" />

@@ -61,7 +61,7 @@ export function IntakeHistoryView({ result }: { result: IntakeHistoryResult }) {
       </div>
       <p>
         {history.state === "identity_linked"
-          ? "Customer identity linked; qualification has not started."
+          ? "Customer identity linked. Qualification is reviewed in the section below."
           : "Identity needs review."}{" "}
         Revision {history.revision} · {history.total} history entries.
       </p>

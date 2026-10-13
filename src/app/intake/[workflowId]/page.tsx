@@ -5,12 +5,15 @@ import { ErrorState } from "@/components/gradia/error-state"
 import { IntakeHistoryView } from "@/components/gradia/intake-history"
 import { IntakeVehicleForm } from "@/components/gradia/intake-vehicle-form"
 import { Pagination } from "@/components/gradia/pagination"
+import { QualificationReview } from "@/components/gradia/qualification-review"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { TeamChrome } from "@/components/gradia/team-chrome"
 import { loadIntakeHistory } from "@/lib/data/intake-history"
+import { loadLeadQualification, loadLeadQualificationHistory } from "@/lib/data/lead-qualification"
 import { intakeVehicleChoicesSchema } from "@/lib/intake-vehicle"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import type { TeamWorkspace } from "@/lib/team-permissions"
 
 export const dynamic = "force-dynamic"
 
@@ -22,7 +25,7 @@ export default async function IntakeHistoryPage({
   searchParams,
 }: {
   params: Promise<{ workflowId: string }>
-  searchParams: Promise<{ shop?: string; page?: string; revision?: string }>
+  searchParams: Promise<{ shop?: string; page?: string; qhpage?: string; revision?: string }>
 }) {
   await requireUser()
   const { workflowId } = await params
@@ -32,9 +35,38 @@ export default async function IntakeHistoryPage({
   const offset =
     Number.isSafeInteger(page) && page > 0 && page < 100000 ? (page - 1) * 20 : -1
   const db = await createClient()
+  const workspaces = await db.rpc("team_workspaces")
+  if (workspaces.error) throw new Error("Workspace access could not be verified.")
+  const allowed = ((workspaces.data ?? []) as TeamWorkspace[]).filter(
+    (workspace) =>
+      workspace.role === "owner" ||
+      (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))
+  )
+  const workspace = query.shop ? allowed.find((item) => item.id === query.shop) : allowed[0]
+  if (!workspace) {
+    return (
+      <TeamChrome>
+        <SectionHeader
+          level={1}
+          eyebrow="Intake"
+          title="Qualification review"
+          subhead="This shop’s intake is not available to your account."
+        />
+        <ErrorState
+          title="Intake unavailable"
+          description="Owner access or a manager CRM-read grant is required. Revoked and staff memberships cannot open qualification."
+          action={
+            <Link href="/team" className={backLink}>
+              Back to your workspaces
+            </Link>
+          }
+        />
+      </TeamChrome>
+    )
+  }
   const result = await loadIntakeHistory(
     db,
-    query.shop ?? "",
+    workspace.id,
     workflowId,
     offset,
     revision
@@ -46,7 +78,7 @@ export default async function IntakeHistoryPage({
     result.history.customer_id !== null
   const choices = canChoose
     ? await db.rpc("intake_vehicle_choices", {
-        p_shop: query.shop,
+        p_shop: workspace.id,
         p_workflow: workflowId,
         p_revision: result.history.revision,
       })
@@ -63,24 +95,44 @@ export default async function IntakeHistoryPage({
           .update(JSON.stringify(candidates))
           .digest("hex")}`
       : ""
-  const base = `/intake/${encodeURIComponent(workflowId)}?shop=${encodeURIComponent(query.shop ?? "")}`
+  const rawHistoryPage = Number(query.qhpage ?? "1")
+  const qualificationHistoryPage =
+    Number.isSafeInteger(rawHistoryPage) && rawHistoryPage > 0 && rawHistoryPage < 100000
+      ? rawHistoryPage
+      : 1
+  const shopId = workspace.id
+  const [qualification, qualificationHistory, serviceRows] = await Promise.all([
+    loadLeadQualification(db, shopId, workflowId),
+    loadLeadQualificationHistory(db, shopId, workflowId, (qualificationHistoryPage - 1) * 20),
+    shopId
+      ? db.from("services").select("id,name").eq("shop_id", shopId).order("name")
+      : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+  ])
+  const services =
+    !serviceRows.error && Array.isArray(serviceRows.data)
+      ? serviceRows.data
+          .filter((row): row is { id: string; name: string } =>
+            typeof row.id === "string" && typeof row.name === "string"
+          )
+      : []
+  const base = `/intake/${encodeURIComponent(workflowId)}?shop=${encodeURIComponent(shopId)}`
   return (
     <TeamChrome>
-      <Link href={`/intake?shop=${encodeURIComponent(query.shop ?? "")}`} className={backLink}>
+      <Link href={`/intake?shop=${encodeURIComponent(shopId)}`} className={backLink}>
         Back to intake review
       </Link>
       <SectionHeader
         level={1}
         eyebrow="Intake"
         title="Intake history"
-        subhead="Evidence and owner decisions for this submission. Reading does not qualify a lead, grant consent, or send a message."
+        subhead="Evidence and owner decisions for this submission. Qualification is reviewed below. Reading does not grant consent or send a message."
       />
       <IntakeHistoryView result={result} />
       {canChoose ? (
         candidates && result.ok ? (
           <IntakeVehicleForm
             key={vehicleReviewKey}
-            shopId={query.shop!}
+            shopId={shopId}
             workflowId={workflowId}
             revision={result.history.revision}
             commandId={randomUUID()}
@@ -95,6 +147,13 @@ export default async function IntakeHistoryPage({
           />
         )
       ) : null}
+      <QualificationReview
+        result={qualification}
+        history={qualificationHistory}
+        shopId={shopId}
+        commandId={randomUUID()}
+        services={services}
+      />
       <Link href={base} className={backLink}>
         Refresh history
       </Link>
@@ -110,6 +169,22 @@ export default async function IntakeHistoryPage({
           next={
             page * 20 < result.history.total
               ? { href: `${base}&page=${page + 1}&revision=${result.history.revision}` }
+              : null
+          }
+        />
+      ) : null}
+      {qualificationHistory.ok ? (
+        <Pagination
+          label="Qualification history pages"
+          status={`Qualification history page ${qualificationHistoryPage}.`}
+          previous={
+            qualificationHistoryPage > 1
+              ? { href: `${base}&qhpage=${qualificationHistoryPage - 1}` }
+              : null
+          }
+          next={
+            qualificationHistory.data.items.length > 20
+              ? { href: `${base}&qhpage=${qualificationHistoryPage + 1}` }
               : null
           }
         />

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), user: vi.fn(), client: vi.fn() }))
 vi.mock("@/lib/shop", () => ({ requireUser: mocks.user }))
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.client }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 import { updateLeadQualification } from "@/app/actions/lead-qualification"
 import { loadLeadQualification, loadLeadQualificationHistory, loadLeadQualifications } from "@/lib/data/lead-qualification"
 import {
