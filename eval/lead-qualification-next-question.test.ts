@@ -27,47 +27,56 @@ const unknown = unknownQualificationFields()
 const basis = { workflow_id: id, revision: 4, evidence_revision: 3 }
 
 describe("next qualification question is a suggestion derived from the record", () => {
-  it("asks for the first missing item in a fixed order, one at a time", () => {
+  it("asks for the first unknown field in the documented order, one at a time", () => {
     const fields = filled()
-    const steps: [string, () => Record<string, unknown>][] = [
-      ["service", () => ({ fields: unknown })],
-      ["vehicle", () => ({ fields: { ...unknown, service: fields.service }, identity: { ...linked, vehicle_id: null, vehicle_status: "unresolved", vehicle: null } })],
-      ["timing", () => ({ fields: { ...unknown, service: fields.service } })],
-      ["vehicle_condition", () => ({ fields: { ...unknown, service: fields.service, timing: fields.timing } })],
-      ["location", () => ({ fields: { ...fields, location: unknown.location, constraints: unknown.constraints } })],
-      ["constraints", () => ({ fields: { ...fields, constraints: unknown.constraints } })],
+    const steps: [string, QualificationFields][] = [
+      ["service", unknown],
+      ["vehicle_condition", { ...unknown, service: fields.service }],
+      ["timing", { ...unknown, service: fields.service, vehicle_condition: fields.vehicle_condition }],
+      ["location", { ...fields, location: unknown.location, constraints: unknown.constraints }],
+      ["constraints", { ...fields, constraints: unknown.constraints }],
     ]
-    for (const [target, patch] of steps) {
-      const next = proposeNextQualificationQuestion(record(patch()))
+    for (const [target, value] of steps) {
+      const next = proposeNextQualificationQuestion(record({ fields: value }))
       expect(next).toMatchObject({ kind: "question", delivery: "none", target, question_id: null, basis })
       expect(next.kind === "question" && next.text.length > 0 && next.text.length <= 500).toBe(true)
     }
-  })
-  it("treats a vehicle link that needs review as missing", () => {
-    expect(proposeNextQualificationQuestion(record({ identity: { ...linked, vehicle_status: "needs_review", vehicle: null } }))).toMatchObject({ target: "vehicle" })
   })
   it("starts with the service when nothing has been recorded", () => {
     const fresh = record({ revision: 0, review_state: "not_started", recorded_review_state: null, fields: unknown, updated_at: null, updated_by: null })
     expect(proposeNextQualificationQuestion(fresh)).toMatchObject({ target: "service", basis: { ...basis, revision: 0 } })
   })
-  it("does not treat a known empty constraint list as unasked", () => {
-    expect(proposeNextQualificationQuestion(record())).toEqual({ kind: "none", reason: "complete" })
+  it("treats a known empty constraint list as an answer, and complete as nothing more", () => {
+    expect(proposeNextQualificationQuestion(record())).toEqual({ kind: "none", reason: "complete", basis })
+    expect(proposeNextQualificationQuestion(record({ fields: { ...filled(), constraints: { ...known, status: "confirmed", source: "staff", items: [] } } }))).toMatchObject({ kind: "none" })
   })
-  it("offers the reviewer's own open question verbatim once the fields are known", () => {
+  it("offers the reviewer's own open question first, verbatim, and skips answered and dropped ones", () => {
+    const third = "00000000-0000-4000-8000-000000000003"
     const open_questions = [
       { id, text: "Was it repainted?", status: "answered", answer: "No" },
+      { id: third, text: "Any pets in the car?", status: "dropped", answer: null },
       { id: other, text: "Is the vehicle garage kept?", status: "open", answer: null },
     ]
-    expect(proposeNextQualificationQuestion(record({ open_questions }))).toEqual({
-      kind: "question", delivery: "none", target: "open_question", question_id: other, text: "Is the vehicle garage kept?", basis,
-    })
-    expect(proposeNextQualificationQuestion(record({ open_questions, fields: { ...filled(), timing: unknown.timing } }))).toMatchObject({ target: "timing" })
+    const expected = { kind: "question", delivery: "none", target: "open_question", question_id: other, text: "Is the vehicle garage kept?", basis }
+    expect(proposeNextQualificationQuestion(record({ open_questions }))).toEqual(expected)
+    expect(proposeNextQualificationQuestion(record({ open_questions, fields: unknown }))).toEqual(expected)
+    const settled = open_questions.slice(0, 2)
+    expect(proposeNextQualificationQuestion(record({ open_questions: settled }))).toMatchObject({ kind: "none" })
+    expect(proposeNextQualificationQuestion(record({ open_questions: settled, fields: { ...filled(), timing: unknown.timing } }))).toMatchObject({ target: "timing" })
   })
-  it("proposes nothing while identity is unresolved or the record is not current", () => {
+  it("returns the review requirement, not a question, while identity is unresolved or evidence is stale", () => {
     const review = { ...linked, state: "identity_review", customer_id: null, customer_name: null, vehicle_id: null, vehicle_status: "unresolved", vehicle: null }
-    expect(proposeNextQualificationQuestion(record({ identity: review, fields: unknown }))).toEqual({ kind: "none", reason: "identity_review_required" })
-    for (const reason of ["customer_changed", "vehicle_changed", "new_evidence", "identity_in_review"])
-      expect(proposeNextQualificationQuestion(record({ review_state: "needs_review", review_reasons: [reason], fields: unknown }))).toEqual({ kind: "none", reason: "needs_review" })
+    expect(proposeNextQualificationQuestion(record({ identity: review, fields: unknown }))).toEqual({ kind: "review_required", reasons: ["identity_in_review"], basis })
+    expect(proposeNextQualificationQuestion(record({ identity: review, review_state: "needs_review", review_reasons: ["identity_in_review", "new_evidence"] })))
+      .toEqual({ kind: "review_required", reasons: ["identity_in_review", "new_evidence"], basis })
+    for (const reason of ["customer_changed", "vehicle_changed", "new_evidence"])
+      expect(proposeNextQualificationQuestion(record({ review_state: "needs_review", review_reasons: [reason], fields: unknown, open_questions: [{ id, text: "Open?", status: "open", answer: null }] })))
+        .toEqual({ kind: "review_required", reasons: [reason], basis })
+  })
+  it("never asks the customer for a vehicle link; it reports it once nothing else is missing", () => {
+    const identity = { ...linked, vehicle_id: null, vehicle_status: "unresolved", vehicle: null }
+    expect(proposeNextQualificationQuestion(record({ identity, fields: unknown }))).toMatchObject({ kind: "question", target: "service" })
+    expect(proposeNextQualificationQuestion(record({ identity }))).toEqual({ kind: "review_required", reasons: ["vehicle_unlinked"], basis })
   })
   it("is deterministic and leaves the record untouched", () => {
     const q = record({ fields: unknown }), before = JSON.stringify(q)
@@ -84,6 +93,12 @@ describe("loading the suggestion reads once and writes nothing", () => {
     expect(result).toMatchObject({ ok: true, data: { kind: "question", target: "service", delivery: "none" } })
     expect(rpc.mock.calls).toEqual([["read_lead_qualification", { p_shop: id, p_workflow: id }]])
     expect(from).not.toHaveBeenCalled()
+  })
+  it("selects by the caller's shop and workflow and repeats identically", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: record({ fields: unknown }), error: null })
+    const db = { rpc } as unknown as SupabaseClient
+    expect(await loadNextQualificationQuestion(db, other, id)).toEqual(await loadNextQualificationQuestion(db, other, id))
+    expect(rpc.mock.calls).toEqual(Array(2).fill(["read_lead_qualification", { p_shop: other, p_workflow: id }]))
   })
   it("never reports a failed, refused or malformed read as nothing to ask", async () => {
     for (const reply of [{ data: null, error: { code: "42501" } }, { data: { workflow_id: id }, error: null }]) {

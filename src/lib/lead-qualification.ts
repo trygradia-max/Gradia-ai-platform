@@ -141,45 +141,51 @@ export function unknownQualificationFields(): QualificationFields {
   }
 }
 
-/** The order missing information is asked for. One question at a time. */
-const QUESTION_ORDER = ["service", "vehicle", "timing", "vehicle_condition", "location", "constraints"] as const
-export type QualificationQuestionTarget = (typeof QUESTION_ORDER)[number]
-/** Fixed wording. No model writes it, and it names no service, price or time the shop has not set. */
-const QUESTION_TEXT: Record<QualificationQuestionTarget, string> = {
+/** Fixed wording, in the order asked. No model writes it, and it names no service, price or time. */
+const QUESTION_TEXT: Record<QualificationField, string> = {
   service: "Which service are you interested in?",
-  vehicle: "What vehicle is this for? Year, make and model, please.",
-  timing: "When would you like to bring it in?",
   vehicle_condition: "How would you describe the vehicle's current condition?",
+  timing: "When would you like to bring it in?",
   location: "Will you be bringing the vehicle to the shop?",
   constraints: "Is there anything we should plan around, such as a deadline or access to the vehicle?",
 }
+type QuestionBasis = { workflow_id: string; revision: number; evidence_revision: number | null }
 
 /**
  * A suggestion for a reviewer to read, edit or ignore. It is not a message, a
  * draft or an approval: nothing is stored, staged or sent, and `delivery` is
- * always `none`. `basis` is the record the suggestion was derived from; a
- * screen must discard it once the record's revision or evidence moves on.
+ * always `none`. Being able to read it grants no permission to send it.
+ * `basis` is the record it was derived from; discard the suggestion once the
+ * record's revision or evidence moves on.
  */
 export type NextQualificationQuestion =
-  | {
-      kind: "question"; delivery: "none"; text: string
-      basis: { workflow_id: string; revision: number; evidence_revision: number | null }
-    } & ({ target: QualificationQuestionTarget; question_id: null } | { target: "open_question"; question_id: string })
-  | { kind: "none"; reason: "identity_review_required" | "needs_review" | "complete" }
+  | ({ kind: "question"; delivery: "none"; text: string; basis: QuestionBasis }
+      & ({ target: QualificationField; question_id: null } | { target: "open_question"; question_id: string }))
+  /** Intake review comes first. No customer-facing question is offered. */
+  | { kind: "review_required"; reasons: ((typeof REVIEW_REASONS)[number] | "vehicle_unlinked")[]; basis: QuestionBasis }
+  /** Nothing is missing. This is not a statement that the lead can be quoted or booked. */
+  | { kind: "none"; reason: "complete"; basis: QuestionBasis }
 
 /**
- * Picks the next thing to ask from what the record says is missing. Pure and
- * deterministic. A record that is in identity review or no longer current
- * yields no question: its answers must be re-reviewed before they drive one.
- * An open question the reviewer wrote is offered verbatim, after the fields.
+ * Picks the one next thing to ask from the persisted record. Pure and
+ * deterministic. A record in identity review, or no longer current against its
+ * customer, vehicle or evidence, yields the review requirement instead. An open
+ * question the reviewer already wrote comes first, verbatim; otherwise the
+ * first field nobody has established. Only `unknown` is missing: a known empty
+ * constraint list is an answer. A vehicle link is settled in intake review,
+ * never by asking, so it is reported only once nothing else is left.
  */
 export function proposeNextQualificationQuestion(q: LeadQualification): NextQualificationQuestion {
-  if (q.identity.state !== "identity_linked" || q.identity.customer_id === null) return { kind: "none", reason: "identity_review_required" }
-  if (q.review_state === "needs_review" || q.review_reasons.length > 0) return { kind: "none", reason: "needs_review" }
   const basis = { workflow_id: q.workflow_id, revision: q.revision, evidence_revision: q.identity.evidence_revision }
-  const target = QUESTION_ORDER.find((t) => (t === "vehicle" ? q.identity.vehicle_status !== "confirmed" : q.fields[t].status === "unknown"))
-  if (target) return { kind: "question", delivery: "none", target, question_id: null, text: QUESTION_TEXT[target], basis }
+  const unlinked = q.identity.state !== "identity_linked" || q.identity.customer_id === null
+  if (unlinked || q.review_state === "needs_review" || q.review_reasons.length > 0) {
+    const reasons = unlinked && !q.review_reasons.includes("identity_in_review") ? ["identity_in_review" as const, ...q.review_reasons] : q.review_reasons
+    return { kind: "review_required", reasons, basis }
+  }
   const open = q.open_questions.find((item) => item.status === "open")
   if (open) return { kind: "question", delivery: "none", target: "open_question", question_id: open.id, text: open.text, basis }
-  return { kind: "none", reason: "complete" }
+  const target = QUALIFICATION_FIELDS.find((field) => q.fields[field].status === "unknown")
+  if (target) return { kind: "question", delivery: "none", target, question_id: null, text: QUESTION_TEXT[target], basis }
+  if (q.identity.vehicle_status !== "confirmed") return { kind: "review_required", reasons: ["vehicle_unlinked"], basis }
+  return { kind: "none", reason: "complete", basis }
 }

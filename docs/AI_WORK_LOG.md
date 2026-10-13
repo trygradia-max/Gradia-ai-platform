@@ -1004,6 +1004,30 @@ local production build. No other agent worktree was changed. Preparing the separ
 thread-load error PR from this merged baseline; deployment remains unperformed
 while Supabase is inactive.
 
+[AI: claude-code] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Claude lane of `docs/handoffs/NEXT_LANES_2026-10-10.md`: a read-only next-question
+proposal from the persisted qualification record, on
+`auto/qualification-next-question` from main c350573, in the `claude-qualification`
+worktree. `proposeNextQualificationQuestion` (`src/lib/lead-qualification.ts`) and
+`loadNextQualificationQuestion` (`src/lib/data/lead-qualification.ts`) reuse the
+existing `read_lead_qualification` loader and its authority. Order: review
+requirement when identity or evidence needs review; the reviewer's first open
+question verbatim; the first unknown of service, vehicle condition, timing, location,
+constraints; an unconfirmed vehicle link reported as a review requirement; otherwise
+complete. Every reply carries the qualification and evidence revision it came from.
+Fixed wording; a known empty constraint list is an answer. Nothing is stored,
+enqueued, staged or sent. No migration, RPC, capability, action, model, provider,
+executor, cron or UI file. Contract and the rechecks any later staging step owes:
+"Next question proposal" in `docs/architecture/LEAD_QUALIFICATION.md`.
+
+Isolated runner with outbound network denied, Node 24.15.0 (the machine has no
+Node 22; earlier entries used 22.23.2): 1,375 unit passes with four existing live
+skips (11 new in `eval/lead-qualification-next-question.test.ts`), full lint, offline
+production build and post-build typecheck passed; `git diff --check` clean. The
+database integration suite was not run: no SQL changed, and tenant and role refusal
+of the read is already covered by `eval/integration/lead-qualification.int.test.ts`.
+Not viewed in a browser; no screen calls it. Other worktrees and the stale
+`platform` checkout were left alone.
 [AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
 Reviewed Cursor #69 and Claude commit b76ca4d in separate worktrees. Reconciled
 both with current main while preserving append-only work-log entries. #69 merged
