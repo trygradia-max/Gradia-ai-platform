@@ -221,6 +221,46 @@ characters. Dates are `YYYY-MM-DD` and `latest` cannot precede `earliest`.
 
 No database message text reaches the caller.
 
+## Next question suggestion
+
+October 12, 2026. Branch `auto/qualification-next-question`. Read-only. No migration,
+RPC, capability or action was added.
+
+`loadNextQualificationQuestion(db, shopId, workflowId)` reads one record through
+`read_lead_qualification` and returns the single next thing to ask, for a reviewer to
+read, edit or ignore. `proposeNextQualificationQuestion(record)` is the same rule as a
+pure function, for a screen that already holds the record.
+
+```json
+{
+  "kind": "question",
+  "delivery": "none",
+  "target": "timing",
+  "question_id": null,
+  "text": "When would you like to bring it in?",
+  "basis": { "workflow_id": "7b1f0c9e-2a44-4d0b-9a55-0c5d1e2f3a41", "revision": 1, "evidence_revision": 1 }
+}
+```
+
+- **Order.** The first of: `service`, `vehicle` (link not confirmed), `timing`,
+  `vehicle_condition`, `location`, `constraints` whose status is `unknown`. When none
+  is, the first `open` question the reviewer wrote, verbatim, with `target`
+  `open_question` and its `question_id`. One suggestion at a time.
+- **Nothing to suggest.** `{ "kind": "none", "reason": … }` with
+  `identity_review_required` (workflow in identity review), `needs_review` (the record
+  is not current; re-review it first) or `complete`.
+- **Wording is fixed text**, not model output. It names no service, price or time.
+- **It is not a message.** Nothing is stored, staged as an approval, or sent, and
+  `delivery` is always `none`. Sending a question to a customer is not built here and
+  must go through the existing approval path when it is.
+- **Staleness.** Discard a suggestion when the record's `revision` or
+  `identity.evidence_revision` no longer matches `basis`.
+- **Authority** is the read's: anyone who can read the record gets the suggestion.
+  `{ ok: false }` means the read failed; it never means there is nothing to ask.
+
+A reviewer who wants to keep a suggestion records it as an open question with the
+existing save. The suggestion itself leaves no audit row.
+
 ## Schema
 
 Migration `20261009100000_lead_qualification.sql`, migration 93.

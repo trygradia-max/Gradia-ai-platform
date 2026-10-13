@@ -766,6 +766,33 @@ use SectionHeader / StatusPill / skip; billing is layout-only with the same
 $20 / +$29 copy. Owner + manager spot-check on 3128/3127. Touched tests 44
 passed. No server actions, RPCs, migrations, or query changes. vercel.json
 deployment stays disabled. Codex 3109/3110 left alone.
+
+[AI: cursor] [DATE: 2026-10-12] [AREA: platform] [STATUS: review]
+Intake review and login/onboarding presentation on `codex/cursor-ui-settings`
+(this worktree; PR branch `codex/cursor-ui-intake`). Restyled existing
+`/intake` and `/intake/[workflowId]` with TeamChrome, ReviewCard, StatusPill,
+ListToolbar, Pagination, FormField, EmptyState, ErrorState, and loading/error
+siblings. Wired only `linkIntakeIdentity` and `linkIntakeVehicle`. Owner
+customer search is the existing `search_intake_customers` RPC and is labelled
+as linking help, not a queue filter. Staff and revoked see unavailable.
+Login got labelled FormField, field errors, and 44px targets; onboarding got
+an accessible stepper, field errors, and 44px actions. Auth, redirect,
+provisioning, billing, and `$20` / `+$29` copy are unchanged.
+
+No qualification library exists in this checkout (Claude owns that backend).
+No reject/defer/dismiss intake actions exist — did not invent them. Did not
+resolve identity in the UI, auto-create customers, record consent, start
+nurture, send messages, or call public-form submit. Ask: this fixture shows
+one unidentified Whisper interaction but zero `list_lead_intake_review` rows;
+if qualification is persisted on another branch, it still needs a contract
+before a review screen can call it.
+
+Reused launcher 3128 / app 3127. Did not touch Codex 3109/3110. Owner empty
+queue, Home compact intake, onboarding hours step, staff/revoked unavailable.
+Viewports 320/390/768/1440/1920: no page overflow. Signed-in `/login`
+redirected to `/dashboard` (unchanged). Touched tests 49 passed; lint on
+touched files passed. Screenshots in `docs/qa/screenshots/2026-10-12/`.
+`vercel.json` deployment stays disabled. SkipLink hydration warning remains.
 [AI: codex] [DATE: 2026-10-09] [AREA: platform] [STATUS: done]
 Prepared the founder-requested UI/component handoff for Cursor, with a charcoal,
 silver and violet semantic palette, source links to 21st.dev/shadcn/Base UI/Origin
@@ -918,6 +945,24 @@ issues outside these presentation diffs; they remain open backend follow-ups.
 No full pilot acceptance, shared migration, deployment or provider activation.
 Git deployments remain disabled.
 
+[AI: claude-code] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Added a read-only "next qualification question" suggestion on
+`auto/qualification-next-question` (from main 1cacb18), in the
+`claude-qualification` worktree. `proposeNextQualificationQuestion` in
+`src/lib/lead-qualification.ts` picks the first missing item in a fixed order
+(service, vehicle link, timing, condition, location, constraints, then the
+reviewer's own open question) and returns fixed wording with the record revision it
+was derived from; `loadNextQualificationQuestion` in
+`src/lib/data/lead-qualification.ts` derives it from one `read_lead_qualification`
+call. A record in identity review or no longer current yields no suggestion. Nothing
+is stored, staged as an approval or sent; no model, provider, migration, RPC,
+capability or screen. Contract: "Next question suggestion" in
+`docs/architecture/LEAD_QUALIFICATION.md`.
+
+Isolated runner on Node 24.15.0 (not the usual Node 22): 1,367 unit passes with four
+existing live skips (10 new), lint and typecheck passed. Build and the database
+integration suite were not run: no migration, RPC or route changed. Committed as b76ca4d; not viewed in a browser, since no screen uses it yet.
+The stale `platform` checkout and every other worktree were left alone.
 [AI: codex] [DATE: 2026-10-10] [AREA: platform] [STATUS: done]
 Completed the bounded inbox load-error follow-up while integrating #64–#67 in
 separate checkouts. Only SQL permission refusal 42501 renders access guidance;
@@ -959,32 +1004,20 @@ local production build. No other agent worktree was changed. Preparing the separ
 thread-load error PR from this merged baseline; deployment remains unperformed
 while Supabase is inactive.
 
-[AI: cursor] [DATE: 2026-10-12] [AREA: platform] [STATUS: review]
-Intake review and login/onboarding presentation on `codex/cursor-ui-settings`
-(this worktree; PR branch `codex/cursor-ui-intake`). Restyled existing
-`/intake` and `/intake/[workflowId]` with TeamChrome, ReviewCard, StatusPill,
-ListToolbar, Pagination, FormField, EmptyState, ErrorState, and loading/error
-siblings. Wired only `linkIntakeIdentity` and `linkIntakeVehicle`. Owner
-customer search is the existing `search_intake_customers` RPC and is labelled
-as linking help, not a queue filter. Staff and revoked see unavailable.
-Login got labelled FormField, field errors, and 44px targets; onboarding got
-an accessible stepper, field errors, and 44px actions. Auth, redirect,
-provisioning, billing, and `$20` / `+$29` copy are unchanged.
+[AI: codex] [DATE: 2026-10-12] [AREA: platform] [STATUS: done]
+Reviewed Cursor #69 and Claude commit b76ca4d in separate worktrees. Reconciled
+both with current main while preserving append-only work-log entries. #69 merged
+as 711f00c after both required checks passed; its Node 22 unit run passed 1,368
+tests (four live skips). Persisted qualification has existed since #62; Cursor's
+old checkout was missing it. A populated qualification review screen remains
+unimplemented, and the supplied intake browser fixture was empty. Updated #69's
+PR description to correct that dependency and retain the acceptance limitation.
 
-No qualification library existed in this checkout at the time of that pass.
-No reject/defer/dismiss intake actions exist — did not invent them. Did not
-resolve identity in the UI, auto-create customers, record consent, start
-nurture, send messages, or call public-form submit. Ask: this fixture shows
-one unidentified Whisper interaction but zero `list_lead_intake_review` rows;
-if qualification is persisted on another branch, it still needs a contract
-before a review screen can call it.
-
-Reused launcher 3128 / app 3127. Did not touch Codex 3109/3110. Owner empty
-queue, Home compact intake, onboarding hours step, staff/revoked unavailable.
-Viewports 320/390/768/1440/1920: no page overflow. Signed-in `/login`
-redirected to `/dashboard` (unchanged). Touched tests 49 passed; lint on
-touched files passed. Screenshots in `docs/qa/screenshots/2026-10-12/`.
-`vercel.json` deployment stays disabled. SkipLink hydration warning remains.
+Published Claude's read-only question proposal as #70 on
+codex/qualification-next-question, corrected its stale uncommitted status, and
+verified 1,374 units on Node 22. Both initial CI checks passed. Reconciled the
+branch with merged #69 for a fresh combined CI run before merge. Original agent
+checkouts remain untouched. No migration, provider send or deployment performed.
 
 [AI: cursor] [DATE: 2026-10-12] [AREA: platform] [STATUS: review]
 Qualification review UI on `codex/cursor-ui-qualification` after merging

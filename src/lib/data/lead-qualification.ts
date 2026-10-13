@@ -1,8 +1,8 @@
 import { z } from "zod"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
-  qualificationHistorySchema, qualificationListSchema, qualificationSchema,
-  type LeadQualification, type LeadQualificationHistory, type LeadQualificationList,
+  proposeNextQualificationQuestion, qualificationHistorySchema, qualificationListSchema, qualificationSchema,
+  type LeadQualification, type LeadQualificationHistory, type LeadQualificationList, type NextQualificationQuestion,
 } from "@/lib/lead-qualification"
 
 const id = z.string().uuid()
@@ -18,6 +18,13 @@ export async function loadLeadQualification(db: SupabaseClient, shopId: string, 
     const parsed = result.error ? null : qualificationSchema.safeParse(result.data)
     return parsed?.success ? { ok: true, data: parsed.data } : { ok: false }
   } catch { return { ok: false } }
+}
+
+/** The next question to suggest to a reviewer, derived from one verified read.
+ *  Read-only: it stores, stages and sends nothing. A failed read is never "no question". */
+export async function loadNextQualificationQuestion(db: SupabaseClient, shopId: string, workflowId: string): Promise<Read<NextQualificationQuestion>> {
+  const record = await loadLeadQualification(db, shopId, workflowId)
+  return record.ok ? { ok: true, data: proposeNextQualificationQuestion(record.data) } : { ok: false }
 }
 
 export async function loadLeadQualifications(db: SupabaseClient, shopId: string, offset = 0): Promise<Read<LeadQualificationList>> {
