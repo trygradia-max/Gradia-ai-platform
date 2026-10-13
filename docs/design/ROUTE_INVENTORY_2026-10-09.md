@@ -12,8 +12,8 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | Route | File | Notes | Status |
 | --- | --- | --- | --- |
 | `/` | `src/app/page.tsx` | Redirects to `/dashboard`. | pending |
-| `/login` | `src/app/login/page.tsx` | Public sign-in. | pending |
-| `/onboarding` | `src/app/onboarding/page.tsx` | First-run wizard; outside dashboard gate. | pending |
+| `/login` | `src/app/login/page.tsx` | Public sign-in. Labelled FormField, 44px targets, field errors. Auth/redirect unchanged. | updated |
+| `/onboarding` | `src/app/onboarding/page.tsx` | First-run wizard; outside dashboard gate. Stepper, FormField, 44px actions. Provisioning/billing unchanged. | updated |
 | `/how-it-works` | `src/app/how-it-works/page.tsx` | Help article. | pending |
 | `/dashboard` | `src/app/(dashboard)/dashboard/page.tsx` | Home. Loading: `dashboard/loading.tsx`. | updated |
 | `/approvals` | `src/app/(dashboard)/approvals/page.tsx` | Owner queue. Loading: `approvals/loading.tsx`. | updated |
@@ -35,8 +35,8 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `/team` | `src/app/team/page.tsx` | Own chrome, not AppShell. Loading/error siblings. | updated |
 | `/team/approvals` | `src/app/team/approvals/page.tsx` | Delegated message approve/reject. | updated |
 | `/team/delivery-reviews` | `src/app/team/delivery-reviews/page.tsx` | Delegated delivery review. | updated |
-| `/intake` | `src/app/intake/page.tsx` | Unresolved identity review. | pending |
-| `/intake/[workflowId]` | `src/app/intake/[workflowId]/page.tsx` | Intake history. | pending |
+| `/intake` | `src/app/intake/page.tsx` | Unresolved identity review. TeamChrome, ReviewCard, honest customer search, Pagination. Loading/error siblings. | updated |
+| `/intake/[workflowId]` | `src/app/intake/[workflowId]/page.tsx` | Intake history + existing vehicle link. Same chrome. | updated |
 | `/q/[token]` | `src/app/q/[token]/page.tsx` | Public quote. `not-found.tsx`. | pending |
 
 ## Redirects (legacy aliases)
@@ -69,6 +69,8 @@ Conversations / Customers) is marked below. Remaining inventory stays
 | `src/app/control-center/error.tsx` | Control Center error. | updated |
 | `src/app/team/loading.tsx` | Team loading. | updated |
 | `src/app/team/error.tsx` | Team error. | updated |
+| `src/app/intake/loading.tsx` | Intake skeleton cards. | updated |
+| `src/app/intake/error.tsx` | Intake failed-load card. | updated |
 | `src/app/q/[token]/not-found.tsx` | Public quote 404. | pending |
 | `src/app/auth/callback/route.ts` | Auth code exchange. | pending |
 
@@ -117,4 +119,6 @@ Conversations / Customers) is marked below. Remaining inventory stays
 2. Approvals, Activity, and delegated `/team/approvals` (ReviewCard +
    honest page-local activity filters).
 3. Team, delivery reviews, Settings, Control Center, receptionist, and
-   billing layout-only. Remaining inventory stays pending.
+   billing layout-only.
+4. Intake review (`/intake`, `/intake/[workflowId]`) plus login and
+   onboarding presentation. Remaining inventory stays pending.
