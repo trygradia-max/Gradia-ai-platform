@@ -1078,3 +1078,19 @@ captured from that process. Targeted tests: 43 passed
 `login-onboarding-ui`). Lint on touched files passed after removing an
 unused helper. `vercel.json` deployment stays disabled. Codex 3109/3110
 left alone.
+
+[AI: codex] [DATE: 2026-10-13] [AREA: platform] [STATUS: review]
+Reconciled #71 with #70's merged helper, retaining the updated review-first/open-question
+contract, then merged #71 after both required checks passed (Node 22 local units:
+1,379 passes). Reconciled #72 with current main without touching agent checkouts.
+Found and fixed qualification editor state surviving a new server revision and edits
+remaining possible after an uncertain save. The editor now remounts on changed server
+record context, preserves exact retry payload/command, catches transport failures as
+uncertain, and prevents repeat saves after success until refreshed. Four state
+regressions added; local units 1,389 passed before #71 integration, lint/offline build
+and post-build types passed. Combined CI and browser acceptance follow.
+Production read-only audit: correct Supabase project ACTIVE_HEALTHY, 71 applied/93
+repository migrations, 22 pending and no production-only versions; all 42 public
+tables have RLS. Application release-freeze triggers remain. Hosted scheduled backups
+are unavailable on the current Free plan; recoverability is not yet verified.
+No production migration, deployment, provider activation or freeze removal performed.
