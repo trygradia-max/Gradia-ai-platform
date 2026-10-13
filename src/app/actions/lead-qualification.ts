@@ -4,6 +4,8 @@ import {
   qualificationCommandSchema, qualificationRefusal, qualificationSchema,
   type QualificationUpdateResult,
 } from "@/lib/lead-qualification"
+import { revalidatePath } from "next/cache"
+
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -35,6 +37,8 @@ export async function updateLeadQualification(input: unknown): Promise<Qualifica
     const qualification = qualificationSchema.safeParse(result.data)
     if (!qualification.success || qualification.data.workflow_id !== c.workflowId || (status !== "recorded" && status !== "already_recorded"))
       return { ok: false, code: "not_confirmed" }
+    revalidatePath("/intake")
+    revalidatePath(`/intake/${c.workflowId}`)
     return { ok: true, status, qualification: qualification.data }
   } catch {
     return { ok: false, code: "uncertain" }

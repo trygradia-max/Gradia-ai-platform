@@ -1042,3 +1042,55 @@ codex/qualification-next-question, corrected its stale uncommitted status, and
 verified 1,374 units on Node 22. Both initial CI checks passed. Reconciled the
 branch with merged #69 for a fresh combined CI run before merge. Original agent
 checkouts remain untouched. No migration, provider send or deployment performed.
+
+[AI: cursor] [DATE: 2026-10-12] [AREA: platform] [STATUS: review]
+Qualification review UI on `codex/cursor-ui-qualification` after merging
+`origin/main` so the existing backend is in this checkout. Wired only
+`loadLeadQualifications`, `loadLeadQualification`,
+`loadLeadQualificationHistory`, and `updateLeadQualification`. Extended
+`/intake` (list) and `/intake/[workflowId]#qualification` (review/edit)
+with intake chrome. Owners and `crm.read` managers can read; save follows
+`can_update` (owner or manager with `leads.qualify`). Staff/revoked get the
+same unavailable state as intake.
+
+Unknown fields render as **Unknown** with no source, not yes/no or empty
+defaults; known-empty constraints stay distinct. Provenance (source and
+intake evidence revision) is shown per field. Stale records use
+`needs_review` plus `review_reasons`. `revision_conflict` and other
+reload-required outcomes lock saving until a fresh load. Uncertain saves
+retry the same command id. `updateLeadQualification` now revalidates
+`/intake` and `/intake/[workflowId]` after an accepted save (the contract
+said to add that when a screen exists). No new migrations, RPCs, or
+nurture/message/consent/identity actions.
+
+Did not copy Claude’s next-question helper — it is not in this checkout
+(`proposeNextQualificationQuestion` remains Claude’s lane). Missing fields
+come from the record’s `missing` array. Login/onboarding were already
+labelled with 44px targets and field errors; no further auth polish.
+
+Local-only preview: applied existing `20261009100000_lead_qualification.sql`
+to the disposable 58331 stack and seeded unknown + stale workflows with
+`scripts/cursor-preview-qualification-fixture.mjs`. The running 3127
+process has a dead file watcher (EMFILE) and kept serving the pre-change
+intake compile; screenshots of the new qualification section were not
+captured from that process. Targeted tests: 43 passed
+(`qualification-review-ui`, `intake-review-ui`, `lead-qualification`,
+`login-onboarding-ui`). Lint on touched files passed after removing an
+unused helper. `vercel.json` deployment stays disabled. Codex 3109/3110
+left alone.
+
+[AI: codex] [DATE: 2026-10-13] [AREA: platform] [STATUS: review]
+Reconciled #71 with #70's merged helper, retaining the updated review-first/open-question
+contract, then merged #71 after both required checks passed (Node 22 local units:
+1,379 passes). Reconciled #72 with current main without touching agent checkouts.
+Found and fixed qualification editor state surviving a new server revision and edits
+remaining possible after an uncertain save. The editor now remounts on changed server
+record context, preserves exact retry payload/command, catches transport failures as
+uncertain, and prevents repeat saves after success until refreshed. Four state
+regressions added; local units 1,389 passed before #71 integration, lint/offline build
+and post-build types passed. Combined CI and browser acceptance follow.
+Production read-only audit: correct Supabase project ACTIVE_HEALTHY, 71 applied/93
+repository migrations, 22 pending and no production-only versions; all 42 public
+tables have RLS. Application release-freeze triggers remain. Hosted scheduled backups
+are unavailable on the current Free plan; recoverability is not yet verified.
+No production migration, deployment, provider activation or freeze removal performed.

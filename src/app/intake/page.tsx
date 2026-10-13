@@ -6,12 +6,14 @@ import { FormField } from "@/components/gradia/form-field"
 import { IntakeReviewQueue } from "@/components/gradia/intake-review-queue"
 import { ListToolbar } from "@/components/gradia/list-toolbar"
 import { Pagination } from "@/components/gradia/pagination"
+import { QualificationList } from "@/components/gradia/qualification-list"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { TeamChrome } from "@/components/gradia/team-chrome"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { loadIntakeReview } from "@/lib/data/intake-review"
+import { loadLeadQualifications } from "@/lib/data/lead-qualification"
 import { intakeCustomerSchema } from "@/lib/intake-identity"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -25,7 +27,7 @@ const workspaceLink =
 export default async function IntakePage({
   searchParams,
 }: {
-  searchParams: Promise<{ shop?: string; page?: string; query?: string }>
+  searchParams: Promise<{ shop?: string; page?: string; qpage?: string; query?: string }>
 }) {
   await requireUser()
   const db = await createClient()
@@ -46,11 +48,11 @@ export default async function IntakePage({
           level={1}
           eyebrow="Intake"
           title="Intake review"
-          subhead="This shop’s intake is not available to your account."
+          subhead="This shop’s intake and qualification review are not available to your account."
         />
         <ErrorState
           title="Intake unavailable"
-          description="Owner access or a manager CRM-read grant is required. Revoked and staff memberships cannot open this queue."
+          description="Owner access or a manager CRM-read grant is required. Revoked and staff memberships cannot open intake or qualification."
           action={
             <Link href="/team" className={workspaceLink}>
               Back to your workspaces
@@ -70,7 +72,19 @@ export default async function IntakePage({
       ? z.array(intakeCustomerSchema).safeParse(candidates.data)
       : null
   const customers = parsed?.success ? parsed.data : undefined
+  const rawQualificationPage = Number(params.qpage ?? "1")
+  const qualificationPage =
+    Number.isSafeInteger(rawQualificationPage) &&
+    rawQualificationPage > 0 &&
+    rawQualificationPage < 100000
+      ? rawQualificationPage
+      : 1
   const result = await loadIntakeReview(db, workspace.id, (page - 1) * 20)
+  const qualifications = await loadLeadQualifications(
+    db,
+    workspace.id,
+    (qualificationPage - 1) * 20
+  )
   const pageQuery = query ? `&query=${encodeURIComponent(query)}` : ""
   const base = `/intake?shop=${workspace.id}`
   const start = (page - 1) * 20 + 1
@@ -85,7 +99,7 @@ export default async function IntakePage({
         level={1}
         eyebrow="Intake"
         title={`${workspace.name} · Intake review`}
-        subhead="Unresolved submissions wait here for an owner to link an existing customer. Viewing does not create a customer, record consent, or start qualification."
+        subhead="Unresolved submissions wait for an identity link. Linked intake can be qualified below. Viewing does not create a customer, record consent, send a message, or start nurture."
       />
       <nav aria-label="Intake workspaces" className="flex flex-wrap gap-4">
         {allowed.map((w) => (
@@ -150,10 +164,35 @@ export default async function IntakePage({
                 : `Showing ${start}–${end} of ${result.queue.total} unresolved in this shop.`
             : undefined
         }
-        previous={page > 1 ? { href: `${base}&page=${page - 1}${pageQuery}` } : null}
+        previous={
+          page > 1
+            ? { href: `${base}&page=${page - 1}&qpage=${qualificationPage}${pageQuery}` }
+            : null
+        }
         next={
           result.ok && page * 20 < result.queue.total
-            ? { href: `${base}&page=${page + 1}${pageQuery}` }
+            ? { href: `${base}&page=${page + 1}&qpage=${qualificationPage}${pageQuery}` }
+            : null
+        }
+      />
+      <QualificationList result={qualifications} shopId={workspace.id} />
+      <Pagination
+        label="Qualification pages"
+        status={
+          qualifications.ok
+            ? qualifications.data.items.length === 0
+              ? "No qualification records in this shop."
+              : `Showing qualification page ${qualificationPage}.`
+            : undefined
+        }
+        previous={
+          qualificationPage > 1
+            ? { href: `${base}&page=${page}&qpage=${qualificationPage - 1}${pageQuery}` }
+            : null
+        }
+        next={
+          qualifications.ok && qualifications.data.items.length > 20
+            ? { href: `${base}&page=${page}&qpage=${qualificationPage + 1}${pageQuery}` }
             : null
         }
       />

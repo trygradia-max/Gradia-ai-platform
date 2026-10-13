@@ -108,7 +108,7 @@ Helpers: `src/lib/data/lead-qualification.ts`. Action:
 `src/lib/lead-qualification.ts`. List and history return up to 21 items; the 21st
 means another page exists. The list omits `fields` and `open_questions`.
 
-The action does not revalidate any path; no screen exists yet. Add that when one does.
+The action revalidates `/intake` and `/intake/[workflowId]` after an accepted save.
 
 ### Reading a record
 
@@ -332,7 +332,9 @@ trigger that fails the audit insert on a marker value; it is not a migration.
 
 ## Limits
 
-- No screen. Cursor owns the UI; this document is the contract.
+- Screen: `/intake` lists records; `/intake/[workflowId]#qualification` reviews
+  and edits them. Unknown, provenance, stale (`needs_review`), and save conflicts
+  are presentation-only on this contract. Nothing here quotes, books, or messages.
 - A save replaces the whole document. There is no per-field patch and no merge of
   concurrent edits: the second writer gets `revision_conflict`.
 - The workflow state machine still has only `identity_review` and
