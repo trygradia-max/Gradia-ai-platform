@@ -84,6 +84,8 @@ export function QualificationForm({
   const [locked, setLocked] = useState(false)
   const identityBlocked =
     qualification.identity.state !== "identity_linked" || qualification.identity.customer_id === null
+  const uncertain = outcome !== null && !outcome.ok && outcome.code === "uncertain"
+  const editDisabled = busy || locked || uncertain || identityBlocked || !qualification.can_update
   const failed = outcome !== null && !outcome.ok
   const fieldError =
     failed && outcome.code === "invalid" ? outcome.field : undefined
@@ -103,25 +105,31 @@ export function QualificationForm({
       className="space-y-5"
       onSubmit={(event) => {
         event.preventDefault()
-        if (locked || identityBlocked || !qualification.identity.customer_id) return
+        if (busy || locked || !qualification.can_update || identityBlocked || !qualification.identity.customer_id) return
         start(async () => {
-          const result = await updateLeadQualification({
-            shopId,
-            workflowId: qualification.workflow_id,
-            commandId: activeCommandId,
-            revision: qualification.revision,
-            customerId: qualification.identity.customer_id,
-            vehicleId: qualification.identity.vehicle_id,
-            reviewState,
-            fields: trimFields(fields),
-            openQuestions: questions.map((question) => ({
-              ...question,
-              text: question.text.trim(),
-              answer: question.answer?.trim() || null,
-            })),
-          })
+          let result: QualificationUpdateResult
+          try {
+            result = await updateLeadQualification({
+              shopId,
+              workflowId: qualification.workflow_id,
+              commandId: activeCommandId,
+              revision: qualification.revision,
+              customerId: qualification.identity.customer_id,
+              vehicleId: qualification.identity.vehicle_id,
+              reviewState,
+              fields: trimFields(fields),
+              openQuestions: questions.map((question) => ({
+                ...question,
+                text: question.text.trim(),
+                answer: question.answer?.trim() || null,
+              })),
+            })
+          } catch {
+            result = { ok: false, code: "uncertain" }
+          }
           setOutcome(result)
           if (result.ok) {
+            setLocked(true)
             router.refresh()
             return
           }
@@ -145,7 +153,7 @@ export function QualificationForm({
           <select
             className={QUALIFICATION_SELECT_CLASS}
             value={reviewState}
-            disabled={busy || locked}
+            disabled={editDisabled}
             onChange={(event) => {
               setReviewState(event.target.value as "in_progress" | "reviewed")
               if (outcome) setActiveCommandId(crypto.randomUUID())
@@ -162,7 +170,7 @@ export function QualificationForm({
           key={name}
           name={name}
           field={fields[name]}
-          disabled={busy || locked || identityBlocked || !qualification.can_update}
+          disabled={editDisabled}
           evidenceRevision={qualification.identity.evidence_revision}
           services={services}
           error={fieldError?.startsWith(`fields.${name}`) ? fieldError : undefined}
@@ -171,7 +179,7 @@ export function QualificationForm({
       ))}
       <QuestionsEditor
         questions={questions}
-        disabled={busy || locked || identityBlocked || !qualification.can_update}
+        disabled={editDisabled}
         error={fieldError?.startsWith("open_questions") ? fieldError : undefined}
         onChange={(next) => {
           setQuestions(next)
@@ -191,7 +199,7 @@ export function QualificationForm({
       ) : null}
       {qualification.can_update && !identityBlocked && !locked ? (
         <Button type="submit" className="min-h-11" disabled={busy}>
-          {busy ? "Recording…" : "Save qualification"}
+          {busy ? "Recording…" : uncertain ? "Retry same save" : "Save qualification"}
         </Button>
       ) : null}
       {locked ? (

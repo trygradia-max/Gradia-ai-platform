@@ -164,6 +164,7 @@ export function QualificationReview({
       />
       {qualification.can_update ? (
         <QualificationForm
+          key={JSON.stringify([shopId, qualification.workflow_id, qualification.revision, qualification.identity, qualification.review_reasons, qualification.can_update])}
           shopId={shopId}
           commandId={commandId}
           qualification={qualification}
