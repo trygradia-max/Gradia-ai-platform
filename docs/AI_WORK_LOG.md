@@ -1105,3 +1105,15 @@ Full redirect suite now runs against both origins; 97 targeted tests pass. Local
 post-build types passed. Hosted login verification remains pending. Added exact-host setup
 and rollback instructions. This source change does not activate providers/crons,
 remove database guards, or promote the public domain.
+
+[AI: codex] [DATE: 2026-10-14] [AREA: qualification-ui] [STATUS: review]
+Reviewed Cursor PR73 and merged current main (including private-review callback
+fix PR75) into its branch in an isolated checkout. The card calls the existing
+pure proposal helper and adds no RPC, send/approval path, or database writes.
+It distinguishes questions, review-required reasons and qualification completion;
+failed reads render no suggestion. Cursor reports 1,396 unit passes/four skips,
+build/types/lint success and fixture contrast/layout checks. Its programmatic focus,
+CSS zoom and simulated-width checks are not native keyboard/browser-zoom/mobile
+acceptance; can_update=false verifies a read-only manager, not delegated save, and
+a failed-load fixture is not a real membership-revocation session. These remain
+acceptance follow-ups. Combined verification and merge are recorded separately.
