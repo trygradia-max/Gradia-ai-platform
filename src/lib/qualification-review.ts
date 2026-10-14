@@ -38,6 +38,18 @@ export const QUALIFICATION_REVIEW_REASON_COPY = {
   new_evidence: "A new submission arrived after this record was saved.",
 } as const satisfies Record<(typeof REVIEW_REASONS)[number], string>
 
+export const QUALIFICATION_VEHICLE_UNLINKED_COPY =
+  "Vehicle is not confirmed. Link it in intake review — the customer is never asked for it here."
+
+export const QUALIFICATION_NEXT_TARGET_LABELS = {
+  service: "Service",
+  vehicle_condition: "Vehicle condition",
+  timing: "Timing",
+  location: "Location",
+  constraints: "Constraints",
+  open_question: "Open question",
+} as const
+
 export const QUALIFICATION_SELECT_CLASS =
   "h-11 w-full rounded-sm border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
 

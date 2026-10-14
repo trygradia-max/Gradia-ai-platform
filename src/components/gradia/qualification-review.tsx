@@ -6,12 +6,16 @@ import { StatusPill } from "@/components/ui/status-pill"
 import type {
   LeadQualification,
   LeadQualificationHistory,
+  NextQualificationQuestion,
 } from "@/lib/lead-qualification"
+import { proposeNextQualificationQuestion } from "@/lib/lead-qualification"
 import {
   QUALIFICATION_FIELD_LABELS,
+  QUALIFICATION_NEXT_TARGET_LABELS,
   QUALIFICATION_REVIEW_REASON_COPY,
   QUALIFICATION_REVIEW_STATE_LABELS,
   QUALIFICATION_STATUS_LABELS,
+  QUALIFICATION_VEHICLE_UNLINKED_COPY,
   type QualificationServiceOption,
   qualificationIdentityLine,
   qualificationProvenanceLabel,
@@ -51,6 +55,87 @@ function fieldValue(name: keyof typeof QUALIFICATION_FIELD_LABELS, qualification
   }
   const items = qualification.fields.constraints.items
   return items.length === 0 ? "No constraints" : items.join(" · ")
+}
+
+function nextReasonText(reason: string) {
+  if (reason === "vehicle_unlinked") return QUALIFICATION_VEHICLE_UNLINKED_COPY
+  return QUALIFICATION_REVIEW_REASON_COPY[reason as keyof typeof QUALIFICATION_REVIEW_REASON_COPY] ?? reason
+}
+
+function nextBasisLine(suggestion: NextQualificationQuestion) {
+  const evidence =
+    suggestion.basis.evidence_revision === null
+      ? "no evidence revision"
+      : `evidence revision ${suggestion.basis.evidence_revision}`
+  return `Derived from revision ${suggestion.basis.revision} · ${evidence} — discard if the record moved on.`
+}
+
+/**
+ * Read-only suggestion derived from the persisted record via Claude's
+ * existing `proposeNextQualificationQuestion` helper. Nothing is stored,
+ * staged, or sent; reading it grants no permission to send it. To keep a
+ * suggestion, record it as an open question with the existing save.
+ */
+export function QualificationNextQuestion({
+  qualification,
+}: {
+  qualification: LeadQualification
+}) {
+  const suggestion = proposeNextQualificationQuestion(qualification)
+  if (suggestion.kind === "review_required") {
+    const reasons =
+      suggestion.reasons.length > 0
+        ? suggestion.reasons.map((reason) => nextReasonText(reason)).join(" ")
+        : "Identity, vehicle, or evidence changed since it was recorded. Refresh and re-review before treating it as current."
+    return (
+      <ReviewCard
+        eyebrow="Suggested next question"
+        title="Review first — no question yet"
+        status={<StatusPill tone="warn">Review required</StatusPill>}
+        evidence={
+          <>
+            <p>{reasons}</p>
+            <p>{nextBasisLine(suggestion)}</p>
+            <p>Read-only suggestion — nothing is sent. Finish intake review first.</p>
+          </>
+        }
+      />
+    )
+  }
+  if (suggestion.kind === "question") {
+    const targetLabel = QUALIFICATION_NEXT_TARGET_LABELS[suggestion.target]
+    return (
+      <ReviewCard
+        eyebrow="Suggested next question"
+        title={suggestion.text}
+        status={<StatusPill tone="accent">Suggested</StatusPill>}
+        evidence={
+          <>
+            <p>About: {targetLabel}.</p>
+            <p>{nextBasisLine(suggestion)}</p>
+            <p>
+              Read-only suggestion — nothing is sent, staged, or approved. To keep it, record it as
+              an open question with the existing save.
+            </p>
+          </>
+        }
+      />
+    )
+  }
+  return (
+    <ReviewCard
+      eyebrow="Suggested next question"
+      title="Nothing missing"
+      status={<StatusPill tone="good">Complete</StatusPill>}
+      evidence={
+        <>
+          <p>Nothing is missing from the record. That is not a quote or booking ready state.</p>
+          <p>{nextBasisLine(suggestion)}</p>
+          <p>Read-only — nothing is sent.</p>
+        </>
+      }
+    />
+  )
 }
 
 export function QualificationReview({
@@ -162,6 +247,7 @@ export function QualificationReview({
           </>
         }
       />
+      <QualificationNextQuestion qualification={qualification} />
       {qualification.can_update ? (
         <QualificationForm
           key={JSON.stringify([shopId, qualification.workflow_id, qualification.revision, qualification.identity, qualification.review_reasons, qualification.can_update])}
