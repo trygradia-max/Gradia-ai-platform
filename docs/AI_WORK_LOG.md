@@ -1095,6 +1095,17 @@ tables have RLS. Application release-freeze triggers remain. Hosted scheduled ba
 are unavailable on the current Free plan; recoverability is not yet verified.
 No production migration, deployment, provider activation or freeze removal performed.
 
+[AI: codex] [DATE: 2026-10-14] [AREA: auth] [STATUS: review]
+Private review login was blocked by two mismatched contracts: Supabase allowed only
+the production callback, and the callback always returned to the production origin.
+Added a deployment-only opt-in using Vercel's server-provided generated hostname,
+restricted to this project/team; invalid review configuration fails before code
+exchange. Production defaults and redirect/credential filtering remain unchanged.
+Full redirect suite now runs against both origins; 97 targeted tests pass. Local Node22: 1,446 unit passes, four live skips; lint, offline build and
+post-build types passed. Hosted login verification remains pending. Added exact-host setup
+and rollback instructions. This source change does not activate providers/crons,
+remove database guards, or promote the public domain.
+
 [AI: claude-code] [DATE: 2026-10-14] [AREA: platform] [STATUS: done]
 Added the step from a reviewed qualification question to a queued message approval,
 on `auto/qualification-question-approval` from origin/main `316511d`. The contract
