@@ -383,8 +383,10 @@ read under the lock.
 5. **Current qualification**: `revision` and `evidence_revision` must equal `basis`
    (`qualification_changed`). After that, the record must not be in identity review
    or `needs_review` (`review_required`).
-6. **Target still unresolved**: the field is still `unknown`, or the open question
-   with that id is still `open` (`question_resolved`).
+6. **Target is still the proposal** (`question_resolved`). The database uses the
+   rule from `proposeNextQualificationQuestion`: the first `open` question, otherwise
+   the first `unknown` field in the fixed order. The target must equal that question.
+   The wording may be edited. Which question is asked may not.
 7. **Contact hard stops** on the linked customer (`contact_blocked`). These match the
    executor's own denials:
    - `do_not_contact` is not explicitly `false`;
@@ -428,7 +430,7 @@ A queued question is **not** sent, approved, or a consent decision.
 | `command_conflict` | This id was already used for something else | New id only after the reviewer re-reviews |
 | `qualification_changed` | The record or its evidence moved since the suggestion | Reload and re-propose |
 | `review_required` | Identity or evidence needs review | Send to intake review |
-| `question_resolved` | That field is known or that question is closed | Reload |
+| `question_resolved` | That is no longer the proposed question: the field is known, the question was closed, or another question comes first | Reload and re-propose |
 | `question_pending` | A question for this lead is already waiting in Approvals | Point to Approvals |
 | `contact_blocked` | Do-not-contact, opted out, or suppressed | Show it; never offer an override here |
 | `channel_unavailable` | The channel is not connected or SMS is not carrier-approved | Point to Settings |
@@ -460,10 +462,6 @@ loosen it.
 - No automatic queueing, nurture, retry loop, cron, model or provider call.
 - No change to `whisper_command`, the executor, consent rules or the action type
   enum.
-- A direct RPC caller may queue any still-unresolved target at the current revision,
-  not only the first one the proposal picks. The action checks that the target
-  matches the current proposal. The database checks only that the target is current
-  and unresolved.
 
 ## Schema
 
@@ -488,6 +486,11 @@ Migration `20261009100000_lead_qualification.sql`, migration 93.
   one transaction.
 - `shop_memberships` and `shop_invitations` accept `leads.qualify` and require
   `crm.read` with it. No existing member receives it.
+
+Migration `20261014120000_qualification_question_staging.sql`, migration 94, adds one
+function only: `stage_qualification_question`. It is session-only, with a fixed
+search path, granted to `authenticated` and revoked from `anon` and `service_role`.
+It adds no table, column, index, trigger, enum value or grant on any table.
 
 ## Verification
 
@@ -514,6 +517,8 @@ trigger that fails the audit insert on a marker value; it is not a migration.
 - The workflow state machine still has only `identity_review` and
   `identity_linked`. No `qualifying` state or pipeline stage is written.
 - Nothing connects a qualification to a quote, an availability check or a booking.
+- A reviewed question can be queued as a pending message approval (owner only, see
+  above). There is no screen for it yet, and nothing queues or sends one on its own.
 - The Agent does not read or write qualification. No model or provider is involved,
   so persisted multi-turn qualification conversations remain future work.
 - The queue has no search or filter. Staff have no access, including for customers
