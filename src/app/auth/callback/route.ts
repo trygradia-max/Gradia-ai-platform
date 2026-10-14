@@ -6,8 +6,19 @@ import { NextResponse } from "next/server"
 const PRODUCTION_ORIGIN = "https://gradia-ai-platform.vercel.app"
 const DEFAULT_PATH = "/dashboard"
 
-function safeDestination(next: string | null, callback: URL): URL {
-  const fallback = new URL(DEFAULT_PATH, PRODUCTION_ORIGIN)
+// Opt-in is deployment-local. VERCEL_URL is server/platform configuration, never
+// request authority. Restrict it to this project's generated deployment hostnames.
+function trustedOrigin(): string | null {
+  const mode = process.env.GRADIA_PRIVATE_REVIEW_AUTH
+  if (!mode || mode === "0") return PRODUCTION_ORIGIN
+  const host = process.env.VERCEL_URL ?? ""
+  if (mode !== "1" || process.env.VERCEL !== "1" ||
+      !/^gradia-ai-platform-[a-z0-9]+-gradia1\.vercel\.app$/.test(host)) return null
+  return `https://${host}`
+}
+
+function safeDestination(next: string | null, callback: URL, origin: string): URL {
+  const fallback = new URL(DEFAULT_PATH, origin)
   if (!next) return fallback
   let decoded = next
   try {
@@ -17,8 +28,8 @@ function safeDestination(next: string | null, callback: URL): URL {
           decoded.includes("\\") || [...decoded].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) return fallback
       const path = decoded.split(/[?#]/, 1)[0]
       if (path.split("/").some(segment => segment === "." || segment === "..")) return fallback
-      const candidate = new URL(decoded, PRODUCTION_ORIGIN)
-      if (candidate.origin !== PRODUCTION_ORIGIN || candidate.username || candidate.password) return fallback
+      const candidate = new URL(decoded, origin)
+      if (candidate.origin !== origin || candidate.username || candidate.password) return fallback
       // Do not propagate credentials through next's query, fragment or path.
       const sensitive = /(?:code|token|secret|password|authorization|state|error_description)/i
       for (const key of candidate.searchParams.keys()) if (sensitive.test(key)) return fallback
@@ -26,7 +37,7 @@ function safeDestination(next: string | null, callback: URL): URL {
       for (const [key, value] of callback.searchParams) {
         if (key !== "next" && sensitive.test(key) && value && decoded.includes(value)) return fallback
       }
-      if (!decoded.includes("%")) return new URL(next, PRODUCTION_ORIGIN)
+      if (!decoded.includes("%")) return new URL(next, origin)
       decoded = decodeURIComponent(decoded)
     }
   } catch {
@@ -36,16 +47,22 @@ function safeDestination(next: string | null, callback: URL): URL {
 }
 
 export async function GET(request: Request) {
+  const origin = trustedOrigin()
+  if (!origin) {
+    return new Response("Authentication configuration unavailable", {
+      status: 503, headers: { "Cache-Control": "no-store" },
+    })
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !anonKey) {
-    return NextResponse.redirect(new URL("/login?error=config", PRODUCTION_ORIGIN))
+    return NextResponse.redirect(new URL("/login?error=config", origin))
   }
 
   const callback = new URL(request.url)
   const { searchParams } = callback
   const code = searchParams.get("code")
-  const destination = safeDestination(searchParams.get("next"), callback)
+  const destination = safeDestination(searchParams.get("next"), callback, origin)
 
   if (code) {
     const cookieStore = await cookies()
@@ -68,5 +85,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL("/login?error=auth", PRODUCTION_ORIGIN))
+  return NextResponse.redirect(new URL("/login?error=auth", origin))
 }
