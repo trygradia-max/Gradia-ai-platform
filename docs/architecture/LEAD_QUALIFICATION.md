@@ -291,6 +291,180 @@ built here.
 there is nothing to ask. A reviewer who wants to keep a proposal records it as an open
 question with the existing save.
 
+## Queueing a reviewed question for approval
+
+October 14, 2026. Branch `auto/qualification-question-approval`. This is the step
+between a reviewed suggestion and the Approvals inbox. It puts one owner-reviewed
+question in the queue as a pending `send_sms` or `send_email` approval. **It sends
+nothing.** Sending stays with the owner in Approvals, through the existing executor
+and its send-time checks.
+
+### What was missing, and what is reused
+
+The staging path already exists: `whisper_command` with operation `reply`, the
+Whisper inbox reply. That RPC runs on the session client. It takes the shop lock,
+allows only the active owner and uses a caller-supplied command id. That id is both
+the audit key and the pending action id. It re-checks the recipient against the
+customer row and refuses a stale conversation. It always classifies the message as
+`marketing`, and nothing it stages auto-sends.
+
+What it does not know is qualification, and this is the gap. Nothing ties the
+queued message to the qualification revision it came from, so nothing refuses a
+question that went stale between review and queueing. There is also no guard
+against queueing the same question twice.
+
+The missing step is one SQL function, `stage_qualification_question`. It takes the
+shop lock, re-checks the qualification and the contact, and then calls
+`whisper_command` in the same transaction. It adds no second executor, no new
+action type, no schedule and no provider call. The pending row is the one
+`whisper_command` writes. Its payload gains one key, `qualification`, so Approvals
+and the executor see an ordinary Whisper reply that can be traced back to the lead.
+
+### Who may queue
+
+| Actor | Queue |
+| --- | --- |
+| Shop owner, active membership | Yes |
+| Manager, any grants (including `crm.read` + `leads.qualify`) | No |
+| Staff, revoked member, other shop's owner, anonymous, service role | No |
+
+This is the Whisper reply rule, unchanged: only the owner may queue a customer
+message. Reading or recording a qualification is not permission to message. A
+manager with `approvals.messages` still decides on queued messages through the
+existing delegated claim; that is not changed here.
+
+Authority is rechecked under the shop lock on every call, **before** the
+exact-retry check. A revoked caller's exact retry is refused.
+
+### Command
+
+Server action `stageQualificationQuestion(input)` in
+`src/app/actions/lead-qualification.ts`, over the RPC
+`stage_qualification_question`.
+
+```json
+{
+  "shopId": "5d0e1f2a-3b4c-4d5e-8f60-718293a4b5c6",
+  "workflowId": "7b1f0c9e-2a44-4d0b-9a55-0c5d1e2f3a41",
+  "commandId": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+  "basis": { "revision": 1, "evidence_revision": 1 },
+  "target": "timing",
+  "questionId": null,
+  "channel": "sms",
+  "conversation": { "latestId": "e1d2c3b4-a596-4877-8695-a4b3c2d1e0f9", "revision": 0 },
+  "message": { "body": "When would you like to bring it in?", "subject": "", "destination": "+15555550123" }
+}
+```
+
+- `basis` is the proposal's `basis`, copied unchanged.
+- `target` and `questionId` are the proposal's `target` and `question_id`.
+  `questionId` is required only when `target` is `open_question`.
+- `conversation` holds `latest_id` and `revision` from the Whisper thread read for
+  this customer and channel, exactly as a Whisper reply sends them.
+- `message.body` is the reviewer's final text. The reviewer may edit the suggested
+  wording. `subject` is required for email and must be `""` for SMS.
+  `destination` is the customer's phone or email as the reviewer saw it.
+- `commandId` is generated once per queue attempt. **Reuse it when retrying.**
+
+The customer is never taken from the caller. It is the workflow's linked customer,
+read under the lock.
+
+### Checks, in order, all in one transaction
+
+1. **Shop lock**, then **authority**: the caller is the active owner of this shop.
+2. **Shape**: valid ids, a known `target`, `questionId` present exactly for
+   `open_question`, channel `sms` or `email`.
+3. **Exact retry**: if `commandId` already names a pending action, its recorded
+   `qualification` binding and its Whisper binding must both match. If they do,
+   the call returns `already_queued` and writes nothing. If either differs, the call
+   fails with `command_conflict`. Exact retries skip checks 4–9: they return the
+   original outcome even after the record has moved on, as qualification saves do.
+4. **Workflow lock**. The workflow must exist in this shop.
+5. **Current qualification**: `revision` and `evidence_revision` must equal `basis`
+   (`qualification_changed`). After that, the record must not be in identity review
+   or `needs_review` (`review_required`).
+6. **Target still unresolved**: the field is still `unknown`, or the open question
+   with that id is still `open` (`question_resolved`).
+7. **Contact hard stops** on the linked customer (`contact_blocked`). These match the
+   executor's own denials:
+   - `do_not_contact` is not explicitly `false`;
+   - for SMS, `sms_opted_out_at` is set;
+   - the canonical destination is suppressed in `customer_channel_permissions`.
+8. **Channel readiness** (`channel_unavailable`).
+   - SMS needs a business number. A Gradia number needs approved A2P. A
+     bring-your-own number needs `byo_sms_verified`.
+   - Email needs a connected mailbox.
+9. **One open question per lead**: no other unexecuted qualification question for
+   this workflow may be waiting. That means pending, edit-requested, or approved but
+   not sent (`question_pending`). A double-click with a fresh id cannot queue the
+   question twice.
+10. **Existing staging**: `whisper_command(... 'reply' ...)` runs inside the same
+    transaction. Its checks still apply:
+    - owner only;
+    - the conversation must be unchanged (`conversation_changed`), which includes
+      the case where the customer has no thread on that channel;
+    - the destination must equal the customer's current phone or email
+      (`recipient_changed`);
+    - body length must be valid;
+    - the active Control Center policy must allow staging (`policy_blocked`).
+11. The pending row's payload gets
+    `qualification: { workflow_id, revision, evidence_revision, target, question_id }`.
+
+Any refusal rolls back everything. Nothing partial is left.
+
+### Result
+
+```json
+{ "ok": true, "status": "queued", "actionId": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d", "workflowId": "7b1f0c9e-…", "channel": "sms" }
+```
+
+`status` is `already_queued` for an exact retry. `actionId` always equals `commandId`.
+A queued question is **not** sent, approved, or a consent decision.
+
+| Result | Meaning | What the screen should do |
+| --- | --- | --- |
+| `invalid` + `field` | Shape refused. Nothing was queued | Point at the field |
+| `forbidden` | Not this shop's active owner, or the workflow or conversation is not visible | Remove the control; do not retry |
+| `command_conflict` | This id was already used for something else | New id only after the reviewer re-reviews |
+| `qualification_changed` | The record or its evidence moved since the suggestion | Reload and re-propose |
+| `review_required` | Identity or evidence needs review | Send to intake review |
+| `question_resolved` | That field is known or that question is closed | Reload |
+| `question_pending` | A question for this lead is already waiting in Approvals | Point to Approvals |
+| `contact_blocked` | Do-not-contact, opted out, or suppressed | Show it; never offer an override here |
+| `channel_unavailable` | The channel is not connected or SMS is not carrier-approved | Point to Settings |
+| `conversation_changed` | A new message arrived, the thread was handed off, or there is no thread on this channel | Reload the thread |
+| `recipient_changed` | The customer's phone or email changed | Reload |
+| `policy_blocked` | The active policy does not permit staging this action | Show the policy state |
+| `not_confirmed` | Refused or unverifiable reply | Reload before retrying |
+| `uncertain` | No reply received | Retry with the **same** `commandId` |
+
+### What still happens at send time, unchanged
+
+When the owner approves, the existing executor runs all its current checks. It
+claims the action atomically and re-checks the policy. It verifies the destination,
+DNC, opt-out and suppression again. A marketing message needs recorded
+`marketing_consent_at`; otherwise the owner must attach the existing reply-purpose
+proof to an inbound message less than 48 hours old. It applies quiet hours, the A2P
+gate and the at-most-once execution ledger. Email also needs verified reply context.
+
+So a queued question for a lead with no marketing consent and no recent inbound
+message **will be held at send**. That is the existing rule and this step does not
+loosen it.
+
+### Not in this step
+
+- No screen. Cursor owns the control on `/intake/[workflowId]`.
+- Leads with no SMS or email thread, such as website-form leads that never
+  messaged, cannot be queued. `whisper_command` needs a conversation. A first
+  outbound message to such a lead is a consent question, not a staging gap.
+- No automatic queueing, nurture, retry loop, cron, model or provider call.
+- No change to `whisper_command`, the executor, consent rules or the action type
+  enum.
+- A direct RPC caller may queue any still-unresolved target at the current revision,
+  not only the first one the proposal picks. The action checks that the target
+  matches the current proposal. The database checks only that the target is current
+  and unresolved.
+
 ## Schema
 
 Migration `20261009100000_lead_qualification.sql`, migration 93.
