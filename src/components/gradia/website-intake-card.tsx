@@ -4,11 +4,11 @@ import * as React from "react"
 
 import {
   configurePublicIntakeForm,
+  listPublicIntakeForms,
 } from "@/app/actions/public-intake-forms"
 import { HelpTip } from "@/components/gradia/help-tip"
 import { STRINGS } from "@/lib/strings"
 import type { publicFormResultSchema } from "@/lib/public-form-intake"
-import { useRouter } from "next/navigation"
 import { Globe, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import type { z } from "zod"
@@ -74,14 +74,16 @@ export function WebsiteIntakeCard({
   shopId: string
   initial: WebsiteIntakeInitial
 }) {
-  const router = useRouter()
+  const [current, setCurrent] = React.useState(initial)
+  const busy = React.useRef(false)
+  const createCommand = React.useRef<WebsiteIntakeCommand | null>(null)
   const [pending, setPending] = React.useState<string | null>(null)
   const [problem, setProblem] = React.useState<string | null>(null)
   const [newOrigin, setNewOrigin] = React.useState("")
   const [drafts, setDrafts] = React.useState<Record<string, string>>({})
   const [editing, setEditing] = React.useState<string | null>(null)
 
-  if (!initial.ok) {
+  if (!current.ok) {
     return (
       <MotionCard interactive={false} className="space-y-4 p-6">
         <div className="flex items-start gap-3">
@@ -94,8 +96,8 @@ export function WebsiteIntakeCard({
               <HelpTip label="Website intake" text={STRINGS.help.settings.websiteIntake} />
             </p>
             <p className="max-w-prose text-sm text-muted-foreground">
-              Website forms are unavailable. Owner access is required — refresh,
-              and check that your login still owns this shop. Nothing was changed.
+              Website forms could not be loaded. Owner access is required. Refresh
+              this page before making changes; an earlier save may have completed.
             </p>
           </div>
         </div>
@@ -103,9 +105,11 @@ export function WebsiteIntakeCard({
     )
   }
 
-  const forms = initial.forms
+  const forms = current.forms
 
   async function run(label: string, command: { formId: string; origin: string; enabled: boolean; revision: number }) {
+    if (busy.current) return
+    busy.current = true
     setPending(label)
     setProblem(null)
     let result: Awaited<ReturnType<typeof configurePublicIntakeForm>>
@@ -114,12 +118,21 @@ export function WebsiteIntakeCard({
     } catch {
       result = { ok: false as const, message: "Configuration could not be confirmed. Refresh before retrying." }
     }
+    // Do not unlock writes until a fresh authenticated list has actually arrived.
+    let fresh: WebsiteIntakeInitial
+    try { fresh = await listPublicIntakeForms(shopId) }
+    catch { fresh = { ok: false } }
+    setCurrent(fresh)
+    if (!fresh.ok) return // Reload required: no controls on an unconfirmed read.
+    if (createCommand.current?.formId === command.formId &&
+        fresh.forms.some(form => form.id === command.formId)) {
+      createCommand.current = null
+      setNewOrigin("")
+    }
+    busy.current = false
     setPending(null)
-    // Fresh list before any further command — a stale revision, an error, or
-    // an uncertain outcome all require re-reading current configuration first.
-    router.refresh()
     if (!result.ok) {
-      setProblem(`${result.message} The list was refreshed — review the current revision before trying again.`)
+      setProblem(`${result.message} Review the current revision before trying again. The current list is now loaded.`)
       return
     }
     if (editing === command.formId) {
@@ -139,7 +152,12 @@ export function WebsiteIntakeCard({
       setProblem("Enter the exact HTTPS origin your website is served from, without a path or trailing slash.")
       return
     }
-    void run(`create:${origin}`, websiteIntakeCreateCommand(origin))
+    if (busy.current) return
+    // Preserve identity when a save may have committed but its response was lost.
+    if (!createCommand.current || createCommand.current.origin !== origin) {
+      createCommand.current = websiteIntakeCreateCommand(origin)
+    }
+    void run(`create:${origin}`, createCommand.current)
   }
 
   return (

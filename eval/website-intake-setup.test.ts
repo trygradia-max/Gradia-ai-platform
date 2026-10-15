@@ -68,7 +68,7 @@ describe("website intake setup presentation", () => {
     const html = cardHtml({ ok: false })
     expect(html).toContain("Website intake")
     expect(html).toContain("Owner access is required")
-    expect(html).toContain("Nothing was changed")
+    expect(html).toContain("an earlier save may have completed")
     // The only button is the help tooltip trigger — no form actions.
     expect(html.match(/<button/g)?.length).toBe(1)
     expect(html).toContain('aria-label="About Website intake"')
@@ -153,10 +153,10 @@ describe("website intake command contract", () => {
       "utf8"
     )
     // Both success and failure paths re-read configuration first.
-    expect(source.match(/router\.refresh\(\)/g)?.length).toBeGreaterThanOrEqual(1)
+    expect(source).toContain("await listPublicIntakeForms(shopId)")
     expect(source).not.toMatch(/setTimeout|setInterval/)
     // No second executor, RPC, or storage write lives in this surface.
     expect(source).not.toMatch(/\.rpc\(|\.insert\(|\.update\(|\.upsert\(|localStorage|pending_actions/i)
-    expect(source).toContain("review the current revision before trying again")
+    expect(source).toContain("Review the current revision before trying again")
   })
 })
