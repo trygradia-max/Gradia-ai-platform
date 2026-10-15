@@ -347,7 +347,7 @@ Server action `stageQualificationQuestion(input)` in
   "shopId": "5d0e1f2a-3b4c-4d5e-8f60-718293a4b5c6",
   "workflowId": "7b1f0c9e-2a44-4d0b-9a55-0c5d1e2f3a41",
   "commandId": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
-  "basis": { "revision": 1, "evidence_revision": 1 },
+  "basis": { "workflow_id": "7b1f0c9e-2a44-4d0b-9a55-0c5d1e2f3a41", "revision": 1, "evidence_revision": 1 },
   "target": "timing",
   "questionId": null,
   "channel": "sms",
@@ -356,7 +356,10 @@ Server action `stageQualificationQuestion(input)` in
 }
 ```
 
-- `basis` is the proposal's `basis`, copied unchanged.
+- `basis` is the proposal's `basis`, copied unchanged. Its `workflow_id` is
+  optional, but when present it must equal `workflowId`; otherwise the result is
+  `invalid` with `field: "basis"`. Until October 15 the action wrongly refused
+  the published basis because of that key.
 - `target` and `questionId` are the proposal's `target` and `question_id`.
   `questionId` is required only when `target` is `open_question`.
 - `conversation` holds `latest_id` and `revision` from the Whisper thread read for
@@ -462,6 +465,44 @@ loosen it.
 - No automatic queueing, nurture, retry loop, cron, model or provider call.
 - No change to `whisper_command`, the executor, consent rules or the action type
   enum.
+
+### Connected acceptance
+
+`eval/integration/lead-workflow-acceptance.int.test.ts` runs one synthetic lead
+through every step, with the SMS provider faked:
+
+1. Inbound SMS intake, including the provider redelivering the event.
+2. The owner links the identity.
+3. The qualification proposal.
+4. `stageQualificationQuestion`.
+5. Owner or delegated-manager approval through the existing executor.
+
+It covers:
+
+- one transport call under concurrent and exact retries;
+- a hold at send without consent or a reviewed reply purpose;
+- stale evidence;
+- a changed recipient, DNC and STOP after queueing;
+- a manager who can approve but cannot queue, and who loses approval when the
+  membership is deactivated;
+- an unknown provider outcome that never resends and blocks a replacement
+  question;
+- a website-only lead that is refused.
+
+These transitions are **not supported** by current code. They are recorded here
+rather than tested as correct:
+
+- **A queued question is not withdrawn when the record moves on.** The executor
+  does not know the qualification binding. If the answer arrives, or the record
+  changes, after queueing, the owner can still approve and send the now-stale
+  question. Only the reviewer's judgment in Approvals stops it.
+- **Nothing records that a question was asked.** After a question is sent and its
+  delivery confirmed, the same proposal, with the same basis, can be queued again.
+- **The inbound reply does not update the record.** Answers are recorded by a
+  person through `update_lead_qualification`. There is no automatic parsing.
+- **Email was not exercised end to end.** The suite drives SMS only. Email staging
+  is covered by the staging tests, and the email send-time rules by the Whisper
+  reply-context tests.
 
 ## Schema
 
