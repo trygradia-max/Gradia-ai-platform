@@ -1350,6 +1350,7 @@ async function executeBookAppointment(
       // and the quote/lead bookkeeping must not leave them stale forever.
       // No-op for payloads without quote refs (voice bookings).
       await applyQuoteBookingBookkeeping(supabase, claimed, proposal, priorId)
+      await ensureBookingConfirmation(supabase, claimed, proposal, priorId)
       return {
         ok: true,
         status: "executed",
@@ -1475,6 +1476,7 @@ async function executeBookAppointment(
     )
     // P0-009: same idempotent quote/lead repair as the fast-path above.
     await applyQuoteBookingBookkeeping(supabase, claimed, proposal, appointmentId)
+    await ensureBookingConfirmation(supabase, claimed, proposal, appointmentId)
     return {
       ok: true,
       status: "executed",
@@ -1709,6 +1711,49 @@ async function executeBookAppointment(
     resultId: leadId ?? appointmentId,
     proposal,
     calendarEventId,
+  }
+}
+
+/**
+ * Replay repair: a crash or drafter outage between the appointment write and
+ * the confirmation leaves the booking without one, and the replay paths return
+ * before the normal staging step. Stage it now, at most once per appointment:
+ * any existing confirmation (pending, approved, rejected or sent) counts, and an
+ * appointment that has already started gets none. Executions of one action are
+ * serialized by its claim, so this check cannot race itself. Best-effort, like
+ * the original: it never fails the booking.
+ */
+async function ensureBookingConfirmation(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  proposal: BookingProposal,
+  appointmentId: string
+): Promise<void> {
+  try {
+    const { data: existing, error } = await supabase
+      .from("pending_actions")
+      .select("id")
+      .eq("shop_id", claimed.shop_id)
+      .eq("payload->>source", "booking_confirmation")
+      .eq("payload->>appointment_id", appointmentId)
+      .limit(1)
+    if (error || (existing as { id: string }[] | null)?.length) return
+    const { data: appt } = await supabase
+      .from("appointments")
+      .select("customer_id, scheduled_at")
+      .eq("id", appointmentId)
+      .eq("shop_id", claimed.shop_id)
+      .maybeSingle()
+    const row = appt as { customer_id: string | null; scheduled_at: string } | null
+    if (!row?.customer_id || !(Date.parse(row.scheduled_at) > Date.now())) return
+    const shop = await loadShopWithToken(supabase, claimed.shop_id)
+    if (!shop) return
+    await queueBookingConfirmationSms(supabase, shop, proposal, row.customer_id, appointmentId)
+  } catch (err) {
+    console.warn(
+      `[approvals] booking confirmation repair failed for appointment ${appointmentId} (booking still stands):`,
+      err
+    )
   }
 }
 

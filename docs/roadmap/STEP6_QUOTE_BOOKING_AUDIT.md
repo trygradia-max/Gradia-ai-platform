@@ -30,15 +30,15 @@ No row here is marked done on code reading alone.
 | Unknown or stale calendar blocks automatic confirmation | Holds vacuously | External calendar failure gives `calendar: "unchecked"`, which is advisory. Booking and reschedule are `ALWAYS_HITL`, and the automatic context hard-blocks conflicts | There is no automatic booking, so nothing auto-confirms. No required-calendar state, stale or unknown, exists for a future booking opt-in. **Missing** before any autonomy. Aurinko coupling unresolved (**Blocked**) |
 | Exactly one booking under concurrency and retry | **Verified** | `booking-atomicity.int.test.ts` (TOCTOU, replay, cross-tenant), `quote-acceptance.int.test.ts` (rollback re-run) | — |
 | One linked pipeline update | **Verified** for quote bookings | `quote-acceptance.int.test.ts`: no duplicate lead or stage history on re-run | `moveLeadToStage` reads then writes with no compare-and-swap. Candidates: `sendQuote` has no status guard and can move a booked lead back to `quote_sent`; a held quote send approved later never marks the quote sent |
-| Governed confirmation | Present | The booking stages a `send_sms` confirmation and the send path applies consent and quiet hours. 48-hour confirm via the no-show cron | No integration test. Candidates: no dedupe key per appointment; the confirmation is skipped on replay, so a crash between the write and staging loses it; the cron stamp has no null guard; the booking and 48-hour confirmations are unlinked |
+| Governed confirmation | **Verified** for booking confirmations (October 15) | The booking stages one transactional `send_sms` for owner approval, and the send path applies consent and quiet hours. `booking-confirmation.int.test.ts`: exactly one per appointment across repeat approval and replay. A crash or drafter outage after the write is repaired on replay. A rejected confirmation is not re-staged, and an appointment that has already started gets none | The 48-hour confirm cron is unchanged and untested at the database: its stamp has no null guard, and crons are held. The booking and 48-hour messages are separate by design ("booked" versus "reply YES"). The repair relies on the action claim serializing replays; there is no database uniqueness key |
 
 ## Recommended next bounded slices, smallest first
 
 1. Integration test: a manager cannot claim `create_quote`, and a quote-bearing
    `send_sms` claim by a manager is refused or proven harmless. A refusal would be
    a SQL change, so it goes in its own PR.
-2. Booking confirmation exactly once per appointment, including replay after a
-   crash. Test first, then a dedupe key.
+2. ~~Booking confirmation exactly once per appointment, including replay after a
+   crash. Test first, then a dedupe key.~~ Done October 15.
 3. Voice and MCP booking duration from the menu, using the same helper as this PR.
 4. Founder or release decisions: when conflict enforcement turns on in Production,
    and whether the D-016 human override survives the "non-overridable" rule.

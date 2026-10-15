@@ -1211,3 +1211,43 @@ or fixture changes. The HTTP regression attempt could not reach the function
 because that local stack no longer had migration94; CI must run the complete
 suite from migrations. Targeted five unit tests, touched-file lint and diff check
 passed. No shared/production migration, deployment, send or provider activation.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Follow-up from the step 6 audit: the booking confirmation is now staged exactly once
+per appointment. Every existing booking suite mocked the drafter to throw, so no
+test ever reached confirmation staging.
+
+The new `eval/integration/booking-confirmation.int.test.ts` reproduced the defect on
+main `93a9f4a`. When an approved booking's appointment was written but its
+confirmation was not staged, the confirmation was lost for good. That happens after
+a crash between the write and staging, or after a drafter outage. Both replay
+paths, the fast path and the serialized write's `exists` result, returned before
+the staging step.
+
+Fix (`src/lib/approvals.ts`, `ensureBookingConfirmation`): on replay, stage the
+missing confirmation, but only when:
+
+- no booking confirmation of any status exists for that appointment, which
+  includes one the owner rejected;
+- the appointment has not started yet.
+
+It is best-effort and never fails the booking. No migration, and no change to the
+send path, consent rules or the 48-hour cron.
+
+Disposable `gradia-record-fresh` stack only, 94 migrations. Node 22.23.2 isolated
+runner.
+
+- The new suite failed 2 of 6 before the fix.
+- Run one file at a time after the fix:
+  - `booking-confirmation`: 6 of 6;
+  - `booking-atomicity`: 13 of 13;
+  - `conflict-enforcement`: 6 of 6;
+  - `quote-acceptance`: 17 of 17.
+- Two combined runs had failures only in seed helpers: "An invalid response was
+  received from the upstream server". The stack's database container had also
+  restarted outside this session about 16 minutes before.
+- Unit: 1,457 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
