@@ -155,7 +155,7 @@ export function QuoteBuilder({
     if (mode === "draft") {
       setBusy(null)
       toast.success("Draft saved — find it under Quotes.")
-      router.push("/customers?tab=quotes")
+      router.push("/customers/quotes")
       return
     }
     const sent = await sendQuote(created.quoteId, mode)
@@ -166,13 +166,13 @@ export function QuoteBuilder({
           ? `Saved, but the send is waiting in Approvals: ${sent.error}`
           : sent.error
       )
-      router.push(sent.held ? "/approvals" : "/customers?tab=quotes")
+      router.push(sent.held ? "/dashboard#needs-you" : "/customers/quotes")
       return
     }
     toast.success(
       `Quote sent by ${mode === "sms" ? "text" : "email"} — ${formatPriceUsd(created.totalCents)}.`
     )
-    router.push("/customers?tab=quotes")
+    router.push("/customers/quotes")
   }
 
   return (

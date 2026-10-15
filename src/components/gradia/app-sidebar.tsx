@@ -6,11 +6,8 @@ import { usePathname } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
   CalendarDays,
-  Activity,
+  Columns3,
   Contact,
-  CreditCard,
-  Headset,
-  Inbox,
   LayoutDashboard,
   MessagesSquare,
   Settings,
@@ -40,23 +37,18 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// The final IA (redesign spec §8-A4) — exactly these seven, in this order,
-// plus the two pinned at the bottom. Old routes (/agents, /agent, /chat,
-// /leads, /recovery, /schedule) live on as redirects, never as nav items.
-// The ⌘K / Whisper command bar stays the primary composer — a verb, not a
-// place.
+// B-14 — five daily screens plus Settings. Approvals and Activity are
+// sections of Chief of Staff. Receptionist and billing stay reachable
+// from Settings; they are setup, not a place you open every morning.
 const nav: NavItem[] = [
-  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/approvals", label: "Approvals", icon: Inbox },
-  { href: "/activity", label: "Activity", icon: Activity },
-  { href: "/conversations", label: "Conversations", icon: MessagesSquare },
+  { href: "/dashboard", label: "Chief of Staff", icon: LayoutDashboard },
+  { href: "/conversations", label: "Inbox", icon: MessagesSquare },
+  { href: "/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/receptionist", label: "Receptionist", icon: Headset },
 ]
 
 const pinnedNav: NavItem[] = [
-  { href: "/billing", label: "Numbers & Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
@@ -117,7 +109,7 @@ export function AppSidebar({
                 const isActive =
                   item.href === "/dashboard"
                     ? pathname === "/dashboard"
-                    : pathname.startsWith(item.href)
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
                 return (
                   <NavRow
@@ -125,7 +117,7 @@ export function AppSidebar({
                     item={item}
                     isActive={isActive}
                     reduce={reduce ?? false}
-                    badge={item.href === "/approvals" ? approvalsCount : 0}
+                    badge={item.href === "/dashboard" ? approvalsCount : 0}
                   />
                 )
               })}
@@ -134,7 +126,7 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      {/* Pinned bottom (spec §8-A4): Numbers & Billing · Settings. */}
+      {/* Pinned bottom (B-14): Settings only. */}
       <SidebarFooter className="border-t border-sidebar-border/60 px-2 py-3">
         <SidebarMenu>
           {pinnedNav.map((item) => (

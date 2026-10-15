@@ -153,7 +153,7 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
     const n = hidden?.[stage]?.count ?? 0
     return n > 0 ? (
       <Link
-        href="/customers?tab=customers"
+        href="/customers"
         className="block px-2 pt-1 text-center text-[11px] text-muted-foreground transition-colors hover:text-foreground"
       >
         {STRINGS.pages.customers.pipelineOlder(n)}
@@ -222,7 +222,7 @@ export function PipelineBoard({ initial }: { initial: PipelineData }) {
       {cards.length === 0 ? (
         <div className="rounded-md border border-border/60 bg-card px-6 py-16 text-center">
           <p className="font-display text-xl text-foreground">
-            The board fills <span className="italic">itself</span>.
+            The board fills itself.
           </p>
           <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">
             Every call, text, and import lands a card here automatically — or
