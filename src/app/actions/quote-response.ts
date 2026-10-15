@@ -4,11 +4,11 @@ import { validQuoteReferences } from "@/lib/tenant-references"
 import { stagingAvailability } from "@/lib/availability"
 import { recordInteraction } from "@/lib/memory"
 import { moveLeadToStage } from "@/lib/pipeline"
-import { isQuoteExpired } from "@/lib/quotes"
+import { isQuoteExpired, quoteDurationMinutes, type QuotableService } from "@/lib/quotes"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { STRINGS } from "@/lib/strings"
 import { createServiceClient } from "@/lib/supabase/service"
-import type { QuoteRow, ShopRow } from "@/lib/types/database"
+import type { QuoteRow, ShopRow, VehicleSizeClass } from "@/lib/types/database"
 
 /**
  * Public quote responses (CRM C3b) — the /q/[token] page's actions. The
@@ -89,6 +89,46 @@ async function hasStagedQuoteBooking(
     .eq("payload->>quote_id", quoteId)
     .limit(1)
   return ((data as { id: string }[] | null)?.length ?? 0) > 0
+}
+
+/** Booking length when a quote has no usable menu duration (the pre-existing
+ *  fixed value). Labelled `duration_source: "default"` on the card. */
+const DEFAULT_QUOTE_BOOKING_MINUTES = 120
+
+/**
+ * How long the accepted work takes, from the shop's CURRENT menu: each line
+ * item's service duration (sized to the quote's vehicle when the service has
+ * size-class durations), summed. Every line must resolve to a shop-scoped
+ * service with a configured duration; otherwise a partial sum would understate
+ * the job, so the existing default is used and labelled as such.
+ */
+async function quotedDurationMinutes(
+  supabase: ReturnType<typeof createServiceClient>,
+  quote: QuoteWithShop
+): Promise<{ minutes: number; source: "menu" | "default" }> {
+  const fallback = { minutes: DEFAULT_QUOTE_BOOKING_MINUTES, source: "default" as const }
+  const ids = (quote.line_items ?? []).map((li) => li.service_id)
+  if (ids.length === 0 || ids.some((id) => !id)) return fallback
+  const { data: svcData } = await supabase
+    .from("services")
+    .select("id, name, duration_minutes, duration_by_size")
+    .eq("shop_id", quote.shop_id)
+    .in("id", [...new Set(ids as string[])])
+  const services = (svcData as QuotableService[] | null) ?? []
+  const quoted = ids.map((id) => services.find((s) => s.id === id))
+  if (quoted.some((s) => !s || s.duration_minutes == null)) return fallback
+  let sizeClass: VehicleSizeClass | null = null
+  if (quote.vehicle_id) {
+    const { data: veh } = await supabase
+      .from("vehicles")
+      .select("size_class")
+      .eq("id", quote.vehicle_id)
+      .eq("shop_id", quote.shop_id)
+      .maybeSingle()
+    sizeClass = (veh as { size_class: VehicleSizeClass | null } | null)?.size_class ?? null
+  }
+  const minutes = quoteDurationMinutes(quoted as QuotableService[], sizeClass)
+  return minutes > 0 ? { minutes, source: "menu" } : fallback
 }
 
 export async function respondToQuote(
@@ -227,9 +267,10 @@ export async function respondToQuote(
       // P0-004 advisory snapshot: the customer picked this time, the owner
       // decides — the card shows any conflict, and the executor re-checks
       // authoritatively at approve time.
+      const duration = await quotedDurationMinutes(supabase, quote)
       const availability = await stagingAvailability(supabase, quote.shop_id, {
         start,
-        end: new Date(start.getTime() + 120 * 60_000),
+        end: new Date(start.getTime() + duration.minutes * 60_000),
         path: "stage:quote_accept",
       })
       const { data: pending, error } = await supabase
@@ -243,7 +284,8 @@ export async function respondToQuote(
             car_info: null,
             service: serviceNames || "Quoted work",
             iso_start_time: start.toISOString(),
-            duration_minutes: 120,
+            duration_minutes: duration.minutes,
+            duration_source: duration.source,
             timezone: null,
             email: quote.customers.email,
             pin_notes: `Booked from quote — total ${quote.total_cents / 100}`,
