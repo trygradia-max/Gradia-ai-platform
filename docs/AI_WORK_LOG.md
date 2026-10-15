@@ -1149,3 +1149,65 @@ Disposable `gradia-record-fresh` stack only, reset from main's 93 migrations, No
   passed.
 
 Nothing was merged, deployed, migrated on a shared database, or activated.
+
+[AI: claude-code] [DATE: 2026-10-14] [AREA: platform] [STATUS: done]
+Added the step from a reviewed qualification question to a queued message approval,
+on `auto/qualification-question-approval` from origin/main `316511d`. The contract
+and permission checks were committed first, in `docs/architecture/LEAD_QUALIFICATION.md`.
+
+Migration 94 adds one session-only function, `stage_qualification_question`. Under
+the shop and workflow locks it rechecks:
+
+- active owner, before the exact-retry check;
+- qualification revision and evidence revision against the proposal basis;
+- identity and review state;
+- that the target is still the proposed question;
+- DNC, STOP and suppression;
+- SMS and email readiness;
+- that no other question for the lead is waiting.
+
+It then reuses `whisper_command`'s reply staging in the same transaction and tags
+the pending row with its qualification binding. Server action
+`stageQualificationQuestion` wraps it.
+
+Nothing is sent. Marketing consent, quiet hours, A2P and at-most-once execution
+remain the existing executor's checks at approval time. Not built: no screen, no
+second executor, no automatic queueing, no change to `whisper_command`, the
+executor or consent rules. Leads with no SMS or email thread cannot be queued.
+
+Verified on the disposable `gradia-record-fresh` stack only, reset from this
+branch's 94 migrations with the five test fixtures:
+
+- new integration file: 14 of 14;
+- unit: 1,395 passed, 4 skipped;
+- lint, offline build, types before and after build, `git diff --check`, and
+  `verify-lead-qualification-migration.py` (exact 94) all passed.
+
+The full integration suite had 4 failing files out of 40 (3 failed tests,
+416 passed). The failures were statement timeouts, seed `createUser` failures,
+and auth sign-in timing out after about 18 seconds with `context deadline
+exceeded`. Over 10 minutes the gateway logged 119 502 or reset errors, and another
+stack's analytics container was crash-looping. Run on their own,
+`delegated-message-approval`, `public-form-intake` and `agent-records` passed.
+`manager-notification` failed again on its own, each time at sign-in or user
+creation. This is recorded as the same unresolved local-environment instability
+as October 9, not as a clean pass.
+
+No production or shared database was touched. Nothing was merged or deployed, and
+no provider was activated.
+
+### [Codex] 2026-10-14 — PR74 integration review: preserve uncertain delivery holds
+
+Reproduced a replacement question being queued after its predecessor was marked
+rejected with an uncompleted send claim. The qualification duplicate guard now
+uses the inbox's existing consumed-claim hold definition, including rejected
+claims and results recorded without a completed claim. Ordinary rejection before
+any send claim still permits a new question. Exact retries remain idempotent.
+
+Added three integration regressions and clarified the contract. A rolled-back
+SQL transaction against disposable gradia-record-fresh reproduced the original
+bug, then verified all three fixed claim/status cases without persisting schema
+or fixture changes. The HTTP regression attempt could not reach the function
+because that local stack no longer had migration94; CI must run the complete
+suite from migrations. Targeted five unit tests, touched-file lint and diff check
+passed. No shared/production migration, deployment, send or provider activation.

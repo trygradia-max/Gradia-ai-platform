@@ -1,8 +1,9 @@
 "use server"
 
 import {
-  qualificationCommandSchema, qualificationRefusal, qualificationSchema,
-  type QualificationUpdateResult,
+  qualificationCommandSchema, qualificationQuestionStagedSchema, qualificationQuestionStageRefusal,
+  qualificationQuestionStageSchema, qualificationRefusal, qualificationSchema,
+  type QualificationQuestionStageResult, type QualificationUpdateResult,
 } from "@/lib/lead-qualification"
 import { revalidatePath } from "next/cache"
 
@@ -40,6 +41,44 @@ export async function updateLeadQualification(input: unknown): Promise<Qualifica
     revalidatePath("/intake")
     revalidatePath(`/intake/${c.workflowId}`)
     return { ok: true, status, qualification: qualification.data }
+  } catch {
+    return { ok: false, code: "uncertain" }
+  }
+}
+
+/**
+ * Queues one reviewed qualification question as a pending message approval.
+ * Owner only. PostgreSQL rechecks, under the shop lock: authority, that the
+ * qualification revision and evidence still match the proposal's basis, that
+ * the target is still the proposed question, identity, contact hard stops,
+ * channel readiness and duplicates. It then stages through the existing Whisper
+ * reply path. Nothing is sent: the owner approves in Approvals and the existing
+ * executor applies consent, quiet hours and A2P at send. An uncertain result is
+ * never retried here: retry with the SAME command id.
+ */
+export async function stageQualificationQuestion(input: unknown): Promise<QualificationQuestionStageResult> {
+  const parsed = qualificationQuestionStageSchema.safeParse(input)
+  if (!parsed.success) {
+    const head = String(parsed.error.issues[0]?.path[0] ?? "")
+    return { ok: false, code: "invalid", field: ["basis", "target", "channel", "message"].includes(head) ? head : "command" }
+  }
+  await requireUser()
+  const c = parsed.data
+  const db = await createClient()
+  try {
+    const result = await db.rpc("stage_qualification_question", {
+      p_shop: c.shopId, p_workflow: c.workflowId, p_command: c.commandId,
+      p_revision: c.basis.revision, p_evidence_revision: c.basis.evidence_revision,
+      p_target: c.target, p_question: c.questionId, p_channel: c.channel,
+      p_latest: c.conversation.latestId, p_conversation_revision: c.conversation.revision, p_payload: c.message,
+    })
+    if (result.error) return qualificationQuestionStageRefusal(result.error)
+    const staged = qualificationQuestionStagedSchema.safeParse(result.data)
+    if (!staged.success || staged.data.action_id !== c.commandId || staged.data.workflow_id !== c.workflowId || staged.data.channel !== c.channel)
+      return { ok: false, code: "not_confirmed" }
+    revalidatePath(`/intake/${c.workflowId}`)
+    revalidatePath("/approvals")
+    return { ok: true, status: staged.data.status, actionId: staged.data.action_id, workflowId: c.workflowId, channel: c.channel }
   } catch {
     return { ok: false, code: "uncertain" }
   }
