@@ -1117,3 +1117,22 @@ CSS zoom and simulated-width checks are not native keyboard/browser-zoom/mobile
 acceptance; can_update=false verifies a read-only manager, not delegated save, and
 a failed-load fixture is not a real membership-revocation session. These remain
 acceptance follow-ups. Combined verification and merge are recorded separately.
+
+[AI: cursor] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+C1 website-intake setup on cursor/cloud-agent-1792041640122-hbrjc from current
+origin/main (baseline merge 3747330; stale pre-baseline local experiments dropped
+in favor of origin/main per the handoff baseline rule). New owner-only
+WebsiteIntakeCard in Settings (own section + nav, after SMS) reusing the existing
+listPublicIntakeForms/configurePublicIntakeForm actions and PUBLIC_FORM_INTAKE
+contract; no new RPC, migration, executor, or send path. Shows exact HTTPS origin,
+Enabled/Disabled pill and revision per form plus the POST endpoint path; new forms
+start disabled and enabling is a separate explicit action. Stale/uncertain saves
+refresh the list first with guidance to re-apply against the current revision; no
+silent retry. Copy states submissions land in identity review as unverified text
+and claims no consent, identity, or readiness. Non-owner reads render an
+unavailable notice with no form controls. Local Node22: 1,460 unit passes / 4
+skips (122 files, 9 new), lint/tsc/build clean. No live-browser namespace exists
+in this environment, so keyboard/mobile acceptance is via native controls,
+label-for associations, fluid-layout assertions and existing token contrast —
+not a native Tab/zoom/device walk; the full native walk stays in C3. No merge,
+deployment, migration, or provider change.
