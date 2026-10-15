@@ -98,7 +98,12 @@ let phoneCounter = 0
 async function seedQuote(
   sb: SupabaseClient,
   seed: Seeded,
-  opts: { phone?: string | null; validUntil?: string | null } = {}
+  opts: {
+    phone?: string | null
+    validUntil?: string | null
+    lineItems?: Array<{ service_id: string | null; name: string; base_cents: number; price_cents: number }>
+    vehicleSizeClass?: string
+  } = {}
 ): Promise<QuoteFixture> {
   phoneCounter += 1
   const phone =
@@ -133,14 +138,26 @@ async function seedQuote(
     .single()
   if (leadErr || !lead) throw new Error(`seed lead: ${leadErr?.message}`)
 
+  let vehicleId: string | null = null
+  if (opts.vehicleSizeClass) {
+    const { data: veh, error: vehErr } = await sb
+      .from("vehicles")
+      .insert({ shop_id: seed.shopId, customer_id: cust.id, make: "Fictional", size_class: opts.vehicleSizeClass })
+      .select("id")
+      .single()
+    if (vehErr || !veh) throw new Error(`seed vehicle: ${vehErr?.message}`)
+    vehicleId = veh.id as string
+  }
+
   const { data: quote, error: quoteErr } = await sb
     .from("quotes")
     .insert({
       shop_id: seed.shopId,
       customer_id: cust.id,
       lead_id: lead.id,
+      vehicle_id: vehicleId,
       status: "sent",
-      line_items: [
+      line_items: opts.lineItems ?? [
         { service_id: null, name: "Full Detail", base_cents: 25000, price_cents: 25000 },
       ],
       subtotal_cents: 25000,
@@ -330,6 +347,126 @@ describe.skipIf(!INTEGRATION)("P0-009 quote acceptance [integration]", () => {
       const replay = await respondToQuote(fx.token, "decline")
       expect(replay).toEqual({ ok: true, status: "declined", bookingStaged: false })
       expect(await leadRows(sb, seed.shopId)).toHaveLength(before.length)
+    })
+  })
+
+  describe("menu-grounded booking duration", () => {
+    let seed: Seeded
+    let other: Seeded
+    let ceramicId: string
+    beforeAll(async () => {
+      seed = await seedShop(sb)
+      other = await seedShop(sb)
+      const { data, error } = await sb
+        .from("services")
+        .insert({
+          shop_id: seed.shopId,
+          name: "Ceramic Coating",
+          price_cents: 90000,
+          duration_minutes: 240,
+          duration_by_size: { truck_suv: 300 },
+        })
+        .select("id")
+        .single()
+      if (error || !data) throw new Error(`seed ceramic: ${error?.message}`)
+      ceramicId = data.id as string
+    })
+    afterAll(async () => {
+      if (seed) await cleanup(sb, seed)
+      if (other) await cleanup(sb, other)
+    })
+
+    const line = (serviceId: string | null, name: string) => ({
+      service_id: serviceId, name, base_cents: 1000, price_cents: 1000,
+    })
+
+    async function acceptAndApprove(fx: QuoteFixture) {
+      const slot = freshSlot()
+      expect(await respondToQuote(fx.token, "accept", slot.start)).toEqual({
+        ok: true, status: "accepted", bookingStaged: true,
+      })
+      const staged = await stagedBookings(sb, seed.shopId, fx.quoteId)
+      expect(staged).toHaveLength(1)
+      const approve = await executeApproval(sb, staged[0].id, seed.shopId, { userId: seed.ownerId })
+      expect(approve.ok, JSON.stringify(approve)).toBe(true)
+      const { data: appt } = await sb
+        .from("appointments")
+        .select("scheduled_at, ends_at, duration_minutes")
+        .eq("shop_id", seed.shopId)
+        .eq("pending_action_id", staged[0].id)
+        .single()
+      const booked = appt as { scheduled_at: string; ends_at: string; duration_minutes: number }
+      return {
+        payload: staged[0].payload,
+        bookedMinutes: (Date.parse(booked.ends_at) - Date.parse(booked.scheduled_at)) / 60_000,
+        durationColumn: booked.duration_minutes,
+        start: slot.start,
+      }
+    }
+
+    it("sums each quoted service's menu duration, sized to the quote's vehicle, through to the appointment", async () => {
+      const fx = await seedQuote(sb, seed, {
+        vehicleSizeClass: "truck_suv",
+        lineItems: [line(seed.serviceId, "Full Detail"), line(ceramicId, "Ceramic Coating")],
+      })
+      const r = await acceptAndApprove(fx)
+      // Full Detail 180 (flat) + Ceramic 300 (truck/SUV size duration).
+      expect(r.payload.duration_minutes).toBe(480)
+      expect(r.payload.duration_source).toBe("menu")
+      expect(r.bookedMinutes).toBe(480)
+      expect(r.durationColumn).toBe(480)
+    })
+
+    it("the staged availability check covers the whole menu duration, not a fixed 2 hours", async () => {
+      const fx = await seedQuote(sb, seed, {
+        vehicleSizeClass: "truck_suv",
+        lineItems: [line(seed.serviceId, "Full Detail"), line(ceramicId, "Ceramic Coating")],
+      })
+      const slot = freshSlot()
+      // Five hours in: outside a 120-minute window, inside the 480-minute job.
+      const { data: busy, error } = await sb
+        .from("appointments")
+        .insert({
+          shop_id: seed.shopId,
+          scheduled_at: new Date(Date.parse(slot.start) + 300 * 60_000).toISOString(),
+          duration_minutes: 60,
+          service_name: "Existing booking",
+        })
+        .select("id")
+        .single()
+      expect(error).toBeNull()
+      expect(await respondToQuote(fx.token, "accept", slot.start)).toMatchObject({ ok: true, bookingStaged: true })
+      const staged = await stagedBookings(sb, seed.shopId, fx.quoteId)
+      expect(staged).toHaveLength(1)
+      const availability = staged[0].payload.availability as { available: boolean; conflicts: Array<{ key: string }> }
+      expect(availability.available).toBe(false)
+      expect(availability.conflicts.map((c) => c.key)).toContain(`appointment:${busy!.id}`)
+    })
+
+    it("without a sized vehicle, uses each service's flat duration", async () => {
+      const fx = await seedQuote(sb, seed, {
+        lineItems: [line(seed.serviceId, "Full Detail"), line(ceramicId, "Ceramic Coating")],
+      })
+      const r = await acceptAndApprove(fx)
+      expect(r.payload.duration_minutes).toBe(420)
+      expect(r.bookedMinutes).toBe(420)
+    })
+
+    it("a line with no menu service keeps the labelled 120-minute default instead of a partial sum", async () => {
+      const fx = await seedQuote(sb, seed, {
+        lineItems: [line(seed.serviceId, "Full Detail"), line(null, "Custom work")],
+      })
+      const r = await acceptAndApprove(fx)
+      expect(r.payload.duration_minutes).toBe(120)
+      expect(r.payload.duration_source).toBe("default")
+      expect(r.bookedMinutes).toBe(120)
+    })
+
+    it("another shop's service id never supplies a duration", async () => {
+      const fx = await seedQuote(sb, seed, { lineItems: [line(other.serviceId, "Full Detail")] })
+      const r = await acceptAndApprove(fx)
+      expect(r.payload.duration_minutes).toBe(120)
+      expect(r.payload.duration_source).toBe("default")
     })
   })
 
