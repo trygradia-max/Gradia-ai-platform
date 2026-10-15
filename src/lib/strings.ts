@@ -294,6 +294,8 @@ export const STRINGS = {
         "Facts your receptionist can use when answering: policies, FAQs, what makes the shop different.",
       reviews:
         "The link customers get when your receptionist asks for a review after a finished job.",
+      websiteIntake:
+        "Forms on your website send inquiries into intake review, from the exact origin you configure. Submissions are unverified text — not consent and not identity proof.",
       usage:
         "What this month's plan covers and how much of it is used, counted in texts and calls.",
       developer:
