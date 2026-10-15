@@ -1351,3 +1351,77 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Follow-up from the step 6 audit: the booking confirmation is now staged exactly once
+per appointment. Every existing booking suite mocked the drafter to throw, so no
+test ever reached confirmation staging.
+
+The new `eval/integration/booking-confirmation.int.test.ts` reproduced the defect on
+main `93a9f4a`. When an approved booking's appointment was written but its
+confirmation was not staged, the confirmation was lost for good. That happens after
+a crash between the write and staging, or after a drafter outage. Both replay
+paths, the fast path and the serialized write's `exists` result, returned before
+the staging step.
+
+Fix (`src/lib/approvals.ts`, `ensureBookingConfirmation`): on replay, stage the
+missing confirmation, but only when:
+
+- no booking confirmation of any status exists for that appointment, which
+  includes one the owner rejected;
+- the appointment has not started yet.
+
+It is best-effort and never fails the booking. No migration, and no change to the
+send path, consent rules or the 48-hour cron.
+
+Disposable `gradia-record-fresh` stack only, 94 migrations. Node 22.23.2 isolated
+runner.
+
+- The new suite failed 2 of 6 before the fix.
+- Run one file at a time after the fix:
+  - `booking-confirmation`: 6 of 6;
+  - `booking-atomicity`: 13 of 13;
+  - `conflict-enforcement`: 6 of 6;
+  - `quote-acceptance`: 17 of 17.
+- Two combined runs had failures only in seed helpers: "An invalid response was
+  received from the upstream server". The stack's database container had also
+  restarted outside this session about 16 minutes before.
+- Unit: 1,457 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B5 (PR #79 review finding). Reproduced four stale-repair cases in
+`booking-confirmation.int.test.ts`. On the previous head, the replay repair:
+
+- confirmed an appointment rescheduled after the failed confirmation for its old
+  time;
+- confirmed a closed appointment;
+- used the customer's old phone;
+- left a stale confirmation queued when the appointment moved during the repair,
+  shown with a deterministic interleaving before the insert.
+
+Fix (`ensureBookingConfirmation`):
+
+- It drafts from the current appointment (time, length, service, timezone,
+  status) and the current customer (name, phone), never from the original
+  proposal.
+- It refuses a closed or already-started appointment, or a customer with no
+  phone. A cancelled appointment is deleted, so there is nothing to confirm.
+- After staging it re-reads the appointment. If anything changed, it deletes
+  the unsent card it just created, and the next replay drafts a fresh one.
+- Rejected confirmations are still respected.
+- The guarantee stays scoped to replays serialized by the action claim. There
+  is no database uniqueness key per appointment.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- `booking-confirmation`: 10 of 10, after one run that failed seed `createUser`
+  before any test.
+- `quote-acceptance`: 17. `conflict-enforcement`: 6. `booking-atomicity`: 13.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types after build, and `git diff --check` passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
