@@ -1231,6 +1231,26 @@ because that local stack no longer had migration94; CI must run the complete
 suite from migrations. Targeted five unit tests, touched-file lint and diff check
 passed. No shared/production migration, deployment, send or provider activation.
 
+[AI: cursor] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+C2 review-and-queue step on cursor/qualification-queue-ui-3f75 from current
+origin/main (50e1236, PR74 merged). New QualificationQueueQuestion on
+/intake/[workflowId]#qualification behind PR73's suggestion card, staging through
+PR74's stageQualificationQuestion action only: editable wording, channel choice
+limited to threads that actually exist (read_whisper_thread SMS+email for the
+linked customer, owner views only), recipient shown read-only as reviewed, basis
+shown, one command id per attempt reused for exact retries. Queued/already_queued
+shows an Approvals link and never claims sent/delivered/consent. Mapped
+refusal/reload guidance for every code (uncertain retries same id; stale family
+locks until reload; command_conflict restarts fresh after re-review; forbidden
+hides the control). Managers see an owner-only note with no controls even with
+qualify/approve grants; leads with no thread get an honest no-first-message note;
+stale/complete suggestions render no queue step. No new RPC, executor, migration,
+consent exception, auto-send, or silent retry. Local Node22: full unit 1,470
+passed / 4 skipped (13 new), lint/tsc/build/diff-check clean. Same environment
+limit as C1: no live-browser namespace here, so native Tab/zoom/device acceptance
+stays in C3; revocation/consent-hold paths rest on the existing integration
+suite. No merge, deployment, migration, or provider change.
+
 [AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
 B2: connected lead-workflow acceptance on main `50e1236`, after #74. New file:
 `eval/integration/lead-workflow-acceptance.int.test.ts`. It drives one synthetic lead
@@ -1307,6 +1327,30 @@ fake SMS transport and a mocked interaction writer, not live channel or persiste
 outbound-history acceptance. Email, send-time qualification freshness, asked-state
 tracking and inbound-answer extraction remain documented follow-ups. No migration,
 production write, deployment or provider activation was performed in this review.
+
+### [Codex] 2026-10-15 — C2 release review: exact retries and stale-form locks
+
+Integrated main through PR78, retaining website settings and both work logs.
+An uncertain staging outcome previously left the message editable despite offering
+an exact retry. The submitted command is now frozen; a synchronous guard blocks
+concurrent clicks; every failure locks edits. Stale/invalid inputs require a full
+reload before a new attempt rather than unlocking ahead of router.refresh.
+Held or non-replyable threads are excluded from channel choices. Unusable-thread
+copy no longer asserts every read failure means no conversation, and pending-question
+guidance includes delivery review rather than assuming approval is always next.
+
+Three behavioral state regressions plus thirteen existing queue UI tests pass;
+touched-file lint and diff check pass. Full combined CI remains required before
+merge. This is not native browser keyboard/zoom/mobile acceptance or a live send.
+No production write, migration, provider activation or deployment performed here.
+
+C2 CI follow-up: two integration attempts failed at disposable Supabase startup,
+before tests, with raw output intentionally suppressed. The wrapper was dropping
+setup-cli's GHCR registry selection when constructing its clean environment.
+Preserved only the allowed ghcr.io value and added fixed-category diagnostics
+(no raw CLI output or credentials). Two diagnostics regressions and lint pass.
+This is a configuration fix and improved failure visibility, not proof of the
+startup failure's root cause; the complete integration run must still pass.
 [AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
 Follow-up from the step 6 audit: a held quote send approved later, and manager
 approval of a quote-bearing message.

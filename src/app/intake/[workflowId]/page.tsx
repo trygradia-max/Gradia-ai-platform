@@ -13,9 +13,51 @@ import { loadLeadQualification, loadLeadQualificationHistory } from "@/lib/data/
 import { intakeVehicleChoicesSchema } from "@/lib/intake-vehicle"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { threadSchema, type WhisperThread } from "@/lib/whisper-inbox"
+import type { QualificationQueueThreads } from "@/components/gradia/qualification-queue"
 import type { TeamWorkspace } from "@/lib/team-permissions"
 
 export const dynamic = "force-dynamic"
+
+/** One Whisper thread read, verified against the requested customer and
+ *  channel. A failed, refused or mismatched read is null — the queue step
+ *  then honestly reports no conversation instead of queueing blind. */
+async function readQueueThread(
+  db: SupabaseClient,
+  shopId: string,
+  customerId: string,
+  channel: "sms" | "email"
+): Promise<WhisperThread | null> {
+  try {
+    const response = await db.rpc("read_whisper_thread", {
+      p_shop: shopId,
+      p_customer: customerId,
+      p_channel: channel,
+      p_offset: 0,
+    })
+    const parsed =
+      response && !response.error ? threadSchema.safeParse(response.data) : null
+    const thread = parsed?.success ? parsed.data : null
+    return thread &&
+      thread.customer_id === customerId &&
+      thread.channel === channel
+      ? thread
+      : null
+  } catch {
+    return null
+  }
+}
+
+function queueThread(
+  thread: WhisperThread | null,
+  channel: "sms" | "email"
+): { latestId: string; revision: number; destination: string } | null {
+  if (!thread || !thread.can_reply || thread.state === "held") return null
+  const destination = channel === "sms" ? thread.customer.phone : thread.customer.email
+  if (!destination) return null
+  return { latestId: thread.latest_id, revision: thread.revision, destination }
+}
 
 const backLink =
   "inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline"
@@ -116,6 +158,26 @@ export default async function IntakeHistoryPage({
           )
       : []
   const base = `/intake/${encodeURIComponent(workflowId)}?shop=${encodeURIComponent(shopId)}`
+  // Queue-for-approval inputs are owner-only: only the active owner may stage
+  // a message, so threads are read only for owners. Everyone else sees the
+  // owner-only note with no queue control. Reads reuse the existing thread
+  // RPC and its authority — no new permission is introduced here.
+  const isOwner = workspace.role === "owner"
+  const customerId =
+    qualification.ok && qualification.data.identity.customer_id
+      ? qualification.data.identity.customer_id
+      : null
+  const [smsThread, emailThread] =
+    isOwner && customerId
+      ? await Promise.all([
+          readQueueThread(db, shopId, customerId, "sms"),
+          readQueueThread(db, shopId, customerId, "email"),
+        ])
+      : [null, null]
+  const queueThreads: QualificationQueueThreads | null =
+    isOwner && customerId
+      ? { sms: queueThread(smsThread, "sms"), email: queueThread(emailThread, "email") }
+      : null
   return (
     <TeamChrome>
       <Link href={`/intake?shop=${encodeURIComponent(shopId)}`} className={backLink}>
@@ -153,6 +215,8 @@ export default async function IntakeHistoryPage({
         shopId={shopId}
         commandId={randomUUID()}
         services={services}
+        threads={queueThreads}
+        isOwner={isOwner}
       />
       <Link href={base} className={backLink}>
         Refresh history
