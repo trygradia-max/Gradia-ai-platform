@@ -383,10 +383,12 @@ export async function proposeBooking(
   // — calendar event on approve. Otherwise fall back to a quoted lead
   // so a human can clarify the time.
   if (isoStart) {
+    // Menu first: the model's duration only sizes this staging snapshot when
+    // the menu has no answer. The executor decides the booked length from the
+    // menu (or holds the card), never from the model.
     const fallbackDuration =
-      Number.isFinite(durationParam) && durationParam > 0
-        ? durationParam
-        : (await lookupServiceDuration(supabase, shopId, service)) ?? 90
+      (await lookupServiceDuration(supabase, shopId, service)) ??
+      (Number.isFinite(durationParam) && durationParam > 0 ? durationParam : 90)
 
     // P0-004 / D-015: voice is an AUTOMATIC path — a slot already taken is
     // refused out loud, never staged as a knowingly-conflicting booking.
