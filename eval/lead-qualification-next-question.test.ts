@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { readFileSync } from "node:fs"
 import { loadNextQualificationQuestion } from "@/lib/data/lead-qualification"
 import {
-  proposeNextQualificationQuestion, qualificationSchema, unknownQualificationFields,
+  proposeNextQualificationQuestion, qualificationQuestionStageSchema, qualificationSchema, unknownQualificationFields,
   type LeadQualification, type QualificationFields,
 } from "@/lib/lead-qualification"
 
@@ -113,5 +113,25 @@ describe("loading the suggestion reads once and writes nothing", () => {
     const source = ["src/lib/lead-qualification.ts", "src/lib/data/lead-qualification.ts"].map((file) => readFileSync(file, "utf8")).join("\n")
     expect(source).not.toMatch(/pending_actions|send_sms|send_email|twilio|aurinko|ai-service|anthropic|drafter|\.insert\(|\.update\(|\.upsert\(/i)
     expect(source.match(/\.rpc\("([a-z_]+)"/g)).toEqual(['.rpc("read_lead_qualification"', '.rpc("list_lead_qualifications"', '.rpc("read_lead_qualification_history"'])
+  })
+})
+
+describe("a proposal feeds the staging command unchanged", () => {
+  const command = (p: ReturnType<typeof proposeNextQualificationQuestion>, workflowId = id) => {
+    if (p.kind !== "question") throw new Error("expected a question")
+    return {
+      shopId: other, workflowId, commandId: other, basis: p.basis, target: p.target, questionId: p.question_id, channel: "sms",
+      conversation: { latestId: other, revision: 0 }, message: { body: p.text, subject: "", destination: "+15555550123" },
+    }
+  }
+  it("accepts the proposal's basis, including its workflow id, as published", () => {
+    const p = proposeNextQualificationQuestion(record({ fields: { ...filled(), timing: unknown.timing } }))
+    expect(qualificationQuestionStageSchema.safeParse(command(p)).success).toBe(true)
+  })
+  it("refuses a basis copied from another workflow's proposal", () => {
+    const p = proposeNextQualificationQuestion(record({ fields: { ...filled(), timing: unknown.timing } }))
+    const r = qualificationQuestionStageSchema.safeParse(command(p, other))
+    expect(r.success).toBe(false)
+    expect(r.error?.issues[0]?.path).toEqual(["basis"])
   })
 })

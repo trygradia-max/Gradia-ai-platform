@@ -1231,6 +1231,55 @@ because that local stack no longer had migration94; CI must run the complete
 suite from migrations. Targeted five unit tests, touched-file lint and diff check
 passed. No shared/production migration, deployment, send or provider activation.
 
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B2: connected lead-workflow acceptance on main `50e1236`, after #74. New file:
+`eval/integration/lead-workflow-acceptance.int.test.ts`. It drives one synthetic lead
+through the real path, with the SMS provider faked:
+
+1. Inbound SMS intake, including the provider redelivering the event (one workflow).
+2. The owner links the identity.
+3. The qualification proposal.
+4. The `stageQualificationQuestion` server action.
+5. Owner or delegated-manager approval through the existing executor.
+
+It covers:
+
+- one send under concurrent and exact retries;
+- a hold without consent or a reviewed reply purpose;
+- stale evidence;
+- a changed recipient, DNC and STOP after queueing;
+- manager staging refused, and a deactivated manager unable to approve;
+- an unknown provider outcome that never resends and blocks a replacement
+  question;
+- a website-only lead with no thread that is refused.
+
+Defect found and fixed: `stageQualificationQuestion` refused the proposal's own
+`basis` as `invalid` with `field: "basis"`. The proposal includes `workflow_id`,
+and the action's schema was strict without it. Every caller following the
+published "copy basis unchanged" contract would have failed. #74's tests called
+the database function directly and missed it. The schema now accepts `workflow_id`
+and requires it to equal `workflowId`. A unit regression fails without the fix.
+
+The unsupported transitions are recorded in `LEAD_QUALIFICATION.md`:
+
+- a queued question is not withdrawn when the record changes;
+- there is no "asked" marker;
+- an inbound answer does not update the record;
+- email was not exercised end to end.
+
+Disposable `gradia-record-fresh` stack only, reset from main's 94 migrations, with
+`verify-lead-qualification-migration.py` passing. Node 22.23.2 isolated runner.
+
+- The new suite plus the staging suite passed 23 of 23 in two runs.
+- A third run failed seed `createUser` before those tests ran, which is the
+  known local auth instability. The first run after the reset also failed seed
+  `createUser` and was retried once.
+- Unit: 1,459 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
 ### [Codex] 2026-10-14 — C1 release review: await configuration reconciliation
 
 Integrated current main while preserving both work-log entries. Replaced the
@@ -1246,3 +1295,15 @@ and a committed create with a lost response; all pass alongside nine existing
 setup tests. Touched-file lint and diff check pass. These are component state
 checks, not browser keyboard/mobile/zoom acceptance; Cursor C3 remains outstanding.
 No production form was enabled or configured, and no shared migration was applied.
+
+### [Codex] 2026-10-14 — PR78 integration review
+
+Reviewed the staging input fix: an unchanged proposal basis is accepted; a supplied
+workflow_id must match the command's workflow. Existing strict fields and database
+authorization remain in place. Integrated current main through PR77, preserving
+both work-log entries. Eighteen targeted unit tests, touched-file lint and diff
+check pass; final combined CI is required before merge. Connected acceptance uses
+fake SMS transport and a mocked interaction writer, not live channel or persisted
+outbound-history acceptance. Email, send-time qualification freshness, asked-state
+tracking and inbound-answer extraction remain documented follow-ups. No migration,
+production write, deployment or provider activation was performed in this review.
