@@ -1895,11 +1895,45 @@ async function executeCreateQuote(
   }
 }
 
+/** Why a queued qualification question is held at send (see LEAD_QUALIFICATION.md). */
+const STALE_QUESTION_HOLDS: Record<string, string> = {
+  qualification_changed: "Held — this lead's qualification changed after the question was queued. Re-propose the question from the lead's intake page.",
+  review_required: "Held — this lead needs identity or evidence review before a question can be sent.",
+  question_resolved: "Held — this is no longer the lead's next question (it was answered, closed, or another question comes first). Re-propose from the lead's intake page.",
+}
+
+/**
+ * Send-time hold for a qualification question whose record moved on after it
+ * was queued. Runs before any transport, token refresh or proof consumption, so
+ * a hold has zero external effects. Messages that are not qualification
+ * questions pass unchanged. A check that cannot run fails closed.
+ */
+async function staleQualificationQuestionHold(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction
+): Promise<string | null> {
+  const binding = (claimed.payload as { qualification?: unknown }).qualification
+  if (!binding || typeof binding !== "object") return null
+  const { data, error } = await supabase.rpc("qualification_question_currency", {
+    p_shop: claimed.shop_id,
+    p_action: claimed.id,
+  })
+  if (error) return "Held — couldn't confirm this question is still current. Nothing was sent; try again shortly."
+  if (data === null) return null
+  return STALE_QUESTION_HOLDS[String(data)] ?? "Held — couldn't confirm this question is still current. Nothing was sent."
+}
+
 async function executeSendSms(
   supabase: SupabaseClient,
   claimed: ClaimedAction
 ): Promise<ApprovalResult> {
   const proposal = claimed.payload as unknown as SmsProposal
+
+  const staleQuestion = await staleQualificationQuestionHold(supabase, claimed)
+  if (staleQuestion) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: staleQuestion }
+  }
 
   if (!proposal.to_phone?.trim() || !proposal.body?.trim()) {
     await rollbackClaim(supabase, claimed)
@@ -2021,6 +2055,12 @@ async function executeSendEmail(
   claimed: ClaimedAction
 ): Promise<ApprovalResult> {
   const proposal = claimed.payload as unknown as EmailProposal
+
+  const staleQuestion = await staleQualificationQuestionHold(supabase, claimed)
+  if (staleQuestion) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: staleQuestion }
+  }
 
   if (
     !proposal.to_email?.trim() ||
