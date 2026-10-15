@@ -456,6 +456,41 @@ So a queued question for a lead with no marketing consent and no recent inbound
 message **will be held at send**. That is the existing rule and this step does not
 loosen it.
 
+### Held at send when the record moved on
+
+October 15, migration 95. The executor rechecks a queued question before it sends
+it. `qualification_question_currency(p_shop, p_action)` is read-only. It applies
+the same rules as staging to the action's `payload.qualification` binding:
+
+- the revision and evidence revision must still match;
+- no identity review may be pending;
+- the question must still be the proposed one.
+
+The check runs first in the SMS and email executors. That is before the mailbox
+token refresh, consent and proof checks, transport, and the execution ledger. So
+a hold has **zero external effects**. The action returns to pending in Approvals.
+
+| Hold | When | Approval result `error` begins | What the screen should do |
+| --- | --- | --- | --- |
+| `qualification_changed` | The record or its evidence was saved after queueing, for example the answer was recorded | "Held — this lead's qualification changed…" | Re-propose from `/intake/[workflowId]`. The old card can be rejected |
+| `review_required` | Identity or evidence now needs review | "Held — this lead needs identity or evidence review…" | Send to intake review |
+| `question_resolved` | That is no longer the proposed question | "Held — this is no longer the lead's next question…" | Re-propose |
+| Check unavailable | The function could not run | "Held — couldn't confirm this question is still current…" | Retry later. Nothing was sent |
+
+Rules:
+
+- **Applies to the owner and to delegated managers.** It applies to the owner's
+  approval and to a delegated manager's, which executes as the service role.
+- **Other messages pass unchanged.** A message without a `qualification` binding,
+  such as an ordinary Whisper reply, is never affected.
+- **Who may call the function:** the shop's owner, a manager with `crm.read`, or
+  the service role. Anyone else gets `42501`.
+- **The check is strict.** Any saved change to the record holds the queued
+  question, even an unrelated field. Re-proposing is cheap; a stale message is
+  not.
+- **A small window remains.** A change that commits after the check but before
+  the provider call can still be sent.
+
 ### Not in this step
 
 - No screen. Cursor owns the control on `/intake/[workflowId]`.
@@ -532,6 +567,12 @@ Migration `20261014120000_qualification_question_staging.sql`, migration 94, add
 function only: `stage_qualification_question`. It is session-only, with a fixed
 search path, granted to `authenticated` and revoked from `anon` and `service_role`.
 It adds no table, column, index, trigger, enum value or grant on any table.
+
+Migration `20261015120000_qualification_question_currency.sql`, migration 95, adds
+one read-only function, `qualification_question_currency`. It is security definer,
+stable, with a fixed search path. It is executable by `authenticated` (owner or a
+manager with `crm.read`, checked inside) and `service_role`, and revoked from
+`anon`. It adds no table, column, index, trigger, enum value or table grant.
 
 ## Verification
 
