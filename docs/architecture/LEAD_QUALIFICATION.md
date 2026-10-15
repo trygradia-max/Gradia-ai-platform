@@ -489,20 +489,37 @@ It covers:
   question;
 - a website-only lead that is refused.
 
-These transitions are **not supported** by current code. They are recorded here
-rather than tested as correct:
+`eval/integration/qualification-delivery-acceptance.int.test.ts` continues from
+the queued question to delivery evidence on **SMS and email**. It uses the real
+interaction history, with only embeddings disabled, and fake transports. It covers:
 
-- **A queued question is not withdrawn when the record moves on.** The executor
-  does not know the qualification binding. If the answer arrives, or the record
-  changes, after queueing, the owner can still approve and send the now-stale
-  question. Only the reviewer's judgment in Approvals stops it.
-- **Nothing records that a question was asked.** After a question is sent and its
-  delivery confirmed, the same proposal, with the same basis, can be queued again.
-- **The inbound reply does not update the record.** Answers are recorded by a
-  person through `update_lead_qualification`. There is no automatic parsing.
-- **Email was not exercised end to end.** The suite drives SMS only. Email staging
-  is covered by the staging tests, and the email send-time rules by the Whisper
-  reply-context tests.
+- exactly one send under concurrent and exact retries;
+- exactly one outbound interaction, linked to the action and the customer and set
+  as the action's `result_id`;
+- the email threaded to the customer's message;
+- `provider_accepted` reported, never "delivered";
+- an unknown outcome held as `claimed`, with no resend and no outbound record,
+  that also blocks a replacement question;
+- suppression, DNC and SMS STOP after queueing held, with zero external effects:
+  no transport, no token refresh, no ledger entry and no interaction.
+
+### Question transition inventory
+
+| From | Event | To | Status |
+| --- | --- | --- | --- |
+| Proposed | Owner queues it | Pending approval | Supported (`stage_qualification_question`) |
+| Proposed | Manager, staff or revoked member queues it | — | Refused by design |
+| Proposed, website-only lead with no thread | Queue | — | Refused by design. A first outbound message is a consent decision |
+| Pending | No consent and no reviewed reply purpose at send | Held, pending | Supported |
+| Pending | STOP, DNC, suppression or changed recipient before send | Held, pending | Supported |
+| Pending | Owner or delegated manager approves with proof | Sent (`provider_accepted`), one outbound interaction | Supported |
+| Pending | Provider outcome unknown | Held as `claimed`; replacement refused | Supported, no resend |
+| Pending | Owner rejects | Rejected | Supported (existing Approvals) |
+| Pending | **Record moves on: answered, resolved or new evidence** | Should be held at send | **Unsupported.** The executor sends the stale question. Next PR |
+| Sent | **Question asked** | Should be recorded as asked, so it isn't re-proposed blindly | **Unsupported.** There is no asked marker, and the same basis can be queued again |
+| Sent | **Customer replies** | Answer recorded in the qualification | **Unsupported.** Answers are recorded by a person through `update_lead_qualification`; there is no inbound parsing |
+
+Each unsupported row is a separate PR with its own published contract.
 
 ## Schema
 
