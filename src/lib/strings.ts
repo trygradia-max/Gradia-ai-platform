@@ -294,6 +294,8 @@ export const STRINGS = {
         "Facts your receptionist can use when answering: policies, FAQs, what makes the shop different.",
       reviews:
         "The link customers get when your receptionist asks for a review after a finished job.",
+      queueForApproval:
+        "Queues the reviewed question as a pending approval. Nothing sends from here — approval and send-time checks still apply.",
       usage:
         "What this month's plan covers and how much of it is used, counted in texts and calls.",
       developer:

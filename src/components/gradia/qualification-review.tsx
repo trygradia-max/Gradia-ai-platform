@@ -1,5 +1,9 @@
 import { ErrorState } from "@/components/gradia/error-state"
 import { QualificationForm } from "@/components/gradia/qualification-form"
+import {
+  QualificationQueueQuestion,
+  type QualificationQueueThreads,
+} from "@/components/gradia/qualification-queue"
 import { ReviewCard } from "@/components/gradia/review-card"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { StatusPill } from "@/components/ui/status-pill"
@@ -144,13 +148,22 @@ export function QualificationReview({
   shopId,
   commandId,
   services,
+  threads,
+  isOwner,
 }: {
   result: { ok: true; data: LeadQualification } | { ok: false }
   history: { ok: true; data: LeadQualificationHistory } | { ok: false } | null
   shopId: string
   commandId: string
   services: QualificationServiceOption[]
+  /** Owner-visible threads for queueing, as the reviewer saw them. Absent
+   *  (or non-owner) means no queue control — never a send path. The intake
+   *  page always provides both; other callers omit them. */
+  threads?: QualificationQueueThreads | null
+  isOwner?: boolean
 }) {
+  const queueThreads = threads ?? null
+  const ownerView = isOwner ?? false
   if (!result.ok) {
     return (
       <section id="qualification" className="space-y-4">
@@ -248,6 +261,22 @@ export function QualificationReview({
         }
       />
       <QualificationNextQuestion qualification={qualification} />
+      <QualificationQueueQuestion
+        key={JSON.stringify([
+          shopId,
+          qualification.workflow_id,
+          qualification.revision,
+          qualification.identity.evidence_revision,
+          qualification.open_questions,
+          threads,
+          isOwner,
+        ])}
+        shopId={shopId}
+        workflowId={qualification.workflow_id}
+        qualification={qualification}
+        threads={queueThreads}
+        isOwner={ownerView}
+      />
       {qualification.can_update ? (
         <QualificationForm
           key={JSON.stringify([shopId, qualification.workflow_id, qualification.revision, qualification.identity, qualification.review_reasons, qualification.can_update])}

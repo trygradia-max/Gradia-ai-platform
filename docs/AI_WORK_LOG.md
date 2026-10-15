@@ -1179,3 +1179,23 @@ or fixture changes. The HTTP regression attempt could not reach the function
 because that local stack no longer had migration94; CI must run the complete
 suite from migrations. Targeted five unit tests, touched-file lint and diff check
 passed. No shared/production migration, deployment, send or provider activation.
+
+[AI: cursor] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+C2 review-and-queue step on cursor/qualification-queue-ui-3f75 from current
+origin/main (50e1236, PR74 merged). New QualificationQueueQuestion on
+/intake/[workflowId]#qualification behind PR73's suggestion card, staging through
+PR74's stageQualificationQuestion action only: editable wording, channel choice
+limited to threads that actually exist (read_whisper_thread SMS+email for the
+linked customer, owner views only), recipient shown read-only as reviewed, basis
+shown, one command id per attempt reused for exact retries. Queued/already_queued
+shows an Approvals link and never claims sent/delivered/consent. Mapped
+refusal/reload guidance for every code (uncertain retries same id; stale family
+locks until reload; command_conflict restarts fresh after re-review; forbidden
+hides the control). Managers see an owner-only note with no controls even with
+qualify/approve grants; leads with no thread get an honest no-first-message note;
+stale/complete suggestions render no queue step. No new RPC, executor, migration,
+consent exception, auto-send, or silent retry. Local Node22: full unit 1,470
+passed / 4 skipped (13 new), lint/tsc/build/diff-check clean. Same environment
+limit as C1: no live-browser namespace here, so native Tab/zoom/device acceptance
+stays in C3; revocation/consent-hold paths rest on the existing integration
+suite. No merge, deployment, migration, or provider change.

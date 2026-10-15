@@ -1,5 +1,6 @@
 import type {
   LeadQualification,
+  QualificationQuestionStageResult,
   QualificationUpdateResult,
   REVIEW_REASONS,
 } from "@/lib/lead-qualification"
@@ -186,4 +187,159 @@ export function qualificationRequiresReload(
   code: Extract<QualificationUpdateResult, { ok: false }>["code"]
 ) {
   return (RELOAD_CODES as readonly string[]).includes(code)
+}
+
+export const QUALIFICATION_STAGE_CHANNEL_LABELS = {
+  sms: "Text message",
+  email: "Email",
+} as const
+
+/**
+ * Owner-language guidance for every queue-for-approval refusal, mirroring
+ * the contract's result table. `retrySame` is true only for `uncertain`
+ * (retry with the same command id); stale outcomes need a fresh load and a
+ * re-proposal, never a blind retry. `hideControl` removes the control for
+ * callers who are not the active owner.
+ */
+export function qualificationStageOutcome(
+  result: Extract<QualificationQuestionStageResult, { ok: false }>,
+): {
+  title: string
+  description: string
+  retrySame: boolean
+  reload: boolean
+  hideControl: boolean
+} {
+  const reload = {
+    title: "",
+    description: "",
+    retrySame: false,
+    reload: true,
+    hideControl: false,
+  }
+  if (result.code === "invalid") {
+    return {
+      title: "This queue request is not valid.",
+      description: `Nothing was queued. Check ${result.field.replaceAll("_", " ")}.`,
+      retrySame: false,
+      reload: false,
+      hideControl: false,
+    }
+  }
+  if (result.code === "forbidden") {
+    return {
+      title: "Only the shop owner can queue a question.",
+      description:
+        "Reading or recording a qualification is not permission to message. This control is hidden — nothing was queued.",
+      retrySame: false,
+      reload: false,
+      hideControl: true,
+    }
+  }
+  if (result.code === "uncertain") {
+    return {
+      title: "Queue result is uncertain.",
+      description:
+        "No reply was received. Retry this same queue request — it keeps its id, so an exact retry can only confirm, never duplicate.",
+      retrySame: true,
+      reload: false,
+      hideControl: false,
+    }
+  }
+  if (result.code === "command_conflict") {
+    return {
+      title: "This queue id was already used for something else.",
+      description:
+        "Nothing new was queued. Reload and re-review the suggestion, then start over with a fresh id.",
+      retrySame: false,
+      reload: true,
+      hideControl: false,
+    }
+  }
+  if (result.code === "qualification_changed") {
+    return {
+      ...reload,
+      title: "The qualification moved since this suggestion.",
+      description:
+        "Reload and re-read the suggestion. The question offered may no longer be the next one.",
+    }
+  }
+  if (result.code === "review_required") {
+    return {
+      ...reload,
+      title: "Intake review comes first.",
+      description:
+        "Identity, vehicle, or evidence needs review before anything can be queued. Nothing was queued.",
+    }
+  }
+  if (result.code === "question_resolved") {
+    return {
+      ...reload,
+      title: "That is no longer the suggested question.",
+      description:
+        "The field is known now, the question was closed, or another question comes first. Reload for the current suggestion.",
+    }
+  }
+  if (result.code === "question_pending") {
+    return {
+      title: "A question for this lead is already waiting.",
+      description:
+        "Nothing new was queued. Open Approvals to review the waiting question — approval, not another queue, is the next step.",
+      retrySame: false,
+      reload: false,
+      hideControl: false,
+    }
+  }
+  if (result.code === "contact_blocked") {
+    return {
+      title: "This customer cannot be messaged.",
+      description:
+        "Do-not-contact, an opt-out, or a suppression applies. There is no override here — nothing was queued.",
+      retrySame: false,
+      reload: false,
+      hideControl: false,
+    }
+  }
+  if (result.code === "channel_unavailable") {
+    return {
+      title: "That channel is not ready.",
+      description:
+        "The channel is not connected or texting is not carrier-approved. Check Settings — nothing was queued.",
+      retrySame: false,
+      reload: false,
+      hideControl: false,
+    }
+  }
+  if (result.code === "conversation_changed") {
+    return {
+      ...reload,
+      title: "The conversation moved or has no thread here.",
+      description:
+        "A new message arrived, the thread was handed off, or this lead has no thread on that channel. Reload the thread before queueing.",
+    }
+  }
+  if (result.code === "recipient_changed") {
+    return {
+      ...reload,
+      title: "The customer's contact changed.",
+      description:
+        "The phone or email on file no longer matches what was reviewed. Reload before queueing.",
+    }
+  }
+  if (result.code === "policy_blocked") {
+    return {
+      title: "The active policy does not permit this.",
+      description: "Check the Control Center policy state. Nothing was queued.",
+      retrySame: false,
+      reload: false,
+      hideControl: false,
+    }
+  }
+  return {
+    title: "Queueing could not be confirmed.",
+    description: "Nothing is assumed queued. Reload before trying again.",
+    retrySame: false,
+    reload: true,
+    hideControl: false,
+  }
 }
