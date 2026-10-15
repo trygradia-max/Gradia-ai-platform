@@ -2,6 +2,7 @@
 import {mkdirSync,copyFileSync,existsSync,readFileSync,symlinkSync,writeFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {spawnSync} from 'node:child_process'
+import {disposableFailureSummary} from './disposable-diagnostics.mjs'
 const action=process.argv[2]
 if (!['start','reset','stop','credentials'].includes(action)) throw new Error('Expected start/reset/stop/credentials')
 const root=resolve('.local-tools/supabase-test')
@@ -12,9 +13,11 @@ if(existsSync(`${root}/supabase/.temp/project-ref`)) throw new Error('Remote lin
 copyFileSync('tests/supabase/config.toml',`${root}/supabase/config.toml`)
 if (!existsSync(`${root}/supabase/migrations`)) symlinkSync(resolve('supabase/migrations'),`${root}/supabase/migrations`,'dir')
 const args={start:['start'],reset:['db','reset','--local','--no-seed'],stop:['stop','--no-backup'],credentials:['status','-o','json']}[action]
-const result=spawnSync('supabase',['--workdir',root,...args],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:process.env.HOME,DOCKER_HOST:'unix:///var/run/docker.sock'},maxBuffer:10*1024*1024})
+// setup-cli selects GHCR in CI; preserve that non-secret registry choice.
+const registry=process.env.SUPABASE_INTERNAL_IMAGE_REGISTRY==='ghcr.io'?{SUPABASE_INTERNAL_IMAGE_REGISTRY:'ghcr.io'}:{}
+const result=spawnSync('supabase',['--workdir',root,...args],{encoding:'utf8',env:{...registry,PATH:process.env.PATH,HOME:process.env.HOME,DOCKER_HOST:'unix:///var/run/docker.sock'},maxBuffer:10*1024*1024})
 // CLI startup/status can contain generated credentials. Never print raw output.
-if(result.status!==0) {console.error('Disposable stack command failed; no credential-bearing output printed.');process.exit(1)}
+if(result.status!==0) {console.error('Disposable stack command failed; no credential-bearing output printed.',JSON.stringify(disposableFailureSummary(result)));process.exit(1)}
 if(action==='credentials') {
  const data=JSON.parse(result.stdout)
  if(data.API_URL!=='http://127.0.0.1:56531'||!data.ANON_KEY||!data.SERVICE_ROLE_KEY) throw new Error('Unexpected test endpoint')
