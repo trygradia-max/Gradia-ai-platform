@@ -64,6 +64,7 @@ import {
 } from "@/lib/twilio"
 import type {
   AppointmentRow,
+  CrmStage,
   LeadStatus,
   PendingActionStatus,
   PendingActionType,
@@ -1903,15 +1904,27 @@ async function executeCreateQuote(
 }
 
 /** Pipeline stages a sent quote may advance from; later stages never move back. */
-const QUOTE_SENT_FROM_STAGES = new Set<string | null>([null, "new", "needs_quote"])
+const QUOTE_SENT_FROM_STAGES: readonly (CrmStage | null)[] = [null, "new", "needs_quote"]
+/** Compare-and-swap attempts before the quote update is left for reconciliation. */
+const QUOTE_SENT_ATTEMPTS = 5
 
 /**
  * Quote bookkeeping for a message that carried a quote link, run after the
  * provider accepted it — however it was approved (the owner's Send click, a
  * later owner approval of a held send, or a delegated manager approval). The
  * quote is marked sent so the customer's link can be answered, and its lead
- * moves forward to quote_sent. Shop-scoped and idempotent. Best-effort: the
- * message already went out, so a failure here is logged, never a send failure.
+ * moves forward to quote_sent.
+ *
+ * Concurrency: the quote write is a compare-and-swap on the status, channel
+ * and sent time this call read, retried on a fresh read, so a customer's
+ * acceptance or a concurrent send on the other channel that lands in between
+ * is kept (a decided quote keeps its status; SMS + email become `both`). The
+ * lead moves only from new/needs_quote, checked atomically by
+ * moveLeadToStage, so a concurrent booking or loss is never regressed.
+ *
+ * The message already went out: a failure here never fails or resends it. It
+ * is logged and recorded on the action as `quote_sent_reconciliation` for an
+ * owner to repair by hand; replaying the action is already_decided.
  */
 async function markQuoteSent(
   supabase: SupabaseClient,
@@ -1921,43 +1934,49 @@ async function markQuoteSent(
   const quoteId = (claimed.payload as { quote_id?: unknown }).quote_id
   if (typeof quoteId !== "string" || !quoteId) return
   try {
-    const { data } = await supabase
-      .from("quotes")
-      .select("id, status, sent_via, sent_at, lead_id")
-      .eq("id", quoteId)
-      .eq("shop_id", claimed.shop_id)
-      .maybeSingle()
-    const quote = data as Pick<QuoteRow, "id" | "status" | "sent_via" | "sent_at" | "lead_id"> | null
-    if (!quote) return
-    const now = new Date().toISOString()
-    const { error } = await supabase
-      .from("quotes")
-      .update({
-        status: quote.status === "draft" || quote.status === "sent" ? "sent" : quote.status,
-        sent_via: quote.sent_via && quote.sent_via !== via ? "both" : via,
-        sent_at: quote.sent_at ?? now,
-        updated_at: now,
-      })
-      .eq("id", quote.id)
-      .eq("shop_id", claimed.shop_id)
-    if (error) throw new Error(error.message)
-    if (quote.lead_id) {
-      const { data: lead } = await supabase
-        .from("leads")
-        .select("stage")
-        .eq("id", quote.lead_id)
+    let leadId: string | null = null
+    let written = false
+    for (let attempt = 0; attempt < QUOTE_SENT_ATTEMPTS && !written; attempt++) {
+      const { data, error: readError } = await supabase
+        .from("quotes")
+        .select("id, status, sent_via, sent_at, lead_id")
+        .eq("id", quoteId)
         .eq("shop_id", claimed.shop_id)
         .maybeSingle()
-      const stage = (lead as { stage: string | null } | null)?.stage ?? null
-      if (lead && QUOTE_SENT_FROM_STAGES.has(stage)) {
-        await moveLeadToStage(supabase, claimed.shop_id, quote.lead_id, "quote_sent")
-      }
+      if (readError) throw new Error(readError.message)
+      const quote = data as Pick<QuoteRow, "id" | "status" | "sent_via" | "sent_at" | "lead_id"> | null
+      if (!quote) return
+      leadId = quote.lead_id
+      const now = new Date().toISOString()
+      let update = supabase
+        .from("quotes")
+        .update({
+          status: quote.status === "draft" ? "sent" : quote.status,
+          sent_via: quote.sent_via && quote.sent_via !== via ? "both" : via,
+          sent_at: quote.sent_at ?? now,
+          updated_at: now,
+        })
+        .eq("id", quote.id)
+        .eq("shop_id", claimed.shop_id)
+        .eq("status", quote.status)
+      update = quote.sent_via === null ? update.is("sent_via", null) : update.eq("sent_via", quote.sent_via)
+      update = quote.sent_at === null ? update.is("sent_at", null) : update.eq("sent_at", quote.sent_at)
+      const { data: rows, error } = await update.select("id")
+      if (error) throw new Error(error.message)
+      written = Boolean((rows as { id: string }[] | null)?.length)
+    }
+    if (!written) throw new Error(`quote changed on each of ${QUOTE_SENT_ATTEMPTS} attempts`)
+    if (leadId) {
+      await moveLeadToStage(supabase, claimed.shop_id, leadId, "quote_sent", { from: QUOTE_SENT_FROM_STAGES })
     }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
     console.error(
-      `[approvals] quote ${quoteId} was sent by action ${claimed.id} but not marked sent — reconcile:`,
-      err instanceof Error ? err.message : err
+      `[approvals] quote ${quoteId} was sent by action ${claimed.id} but not marked sent — reconcile by hand, do not resend: ${message}`
     )
+    await recordPayloadReconciliation(supabase, claimed, {
+      quote_sent_reconciliation: { status: "failed", via, error: message, at: new Date().toISOString() },
+    })
   }
 }
 
