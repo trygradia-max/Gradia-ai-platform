@@ -1118,6 +1118,38 @@ acceptance; can_update=false verifies a read-only manager, not delegated save, a
 a failed-load fixture is not a real membership-revocation session. These remain
 acceptance follow-ups. Combined verification and merge are recorded separately.
 
+[AI: claude-code] [DATE: 2026-10-14] [AREA: platform] [STATUS: review]
+B1: rechecked PR #74 at head `0fd4c9b`. It contains current main, both required
+checks pass, and it has no reviewer findings, so no follow-up PR was opened. Migration
+94 was re-applied from zero on the disposable `gradia-record-fresh` stack, with
+exactly 94 migrations. `verify-lead-qualification-migration.py` passed.
+`stage_qualification_question` is security definer with an empty search path,
+executable only by `authenticated`. The two qualification integration files passed
+33 of 33 in three repeat runs. The first run after the reset had one transient
+intake-seed failure.
+
+B3: step 6 quote/booking readiness audit, recorded in
+`docs/roadmap/STEP6_QUOTE_BOOKING_AUDIT.md`. Fixed the smallest uncovered
+invariant: an accepted quote staged a fixed 120-minute booking whatever the menu
+said. `respondToQuote` now sums the shop's current menu durations for the quoted
+services, sized to the quote's vehicle, for both the staging availability check and
+the booking. When any line has no shop-scoped menu service, it keeps the old 120
+minutes, labelled `duration_source: "default"`. The new integration scenarios
+failed on unfixed main and pass with the fix. No migration, executor, policy or
+conflict-rule change.
+
+Disposable `gradia-record-fresh` stack only, reset from main's 93 migrations, Node
+22.23.2 isolated runner:
+
+- `quote-acceptance.int.test.ts`: 17 of 17 on a clean run. Two other runs failed
+  only on local-gateway errors: an "invalid response from upstream" while seeding
+  a customer, and one run where `beforeAll` hung and tests were skipped.
+- Unit: 1,452 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
 [AI: claude-code] [DATE: 2026-10-14] [AREA: platform] [STATUS: done]
 Added the step from a reviewed qualification question to a queued message approval,
 on `auto/qualification-question-approval` from origin/main `316511d`. The contract
