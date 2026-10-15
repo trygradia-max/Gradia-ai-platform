@@ -1343,3 +1343,11 @@ Three behavioral state regressions plus thirteen existing queue UI tests pass;
 touched-file lint and diff check pass. Full combined CI remains required before
 merge. This is not native browser keyboard/zoom/mobile acceptance or a live send.
 No production write, migration, provider activation or deployment performed here.
+
+C2 CI follow-up: two integration attempts failed at disposable Supabase startup,
+before tests, with raw output intentionally suppressed. The wrapper was dropping
+setup-cli's GHCR registry selection when constructing its clean environment.
+Preserved only the allowed ghcr.io value and added fixed-category diagnostics
+(no raw CLI output or credentials). Two diagnostics regressions and lint pass.
+This is a configuration fix and improved failure visibility, not proof of the
+startup failure's root cause; the complete integration run must still pass.
