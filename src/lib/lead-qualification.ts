@@ -189,3 +189,53 @@ export function proposeNextQualificationQuestion(q: LeadQualification): NextQual
   if (q.identity.vehicle_status !== "confirmed") return { kind: "review_required", reasons: ["vehicle_unlinked"], basis }
   return { kind: "none", reason: "complete", basis }
 }
+
+/**
+ * Queues one reviewed question as a pending message approval through the existing
+ * Whisper reply staging. Owner only. It sends nothing; the owner sends from
+ * Approvals, through the existing executor and its send-time checks.
+ */
+export const qualificationQuestionStageSchema = z.object({
+  shopId: uuid, workflowId: uuid, commandId: uuid,
+  basis: z.object({ revision: z.number().int().min(0).max(2147483646), evidence_revision: z.number().int().positive().nullable() }).strict(),
+  target: z.enum([...QUALIFICATION_FIELDS, "open_question"]),
+  questionId: uuid.nullable(),
+  channel: z.enum(["sms", "email"]),
+  conversation: z.object({ latestId: uuid, revision: z.number().int().min(0) }).strict(),
+  message: z.object({ body: z.string().trim().min(1).max(8000), subject: z.string().max(200), destination: z.string().min(1).max(254) }).strict(),
+}).strict()
+  .refine((c) => (c.target === "open_question") === (c.questionId !== null), { path: ["target"] })
+  .refine((c) => c.channel === "email" ? c.message.subject.trim().length > 0 : c.message.subject === "", { path: ["message"] })
+  .refine((c) => c.channel === "email" || c.message.body.length <= 1600, { path: ["message"] })
+export type QualificationQuestionStage = z.infer<typeof qualificationQuestionStageSchema>
+
+const STAGE_CONFLICTS = [
+  "command_conflict", "qualification_changed", "review_required", "question_resolved", "question_pending",
+  "contact_blocked", "channel_unavailable", "conversation_changed", "recipient_changed",
+] as const
+
+/** Every outcome a caller must handle. `queued` is not sent, approved or a consent decision. */
+export type QualificationQuestionStageResult =
+  | { ok: true; status: "queued" | "already_queued"; actionId: string; workflowId: string; channel: "sms" | "email" }
+  | { ok: false; code: "invalid"; field: string }
+  | { ok: false; code: "forbidden" | "policy_blocked" | (typeof STAGE_CONFLICTS)[number] | "not_confirmed" | "uncertain" }
+
+export const qualificationQuestionStagedSchema = z.object({
+  status: z.enum(["queued", "already_queued"]), action_id: uuid, workflow_id: uuid, channel: z.enum(["sms", "email"]),
+  qualification: z.object({
+    workflow_id: uuid, revision: z.number().int(), evidence_revision: z.number().int().nullable(),
+    target: z.enum([...QUALIFICATION_FIELDS, "open_question"]), question_id: uuid.nullable(),
+  }).strict(),
+}).strict()
+
+/** Maps a database refusal to a contract outcome without exposing database text. */
+export function qualificationQuestionStageRefusal(error: { code?: string; details?: string | null }): Extract<QualificationQuestionStageResult, { ok: false }> {
+  const detail = typeof error.details === "string" ? error.details : ""
+  if (error.code === "22023") return { ok: false, code: "invalid", field: ["basis", "target", "channel", "message"].includes(detail) ? detail : "command" }
+  if (error.code === "42501") return { ok: false, code: detail === "policy_blocked" ? "policy_blocked" : "forbidden" }
+  if (error.code === "PT409") {
+    const conflict = STAGE_CONFLICTS.find((c) => c === detail)
+    if (conflict) return { ok: false, code: conflict }
+  }
+  return { ok: false, code: "not_confirmed" }
+}
