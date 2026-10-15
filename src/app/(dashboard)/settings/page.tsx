@@ -9,12 +9,14 @@ import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
 import { UsageMeters } from "@/components/gradia/usage-meters"
 import { KnowledgeSettingsCard } from "@/components/gradia/knowledge-settings-card"
 import { ReviewLinkCard } from "@/components/gradia/review-link-card"
+import { WebsiteIntakeCard } from "@/components/gradia/website-intake-card"
 import { McpTokensCard } from "@/components/gradia/mcp-tokens-card"
 import { AutomationsCard } from "@/components/gradia/automations-card"
 import { ClearDemoDataCard } from "@/components/gradia/clear-demo-data-card"
 import { DataExportCard } from "@/components/gradia/data-export-card"
 import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
 import { getAutomationSettings } from "@/app/actions/automations"
+import { listPublicIntakeForms } from "@/app/actions/public-intake-forms"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
@@ -178,6 +180,7 @@ export default async function SettingsPage({
   const voiceOptions = listVoiceOptions()
   const services = await listServicesForCurrentShop()
   const automationEntries = await getAutomationSettings()
+  const websiteForms = await listPublicIntakeForms(shopCtx.id)
 
   const sections = [
     { id: "services", label: "Service menu" },
@@ -186,6 +189,7 @@ export default async function SettingsPage({
     { id: "voice", label: "Voice" },
     { id: "email", label: "Email" },
     { id: "sms", label: "SMS" },
+    { id: "website", label: "Website" },
     { id: "payments", label: "Payments" },
     { id: "jobber", label: "Jobber" },
     { id: "knowledge", label: "Knowledge" },
@@ -385,6 +389,10 @@ export default async function SettingsPage({
           shop.twilio_phone_number === shop.gradia_number_e164 ? (
             <A2pWizard initial={a2pState} />
           ) : null}
+        </section>
+
+        <section id="website">
+          <WebsiteIntakeCard shopId={shopCtx.id} initial={websiteForms} />
         </section>
 
         {integrationEnabled("payments") && (
