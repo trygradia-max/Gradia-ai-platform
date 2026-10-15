@@ -220,9 +220,9 @@ export function qualificationStageOutcome(
   if (result.code === "invalid") {
     return {
       title: "This queue request is not valid.",
-      description: `Nothing was queued. Check ${result.field.replaceAll("_", " ")}.`,
+      description: `Nothing was queued. Check ${result.field.replaceAll("_", " ")}. Reload to review a fresh request.`,
       retrySame: false,
-      reload: false,
+      reload: true,
       hideControl: false,
     }
   }
@@ -230,7 +230,7 @@ export function qualificationStageOutcome(
     return {
       title: "Only the shop owner can queue a question.",
       description:
-        "Reading or recording a qualification is not permission to message. This control is hidden — nothing was queued.",
+        "Reading or recording a qualification is not permission to message. This control is hidden. If an earlier attempt was uncertain, review Approvals before assuming it did not queue.",
       retrySame: false,
       reload: false,
       hideControl: true,
@@ -284,7 +284,7 @@ export function qualificationStageOutcome(
     return {
       title: "A question for this lead is already waiting.",
       description:
-        "Nothing new was queued. Open Approvals to review the waiting question — approval, not another queue, is the next step.",
+        "Nothing new was queued. Open Approvals to review the existing question or its unconfirmed delivery. Do not create a replacement while delivery is uncertain.",
       retrySame: false,
       reload: false,
       hideControl: false,

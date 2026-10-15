@@ -197,13 +197,16 @@ export function proposeNextQualificationQuestion(q: LeadQualification): NextQual
  */
 export const qualificationQuestionStageSchema = z.object({
   shopId: uuid, workflowId: uuid, commandId: uuid,
-  basis: z.object({ revision: z.number().int().min(0).max(2147483646), evidence_revision: z.number().int().positive().nullable() }).strict(),
+  // The proposal's `basis`, copied unchanged. It carries `workflow_id`, which
+  // must then name this workflow.
+  basis: z.object({ workflow_id: uuid.optional(), revision: z.number().int().min(0).max(2147483646), evidence_revision: z.number().int().positive().nullable() }).strict(),
   target: z.enum([...QUALIFICATION_FIELDS, "open_question"]),
   questionId: uuid.nullable(),
   channel: z.enum(["sms", "email"]),
   conversation: z.object({ latestId: uuid, revision: z.number().int().min(0) }).strict(),
   message: z.object({ body: z.string().trim().min(1).max(8000), subject: z.string().max(200), destination: z.string().min(1).max(254) }).strict(),
 }).strict()
+  .refine((c) => c.basis.workflow_id === undefined || c.basis.workflow_id === c.workflowId, { path: ["basis"] })
   .refine((c) => (c.target === "open_question") === (c.questionId !== null), { path: ["target"] })
   .refine((c) => c.channel === "email" ? c.message.subject.trim().length > 0 : c.message.subject === "", { path: ["message"] })
   .refine((c) => c.channel === "email" || c.message.body.length <= 1600, { path: ["message"] })

@@ -113,7 +113,7 @@ describe("queue for approval review step", () => {
 
   it("refuses website-only leads without inventing a first-message path", () => {
     const html = queueHtml(record(), noThreads, true)
-    expect(html).toContain("No conversation to queue into")
+    expect(html).toContain("No usable conversation to queue into")
     expect(html).toContain("website-only lead cannot receive a first message from here")
     expect(html).toContain("never sends")
     expect(html).not.toContain("Queue for approval</button")
@@ -121,7 +121,7 @@ describe("queue for approval review step", () => {
 
   it("reports unreadable threads without queueing blind", () => {
     const html = queueHtml(record(), null, true)
-    expect(html).toContain("No conversation to queue into")
+    expect(html).toContain("No usable conversation to queue into")
     expect(html).toContain("could not be loaded")
     expect(html).not.toContain("Queue for approval</button")
   })
@@ -298,7 +298,7 @@ describe("staging refusal guidance", () => {
     }
     const invalid = qualificationStageOutcome({ ok: false, code: "invalid", field: "message" })
     expect(invalid.description).toContain("message")
-    expect(invalid.reload).toBe(false)
+    expect(invalid.reload).toBe(true)
   })
 
   it("adds no second executor, RPC, or send path", () => {

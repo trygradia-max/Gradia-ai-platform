@@ -102,7 +102,9 @@ export function QualificationQueueQuestion({
     suggestion.kind === "question" ? suggestion.text : ""
   )
   const [subject, setSubject] = React.useState("")
-  const [commandId, setCommandId] = React.useState(() => crypto.randomUUID())
+  const [commandId] = React.useState(() => crypto.randomUUID())
+  const submitted = React.useRef<ReturnType<typeof buildStageCommand> | null>(null)
+  const busy = React.useRef(false)
   const [sending, setSending] = React.useState(false)
   const [fieldError, setFieldError] = React.useState<string | null>(null)
   const [outcome, setOutcome] = React.useState<Outcome | null>(null)
@@ -141,13 +143,13 @@ export function QualificationQueueQuestion({
     return (
       <ReviewCard
         eyebrow="Queue for approval"
-        title="No conversation to queue into"
+        title="No usable conversation to queue into"
         status={<StatusPill tone="muted">Unavailable</StatusPill>}
         evidence={
           <>
             <p>
               {threads
-                ? "This customer has no SMS or email thread yet. Queueing needs an existing conversation — a website-only lead cannot receive a first message from here."
+                ? "No usable SMS or email conversation is available. A thread may be missing, held, or unreadable. Refresh and review Conversations. Queueing needs an existing conversation — a website-only lead cannot receive a first message from here."
                 : "The conversations could not be loaded. Refresh before queueing anything."}
             </p>
             <p>
@@ -170,8 +172,8 @@ export function QualificationQueueQuestion({
         status={<StatusPill tone="muted">Hidden</StatusPill>}
         evidence={
           <p>
-            Only the shop owner can queue a question. This control was removed —
-            nothing was queued.
+            Only the shop owner can queue a question. This control was removed. If an earlier attempt was uncertain, review
+            Approvals before assuming it did not queue.
           </p>
         }
       />
@@ -214,10 +216,10 @@ export function QualificationQueueQuestion({
           : (failure as Extract<QualificationQuestionStageResult, { ok: false }>)
       )
     : null
-  const locked = sending || (failure !== null && !guidance?.retrySame)
+  const locked = sending || failure !== null
 
   async function queue() {
-    if (sending || outcome?.ok) return
+    if (busy.current || outcome?.ok || (failure && !guidance?.retrySame)) return
     if (activeChannel === "email" && subject.trim().length === 0) {
       setFieldError("An email subject is required.")
       return
@@ -227,11 +229,11 @@ export function QualificationQueueQuestion({
       return
     }
     setFieldError(null)
+    busy.current = true
     setSending(true)
     let result: QualificationQuestionStageResult
     try {
-      result = await stageQualificationQuestion(
-        buildStageCommand({
+      submitted.current ??= buildStageCommand({
           shopId,
           workflowId,
           commandId,
@@ -241,7 +243,7 @@ export function QualificationQueueQuestion({
           body: body.trim(),
           subject: subject.trim(),
         })
-      )
+      result = await stageQualificationQuestion(submitted.current)
     } catch {
       result = { ok: false, code: "uncertain" }
     }
@@ -256,6 +258,7 @@ export function QualificationQueueQuestion({
       router.refresh()
       return
     }
+    busy.current = false
     const mapped = qualificationStageOutcome(result)
     if (mapped.hideControl) setControlHidden(true)
     setOutcome(
@@ -267,15 +270,12 @@ export function QualificationQueueQuestion({
   }
 
   function retrySame() {
-    setOutcome(null)
     void queue()
   }
 
   function startOver() {
-    setCommandId(crypto.randomUUID())
-    setOutcome(null)
-    setFieldError(null)
-    router.refresh()
+    // A full reload keeps this stale form locked until fresh server data mounts.
+    window.location.reload()
   }
 
   const targetLabel = QUALIFICATION_NEXT_TARGET_LABELS[pendingQuestion.target]
@@ -302,7 +302,7 @@ export function QualificationQueueQuestion({
 
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">Channel</p>
-        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Channel">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Channel">
           {available.map((c) => (
             <Button
               key={c}
@@ -330,6 +330,7 @@ export function QualificationQueueQuestion({
           <Label htmlFor="queue-subject">Subject (required for email)</Label>
           <Input
             id="queue-subject"
+            maxLength={200}
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             disabled={sending || locked}

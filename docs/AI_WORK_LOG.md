@@ -1118,6 +1118,57 @@ acceptance; can_update=false verifies a read-only manager, not delegated save, a
 a failed-load fixture is not a real membership-revocation session. These remain
 acceptance follow-ups. Combined verification and merge are recorded separately.
 
+[AI: cursor] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+C1 website-intake setup on cursor/cloud-agent-1792041640122-hbrjc from current
+origin/main (baseline merge 3747330; stale pre-baseline local experiments dropped
+in favor of origin/main per the handoff baseline rule). New owner-only
+WebsiteIntakeCard in Settings (own section + nav, after SMS) reusing the existing
+listPublicIntakeForms/configurePublicIntakeForm actions and PUBLIC_FORM_INTAKE
+contract; no new RPC, migration, executor, or send path. Shows exact HTTPS origin,
+Enabled/Disabled pill and revision per form plus the POST endpoint path; new forms
+start disabled and enabling is a separate explicit action. Stale/uncertain saves
+refresh the list first with guidance to re-apply against the current revision; no
+silent retry. Copy states submissions land in identity review as unverified text
+and claims no consent, identity, or readiness. Non-owner reads render an
+unavailable notice with no form controls. Local Node22: 1,460 unit passes / 4
+skips (122 files, 9 new), lint/tsc/build clean. No live-browser namespace exists
+in this environment, so keyboard/mobile acceptance is via native controls,
+label-for associations, fluid-layout assertions and existing token contrast —
+not a native Tab/zoom/device walk; the full native walk stays in C3. No merge,
+deployment, migration, or provider change.
+
+[AI: claude-code] [DATE: 2026-10-14] [AREA: platform] [STATUS: review]
+B1: rechecked PR #74 at head `0fd4c9b`. It contains current main, both required
+checks pass, and it has no reviewer findings, so no follow-up PR was opened. Migration
+94 was re-applied from zero on the disposable `gradia-record-fresh` stack, with
+exactly 94 migrations. `verify-lead-qualification-migration.py` passed.
+`stage_qualification_question` is security definer with an empty search path,
+executable only by `authenticated`. The two qualification integration files passed
+33 of 33 in three repeat runs. The first run after the reset had one transient
+intake-seed failure.
+
+B3: step 6 quote/booking readiness audit, recorded in
+`docs/roadmap/STEP6_QUOTE_BOOKING_AUDIT.md`. Fixed the smallest uncovered
+invariant: an accepted quote staged a fixed 120-minute booking whatever the menu
+said. `respondToQuote` now sums the shop's current menu durations for the quoted
+services, sized to the quote's vehicle, for both the staging availability check and
+the booking. When any line has no shop-scoped menu service, it keeps the old 120
+minutes, labelled `duration_source: "default"`. The new integration scenarios
+failed on unfixed main and pass with the fix. No migration, executor, policy or
+conflict-rule change.
+
+Disposable `gradia-record-fresh` stack only, reset from main's 93 migrations, Node
+22.23.2 isolated runner:
+
+- `quote-acceptance.int.test.ts`: 17 of 17 on a clean run. Two other runs failed
+  only on local-gateway errors: an "invalid response from upstream" while seeding
+  a customer, and one run where `beforeAll` hung and tests were skipped.
+- Unit: 1,452 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
 [AI: claude-code] [DATE: 2026-10-14] [AREA: platform] [STATUS: done]
 Added the step from a reviewed qualification question to a queued message approval,
 on `auto/qualification-question-approval` from origin/main `316511d`. The contract
@@ -1199,3 +1250,96 @@ passed / 4 skipped (13 new), lint/tsc/build/diff-check clean. Same environment
 limit as C1: no live-browser namespace here, so native Tab/zoom/device acceptance
 stays in C3; revocation/consent-hold paths rest on the existing integration
 suite. No merge, deployment, migration, or provider change.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B2: connected lead-workflow acceptance on main `50e1236`, after #74. New file:
+`eval/integration/lead-workflow-acceptance.int.test.ts`. It drives one synthetic lead
+through the real path, with the SMS provider faked:
+
+1. Inbound SMS intake, including the provider redelivering the event (one workflow).
+2. The owner links the identity.
+3. The qualification proposal.
+4. The `stageQualificationQuestion` server action.
+5. Owner or delegated-manager approval through the existing executor.
+
+It covers:
+
+- one send under concurrent and exact retries;
+- a hold without consent or a reviewed reply purpose;
+- stale evidence;
+- a changed recipient, DNC and STOP after queueing;
+- manager staging refused, and a deactivated manager unable to approve;
+- an unknown provider outcome that never resends and blocks a replacement
+  question;
+- a website-only lead with no thread that is refused.
+
+Defect found and fixed: `stageQualificationQuestion` refused the proposal's own
+`basis` as `invalid` with `field: "basis"`. The proposal includes `workflow_id`,
+and the action's schema was strict without it. Every caller following the
+published "copy basis unchanged" contract would have failed. #74's tests called
+the database function directly and missed it. The schema now accepts `workflow_id`
+and requires it to equal `workflowId`. A unit regression fails without the fix.
+
+The unsupported transitions are recorded in `LEAD_QUALIFICATION.md`:
+
+- a queued question is not withdrawn when the record changes;
+- there is no "asked" marker;
+- an inbound answer does not update the record;
+- email was not exercised end to end.
+
+Disposable `gradia-record-fresh` stack only, reset from main's 94 migrations, with
+`verify-lead-qualification-migration.py` passing. Node 22.23.2 isolated runner.
+
+- The new suite plus the staging suite passed 23 of 23 in two runs.
+- A third run failed seed `createUser` before those tests ran, which is the
+  known local auth instability. The first run after the reset also failed seed
+  `createUser` and was retried once.
+- Unit: 1,459 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
+### [Codex] 2026-10-14 — C1 release review: await configuration reconciliation
+
+Integrated current main while preserving both work-log entries. Replaced the
+fire-and-forget route refresh with an awaited session-scoped list action. A
+synchronous guard prevents repeat submissions while save/read is outstanding;
+a failed read removes mutation controls until page reload. Uncertain creates
+retain the original form ID, and a confirmed list containing that ID clears the
+add draft. The unavailable message no longer claims nothing changed after a
+potentially committed save.
+
+Three state regressions exercise delayed reads, duplicate clicks, failed reads,
+and a committed create with a lost response; all pass alongside nine existing
+setup tests. Touched-file lint and diff check pass. These are component state
+checks, not browser keyboard/mobile/zoom acceptance; Cursor C3 remains outstanding.
+No production form was enabled or configured, and no shared migration was applied.
+
+### [Codex] 2026-10-14 — PR78 integration review
+
+Reviewed the staging input fix: an unchanged proposal basis is accepted; a supplied
+workflow_id must match the command's workflow. Existing strict fields and database
+authorization remain in place. Integrated current main through PR77, preserving
+both work-log entries. Eighteen targeted unit tests, touched-file lint and diff
+check pass; final combined CI is required before merge. Connected acceptance uses
+fake SMS transport and a mocked interaction writer, not live channel or persisted
+outbound-history acceptance. Email, send-time qualification freshness, asked-state
+tracking and inbound-answer extraction remain documented follow-ups. No migration,
+production write, deployment or provider activation was performed in this review.
+
+### [Codex] 2026-10-15 — C2 release review: exact retries and stale-form locks
+
+Integrated main through PR78, retaining website settings and both work logs.
+An uncertain staging outcome previously left the message editable despite offering
+an exact retry. The submitted command is now frozen; a synchronous guard blocks
+concurrent clicks; every failure locks edits. Stale/invalid inputs require a full
+reload before a new attempt rather than unlocking ahead of router.refresh.
+Held or non-replyable threads are excluded from channel choices. Unusable-thread
+copy no longer asserts every read failure means no conversation, and pending-question
+guidance includes delivery review rather than assuming approval is always next.
+
+Three behavioral state regressions plus thirteen existing queue UI tests pass;
+touched-file lint and diff check pass. Full combined CI remains required before
+merge. This is not native browser keyboard/zoom/mobile acceptance or a live send.
+No production write, migration, provider activation or deployment performed here.

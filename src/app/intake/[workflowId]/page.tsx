@@ -53,7 +53,7 @@ function queueThread(
   thread: WhisperThread | null,
   channel: "sms" | "email"
 ): { latestId: string; revision: number; destination: string } | null {
-  if (!thread) return null
+  if (!thread || !thread.can_reply || thread.state === "held") return null
   const destination = channel === "sms" ? thread.customer.phone : thread.customer.email
   if (!destination) return null
   return { latestId: thread.latest_id, revision: thread.revision, destination }
