@@ -1390,3 +1390,38 @@ runner.
   passed.
 
 Nothing was merged, deployed, migrated on a shared database, or activated.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B5 (PR #79 review finding). Reproduced four stale-repair cases in
+`booking-confirmation.int.test.ts`. On the previous head, the replay repair:
+
+- confirmed an appointment rescheduled after the failed confirmation for its old
+  time;
+- confirmed a closed appointment;
+- used the customer's old phone;
+- left a stale confirmation queued when the appointment moved during the repair,
+  shown with a deterministic interleaving before the insert.
+
+Fix (`ensureBookingConfirmation`):
+
+- It drafts from the current appointment (time, length, service, timezone,
+  status) and the current customer (name, phone), never from the original
+  proposal.
+- It refuses a closed or already-started appointment, or a customer with no
+  phone. A cancelled appointment is deleted, so there is nothing to confirm.
+- After staging it re-reads the appointment. If anything changed, it deletes
+  the unsent card it just created, and the next replay drafts a fresh one.
+- Rejected confirmations are still respected.
+- The guarantee stays scoped to replays serialized by the action claim. There
+  is no database uniqueness key per appointment.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- `booking-confirmation`: 10 of 10, after one run that failed seed `createUser`
+  before any test.
+- `quote-acceptance`: 17. `conflict-enforcement`: 6. `booking-atomicity`: 13.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types after build, and `git diff --check` passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.

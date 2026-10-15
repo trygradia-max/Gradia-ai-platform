@@ -133,4 +133,77 @@ describe.skipIf(!INTEGRATION)("booking confirmation is staged exactly once per a
     expect(await approve(id)).toMatchObject({ ok: true, status: "executed", resultId: appointmentId })
     expect(await confirmations(appointmentId)).toHaveLength(1)
   })
+
+  it("an appointment rescheduled after the failed confirmation is confirmed for its current time", async () => {
+    const crashed = await crashedAfterWrite(futureSlot())
+    const moved = futureSlot()
+    expect((await db.from("appointments").update({ scheduled_at: moved, ends_at: new Date(Date.parse(moved) + 90 * 60_000).toISOString(), duration_minutes: 90 }).eq("id", crashed.appointmentId)).error).toBeNull()
+    expect(await approve(crashed.id)).toMatchObject({ ok: true, status: "executed" })
+    const [row] = await confirmations(crashed.appointmentId)
+    expect(Date.parse(row.payload.iso_start_time as string)).toBe(Date.parse(moved))
+    expect(vi.mocked(draftBookingConfirmationSms)).toHaveBeenCalledWith(expect.objectContaining({ durationMinutes: 90 }))
+    expect(Date.parse(vi.mocked(draftBookingConfirmationSms).mock.calls[0][0].isoStartTime)).toBe(Date.parse(moved))
+  })
+
+  it("a closed appointment gets no repaired confirmation", async () => {
+    const crashed = await crashedAfterWrite(futureSlot())
+    expect((await db.from("appointments").update({ status: "closed" }).eq("id", crashed.appointmentId)).error).toBeNull()
+    expect(await approve(crashed.id)).toMatchObject({ ok: true, status: "executed" })
+    expect(await confirmations(crashed.appointmentId)).toHaveLength(0)
+  })
+
+  it("a customer whose phone changed is confirmed at the current number", async () => {
+    const crashed = await crashedAfterWrite(futureSlot())
+    const current = phone()
+    const appt = (await db.from("appointments").select("customer_id").eq("id", crashed.appointmentId).single()).data!
+    expect((await db.from("customers").update({ phone: current }).eq("id", appt.customer_id)).error).toBeNull()
+    expect(await approve(crashed.id)).toMatchObject({ ok: true, status: "executed" })
+    const [row] = await confirmations(crashed.appointmentId)
+    expect(row.payload.to_phone).toBe(current)
+  })
+
+  it("an appointment moved while the repair is staging leaves no stale confirmation; the next replay confirms the new time", async () => {
+    const crashed = await crashedAfterWrite(futureSlot())
+    const moved = futureSlot()
+    const racer = interleaved(db, "pending_actions", "insert", async () => {
+      expect((await db.from("appointments").update({ scheduled_at: moved, ends_at: new Date(Date.parse(moved) + 120 * 60_000).toISOString() }).eq("id", crashed.appointmentId)).error).toBeNull()
+    })
+    expect(await executeApproval(racer, crashed.id, shop.shopId, { userId: shop.ownerId })).toMatchObject({ ok: true, status: "executed" })
+    expect(await confirmations(crashed.appointmentId)).toHaveLength(0)
+    await reDrive(crashed.id)
+    expect(await approve(crashed.id)).toMatchObject({ ok: true, status: "executed" })
+    const rows = await confirmations(crashed.appointmentId)
+    expect(rows).toHaveLength(1)
+    expect(Date.parse(rows[0].payload.iso_start_time as string)).toBe(Date.parse(moved))
+  })
 })
+
+/**
+ * A client whose first awaited `method` ("insert" or "update") on `table` runs
+ * `competing` first: after this code's reads, before that write.
+ */
+function interleaved(client: SupabaseClient, table: string, method: "insert" | "update", competing: () => Promise<unknown>): SupabaseClient {
+  let fired = false
+  return new Proxy(client, {
+    get(target, key) {
+      if (key === "from") return (name: string) => {
+        const builder = target.from(name)
+        if (name !== table) return builder
+        const original = (builder as unknown as Record<string, (...a: unknown[]) => unknown>)[method].bind(builder)
+        ;(builder as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
+          const filter = original(...args) as { then: (ok: unknown, bad?: unknown) => unknown }
+          const then = filter.then.bind(filter)
+          filter.then = (ok: unknown, bad?: unknown) => {
+            if (fired) return then(ok, bad)
+            fired = true
+            return Promise.resolve().then(competing).then(() => then(ok, bad), bad as (e: unknown) => unknown)
+          }
+          return filter
+        }
+        return builder
+      }
+      const value = Reflect.get(target, key)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+}
