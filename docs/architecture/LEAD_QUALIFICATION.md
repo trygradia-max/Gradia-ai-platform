@@ -398,7 +398,7 @@ read under the lock.
    - Email needs a connected mailbox.
 9. **One open question per lead**: no other unexecuted qualification question for
    this workflow may be waiting. That means pending, edit-requested, or approved but
-   not sent (`question_pending`). A double-click with a fresh id cannot queue the
+   not sent (`question_pending`). A consumed send claim also blocks replacement while delivery is unconfirmed, even if the action was later rejected or has a result without a completed claim. A double-click with a fresh id cannot queue the
    question twice.
 10. **Existing staging**: `whisper_command(... 'reply' ...)` runs inside the same
     transaction. Its checks still apply:

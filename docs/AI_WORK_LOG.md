@@ -1163,3 +1163,19 @@ as October 9, not as a clean pass.
 
 No production or shared database was touched. Nothing was merged or deployed, and
 no provider was activated.
+
+### [Codex] 2026-10-14 — PR74 integration review: preserve uncertain delivery holds
+
+Reproduced a replacement question being queued after its predecessor was marked
+rejected with an uncompleted send claim. The qualification duplicate guard now
+uses the inbox's existing consumed-claim hold definition, including rejected
+claims and results recorded without a completed claim. Ordinary rejection before
+any send claim still permits a new question. Exact retries remain idempotent.
+
+Added three integration regressions and clarified the contract. A rolled-back
+SQL transaction against disposable gradia-record-fresh reproduced the original
+bug, then verified all three fixed claim/status cases without persisting schema
+or fixture changes. The HTTP regression attempt could not reach the function
+because that local stack no longer had migration94; CI must run the complete
+suite from migrations. Targeted five unit tests, touched-file lint and diff check
+passed. No shared/production migration, deployment, send or provider activation.

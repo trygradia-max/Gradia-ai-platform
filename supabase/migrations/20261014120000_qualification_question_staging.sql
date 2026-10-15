@@ -67,10 +67,13 @@ BEGIN
    OR (p_channel='email' AND (nullif(btrim(coalesce(s.aurinko_access_token_enc,'')),'') IS NULL OR s.aurinko_account_id IS NULL)) THEN
    RAISE EXCEPTION 'Channel unavailable' USING ERRCODE='PT409',DETAIL='channel_unavailable'; END IF;
 
-  -- One waiting question per lead: pending, edit-requested, or approved but not sent.
+  -- One waiting question per lead, including uncertain delivery after any decision.
+  -- Match the inbox hold: a decision/result alone cannot clear a consumed send claim.
   IF EXISTS(SELECT 1 FROM public.pending_actions a WHERE a.shop_id=p_shop AND a.action_type::text IN ('send_sms','send_email')
    AND a.payload->'qualification'->>'workflow_id'=p_workflow::text
-   AND (a.status IN ('pending','edit_requested') OR (a.status='approved' AND a.result_id IS NULL))) THEN
+   AND (a.status IN ('pending','edit_requested') OR (a.status='approved' AND a.result_id IS NULL)
+    OR EXISTS (SELECT 1 FROM public.service_proof_consumptions spent WHERE spent.shop_id=p_shop AND spent.action_id=a.id
+      AND (spent.completed_at IS NULL OR a.result_id IS NULL OR a.status<>'approved')))) THEN
    RAISE EXCEPTION 'Question pending' USING ERRCODE='PT409',DETAIL='question_pending'; END IF;
  END IF;
 

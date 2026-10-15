@@ -100,6 +100,19 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("queueing a reviewed qualification qu
     expect((await proposal(l)).basis.revision).toBe(0)
   })
 
+  it.each([
+    { status: "rejected", completed: false, result: false },
+    { status: "rejected", completed: true, result: true },
+    { status: "approved", completed: false, result: true },
+  ])("refuses a replacement while delivery remains unconfirmed: %j", async ({ status, completed, result }) => {
+    const l = await lead(), a = await args(l)
+    expect((await stage(a)).error).toBeNull()
+    expect((await db.from("service_proof_consumptions").insert({ proof_id: randomUUID(), shop_id: shop.shopId, action_id: a.p_command, claims: {}, completed_at: completed ? new Date().toISOString() : null })).error).toBeNull()
+    expect((await db.from("pending_actions").update({ status, result_id: result ? l.latest : null }).eq("id", a.p_command)).error).toBeNull()
+    expect(refusal(await stage(await args(l)))).toBe("question_pending")
+    expect((await pending(l.workflowId)).data).toHaveLength(1)
+  })
+
   it("an exact retry, including a concurrent one, returns the same action and writes nothing new", async () => {
     const l = await lead(), a = await args(l)
     const [x, y] = await Promise.all([stage(a), stage(a)])
