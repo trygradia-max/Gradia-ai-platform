@@ -8,7 +8,6 @@ import { z } from "zod"
 
 import { executeApproval } from "@/lib/approvals"
 import { recordInteraction } from "@/lib/memory"
-import { moveLeadToStage } from "@/lib/pipeline"
 import {
   buildQuoteLineItem,
   computeQuoteTotals,
@@ -288,20 +287,8 @@ export async function sendQuote(
     return { ok: false, held: true, error: result.error }
   }
 
-  await supabase
-    .from("quotes")
-    .update({
-      status: quote.status === "draft" || quote.status === "sent" ? "sent" : quote.status,
-      sent_via: quote.sent_via && quote.sent_via !== via ? "both" : via,
-      sent_at: quote.sent_at ?? new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", quoteId)
-
-  // Auto-move (C2, code not LLM): quote sent → pipeline card to quote_sent.
-  if (quote.lead_id) {
-    await moveLeadToStage(supabase, shop.id, quote.lead_id, "quote_sent")
-  }
+  // The executor marked the quote sent and moved its lead forward to
+  // quote_sent, the same way it does when a held send is approved later.
 
   await recordInteraction(supabase, {
     shopId: shop.id,

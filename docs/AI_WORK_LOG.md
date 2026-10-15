@@ -1246,3 +1246,40 @@ and a committed create with a lost response; all pass alongside nine existing
 setup tests. Touched-file lint and diff check pass. These are component state
 checks, not browser keyboard/mobile/zoom acceptance; Cursor C3 remains outstanding.
 No production form was enabled or configured, and no shared migration was applied.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Follow-up from the step 6 audit: a held quote send approved later, and manager
+approval of a quote-bearing message.
+
+The new `eval/integration/held-quote-send.int.test.ts` reproduced the defect on main.
+`sendQuote` updated the quote and lead itself, only when its own immediate send
+succeeded. When the SMS gate held the send, for example an unverified own number,
+a later approval from Approvals sent the quote link but left the quote as `draft`.
+The customer's link then refused any response.
+
+Fix: a shared `markQuoteSent` step in `src/lib/approvals.ts`. It runs after any
+executed `send_sms` or `send_email` carrying `quote_id`, whoever approved it. It is
+shop-scoped, idempotent and best-effort. The lead moves to `quote_sent` only from
+`new` or `needs_quote`, never back from `booked`. `sendQuote`'s inline copy was
+removed so both paths share it.
+
+Manager finding: a manager with `approvals.messages` can approve a held quote send.
+The review hash binds the owner's exact text, and a direct edit changed nothing,
+so this is delivery of an owner-priced quote, not price or discount authority.
+Whether managers should deliver quotes at all is recorded as an open product
+question. The SQL was not changed.
+
+Disposable `gradia-record-fresh` stack only, 94 migrations. Node 22.23.2 isolated
+runner, one file at a time:
+
+- `held-quote-send`: 4 of 4. Before the fix, 2 of 3 failed with the quote still
+  `draft`.
+- `delegated-message-approval`: 26 of 26.
+- `whisper-reply-context`: 19 of 19.
+- `service-proof-replay`: 15 of 15.
+- `quote-acceptance`: 17 of 17.
+- Unit: 1,469 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.

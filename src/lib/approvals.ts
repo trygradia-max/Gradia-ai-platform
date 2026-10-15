@@ -67,6 +67,7 @@ import type {
   LeadStatus,
   PendingActionStatus,
   PendingActionType,
+  QuoteRow,
   ServiceRow,
   ShopRow,
 } from "@/lib/types/database"
@@ -583,9 +584,15 @@ export async function executeApproval(
     case "cancel_appointment":
       return executeCancelAppointment(supabase, claimed)
     case "send_sms":
-      return executeSendSms(supabase, claimed)
-    case "send_email":
-      return executeSendEmail(supabase, claimed)
+    case "send_email": {
+      const result = claimed.action_type === "send_sms"
+        ? await executeSendSms(supabase, claimed)
+        : await executeSendEmail(supabase, claimed)
+      if (result.ok && result.status === "executed") {
+        await markQuoteSent(supabase, claimed, claimed.action_type === "send_sms" ? "sms" : "email")
+      }
+      return result
+    }
     case "create_quote":
       return executeCreateQuote(supabase, claimed)
     default:
@@ -1892,6 +1899,65 @@ async function executeCreateQuote(
     actionType: "create_quote",
     resultId: (quote as { id: string }).id,
     proposal: proposal as unknown as Record<string, unknown>,
+  }
+}
+
+/** Pipeline stages a sent quote may advance from; later stages never move back. */
+const QUOTE_SENT_FROM_STAGES = new Set<string | null>([null, "new", "needs_quote"])
+
+/**
+ * Quote bookkeeping for a message that carried a quote link, run after the
+ * provider accepted it — however it was approved (the owner's Send click, a
+ * later owner approval of a held send, or a delegated manager approval). The
+ * quote is marked sent so the customer's link can be answered, and its lead
+ * moves forward to quote_sent. Shop-scoped and idempotent. Best-effort: the
+ * message already went out, so a failure here is logged, never a send failure.
+ */
+async function markQuoteSent(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  via: "sms" | "email"
+): Promise<void> {
+  const quoteId = (claimed.payload as { quote_id?: unknown }).quote_id
+  if (typeof quoteId !== "string" || !quoteId) return
+  try {
+    const { data } = await supabase
+      .from("quotes")
+      .select("id, status, sent_via, sent_at, lead_id")
+      .eq("id", quoteId)
+      .eq("shop_id", claimed.shop_id)
+      .maybeSingle()
+    const quote = data as Pick<QuoteRow, "id" | "status" | "sent_via" | "sent_at" | "lead_id"> | null
+    if (!quote) return
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from("quotes")
+      .update({
+        status: quote.status === "draft" || quote.status === "sent" ? "sent" : quote.status,
+        sent_via: quote.sent_via && quote.sent_via !== via ? "both" : via,
+        sent_at: quote.sent_at ?? now,
+        updated_at: now,
+      })
+      .eq("id", quote.id)
+      .eq("shop_id", claimed.shop_id)
+    if (error) throw new Error(error.message)
+    if (quote.lead_id) {
+      const { data: lead } = await supabase
+        .from("leads")
+        .select("stage")
+        .eq("id", quote.lead_id)
+        .eq("shop_id", claimed.shop_id)
+        .maybeSingle()
+      const stage = (lead as { stage: string | null } | null)?.stage ?? null
+      if (lead && QUOTE_SENT_FROM_STAGES.has(stage)) {
+        await moveLeadToStage(supabase, claimed.shop_id, quote.lead_id, "quote_sent")
+      }
+    }
+  } catch (err) {
+    console.error(
+      `[approvals] quote ${quoteId} was sent by action ${claimed.id} but not marked sent — reconcile:`,
+      err instanceof Error ? err.message : err
+    )
   }
 }
 
