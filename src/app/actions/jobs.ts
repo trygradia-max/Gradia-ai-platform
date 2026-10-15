@@ -1,5 +1,7 @@
 "use server"
 
+import { servicePayload } from "@/lib/service-purpose"
+import { isOwnedJobPhotoPath, isCanonicalPhotoId } from "@/lib/job-photo-paths"
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -387,7 +389,8 @@ export async function rescheduleJob(
     const { error: stageErr } = await supabase.from("pending_actions").insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+        category: "transactional",
         to_phone: job.customer.phone,
         body: `Hi ${first || "there"}, it's ${shop.name} — we've moved your${job.service_name ? ` ${job.service_name}` : ""} appointment to ${when}. Reply if that doesn't work and we'll find a better slot. — ${shop.name}`,
         customer_name: job.customer.name,
@@ -395,7 +398,7 @@ export async function rescheduleJob(
         reason: "Reschedule heads-up",
         source: "job_reschedule",
         appointment_id: jobId,
-      },
+      }),
       requested_by: user.id,
     })
     notificationStaged = !stageErr
@@ -475,7 +478,10 @@ export async function uploadJobPhoto(
   phase: "before" | "after",
   formData: FormData
 ): Promise<PhotoUploadResult> {
+  if (phase !== "before" && phase !== "after") return { ok: false, error: "Photo phase must be before or after." }
+  if (!isCanonicalPhotoId(jobId)) return {ok:false,error:"Appointment ID must be canonical."}
   const shop = await requireShop()
+  if (!isCanonicalPhotoId(shop.id)) return {ok:false,error:"Shop identity must be canonical."}
   const supabase = await createClient()
   const file = formData.get("photo")
   if (!(file instanceof File) || file.size === 0) {
@@ -496,6 +502,7 @@ export async function uploadJobPhoto(
 
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase().slice(0, 5)
   const path = `${shop.id}/${jobId}/${phase}-${randomUUID()}.${ext}`
+  if (!isOwnedJobPhotoPath(path, shop.id, jobId, phase)) return { ok: false, error: "Unsupported photo path or file extension." }
   const service = createServiceClient()
   const { error: uploadErr } = await service.storage
     .from(PHOTO_BUCKET)
@@ -526,8 +533,10 @@ export async function uploadJobPhoto(
 /** Signed URLs for a job's photos (private bucket — 1h links). */
 export async function getJobPhotoUrls(
   jobId: string
-): Promise<{ before: string[]; after: string[] }> {
+): Promise<{ before: string[]; after: string[]; error?: string }> {
+  if (!isCanonicalPhotoId(jobId)) return {before:[],after:[],error:"Photo identity is invalid. Review the appointment record."}
   const shop = await requireShop()
+  if (!isCanonicalPhotoId(shop.id)) return {before:[],after:[],error:"Photo identity is invalid. Review the shop record."}
   const supabase = await createClient()
   const { data } = await supabase
     .from("appointments")
@@ -537,11 +546,14 @@ export async function getJobPhotoUrls(
     .maybeSingle()
   const job = data as Pick<AppointmentRow, "photos_before" | "photos_after"> | null
   if (!job) return { before: [], after: [] }
+  if (!(job.photos_before ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "before")) ||
+      !(job.photos_after ?? []).every(p => isOwnedJobPhotoPath(p, shop.id, jobId, "after"))) return { before: [], after: [], error:"Photo paths are invalid. Review the appointment photos before retrying." }
 
   const service = createServiceClient()
-  const sign = async (paths: string[] | undefined): Promise<string[]> => {
+  const sign = async (paths: string[] | undefined, phase: "before" | "after"): Promise<string[]> => {
     const out: string[] = []
     for (const p of paths ?? []) {
+      if (!isOwnedJobPhotoPath(p, shop.id, jobId, phase)) continue
       const { data: s } = await service.storage
         .from(PHOTO_BUCKET)
         .createSignedUrl(p, 60 * 60)
@@ -549,5 +561,5 @@ export async function getJobPhotoUrls(
     }
     return out
   }
-  return { before: await sign(job.photos_before), after: await sign(job.photos_after) }
+  return { before: await sign(job.photos_before, "before"), after: await sign(job.photos_after, "after") }
 }

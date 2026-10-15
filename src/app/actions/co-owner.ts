@@ -71,6 +71,7 @@ export async function draftFollowupForLead(
 
   const reason = `Co-owner suggestion · follow up on ${lead.customer_name}`
   const payload = {
+    category: "marketing",
     to_phone: lead.phone,
     body: draft,
     customer_name: lead.customer_name,

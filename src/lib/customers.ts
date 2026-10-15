@@ -1,3 +1,4 @@
+import { normalizeDestination } from "@/lib/contact-destination"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { CustomerRow } from "@/lib/types/database"
@@ -16,18 +17,10 @@ export type FindOrCreateResult =
   | { ok: false; error: string }
 
 export function normalizePhone(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  const digits = trimmed.replace(/\D/g, "")
-  if (!digits) return null
-  return trimmed.startsWith("+") ? `+${digits}` : digits
+  return raw ? normalizeDestination("sms",raw) : null
 }
-
 export function normalizeEmail(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const trimmed = raw.trim().toLowerCase()
-  return trimmed || null
+  return raw ? normalizeDestination("email",raw) : null
 }
 
 type NormalizedIdentifiers = {
@@ -44,13 +37,13 @@ function normalizeIdentifiers(input: ChannelIdentifiers): NormalizedIdentifiers 
 
 function buildOrFilter(ids: NormalizedIdentifiers): string | null {
   const parts: string[] = []
-  if (ids.phone) parts.push(`phone.eq.${ids.phone}`)
-  if (ids.email) parts.push(`email.eq.${ids.email}`)
+  if (ids.phone) parts.push(`phone_canonical.eq.${ids.phone}`)
+  if (ids.email) parts.push(`email_canonical.eq.${ids.email}`)
   return parts.length > 0 ? parts.join(",") : null
 }
 
 /**
- * Lookup-only counterpart to findOrCreateCustomer. Returns the oldest
+ * Lookup-only counterpart to findOrCreateCustomer. Returns one unambiguous
  * matching record or null. Use this from voice / email / SMS handlers when
  * recalling history — we don't want to create empty customer rows during
  * a "do we know this caller?" check.
@@ -70,7 +63,6 @@ export async function findCustomerByChannel(
     .eq("shop_id", shopId)
     .or(orFilter)
     .order("created_at", { ascending: true })
-    .limit(1)
     .maybeSingle()
 
   if (error) {
@@ -79,16 +71,7 @@ export async function findCustomerByChannel(
   return (data as CustomerRow | null) ?? null
 }
 
-/**
- * Resolves a customer for the given shop, creating one if no existing row
- * matches any of the provided channel identifiers. The match wins by oldest
- * created_at, so concurrent inserts deterministically converge on one record.
- *
- * Conflict policy: if a new identifier we'd add is already in use by a
- * different customer in this shop, we skip filling that field on the
- * resolved record and return what we have. Manual merge handles cross-record
- * dedup later — we never auto-merge two customers.
- */
+/** Resolve canonical identifiers without silently merging conflicting identities. */
 export async function findOrCreateCustomer(
   supabase: SupabaseClient,
   shopId: string,
@@ -96,6 +79,7 @@ export async function findOrCreateCustomer(
 ): Promise<FindOrCreateResult> {
   const ids = normalizeIdentifiers(input)
   const orFilter = buildOrFilter(ids)
+  if ((input.phone && !ids.phone) || (input.email && !ids.email)) return {ok:false,error:"Invalid or ambiguous customer destination."}
 
   if (!orFilter) {
     return {
@@ -115,8 +99,10 @@ export async function findOrCreateCustomer(
     return { ok: false, error: lookupErr.message }
   }
 
-  if (matches && matches.length > 0) {
+  if (matches && matches.length > 1) return {ok:false,error:"Conflicting customer identities require review."}
+  if (matches && matches.length === 1) {
     const target = matches[0] as CustomerRow
+    if ((ids.phone && target.phone && normalizePhone(target.phone)!==ids.phone) || (ids.email && target.email && normalizeEmail(target.email)!==ids.email)) return {ok:false,error:"Destination conflicts with the identified customer; review required."}
 
     const updates: Partial<CustomerRow> = {}
     const cleanName = input.name?.trim()
@@ -132,18 +118,12 @@ export async function findOrCreateCustomer(
       .from("customers")
       .update(updates)
       .eq("id", target.id)
+      .eq("shop_id", shopId)
       .select("*")
       .single()
 
     if (updateErr) {
-      // Likely a unique-violation: an identifier we tried to add is already
-      // bound to another customer. Return the original record un-updated so
-      // the caller still gets a valid customer to attach.
-      console.warn(
-        "[customers] partial update conflict, returning existing record:",
-        updateErr.message
-      )
-      return { ok: true, customer: target, created: false }
+      return {ok:false,error:"Customer identifier update failed; review required."}
     }
 
     return { ok: true, customer: updated as CustomerRow, created: false }
@@ -169,9 +149,10 @@ export async function findOrCreateCustomer(
       .eq("shop_id", shopId)
       .or(orFilter)
       .order("created_at", { ascending: true })
-      .limit(1)
 
-    if (race && race.length > 0) {
+    if (race && race.length === 1) {
+      const candidate=race[0] as CustomerRow
+      if ((ids.phone && normalizePhone(candidate.phone)!==ids.phone) || (ids.email && normalizeEmail(candidate.email)!==ids.email)) return {ok:false,error:"Concurrent identifier conflict requires review."}
       return { ok: true, customer: race[0] as CustomerRow, created: false }
     }
     return { ok: false, error: insertErr.message }

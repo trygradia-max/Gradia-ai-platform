@@ -548,3 +548,49 @@ conversations was invisible, and the model then invented an excuse.
    F-150 lead found deterministically; then "book mike" → staged booking.
 4. Settings → Developer → Clear demo data to sweep the smoke rows; delete
    the May "James Bond" card manually (it carries no demo marker).
+
+---
+
+# Run report — 2026-07-15 (Workstream A: master-audit branch landed)
+
+_Per `_docs/HANDOFF_CLAUDE_CODE_2026-07-13.md`. Branch `redesign/master-prompt` → `main` (PR #5, merge `5a1e53e`). Founder authorized the merge in-session._
+
+## What happened
+
+1. **Worktree repair (unplanned).** `.wt-master`'s `gitdir` pointers still referenced
+   the authoring sandbox (`/sessions/bold-vigilant-bardeen/...`); re-pointed both to
+   the local repo. `node_modules/.bin` links were flattened copies and darwin natives
+   were missing (why `next build` had never run on this branch) — fixed with
+   `npm install` + `npm rebuild`, no lockfile changes.
+2. **Merge `origin/main` (38787a4, PR #4 fix-pass).** Zero textual conflicts.
+   Verified the flagged overlap composes per the handoff rule: `pipeline-board.tsx`
+   keeps the fix-pass behavior (STAGE_EMPTY_COPY, count pills, totals) *and* this
+   branch's token sweep (6× `rounded-md`, zero `rounded-xl/2xl` remnants).
+   Note: main's new `clear-demo-data-card.tsx` uses `rounded-xl`, consistent with
+   ~10 neighboring files — the sweep was selective; not a regression.
+3. **Gates (all green, run on darwin post-merge):**
+   - `npm run test` — **415 passed / 4 skipped** (skips = `skipIf(!LIVE)` live-eval suites); meets the ≥415 bar.
+   - `npm run lint` — clean. `npx tsc --noEmit` — clean.
+   - `npm run build` — **first successful `next build` on this branch**, no fixes needed.
+4. **PR #5** opened with `docs/MASTER_AUDIT_2026-07-13.md` as body basis; founder said
+   "merge"; merged as `5a1e53e`. Vercel prod deploy: **success**.
+5. **Migration.** `supabase db push --dry-run` against the linked prod project
+   (`zfxkzciumhrrgfeacwds`) showed exactly one pending migration —
+   `20260713130000_master_audit_perf.sql` (fix-pass added none). Applied;
+   `supabase migration list` confirms local/remote in sync. Content as specified:
+   `revenue_summary()` (SECURITY INVOKER), 4 indexes, `usage_events` kind CHECK
+   + `inbound_classify` cost-visibility pricing row (retail 0).
+6. **Prod smoke — public surfaces verified by agent:**
+   - invalid `/q/xxx` → **branded expired-quote page** (a Wave-1 boundary from this
+     branch, proving the new deploy is serving) ✅
+   - logged-out routing: `/` → `/dashboard` → `/login?next=%2Fdashboard`;
+     `/billing` logged-out → `/onboarding` ✅
+   - **Logged-in checks handed to founder** (Chrome extension wouldn't connect;
+     founder opted to run them): dashboard loads, Home revenue numbers via new RPC,
+     `/customers` tabs, demo customer merge moves quotes/vehicles, `/billing`
+     back link out-of-plan.
+
+## Stopped here
+
+Workstream A complete. **Workstream B (Knowledge & Promotions) not started** —
+awaiting founder confirmation per the handoff.

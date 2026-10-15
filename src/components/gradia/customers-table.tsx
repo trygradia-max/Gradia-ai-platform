@@ -3,10 +3,9 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { motion, useReducedMotion, type Variants } from "framer-motion"
-import { Search } from "lucide-react"
-
-import { MotionCard } from "@/components/gradia/motion/motion-card"
+import { EmptyState } from "@/components/gradia/empty-state"
+import { FormField } from "@/components/gradia/form-field"
+import { ListToolbar } from "@/components/gradia/list-toolbar"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -16,6 +15,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { CustomerWithCounts } from "@/lib/data/customers"
+import { STRINGS } from "@/lib/strings"
+
+const LIST_CAP = 200
 
 function formatRelative(iso: string | null): string {
   if (!iso) return "—"
@@ -39,23 +41,6 @@ function channelHints(c: CustomerWithCounts): string {
   return parts.join(" · ") || "—"
 }
 
-const rowContainer: Variants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.03, delayChildren: 0.08 },
-  },
-}
-
-const row: Variants = {
-  hidden: { opacity: 0, y: 8 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.15, ease: "easeOut" },
-  },
-}
-
 export function CustomersTable({
   initialQuery,
   customers,
@@ -65,10 +50,8 @@ export function CustomersTable({
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const reduce = useReducedMotion()
   const [query, setQuery] = React.useState(initialQuery)
 
-  // Debounced server-side search via ?q=… on the URL.
   React.useEffect(() => {
     const handle = window.setTimeout(() => {
       const next = new URLSearchParams(searchParams?.toString() ?? "")
@@ -84,148 +67,135 @@ export function CustomersTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query])
 
+  const capped = customers.length >= LIST_CAP
+  const countLabel =
+    customers.length === 0
+      ? initialQuery
+        ? "No match on this search"
+        : "Nobody yet"
+      : capped
+        ? `Showing the first ${LIST_CAP}. Search to find someone else.`
+        : `${customers.length} ${customers.length === 1 ? "customer" : "customers"}`
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
-          <Search
-            className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70"
-            aria-hidden
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, phone, email, social…"
-            className="h-10 pl-9"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-        <p className="label-eyebrow text-muted-foreground/70 sm:text-right">
-          {customers.length === 0
-            ? initialQuery
-              ? "No match"
-              : "Nobody yet"
-            : `${customers.length} ${
-                customers.length === 1 ? "customer" : "customers"
-              }`}
-        </p>
-      </div>
-
-      <MotionCard interactive={false} className="overflow-hidden p-0">
-        {customers.length === 0 ? (
-          <EmptyState searching={Boolean(initialQuery)} />
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border/50 hover:bg-transparent">
-                  <TableHead className="label-eyebrow min-w-[140px] pl-4 sm:pl-6">
-                    Name
-                  </TableHead>
-                  <TableHead className="label-eyebrow hidden sm:table-cell">
-                    Phone
-                  </TableHead>
-                  <TableHead className="label-eyebrow hidden md:table-cell">
-                    Email
-                  </TableHead>
-                  <TableHead className="label-eyebrow hidden lg:table-cell">
-                    Channels
-                  </TableHead>
-                  <TableHead className="label-eyebrow text-right">
-                    Leads
-                  </TableHead>
-                  <TableHead className="label-eyebrow pr-4 text-right sm:pr-6">
-                    Last heard
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <motion.tbody
-                key={initialQuery /* re-stagger when search changes results */}
-                variants={reduce ? undefined : rowContainer}
-                initial={reduce ? undefined : "hidden"}
-                animate={reduce ? undefined : "show"}
-                className="[&_tr]:border-b [&_tr]:border-border/40"
-              >
-                {customers.map((c) => (
-                  <motion.tr
-                    key={c.id}
-                    variants={reduce ? undefined : row}
-                    className="relative transition-colors duration-200 hover:bg-card/60 focus-within:bg-card/60"
-                  >
-                    <TableCell className="max-w-[200px] pl-4 font-medium sm:pl-6">
-                      {/* Overlay link makes the whole row clickable while
-                          keeping table cells selectable for screen readers. */}
-                      <Link
-                        href={`/customers/${c.id}`}
-                        aria-label={`Open ${c.name?.trim() || "customer"}`}
-                        className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-                      />
-                      <span className="block truncate text-foreground">
-                        {c.name?.trim() || "Unknown"}
-                      </span>
-                      <span className="block truncate text-xs tabular-nums font-normal text-muted-foreground sm:hidden">
-                        {c.phone ?? "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden tabular-nums text-muted-foreground sm:table-cell">
-                      {c.phone ?? "—"}
-                    </TableCell>
-                    <TableCell className="hidden max-w-[240px] truncate text-muted-foreground md:table-cell">
-                      {c.email ?? "—"}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <span className="label-eyebrow !text-muted-foreground/80">
-                        {channelHints(c)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {c.lead_count}
-                    </TableCell>
-                    <TableCell
-                      suppressHydrationWarning
-                      className="pr-4 text-right tabular-nums text-muted-foreground sm:pr-6"
-                    >
-                      {formatRelative(c.last_seen_at)}
-                    </TableCell>
-                  </motion.tr>
-                ))}
-              </motion.tbody>
-            </Table>
+      <ListToolbar
+        label="Customer search"
+        search={
+          <div className="w-full sm:max-w-sm">
+            <FormField
+              id="customer-search"
+              label="Search customers"
+              hint="Matches name, phone, or email on this shop. This is not a full-database filter."
+            >
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Name, phone, or email"
+                className="h-11"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </FormField>
           </div>
-        )}
-      </MotionCard>
-    </div>
-  )
-}
+        }
+        status={
+          <p className="text-sm text-muted-foreground sm:text-right">{countLabel}</p>
+        }
+      />
 
-function EmptyState({ searching }: { searching: boolean }) {
-  return (
-    <div className="px-6 py-16 text-center">
-      <p className="font-display text-2xl text-foreground">
-        {searching ? (
-          <>
-            <span className="italic">Nobody</span>{" "}by that name yet.
-          </>
-        ) : (
-          <>
-            <span className="italic">Quiet</span>{" "}so far.
-          </>
-        )}
-      </p>
-      <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-        {searching
-          ? "Try a different name or number — we'll keep looking."
-          : "Customers land here automatically the moment voice, SMS, email, or DMs come in."}
-      </p>
-      {!searching ? (
-        <Link
-          href="/customers/recovery"
-          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+      {customers.length === 0 ? (
+        <EmptyState
+          title={initialQuery ? "Nobody by that name yet." : "Quiet so far."}
+          description={
+            initialQuery
+              ? "Try a different name or number."
+              : STRINGS.empty.customersFirstUse
+          }
+          action={
+            !initialQuery ? (
+              <Link
+                href="/customers/recovery"
+                className="inline-flex min-h-11 items-center text-sm font-medium text-accent-text underline-offset-4 hover:underline"
+              >
+                Import your customers
+              </Link>
+            ) : null
+          }
+        />
+      ) : (
+        <div
+          role="region"
+          aria-label="Customer list"
+          tabIndex={0}
+          className="overflow-x-auto rounded-md bg-card ring-1 ring-border"
         >
-          Import your customers →
-        </Link>
-      ) : null}
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border hover:bg-transparent">
+                <TableHead className="label-eyebrow min-w-[140px] pl-4 sm:pl-6">
+                  Name
+                </TableHead>
+                <TableHead className="label-eyebrow hidden sm:table-cell">
+                  Phone
+                </TableHead>
+                <TableHead className="label-eyebrow hidden md:table-cell">
+                  Email
+                </TableHead>
+                <TableHead className="label-eyebrow hidden lg:table-cell">
+                  Channels
+                </TableHead>
+                <TableHead className="label-eyebrow text-right">Leads</TableHead>
+                <TableHead className="label-eyebrow pr-4 text-right sm:pr-6">
+                  Last heard
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <tbody className="[&_tr]:border-b [&_tr]:border-border">
+              {customers.map((c) => (
+                <TableRow
+                  key={c.id}
+                  className="relative hover:bg-accent focus-within:bg-accent"
+                >
+                  <TableCell className="max-w-[200px] pl-4 font-medium sm:pl-6">
+                    <Link
+                      href={`/customers/${c.id}`}
+                      aria-label={`Open ${c.name?.trim() || "customer"}`}
+                      className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                    />
+                    <span className="block truncate text-foreground">
+                      {c.name?.trim() || "Unknown"}
+                    </span>
+                    <span className="block truncate font-data text-xs font-normal text-muted-foreground sm:hidden">
+                      {c.phone ?? "—"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden font-data text-muted-foreground sm:table-cell">
+                    {c.phone ?? "—"}
+                  </TableCell>
+                  <TableCell className="hidden max-w-[240px] truncate text-muted-foreground md:table-cell">
+                    {c.email ?? "—"}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <span className="label-eyebrow text-muted-foreground">
+                      {channelHints(c)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right font-data text-muted-foreground">
+                    {c.lead_count}
+                  </TableCell>
+                  <TableCell
+                    suppressHydrationWarning
+                    className="pr-4 text-right font-data text-muted-foreground sm:pr-6"
+                  >
+                    {formatRelative(c.last_seen_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      )}
     </div>
   )
 }

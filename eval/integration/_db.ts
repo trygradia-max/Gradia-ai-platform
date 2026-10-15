@@ -22,7 +22,17 @@ export const INTEGRATION =
 /** Permission tests additionally need the anon key (owner-session client). */
 export const INTEGRATION_WITH_SESSION = INTEGRATION && Boolean(ANON)
 
+export function assertDisposableTarget(): void {
+  const allowed = (URL === "http://127.0.0.1:56531" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-isolated-tests") ||
+    (URL === "http://127.0.0.1:56731" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-record-fresh") ||
+    (URL === "http://127.0.0.1:57331" && process.env.GRADIA_DISPOSABLE_TEST === "gradia-public-form-tests")
+  if (!allowed) {
+    throw new Error("Integration target is not the isolated disposable stack")
+  }
+}
+
 export function serviceClient(): SupabaseClient {
+  assertDisposableTarget()
   if (!URL || !KEY) {
     throw new Error("SUPABASE_TEST_URL / SUPABASE_TEST_SERVICE_ROLE_KEY not set")
   }
@@ -33,6 +43,7 @@ export function serviceClient(): SupabaseClient {
 
 /** Bare anon client — the unauthenticated PostgREST surface. */
 export function anonClient(): SupabaseClient {
+  assertDisposableTarget()
   if (!URL || !ANON) {
     throw new Error("SUPABASE_TEST_URL / SUPABASE_TEST_ANON_KEY not set")
   }

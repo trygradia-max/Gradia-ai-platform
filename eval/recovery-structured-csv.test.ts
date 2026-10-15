@@ -27,15 +27,15 @@ import { DEFAULT_PRICING } from "@/lib/pricing"
 
 const GOOGLE_CONTACTS = [
   "Name,Given Name,Family Name,E-mail 1 - Value,Phone 1 - Value,Phone 2 - Value,Notes",
-  'Marcus Webb,Marcus,Webb,marcus@gmail.com,(415) 555-0142,,Repeat ceramic customer',
-  'sarah j. lin,Sarah,Lin,sarah.lin@yahoo.com,415-555-0199 ::: 415-555-0200,,',
+  'Marcus Webb,Marcus,Webb,marcus@gmail.com,+1 (415) 555-0142,,Repeat ceramic customer',
+  'sarah j. lin,Sarah,Lin,sarah.lin@yahoo.com,+1 415-555-0199 ::: +1 415-555-0200,,',
   ",,,,,,", // fully empty row → skipped
 ].join("\n")
 
 const JOBBER_EXPORT = [
   "Client Name,Phone,Email,Vehicle Year,Vehicle Make,Vehicle Model,Vehicle Color,Status,Lead Source,Last Job Date,Job Notes",
   "TONY ALVAREZ,+14155550111,tony@x.com,2019,Honda,Civic,Blue,Estimate Given,Google,2026-01-15,Wants full correction",
-  "Bo Chen,4155550122,,2021,McLaren,720S,Orange,Scheduled,Referral,03/02/2026,",
+  "Bo Chen,+14155550122,,2021,McLaren,720S,Orange,Scheduled,Referral,03/02/2026,",
   "No Contact Row,,,2020,Ford,F-150,,,,,", // no phone/email → dropped
 ].join("\n")
 
@@ -45,8 +45,8 @@ const JOBBER_EXPORT = [
 const MESSY_SHEET = [
   "My Shop Customers Export 2026,,,,,,,,,,,,,,",
   "Customer,F2,Email Address,Car,Stage,Src,Last Visit,Fav Color,X1,X2,X3,X4,X5,X6,X7",
-  'jane doe,(415) 555-0101,jane@x.com,"2022 Tesla Model Y, white",Estimate Given,IG,6/1/2026,teal,a,b,c,d,e,f,g',
-  "Rick Ortiz,415 555 0102,,bimmer m3 comp lifted,New Lead,,,,,,,,,,",
+  'jane doe,+1 (415) 555-0101,jane@x.com,"2022 Tesla Model Y, white",Estimate Given,IG,6/1/2026,teal,a,b,c,d,e,f,g',
+  "Rick Ortiz,+1 415 555 0102,,bimmer m3 comp lifted,New Lead,,,,,,,,,,",
 ].join("\n")
 
 // --- header detection + auto-mapping -------------------------------------------
@@ -129,8 +129,8 @@ describe("applyMapping — Google Contacts", () => {
 
   it("splits multi-value phone cells and normalizes numbers", () => {
     expect(records).toHaveLength(2)
-    expect(records[1].phones).toEqual(["4155550199", "4155550200"])
-    expect(records[0].phones).toEqual(["4155550142"])
+    expect(records[1].phones).toEqual(["+14155550199", "+14155550200"])
+    expect(records[0].phones).toEqual(["+14155550142"])
   })
 
   it("keeps notes columns as notes with their header", () => {

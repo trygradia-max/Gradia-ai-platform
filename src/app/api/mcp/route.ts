@@ -70,6 +70,7 @@ async function handle(request: Request): Promise<Response> {
     shopId: auth.shopId,
     shopName: auth.shopName,
     ownerId: auth.ownerId,
+    tokenId: auth.tokenId,
     supabase: createServiceClient(),
   })
 

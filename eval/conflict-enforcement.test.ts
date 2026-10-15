@@ -99,6 +99,8 @@ function mockDb(opts: {
   const rpcCalls = opts.rpcCalls ?? []
   return {
     rpc: (fn: string, args: Record<string, unknown>) => {
+      // Policy claim is tested against PostgreSQL in control-execution.int.test.ts.
+      if (fn === "claim_control_action") return Promise.resolve({ data: opts.claimed ?? { already_decided: true }, error: null })
       rpcCalls.push({ fn, args })
       if (opts.rpcResult instanceof Error) {
         return Promise.resolve({ data: null, error: { message: opts.rpcResult.message } })
@@ -715,6 +717,14 @@ describe("one conflict algorithm — no call site re-implements overlap math", (
     expect(defining).toEqual([join(SRC, "lib", "availability.ts")])
   })
 
+  it("MCP only stages; approval retains central availability enforcement", () => {
+    const mcp = readFileSync("src/lib/mcp/server.ts", "utf8")
+    const booking = mcp.slice(mcp.indexOf('    "propose_booking",'), mcp.indexOf('    "propose_sms",'))
+    expect(booking).toContain("stageAgentCapture")
+    expect(booking).toContain('type: "book_appointment"')
+    expect(booking).not.toMatch(/stagingAvailability|createEvent|\.insert\(/)
+  })
+
   it("every wired call site goes through the central service", () => {
     const wired = [
       "src/lib/approvals.ts",
@@ -722,7 +732,6 @@ describe("one conflict algorithm — no call site re-implements overlap math", (
       "src/app/actions/quote-response.ts",
       "src/app/actions/jobs.ts",
       "src/lib/owner-agent.ts",
-      "src/lib/mcp/server.ts",
     ]
     for (const rel of wired) {
       const content = readFileSync(join(process.cwd(), rel), "utf8")

@@ -1,3 +1,5 @@
+import { claimWhisperEmailTransport } from "@/lib/service-purpose"
+import { isRecordAction, type RecordCommand } from "@/lib/control-center/record-command"
 /**
  * Shared approval engine. The dashboard action (and, before CLEANUP-001, the Slack callback) and the
  * /approvals dashboard call into these helpers so the actual claim → execute
@@ -10,6 +12,8 @@
  *   - add_note:    insert a row into `interactions` (channel='note')
  */
 
+import { servicePayload, claimServiceExecution, completeServiceExecution, auditServiceActionRetry, serviceActionIsUnspent } from "@/lib/service-purpose"
+import { validTenantReferences } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
@@ -46,7 +50,7 @@ import { getPricing, priceUsage, smsSegments } from "@/lib/pricing"
 import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { pushBookingToCrm, pushLeadToCrm } from "@/lib/crm-provider"
 import { recordInteraction } from "@/lib/memory"
-import { evaluateSmsSendPolicy, type SendCategory } from "@/lib/send-policy"
+import { evaluateSmsSendPolicy, evaluateCustomerSendPolicy, type SendCategory } from "@/lib/send-policy"
 import { moveLeadToStage, stageFromLegacyStatus } from "@/lib/pipeline"
 import { buildQuoteLineItem, computeQuoteTotals } from "@/lib/quotes"
 import { parseVehicle } from "@/lib/vehicle"
@@ -112,11 +116,14 @@ export type SmsProposal = {
   customer_id: string | null
   /** Source-side context — what prompted this draft (e.g. inbound message ID, agent name). */
   reason: string | null
-  /** Safe-send classification (B2). Marketing needs consent/EBR; defaults transactional. */
+  /** Safe-send classification (B2). Marketing needs explicit channel consent; unknown categories are held. */
+  service_proof?: string | null
   category?: SendCategory
 }
 
 export type EmailProposal = {
+  service_proof?: string | null
+  category?: SendCategory
   to_email: string
   subject: string
   body: string
@@ -126,6 +133,7 @@ export type EmailProposal = {
 }
 
 type ClaimedAction = {
+  result_id?: string | null
   id: string
   shop_id: string
   action_type: PendingActionType
@@ -133,6 +141,7 @@ type ClaimedAction = {
 }
 
 export type ApprovalSuccess =
+  | { status: "executed"; actionType: RecordCommand["type"]; resultId: string; proposal: Record<string, unknown> }
   | {
       status: "executed"
       actionType: "create_lead"
@@ -196,6 +205,7 @@ export type ApprovalResult =
     }
 
 export type DecisionSuccess =
+  | { status: "claimed"; actionType: RecordCommand["type"]; proposal: Record<string, unknown> }
   | { status: "claimed"; actionType: "create_lead"; proposal: LeadProposal }
   | { status: "claimed"; actionType: "add_note"; proposal: NoteProposal }
   | {
@@ -277,6 +287,7 @@ async function claimPendingAction(
     if (row && row.shop_id !== shopId) {
       reportTenantScopeViolation({
         surface: "approvals.claimPendingAction",
+        notifyExternally: false,
         authorizedShopId: shopId,
         rowShopId: row.shop_id,
         rowId: pendingId,
@@ -470,6 +481,14 @@ export type ExecuteApprovalOptions = {
    * blocks conflicts, and any override metadata on the payload is IGNORED.
    */
   context?: ConflictPolicyContext
+  /**
+   * Delegated manager approval of a queued message. The claim runs on the
+   * manager's own session, so SQL proves who is approving and binds the claim
+   * to the exact message reviewed. Only after that claim succeeds is the
+   * execution client used; the executors need shop credentials and owner-
+   * only rows a manager session cannot read. It is never used to authorize.
+   */
+  delegated?: { expectedReview: string; executionClient: SupabaseClient }
 }
 
 export async function executeApproval(
@@ -482,22 +501,71 @@ export async function executeApproval(
   const context: ConflictPolicyContext = options?.context ?? "hitl"
   let claimed: ClaimedAction | null
   try {
-    claimed = await claimPendingAction(
-      supabase,
-      pendingId,
-      shopId,
-      "approved",
-      decider
-    )
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
+    // Policy, current membership, audit and action claim share one transaction.
+    // No read-then-update authorization window and no legacy fallback on errors.
+    const { data, error } = options?.delegated
+      ? await supabase.rpc("claim_delegated_message", {
+          p_shop: shopId, p_action: pendingId, p_expected: options.delegated.expectedReview,
+        })
+      : await supabase.rpc("claim_control_action", {
+          p_shop: shopId, p_action: pendingId, p_actor: decider.userId ?? null,
+          p_context: context,
+        })
+    if (error) return { ok: false, error: "Execution status could not be verified. Review action history before retrying." }
+    if (data?.denied) {
+      const reasons: Record<string, string> = {
+        actor_not_authorized: "Only the current shop owner can approve this action.",
+        execution_not_permitted: "The active Control Center policy does not permit this action.",
+        explicit_activation_required: "An owner must activate a policy before autonomous actions can run.",
+        human_approval_required: "This action requires owner approval.",
+        autonomy_entitlement_required: "Autonomous execution is not available for this workspace.",
+        location_unavailable: "The workspace location could not be verified.",
+        owner_approval_required: "Only the shop owner can approve this kind of action.",
+        review_changed: "This message changed or is being edited. Refresh and review it again before approving.",
+      }
+      return { ok: false, error: reasons[String(data.denied)] ?? "Execution status could not be verified. Review action history before retrying." }
     }
+    if (data?.already_decided === true) claimed = null
+    else {
+      if (!data || data.id !== pendingId || data.shop_id !== shopId || typeof data.action_type !== "string" || !data.payload || typeof data.payload !== "object" || Array.isArray(data.payload)) {
+        return { ok: false, error: "The policy claim could not be verified. Review action history before retrying." }
+      }
+      claimed = data as ClaimedAction
+    }
+  } catch {
+    return { ok: false, error: "Execution status could not be verified. Review action history before retrying." }
   }
 
   if (!claimed) {
+    // Preserve the existing local-only cross-tenant attack signal. This probe
+    // never authorizes execution; session RLS still hides foreign rows.
+    try {
+      const { data: probe } = await supabase.from("pending_actions").select("id, shop_id").eq("id", pendingId).maybeSingle()
+      if (probe && probe.shop_id !== shopId) reportTenantScopeViolation({ surface: "approvals.claimPendingAction", notifyExternally: false, authorizedShopId: shopId, rowShopId: probe.shop_id, rowId: pendingId, detail: "policy claim rejected foreign action" })
+    } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
+  }
+
+  if (options?.delegated) {
+    // The claim above is the authorization; from here the shop-scoped executors
+    // run exactly as they do for an owner. Anything but a message is released.
+    supabase = options.delegated.executionClient
+    if (claimed.action_type !== "send_sms" && claimed.action_type !== "send_email") {
+      await rollbackClaim(supabase, claimed)
+      return { ok: false, error: "Only the shop owner can approve this kind of action." }
+    }
+  }
+
+  // Record commands commit validation, audit, domain write and claim atomically.
+  // Never reopen an already-committed command after an application read failure.
+  if (isRecordAction(claimed.action_type)) {
+    if (!claimed.result_id) return { ok: false, error: "Record execution status is uncertain. Review history before retrying." }
+    return { ok: true, status: "executed", actionType: claimed.action_type, resultId: claimed.result_id, proposal: claimed.payload }
+  }
+  if (!await validTenantReferences(supabase, shopId, claimed.payload)) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: "Action reference not found in this shop." }
   }
 
   switch (claimed.action_type) {
@@ -1581,7 +1649,7 @@ async function executeBookAppointment(
   // Best-effort confirmation draft. Always after a successful booking
   // landing — drafter failures must not roll back the booking.
   try {
-    await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id)
+    await queueBookingConfirmationSms(supabase, shop, proposal, customerResult.customer.id, appointmentId)
   } catch (err) {
     console.warn(
       "[approvals] booking confirmation draft failed (booking still succeeded):",
@@ -1648,7 +1716,8 @@ async function queueBookingConfirmationSms(
   supabase: SupabaseClient,
   shop: ShopRow,
   proposal: BookingProposal,
-  customerId: string
+  customerId: string,
+  appointmentId: string
 ): Promise<void> {
   // Skip if the shop hasn't connected SMS — without a Twilio number
   // there's nothing for the operator to eventually approve & send.
@@ -1675,15 +1744,17 @@ async function queueBookingConfirmationSms(
     .insert({
       shop_id: shop.id,
       action_type: "send_sms",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+        category: "transactional",
         to_phone: proposal.phone,
         body: draft,
         customer_name: proposal.customer_name,
         customer_id: customerId,
         reason,
         source: "booking_confirmation",
+        appointment_id: appointmentId,
         iso_start_time: proposal.iso_start_time,
-      },
+      }),
       requested_by: shop.owner_id,
     })
     .select("id")
@@ -1857,18 +1928,27 @@ async function executeSendSms(
   const policy = await evaluateSmsSendPolicy(supabase, shop, {
     toPhone: proposal.to_phone,
     customerId: proposal.customer_id ?? null,
-    category: proposal.category ?? "transactional",
+    category: proposal.category, body: proposal.body, serviceProof: proposal.service_proof, actionId:claimed.id,
   })
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
   }
 
+  if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
+  }
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"sms" as const,destination:policy.destination,body:proposal.body,actionId:claimed.id},proposal.service_proof) : null
+  if (execution && !execution.ok) {
+    await rollbackClaim(supabase, claimed)
+    return {ok:false,error:execution.reason}
+  }
   let sendResult
   try {
     sendResult = await sendOutboundSms({
       from: shop.twilio_phone_number,
-      to: proposal.to_phone,
+      to: policy.destination,
       body: proposal.body,
       statusCallback: defaultStatusCallbackUrl(claimed.shop_id),
       creds: resolveTwilioCredentials(shop),
@@ -1884,13 +1964,8 @@ async function executeSendSms(
   }
 
   // Best-effort attachment — proposal may already carry customer_id.
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      phone: proposal.to_phone,
-    })
-    if (customer) customerId = customer.id
-  }
+  await completeServiceExecution(supabase, claimed.shop_id, execution)
+  const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -1960,6 +2035,40 @@ async function executeSendEmail(
   }
 
   const shop = await loadShopWithToken(supabase, claimed.shop_id)
+  if (!shop) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: "Shop not found." }
+  }
+  const policy = await evaluateCustomerSendPolicy(supabase, shop, {
+    channel: "email", destination: proposal.to_email,
+    customerId: proposal.customer_id ?? null, category: proposal.category, body: proposal.body, subject: proposal.subject, serviceProof: proposal.service_proof, actionId:claimed.id,
+  })
+  if (!policy.allowed) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: policy.reason }
+  }
+  let replyToMessageId: string | undefined
+  try {
+    const context=await supabase.rpc("whisper_reply_context",{p_shop:claimed.shop_id,p_action:claimed.id})
+    if(context.error) throw new Error("Reply context unavailable")
+    if(context.data) {
+      const reply=context.data.email_reply
+      if(context.data.customer_id!==proposal.customer_id || context.data.channel!=="email" || context.data.destination!==policy.destination || !reply || String(shop.aurinko_account_id)!==reply.account_id || typeof reply.message_id!=="string") throw new Error("Reply binding changed")
+      replyToMessageId=reply.message_id
+    }
+  } catch {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — verified mailbox reply context is unavailable. No standalone fallback was sent."}
+  }
+  if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {
+    await rollbackClaim(supabase,claimed)
+    return {ok:false,error:"Held for review — This action was already used or its execution history could not be verified. Reconcile delivery before creating a new action."}
+  }
+  const execution = proposal.category === "transactional" ? await claimServiceExecution(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email" as const,destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id},proposal.service_proof) : replyToMessageId ? await claimWhisperEmailTransport(supabase,{shopId:claimed.shop_id,customerId:policy.customerId,channel:"email",destination:policy.destination,body:proposal.body,subject:proposal.subject,actionId:claimed.id}) : null
+  if (execution && !execution.ok) {
+    await rollbackClaim(supabase, claimed)
+    return {ok:false,error:execution.reason}
+  }
   let accessToken: string | null = null
   if (shop) {
     try {
@@ -1981,7 +2090,8 @@ async function executeSendEmail(
     const sent = await sendEmailMessage(accessToken, {
       subject: proposal.subject,
       body: proposal.body,
-      to: proposal.to_email,
+      to: policy.destination,
+      ...(replyToMessageId ? {replyToMessageId} : {}),
     })
     sentId = sent.id
   } catch (err) {
@@ -1995,13 +2105,8 @@ async function executeSendEmail(
     }
   }
 
-  let customerId = proposal.customer_id
-  if (!customerId) {
-    const customer = await findCustomerByChannel(supabase, claimed.shop_id, {
-      email: proposal.to_email,
-    })
-    if (customer) customerId = customer.id
-  }
+  await completeServiceExecution(supabase, claimed.shop_id, execution)
+  const customerId = policy.customerId
 
   const interaction = await recordInteraction(supabase, {
     shopId: claimed.shop_id,
@@ -2012,6 +2117,7 @@ async function executeSendEmail(
     metadata: {
       direction: "outbound",
       aurinko_message_id: sentId || null,
+      aurinko_reply_to_message_id: replyToMessageId ?? null,
       to_email: proposal.to_email,
       subject: proposal.subject,
       pending_action_id: claimed.id,
@@ -2048,6 +2154,7 @@ async function executeSendEmail(
 }
 
 function decisionFromClaim(claimed: ClaimedAction): DecisionResult {
+  if (isRecordAction(claimed.action_type)) return { ok: true, status: "claimed", actionType: claimed.action_type, proposal: claimed.payload }
   switch (claimed.action_type) {
     case "create_lead":
       return {
@@ -2130,6 +2237,13 @@ export async function markEditRequested(
   }
 
   if (!claimed) {
+    // Preserve the existing local-only cross-tenant attack signal. This probe
+    // never authorizes execution; session RLS still hides foreign rows.
+    try {
+      const { data: probe } = await supabase.from("pending_actions").select("id, shop_id").eq("id", pendingId).maybeSingle()
+      if (probe && probe.shop_id !== shopId) reportTenantScopeViolation({ surface: "approvals.claimPendingAction", notifyExternally: false, authorizedShopId: shopId, rowShopId: probe.shop_id, rowId: pendingId, detail: "policy claim rejected foreign action" })
+    } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 
@@ -2160,6 +2274,13 @@ export async function executeRejection(
   }
 
   if (!claimed) {
+    // Preserve the existing local-only cross-tenant attack signal. This probe
+    // never authorizes execution; session RLS still hides foreign rows.
+    try {
+      const { data: probe } = await supabase.from("pending_actions").select("id, shop_id").eq("id", pendingId).maybeSingle()
+      if (probe && probe.shop_id !== shopId) reportTenantScopeViolation({ surface: "approvals.claimPendingAction", notifyExternally: false, authorizedShopId: shopId, rowShopId: probe.shop_id, rowId: pendingId, detail: "policy claim rejected foreign action" })
+    } catch { /* Already-decided/foreign actions never execute, even if telemetry fails. */ }
+    await auditServiceActionRetry(supabase, shopId, pendingId)
     return { ok: true, status: "already_decided" }
   }
 

@@ -1,5 +1,4 @@
 import { CalendarWeekView } from "@/components/gradia/calendar-week"
-import { SectionHeader } from "@/components/gradia/section-header"
 import { loadCalendarWeek } from "@/lib/data/calendar"
 
 export const dynamic = "force-dynamic"
@@ -19,12 +18,16 @@ export default async function CalendarPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      <SectionHeader
-        level={1}
-        eyebrow="Calendar"
-        title="This week"
-        subhead="Every appointment as a block. Moving one still waits for your approval before the customer is told."
-      />
+      <header className="space-y-2">
+        <p className="label-eyebrow text-muted-foreground/70">Calendar</p>
+        <h1 className="font-display text-2xl text-foreground">
+          The week, at a <span className="italic">glance</span>.
+        </h1>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Every job as a block — tap for the card, drag to move it. Customers
+          get a heads-up only after you approve it.
+        </p>
+      </header>
 
       <CalendarWeekView initial={week} />
     </div>

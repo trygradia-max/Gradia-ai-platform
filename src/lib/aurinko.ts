@@ -294,10 +294,12 @@ export type AurinkoMessage = {
   fromName: string | null
   fromEmail: string | null
   receivedAt: string | null
+  threadId?: string | null
 }
 
 type RawAurinkoAddress = { name?: string | null; address?: string | null }
 type RawAurinkoMessage = {
+  threadId?: string | null
   id?: string
   subject?: string | null
   bodyPlain?: string | null
@@ -331,6 +333,7 @@ export async function getEmailMessage(
     throw new AurinkoError(res.status, `Message fetch failed: ${body.slice(0, 200)}`)
   }
   const obj = JSON.parse(body) as RawAurinkoMessage
+  if (obj.id !== messageId) throw new AurinkoError(502, "Inbound message identity mismatch")
   const from = obj.from ?? obj.sender ?? null
   return {
     id: obj.id ?? messageId,
@@ -339,6 +342,7 @@ export async function getEmailMessage(
     fromName: from?.name ?? null,
     fromEmail: from?.address ?? null,
     receivedAt: obj.receivedDateTime ?? obj.receivedAt ?? null,
+    threadId: obj.threadId ?? null,
   }
 }
 
@@ -357,10 +361,9 @@ export type AurinkoSentMessage = {
  * which produces plain-text bodies on purpose (no formatting drift
  * across mail clients).
  *
- * Threading: Aurinko doesn't document an explicit reference-message
- * field, so this sends as a new message. The recipient sees a
- * standalone email rather than a threaded reply. Fine for pilot —
- * proper threading is a follow-up.
+ * Optional reply identity is resolved from trusted shop-scoped inbound evidence.
+ * Official contract: POST /v1/email/messages/{messageId}/reply?bodyType=text.
+ * No reply-all, CC/BCC inheritance, tracking or standalone fallback.
  */
 export async function sendEmailMessage(
   accessToken: string,
@@ -369,8 +372,10 @@ export async function sendEmailMessage(
     body: string
     to: string
     cc?: string | null
+    replyToMessageId?: string
   }
 ): Promise<AurinkoSentMessage> {
+  if (input.replyToMessageId !== undefined && (!/^[A-Za-z0-9_+=.-]{1,1024}$/.test(input.replyToMessageId) || [".",".."].includes(input.replyToMessageId) || input.cc)) throw new AurinkoError(400,"Invalid reply identity")
   const trimmedSubject = input.subject.trim()
   const trimmedBody = input.body.trim()
   if (!trimmedSubject) {
@@ -393,7 +398,9 @@ export async function sendEmailMessage(
     body.cc = [{ address: input.cc.trim() }]
   }
 
-  const res = await fetch(`${AURINKO_API_BASE}/email/messages`, {
+  if (input.replyToMessageId) { delete body.bodyType; body.cc=[]; body.bcc=[] }
+  const endpoint=input.replyToMessageId ? `/email/messages/${encodeURIComponent(input.replyToMessageId)}/reply?bodyType=text&returnIds=true` : "/email/messages"
+  const res = await fetch(`${AURINKO_API_BASE}${endpoint}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -404,7 +411,7 @@ export async function sendEmailMessage(
   })
   const raw = await res.text()
   if (!res.ok) {
-    throw new AurinkoError(res.status, `Email send failed: ${raw.slice(0, 300)}`)
+    throw new AurinkoError(res.status, "Email submission failed; review delivery before retrying")
   }
   let parsed: unknown
   try {
@@ -412,7 +419,8 @@ export async function sendEmailMessage(
   } catch {
     throw new AurinkoError(500, "Email send response was not JSON")
   }
-  const obj = parsed as { id?: string | number }
+  const obj = parsed as { id?: string | number; status?: string; processingStatus?: string }
+  if (input.replyToMessageId && (obj.status!=="Ok" || obj.processingStatus==="Incomplete" || typeof obj.id!=="string" || !obj.id.trim())) throw new AurinkoError(502,"Reply submission uncertain; reconcile delivery before any replacement")
   return { id: obj.id !== undefined ? String(obj.id) : "" }
 }
 

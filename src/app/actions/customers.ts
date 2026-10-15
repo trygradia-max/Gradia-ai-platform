@@ -110,27 +110,7 @@ export type MergeCustomersResult =
     }
   | { ok: false; error: string }
 
-/**
- * Merges `loser` into `winner`:
- *   1. Reassigns EVERY child row from loser to winner via the shared
- *      re-point core (lib/merge-customers.ts). Done FIRST because
- *      interactions / vehicles / quotes are ON DELETE CASCADE —
- *      deleting the loser without reassigning destroys them — and the
- *      SET NULL tables (leads, appointments, payments, call_records,
- *      automation_runs) would silently lose attribution.
- *   2. Frees up loser's identifier columns by NULLing them, so the
- *      per-shop unique indexes don't block the absorption step.
- *   3. Copies any identifiers winner is missing from loser. Each
- *      copy is best-effort: a 23505 unique-violation means a third
- *      customer already owns that value — we skip that field and
- *      surface it in `identifierConflicts` so the operator knows.
- *   4. Deletes loser.
- *
- * Not transactional (Supabase JS doesn't expose pg transactions).
- * Race window is tiny at pilot scale; if step 4 fails after step 1,
- * the loser row is left with zero refs and can be deleted manually
- * or by re-running the merge.
- */
+/** Atomically merge through the shared database operation. */
 export async function mergeCustomers(
   input: z.infer<typeof mergeSchema>
 ): Promise<MergeCustomersResult> {
@@ -146,84 +126,11 @@ export async function mergeCustomers(
   const shop = await requireShop()
   const supabase = await createClient()
 
-  const { data: rows, error: fetchErr } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("shop_id", shop.id)
-    .in("id", [parsed.data.winner_id, parsed.data.loser_id])
-  if (fetchErr) return { ok: false, error: fetchErr.message }
-
-  const both = (rows as CustomerRow[] | null) ?? []
-  if (both.length !== 2) {
-    return { ok: false, error: "Couldn't find both customers in our shop." }
-  }
-  const winner = both.find((r) => r.id === parsed.data.winner_id)!
-  const loser = both.find((r) => r.id === parsed.data.loser_id)!
-
-  // 1. Reassign ALL child rows from loser → winner (shared core —
-  //    covers the CASCADE tables that would otherwise be destroyed).
-  const repoint = await repointCustomerChildren(
-    supabase,
-    shop.id,
-    winner.id,
-    loser.id
-  )
-  if (!repoint.ok) {
-    return {
-      ok: false,
-      error: `Couldn't move ${repoint.table}: ${repoint.error}`,
-    }
-  }
-  const moved = repoint.moved
-
-  // 2. Free up loser's identifier columns.
-  await supabase
-    .from("customers")
-    .update({
-      name: null,
-      phone: null,
-      email: null,
-    })
-    .eq("id", loser.id)
-
-  // 3. Absorb each missing identifier on the winner — best-effort.
+  const result = await repointCustomerChildren(supabase, shop.id, parsed.data.winner_id, parsed.data.loser_id)
+  if (!result.ok) return {ok:false,error:result.error}
+  const moved = result.moved
   const identifierConflicts: string[] = []
-  const absorbCandidates: { field: keyof CustomerRow; value: string | null }[] = [
-    { field: "name", value: winner.name ? null : loser.name },
-    { field: "phone", value: winner.phone ? null : loser.phone },
-    { field: "email", value: winner.email ? null : loser.email },
-  ]
-
-  for (const { field, value } of absorbCandidates) {
-    if (!value) continue
-    const { error: updErr } = await supabase
-      .from("customers")
-      .update({ [field]: value })
-      .eq("id", winner.id)
-    if (updErr) {
-      if (updErr.code === "23505") {
-        identifierConflicts.push(String(field))
-      } else {
-        // Unexpected — bail out but leave the FK reassignments in place.
-        return { ok: false, error: updErr.message }
-      }
-    }
-  }
-
-  // 4. Delete loser.
-  const delRes = await supabase
-    .from("customers")
-    .delete()
-    .eq("id", loser.id)
-    .eq("shop_id", shop.id)
-  if (delRes.error) {
-    return {
-      ok: false,
-      error: `Reassigned everything but couldn't delete the duplicate: ${delRes.error.message}`,
-    }
-  }
-
   revalidatePath("/customers")
-  revalidatePath(`/customers/${winner.id}`)
+  revalidatePath(`/customers/${parsed.data.winner_id}`)
   return { ok: true, moved, identifierConflicts }
 }

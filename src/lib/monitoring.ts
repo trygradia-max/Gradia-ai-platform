@@ -42,10 +42,13 @@ export function reportTenantScopeViolation(input: {
   rowShopId: string | null
   rowId: string
   detail?: string
+  /** Denied requests must remain observable without contacting providers. */
+  notifyExternally?: boolean
 }): void {
   console.error(
     `[monitoring] TENANT_SCOPE_VIOLATION surface=${input.surface} row=${input.rowId} authorized_shop=${input.authorizedShopId} row_shop=${input.rowShopId ?? "unknown"}${input.detail ? ` — ${input.detail}` : ""}`
   )
+  if (input.notifyExternally === false) return
   void sendOpsAlert({
     severity: "SEV-0",
     source: "tenancy",

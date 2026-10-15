@@ -397,7 +397,7 @@ describe("quote accept — advisory snapshot rides the staged card", () => {
         }
         chain.maybeSingle = () =>
           Promise.resolve({
-            data: table === "quotes" ? quoteRow : null,
+            data: table === "quotes" ? quoteRow : table === "customers" ? {id:"cust-1",shop_id:"shop-1"} : null,
             error: null,
           })
         chain.single = () => Promise.resolve({ data: { id: "pa-new" }, error: null })

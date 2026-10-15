@@ -14,8 +14,9 @@ import {
 } from "lucide-react"
 
 import { EmptyState } from "@/components/gradia/empty-state"
-import { StatusPill } from "@/components/ui/status-pill"
-import type { ActivityFeedItem } from "@/lib/data/activity"
+import { ListToolbar } from "@/components/gradia/list-toolbar"
+import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
+import type { ActivityFeedItem, ActivityOutcome } from "@/lib/data/activity"
 import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 
@@ -44,6 +45,19 @@ function itemIcon(item: ActivityFeedItem) {
 
 type Filter = "all" | "handled"
 
+const OUTCOME_TONE: Record<ActivityOutcome, StatusPillTone> = {
+  handled: "good",
+  "needs-you": "warn",
+  dropped: "muted",
+  unresolved: "bad",
+}
+const OUTCOME_LABEL: Record<ActivityOutcome, string> = {
+  handled: STRINGS.pages.activity.outcome.handled,
+  "needs-you": STRINGS.pages.activity.outcome.needsYou,
+  dropped: STRINGS.pages.activity.outcome.dropped,
+  unresolved: STRINGS.pages.activity.outcome.unresolved,
+}
+
 /**
  * The glass box (spec §5.1): reverse-chron feed of what the agent did.
  * Routine wins log quietly; "Needs you" entries carry the amber pill and
@@ -60,11 +74,18 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
     filter === "handled" ? items.filter((i) => i.outcome === "handled") : items
 
   const chipClass =
-    "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150"
+    "inline-flex min-h-11 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150"
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
+      <ListToolbar
+        label="Activity on this page"
+        status={
+          <p className="text-sm text-muted-foreground">
+            {`Filters apply to the ${items.length} ${items.length === 1 ? "event" : "events"} loaded here, not the whole history.`}
+          </p>
+        }
+      >
         <Link
           href="/approvals"
           className={cn(
@@ -79,12 +100,13 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
             key={f}
             type="button"
             onClick={() => setFilter(f)}
+            aria-pressed={filter === f}
             className={cn(
               chipClass,
               "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               filter === f
-                ? "border-border-strong bg-card text-foreground"
-                : "border-border/60 text-muted-foreground hover:text-foreground"
+                ? "border-input bg-card text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground"
             )}
           >
             {f === "all" ? s.filters.all : s.filters.handled}
@@ -93,11 +115,11 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
         <span
           aria-disabled
           title={s.escalatedUnavailable}
-          className={cn(chipClass, "cursor-not-allowed border-border/40 text-muted-foreground/50")}
+          className={cn(chipClass, "cursor-not-allowed border-border text-muted-foreground")}
         >
           {s.filters.escalated}
         </span>
-      </div>
+      </ListToolbar>
 
       {visible.length === 0 ? (
         <EmptyState
@@ -105,7 +127,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
           description={STRINGS.empty.activityFirstUse}
         />
       ) : (
-        <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-card">
+        <ul className="divide-y divide-border rounded-md bg-card ring-1 ring-border">
           {visible.map((item) => {
             const Icon = itemIcon(item)
             return (
@@ -130,7 +152,7 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
                   {/* The decision log line (spec §5.1) — data, not decoration. */}
                   {item.because ? (
                     <p className="border-l-2 border-border pl-2.5 text-xs text-muted-foreground">
-                      <span className="font-medium text-muted-foreground/80">
+                      <span className="font-medium text-muted-foreground">
                         {s.whyLabel}:
                       </span>{" "}
                       {item.because}
@@ -138,26 +160,21 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
                   ) : null}
                   <div className="flex items-center gap-2 pt-0.5">
                     <StatusPill
-                      tone={
-                        item.outcome === "needs-you"
-                          ? "warn"
-                          : item.outcome === "dropped"
-                            ? "muted"
-                            : "good"
-                      }
+                      tone={OUTCOME_TONE[item.outcome] ?? "bad"}
                     >
-                      {item.outcome === "needs-you"
-                        ? s.outcome.needsYou
-                        : item.outcome === "dropped"
-                          ? s.outcome.dropped
-                          : s.outcome.handled}
+                      {/* An outcome this build does not know is never shown as handled. */}
+                      {OUTCOME_LABEL[item.outcome] ?? s.outcome.unresolved}
                     </StatusPill>
                     {item.href ? (
                       <Link
                         href={item.href}
                         className="inline-flex items-center gap-1 text-xs font-medium text-accent-text hover:underline"
                       >
-                        {item.kind === "call" ? s.viewCall : s.filters.needsReview}
+                        {item.kind === "call"
+                          ? s.viewCall
+                          : item.outcome === "unresolved"
+                            ? s.reviewResult
+                            : s.filters.needsReview}
                         <ArrowRight className="size-3" aria-hidden />
                       </Link>
                     ) : null}

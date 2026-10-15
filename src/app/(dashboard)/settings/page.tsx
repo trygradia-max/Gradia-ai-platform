@@ -1,6 +1,8 @@
+import {getManagerNotifications} from "@/app/actions/manager-notifications"
+import {ManagerNotificationSettings} from "@/components/gradia/manager-notification-settings"
 import { headers } from "next/headers"
 import Link from "next/link"
-import { Bot, Briefcase, Calendar, ChevronRight, CreditCard, Mail, MessageSquare, Phone, Shield } from "lucide-react"
+import { Bot, Briefcase, Calendar, ChevronRight, Mail, MessageSquare, Phone, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
@@ -106,6 +108,7 @@ export default async function SettingsPage({
     jobber?: string
   }>
 }) {
+  const notificationSettings = await getManagerNotifications()
   const shopCtx = await requireShop()
   const supabase = await createClient()
 
@@ -203,52 +206,35 @@ export default async function SettingsPage({
       />
 
       <div className="space-y-8 pt-2">
-        {/* Setup surfaces left the daily nav (B-14). They live here. */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Link
-            href="/receptionist"
-            className="group flex items-center gap-4 rounded-md border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
-          >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary ring-1 ring-primary/25">
-              <Bot className="size-[18px]" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-medium leading-tight text-foreground">
-                Receptionist
-              </p>
-              <p className="text-sm text-muted-foreground">
-                What answers the phone, and how much it does on its own.
-              </p>
-            </div>
-            <ChevronRight
-              className="size-5 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover:translate-x-0.5"
-              aria-hidden
-            />
-          </Link>
-          <Link
-            href="/billing"
-            className="group flex items-center gap-4 rounded-md border border-border/60 bg-card px-5 py-4 transition-colors hover:border-border"
-          >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary ring-1 ring-primary/25">
-              <CreditCard className="size-[18px]" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-medium leading-tight text-foreground">
-                Plan
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Your Gradia plan and included credits.
-              </p>
-            </div>
-            <ChevronRight
-              className="size-5 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover:translate-x-0.5"
-              aria-hidden
-            />
-          </Link>
-        </div>
+        <Link href="/control-center" className="block rounded-md bg-card p-4 ring-1 ring-border">
+          <span className="font-medium">Control Center policy drafts</span>
+          <span className="mt-1 block text-sm text-muted-foreground">Review and save future operation rules. Drafts do not change active behavior.</span>
+        </Link>
+        {/* "What Gradia does" lives here now that the primary nav is three
+            pages (FOCUS spec §4.4) — the capability roster + autonomy dial. */}
+        <Link
+          href="/receptionist"
+          className="group flex items-center gap-4 rounded-md bg-card px-5 py-4 ring-1 ring-border transition-colors hover:bg-raised"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/25">
+            <Bot className="size-[18px]" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-lg leading-tight tracking-tight text-foreground">
+              What Gradia does
+            </p>
+            <p className="text-sm text-muted-foreground">
+              See what&apos;s running for us, and tune how much we act on our own.
+            </p>
+          </div>
+          <ChevronRight
+            className="size-5 shrink-0 text-muted-foreground/60 transition-transform duration-200 group-hover:translate-x-0.5"
+            aria-hidden
+          />
+        </Link>
 
         <div className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground/70">Channels</p>
+          <p className="label-eyebrow text-muted-foreground">Channels</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <ConnectionTile
               icon={Phone}
@@ -297,7 +283,7 @@ export default async function SettingsPage({
         </div>
 
         <div className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground/70">
+          <p className="label-eyebrow text-muted-foreground">
             Your business
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -342,7 +328,7 @@ export default async function SettingsPage({
       </div>
 
       <details className="pt-10">
-        <summary className="label-eyebrow cursor-pointer select-none text-muted-foreground/70 transition-colors hover:text-foreground">
+        <summary className="label-eyebrow cursor-pointer select-none text-muted-foreground transition-colors hover:text-foreground">
           Manage individual connections
         </summary>
         <SettingsSectionNav sections={sections} />
@@ -375,6 +361,7 @@ export default async function SettingsPage({
         </section>
 
         <section id="email">
+          <ManagerNotificationSettings key={notificationSettings?.settings.revision ?? "unavailable"} initial={notificationSettings}/>
           <EmailSettingsCard
             initialConnected={connection.email.connected}
             initialAccountEmail={connection.email.identity}

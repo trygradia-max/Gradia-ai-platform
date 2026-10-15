@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { createLead, type CreateLeadResult } from "@/app/actions/leads"
 import type { LeadStatus } from "@/lib/types/database"
+import { FormField } from "@/components/gradia/form-field"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -70,7 +71,7 @@ export function AddLeadDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button className="gap-2 shadow-sm transition-transform duration-200 active:scale-[0.98]" />
+          <Button className="min-h-11 gap-2" />
         }
       >
         <Plus className="size-4" aria-hidden />
@@ -85,45 +86,37 @@ export function AddLeadDialog() {
         </DialogHeader>
         <form className="grid gap-4" onSubmit={handleSubmit}>
           <input type="hidden" name="status" value={status} readOnly />
-          <div className="grid gap-2">
-            <Label htmlFor="customerName">Customer</Label>
+          <FormField id="customerName" label="Customer">
             <Input
-              id="customerName"
               name="customerName"
               autoComplete="name"
               placeholder="Alex Rivera"
               required
             />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="phone">Phone</Label>
+          </FormField>
+          <FormField id="phone" label="Phone">
             <Input
-              id="phone"
               name="phone"
               type="tel"
               autoComplete="tel"
               placeholder="+1 (555) 010-2030"
               required
             />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="carInfo">Vehicle</Label>
+          </FormField>
+          <FormField id="carInfo" label="Vehicle">
             <Input
-              id="carInfo"
               name="carInfo"
               placeholder="2021 Tesla Model Y — white"
             />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="pinNotes">Pin-point notes</Label>
+          </FormField>
+          <FormField id="pinNotes" label="Pin-point notes">
             <Textarea
-              id="pinNotes"
               name="pinNotes"
               placeholder="Paint correction on hood, pet hair in rear…"
               rows={3}
               className="resize-none"
             />
-          </div>
+          </FormField>
           <div className="grid gap-2">
             <Label htmlFor="lead-status-select">Status</Label>
             <Select
@@ -151,14 +144,14 @@ export function AddLeadDialog() {
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
-              className="h-11 transition-colors duration-200 sm:h-9"
+              className="min-h-11"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={pending}
-              className="h-11 transition-transform duration-200 active:scale-[0.99] sm:h-9"
+              className="min-h-11"
             >
               {pending ? "Saving…" : "Save lead"}
             </Button>

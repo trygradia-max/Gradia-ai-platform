@@ -20,6 +20,7 @@
  * pre-migration fallback themselves.
  */
 
+import { ownedReference } from "@/lib/tenant-references"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { ParsedVehicle } from "@/lib/vehicle"
@@ -131,6 +132,7 @@ export async function upsertCustomerVehicle(
     importJobId?: string | null
   } = {}
 ): Promise<string | null> {
+  if (!await ownedReference(supabase, shopId, "customers", customerId)) return null
   if (!v.make && !v.model && !v.year && !v.color) return null
 
   // Write-through to the deprecated flat columns (fill-if-empty — the exact

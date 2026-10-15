@@ -10,15 +10,16 @@ import {
 import { CheckCircle2, Loader2, Mail, TriangleAlert } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
+import { FormField } from "@/components/gradia/form-field"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 
 type MessageState =
   | { kind: "none" }
   | { kind: "success"; text: string }
-  | { kind: "error"; text: string }
+  | { kind: "email-error"; text: string }
+  | { kind: "google-error"; text: string }
 
 export function LoginForm() {
   const searchParams = useSearchParams()
@@ -49,14 +50,14 @@ export function LoginForm() {
         },
       })
       if (signError) {
-        setMessage({ kind: "error", text: signError.message })
+        setMessage({ kind: "google-error", text: signError.message })
         setGooglePending(false)
       }
       // On success, Supabase redirects to Google — no need to clear
       // pending, the page is about to unload anyway.
     } catch (err) {
       setMessage({
-        kind: "error",
+        kind: "google-error",
         text:
           err instanceof Error
             ? err.message
@@ -83,7 +84,7 @@ export function LoginForm() {
         },
       })
       if (signError) {
-        setMessage({ kind: "error", text: signError.message })
+        setMessage({ kind: "email-error", text: signError.message })
         setPending(false)
         return
       }
@@ -93,7 +94,7 @@ export function LoginForm() {
       })
     } catch (err) {
       setMessage({
-        kind: "error",
+        kind: "email-error",
         text:
           err instanceof Error
             ? err.message
@@ -120,7 +121,7 @@ export function LoginForm() {
       />
 
       <div className="space-y-1.5">
-        <p className="label-eyebrow text-muted-foreground/70">Sign in</p>
+        <p className="label-eyebrow text-muted-foreground">Sign in</p>
         <h2 className="font-display text-2xl leading-tight tracking-[-0.015em] text-foreground">
           One tap, <span className="italic">no passwords</span>.
         </h2>
@@ -138,7 +139,8 @@ export function LoginForm() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
-            className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="mt-4 flex items-start gap-2 rounded-lg border border-status-danger-fg/30 bg-status-danger-bg px-3 py-2 text-sm text-status-danger-fg"
+            role="alert"
           >
             <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
@@ -156,7 +158,7 @@ export function LoginForm() {
         disabled={anyPending}
         variant="outline"
         size="lg"
-        className="mt-5 h-11 w-full gap-2.5 border-border/60 bg-background/60 transition-transform duration-200 hover:bg-background/80 active:scale-[0.98]"
+        className="mt-5 min-h-11 w-full gap-2.5 border-border-control bg-background/60 transition-transform duration-200 hover:bg-background/80 active:scale-[0.98]"
       >
         {googlePending ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -168,34 +170,32 @@ export function LoginForm() {
 
       <div className="relative my-5 flex items-center gap-3">
         <span className="h-px flex-1 bg-border/60" aria-hidden />
-        <span className="label-eyebrow text-muted-foreground/60">or</span>
+        <span className="label-eyebrow text-muted-foreground">or</span>
         <span className="h-px flex-1 bg-border/60" aria-hidden />
       </div>
 
       <form className="grid gap-4" onSubmit={handleSubmit}>
-        <div className="grid gap-2">
-          <Label
-            htmlFor="email"
-            className="label-eyebrow text-muted-foreground/70"
-          >
-            Work email
-          </Label>
+        <FormField
+          id="email"
+          label="Work email"
+          hint="We’ll send a one-time sign-in link. This does not create a shop."
+          error={message.kind === "email-error" ? message.text : undefined}
+        >
           <Input
-            id="email"
             name="email"
             type="email"
             required
             autoComplete="email"
             placeholder="you@studio.com"
             disabled={anyPending}
-            className="h-11 border-border/60 bg-background/60 focus-visible:border-primary/40"
+            className="h-11 border-border-control bg-background/60"
           />
-        </div>
+        </FormField>
         <Button
           type="submit"
           disabled={anyPending}
           size="lg"
-          className="h-11 gap-2 transition-transform duration-200 active:scale-[0.98]"
+          className="min-h-11 gap-2 transition-transform duration-200 active:scale-[0.98]"
         >
           {pending ? (
             <>
@@ -212,17 +212,18 @@ export function LoginForm() {
       </form>
 
       <AnimatePresence initial={false} mode="wait">
-        {message.kind !== "none" ? (
+        {message.kind === "success" || message.kind === "google-error" ? (
           <motion.div
             key={message.kind}
+            role={message.kind === "success" ? "status" : "alert"}
             initial={reduce ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
             className={
               message.kind === "success"
-                ? "mt-4 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400"
-                : "mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                ? "mt-4 flex items-start gap-2 rounded-lg border border-status-success-fg/30 bg-status-success-bg px-3 py-2 text-sm text-status-success-fg"
+                : "mt-4 flex items-start gap-2 rounded-lg border border-status-danger-fg/30 bg-status-danger-bg px-3 py-2 text-sm text-status-danger-fg"
             }
           >
             {message.kind === "success" ? (

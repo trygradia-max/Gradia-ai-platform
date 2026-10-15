@@ -1,6 +1,10 @@
 # GRADIA — CONTEXT
 
-_Founder decision, 2026-09-03. **This file is the single source of truth for what Gradia is and what gets built next.** Any session — Claude Code, Cursor, or a new Cowork chat — reads this file first and needs nothing else to start work. The `docs/gradia-v2/` library remains the audit trail and the detail reference; it is no longer on the critical path of every session. Where this file and any other plan disagree, **this file wins.**_
+_Founder diary, 2026-09-03. Updated 2026-09-24._
+
+Product requirements for the sellable MVP are the five September 11, 2026 documents: `docs/product/GRADIA_MVP_VISION.md`, `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md`, `docs/architecture/GRADIA_AGENT_ARCHITECTURE.md`, `docs/architecture/AUTONOMY_APPROVAL_MODES.md`, and `docs/architecture/GRADIA_MEMORY.md`. Start with `docs/CHEAT_SHEET.md`. This file is a dated status diary. Where it conflicts with those five documents, those documents win. Future products are listed in `docs/roadmap/POST_MVP_IDEAS.md`. Do not pick the next build from the unchecked boxes below.
+
+The founder checkout at local `main` `20e153a` still has an older uncommitted edit of this file. That working tree was not overwritten.
 
 ---
 
@@ -12,35 +16,13 @@ Every channel flows in: phone calls, SMS, email, website forms, and Meta lead ad
 
 **The Gradia Agent sits on top and operates it.** A new lead arrives; the agent qualifies it over SMS, answers questions, quotes, proposes times, books the appointment, and moves the card through the pipeline. The owner reads what happened and approves what matters. They do not operate the software — they supervise it.
 
-**ICP:** established shops with staff (3–30 employees), already spending on ads. Not solo operators.
+**ICP:** solo detailers and established shops. September 11 replaced the staff-only limit. One active location or mobile service area.
 
 **The commercial claim:** Jobber and Urable are systems of record you operate. Gradia does the work and reports it.
 
-## 1b. The sellable MVP — D-069 (founder decision 2026-09-08)
+## 2. What Gradia is NOT in this MVP (D-067, narrowed 2026-09-24)
 
-§1 describes the product. This section describes **the first thing we sell**, and the line that says when we can sell it. It exists because §4 was a 16-ticket list with nothing marking "this is the release."
-
-**Gradia v1 — "Never miss another call."** A detailing shop's phone gets answered every time by an agent that knows their services and prices, books into their calendar, and files everything into a CRM the owner never types into.
-
-**In v1:** voice receptionist · CRM · pipeline · calendar · quotes · Chief of Staff · email (staged-and-approved send). **Not in v1: SMS, and Meta lead ads.**
-
-**Why the cut:** SMS is blocked behind the shop's own A2P registration and Meta lead ads behind Meta App Review. Both are *calendar time we do not control*. Voice needs no registration — it is sellable the day it is verified. A v1 that requires SMS cannot be sold this quarter; a v1 built on voice can. This is A-02a made concrete.
-
-**Ship gate — v1 is sellable only when all six are true:**
-1. Voice acceptance run passes on a real inbound call (§7)
-2. **B-19** — an established shop keeps its own number (call forwarding)
-3. **B-20** — the owner is told when an approval is waiting
-4. **B-16** — onboarding leaves a shop able to quote (services + pricing + hours). First half merged 2026-09-08
-5. **B-09** — conflict enforcement ON; double-booking impossible
-6. A shop completes setup and takes a real call with **zero founder involvement**
-
-Everything else in §4 is v2 or later. This dates those tickets; it does not delete them.
-
-**Stated plainly in every sales conversation, never hidden:** no SMS until that shop's own A2P clears · no payments, ever (§2) · no jobs or work orders (§2) · one owner login until A-08.
-
-## 2. What Gradia is NOT (D-067 — do not build, do not plan, do not claim)
-
-Removed from scope entirely. Not "later" — out. Revisit only on a recorded founder decision after a paying customer asks.
+Not in the current pilot. Payments, point of sale, full work orders, win-back campaigns, Google review texts, and an on-the-go owner app are future products in `docs/roadmap/POST_MVP_IDEAS.md`. They are not “never.” Do not build them in an MVP session.
 
 - Jobs, work orders, checklists, team scheduling
 - Invoices, deposits, payments, Stripe Connect, any payment processing
@@ -76,13 +58,13 @@ Gradia is **not** a payment processor and never will be (licensing, underwriting
 
 **Missing for the definition in §1:**
 - Meta lead ads intake
-- In-thread email reply from the inbox (**correction 2026-09-08:** outbound email *does* exist — `aurinko.ts::sendEmailMessage`, staged as a `send_email` pending_action and sent via the shop's connected Gmail on approval. What is missing is replying inside a thread from the inbox, per B-12/U-07 — not sending as such. Gradia still has **no transactional sender of its own**; see B-20.)
+- In-thread email reply. Outbound email already exists through the shop's connected Gmail on approval. Gradia has no transactional sender of its own.
 - The new-lead → qualify → book flow wired as one automatic path
-- CRM holes: no direct "add customer" form, no data export, no VIN field, dual-truth `leads.status` vs `stage`
+- CRM holes: no direct "add customer" form, no VIN field, dual-truth `leads.status` vs `stage`. Data export shipped in PR #37.
 
 ## 4. Build list — in order, one ticket = one session
 
-A session picks the **first unchecked item**, builds it, opens a PR, and stops. It does not start the next one.
+Do not pick the first unchecked box. The live order is `docs/roadmap/MVP_IMPLEMENTATION_SEQUENCE.md`. Next incomplete work is runtime command authority on the merged PR #48 policy drafts. Boxes below are a 2026-09-03 diary. B-03 Chief of Staff shipped in PR #39. B-16 services, prices, and hours shipped in PR #41. The rest of those tickets is still open.
 
 - [x] **B-01 — Data export.** Customers, vehicles, leads, appointments, conversations → CSV + JSON. Tenant-scoped, rate-limited. _Loop proof ticket: small, no money, no schema._
 - [x] **B-00 — Fix Preview auth redirect. BLOCKS THE ACCEPTANCE RULE — do before any further review.** Logging in on a Vercel Preview bounces the user to production because the auth callback uses the hardcoded `GRADIA_DASHBOARD_URL` env var (`https://gradia-ai-platform.vercel.app`) instead of the request's own origin. Consequence: **no ticket can actually be verified on a Preview**, so §6's acceptance rule and autorun rule 8 are unenforceable, and anything previously "verified on Preview" was in fact viewed on production. Fix: derive the redirect origin from the incoming request (or `VERCEL_URL`) and fall back to the env var only when neither is available. Small — auth callback + config read. Add a test that a Preview-host request never redirects to the production host.
@@ -99,7 +81,7 @@ A session picks the **first unchecked item**, builds it, opens a PR, and stops. 
 - [ ] **B-10 — Book from the SMS conversation** into a real appointment. Closes the loop.
 - [ ] **B-11 — CRM holes.** Direct add-customer form, VIN field, retire the `leads.status` enum.
 - [ ] **B-15b — Collect A2P registration data during onboarding (founder's idea, adopted).** Capture everything the carrier needs while the shop is already filling in setup — legal business name, EIN/Tax ID, entity type, industry, website, business address, authorised contact — plus campaign fields: use case, sample messages, opt-in description and proof, and the HELP/STOP reply text. Submit to Twilio via API on completion; never send the shop to Twilio's site. Pairs with A-02b/c: registration starts on day one and the shop sees an honest pending state while voice and email already work.
-- [ ] **B-16 — Onboarding that actually activates a shop.** Today it collects four things: shop name, location, phone, number. **Missing: services + pricing (the agent cannot quote without them), working hours, calendar connection, SMS consent language, Meta connection, A2P status.** A shop finishes setup today and the agent is mute. Highest-leverage ticket for activation. (§4f G-05) **Split pinned by founder 2026-09-03 — build the first half only: (a) services + pricing (packages, durations, vehicle-size modifiers) and (b) working hours. Those two are what let the agent quote and propose times; nothing else in this list does. Explicitly OUT of this session: SMS consent language (A-05 — lawyer question, an agent must not draft TCPA copy), the A2P status step (B-15b — the field set is unknown until the founder's first Brand filing returns real numbers), Meta connection (blocked on Meta App Review), and calendar connect (the Aurinko flow already exists in Settings — surface it, do not rebuild it).**
+- [x] **B-16 (first half) — Onboarding that actually activates a shop.** Today it collects four things: shop name, location, phone, number. **Missing: services + pricing (the agent cannot quote without them), working hours, calendar connection, SMS consent language, Meta connection, A2P status.** A shop finishes setup today and the agent is mute. Highest-leverage ticket for activation. (§4f G-05) **Split pinned by founder 2026-09-03 — build the first half only: (a) services + pricing (packages, durations, vehicle-size modifiers) and (b) working hours. Those two are what let the agent quote and propose times; nothing else in this list does. Explicitly OUT of this session: SMS consent language (A-05 — lawyer question, an agent must not draft TCPA copy), the A2P status step (B-15b — the field set is unknown until the founder's first Brand filing returns real numbers), Meta connection (blocked on Meta App Review), and calendar connect (the Aurinko flow already exists in Settings — surface it, do not rebuild it).** **CLOSED 2026-09-04 — first half only, merged from `auto/b-16-0903-2010`.** Shipped: (a) services + pricing via the real `ServiceMenuCard` (size-class prices, durations, condition bumps) — the wizard's duplicate add-service form was deleted rather than kept, so onboarding writes the same rows Settings does; (b) a working-hours step, gated on `settings.calendar.working_hours` having ever been saved so the wizard can tell "never reviewed" from "reviewed and kept the default". Wizard is now six steps; the Gmail OAuth return lands on step 5. **STILL OPEN — the second half is NOT built and needs its own ticket:** SMS consent language (A-05, lawyer question), the A2P status step (B-15b), Meta connection (blocked on Meta App Review), and surfacing the existing calendar-connect flow. **Follow-up found during review:** onboarding now collects per-vehicle-size durations that nothing downstream of quoting read — fixed for every speaking surface on `fix/duration-size-class`; the booking path (`lookupServiceDuration`) still writes the flat duration and needs a founder decision on what to reserve when the vehicle is unknown.
 - [ ] **B-12 — Inbox reply. SMS first, then email.** `conversation-threads.tsx` is **read-only** — replying to a customer text today means leaving the inbox, finding the customer record and using `SmsQuickReply` there. Inline reply on the thread is the fix; email send follows. (§4e U-07)
 - [ ] **B-13 — Minimal CSV import.** Customers + vehicles, dedupe on phone/email.
 - [ ] **B-14 — Navigation cut to five + Settings.** Chief of Staff · Inbox · Pipeline · Customers · Calendar, with Settings at the bottom. `/receptionist` and `/billing` (Numbers) move **into Settings** — they are setup surfaces, not daily-use screens. `/activity` and `/approvals` become Chief of Staff sections. Everything in §2 flag-hidden, not deleted. (§4d U-02, U-05)

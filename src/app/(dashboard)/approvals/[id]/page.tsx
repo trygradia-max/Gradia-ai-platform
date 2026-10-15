@@ -1,8 +1,16 @@
+import {DeliveryReconciliationHistory} from "@/components/gradia/delivery-reconciliation-history"
+import {readMessageDeliveryReview} from "@/lib/message-delivery-review"
+import {MessageDeliveryReviewPanel} from "@/components/gradia/message-delivery-review"
+import {WhisperReplyEvidence} from "@/components/gradia/whisper-reply-evidence"
+import { isRecordAction } from "@/lib/control-center/record-command"
+import { RecordProposalReview } from "@/components/gradia/record-proposal-review"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 
+import { EmptyState } from "@/components/gradia/empty-state"
 import { PendingProposalEditor } from "@/components/gradia/pending-proposal-editor"
+import { SectionHeader } from "@/components/gradia/section-header"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
 import { buttonVariants } from "@/components/ui/button"
 import { normalizePhone } from "@/lib/customers"
@@ -61,8 +69,10 @@ type EmailPayload = {
 
 export default async function PendingProposalPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{reviewOffset?: string | string[]}>
 }) {
   const { id } = await params
   const shop = await requireShop()
@@ -84,35 +94,41 @@ export default async function PendingProposalPage({
 
   const pending = data as PendingActionRow
 
+  const isMessage=pending.action_type === "send_sms" || pending.action_type === "send_email"
+  if(isMessage){
+    const review=await readMessageDeliveryReview(supabase,shop.id,pending.id)
+    if(review.state!=="unspent")return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><MessageDeliveryReviewPanel review={review}/>{review.state!=="unavailable" && <DeliveryReconciliationHistory db={supabase} shopId={shop.id} actionId={pending.id} page={(await searchParams).reviewOffset}/>}</div>
+    if(pending.status==="approved"&&!pending.result_id)return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><h1>Execution unconfirmed</h1><p role="alert">Approval is not proof of delivery. Review execution and provider evidence before taking any further action; do not resend automatically.</p></div>
+  }
+
   if (pending.status === "approved" || pending.status === "rejected") {
     return (
       <div className="mx-auto w-full max-w-3xl space-y-8">
         <BackLink />
-        <div className="rounded-2xl border border-border/60 bg-card px-6 py-16 text-center">
-          <p className="label-eyebrow mb-2 text-muted-foreground/70">
-            {pending.status === "approved" ? "Approved" : "Dropped"}
-          </p>
-          <p className="font-display text-2xl text-foreground">
-            <span className="italic">Already</span>{" "}decided.
-          </p>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-            {pending.status === "approved"
+        <EmptyState
+          title="Already decided."
+          description={
+            pending.status === "approved"
               ? "This one's been approved — nothing more for us to do here."
-              : "This one's been dropped — gone for good."}
-          </p>
-          <Link
-            href="/approvals"
-            className={cn(
-              buttonVariants({ size: "lg" }),
-              "mt-6 inline-flex h-11 gap-2"
-            )}
-          >
-            Back to the queue
-          </Link>
-        </div>
+              : "This one's been dropped — gone for good."
+          }
+          action={
+            <Link
+              href="/approvals"
+              className={cn(
+                buttonVariants({ size: "lg" }),
+                "inline-flex h-11 gap-2"
+              )}
+            >
+              Back to the queue
+            </Link>
+          }
+        />
       </div>
     )
   }
+
+  if(isRecordAction(pending.action_type))return <div className="mx-auto max-w-3xl space-y-6"><BackLink/><h1 className="font-display text-2xl">Review record change</h1><RecordProposalReview id={pending.id} type={pending.action_type} payload={pending.payload as Record<string,unknown>}/></div>
 
   const editorProps = buildEditorProps(pending)
   const quickReplyTarget = await resolveQuickReplyTarget(
@@ -125,20 +141,19 @@ export default async function PendingProposalPage({
     <div className="mx-auto w-full max-w-3xl space-y-8">
       <header className="space-y-3">
         <BackLink />
-        <div className="space-y-2">
-          <p className="label-eyebrow text-muted-foreground/70">
-            Review proposal
-          </p>
-          <h1 className="font-display text-2xl text-foreground">
-            One pass, then it&apos;s <span className="italic">live</span>.
-          </h1>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Tweak whatever&apos;s off, then save — or drop it if it&apos;s
-            noise. Either way it comes off the queue.
-          </p>
-        </div>
+        <SectionHeader
+          level={1}
+          eyebrow="Review proposal"
+          title={
+            <>
+              One pass, then it&apos;s <span className="italic">live</span>.
+            </>
+          }
+          subhead="Tweak whatever's off, then save — or drop it if it's noise. Either way it comes off the queue."
+        />
       </header>
 
+      {isMessage?<WhisperReplyEvidence db={supabase} shopId={shop.id} actionId={pending.id}/>:null}
       <PendingProposalEditor {...editorProps} />
       {quickReplyTarget ? (
         <SmsQuickReply

@@ -21,28 +21,43 @@ export function SectionHeader({
   title,
   subhead,
   level = 2,
+  action,
   className,
 }: {
   eyebrow: string
   title: ReactNode
   subhead?: ReactNode
   level?: 1 | 2
+  /** Optional right slot — one primary action or a status cluster. */
+  action?: ReactNode
   className?: string
 }) {
   const Heading = level === 1 ? "h1" : "h2"
   return (
-    <header className={cn(level === 1 ? "space-y-2" : "space-y-1.5", className)}>
-      <p className="label-eyebrow text-muted-foreground/70">{eyebrow}</p>
-      <Heading
-        className={cn(
-          "font-display text-foreground",
-          level === 1 ? "text-2xl" : "text-xl"
-        )}
-      >
-        {title}
-      </Heading>
-      {subhead ? (
-        <p className="max-w-prose text-sm text-muted-foreground">{subhead}</p>
+    <header
+      className={cn(
+        action
+          ? "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+          : undefined,
+        className
+      )}
+    >
+      <div className={level === 1 ? "space-y-2" : "space-y-1.5"}>
+        <p className="label-eyebrow text-muted-foreground">{eyebrow}</p>
+        <Heading
+          className={cn(
+            "font-display text-foreground",
+            level === 1 ? "text-2xl" : "text-xl"
+          )}
+        >
+          {title}
+        </Heading>
+        {subhead ? (
+          <p className="max-w-prose text-sm text-muted-foreground">{subhead}</p>
+        ) : null}
+      </div>
+      {action ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>
       ) : null}
     </header>
   )

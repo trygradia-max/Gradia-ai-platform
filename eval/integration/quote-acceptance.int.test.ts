@@ -419,23 +419,22 @@ describe.skipIf(!INTEGRATION)("P0-009 quote acceptance [integration]", () => {
       const res = await executeApproval(sb, (pending as { id: string }).id, seedA.shopId, {
         userId: seedA.ownerId,
       })
-      expect(res.ok).toBe(true)
+      expect(res.ok).toBe(false)
 
       // Shop B's quote and lead are exactly as seeded — nothing crossed over.
       expect(await quoteStatus(sb, fxB.quoteId)).toBe("sent")
       const leadB = (await leadRows(sb, seedB.shopId)).find((l) => l.id === fxB.leadId)
       expect(leadB?.stage).toBe("quote_sent")
-      // The booking fell back to creating a lead in shop A only.
+      // The entire forged operation is denied; no replacement lead or booking.
       const leadsA = await leadRows(sb, seedA.shopId)
-      expect(leadsA.some((l) => l.id === fxB.leadId)).toBe(false)
+      expect(leadsA).toHaveLength(0)
       const { data: appt } = await sb
         .from("appointments")
         .select("lead_id, quote_id")
         .eq("shop_id", seedA.shopId)
         .eq("pending_action_id", (pending as { id: string }).id)
         .single()
-      expect(appt?.lead_id).not.toBe(fxB.leadId)
-      expect(appt?.quote_id).toBeNull()
+      expect(appt).toBeNull()
     })
   })
 

@@ -91,6 +91,10 @@ function mockDb(cfg: {
       const call: Call = { table, op: "select", filters: [] }
       calls.push(call)
       const exec = (): { data: unknown; error: { message: string } | null } => {
+        if ((table === "customers" || table === "leads") && call.op === "select") {
+          const row = table === "customers" ? {id:"cust-1",shop_id:"shop-1"} : {id:"lead-1",shop_id:"shop-1",customer_id:"cust-1"}
+          return {data: call.filters.every(([k,v]) => row[k as keyof typeof row] === v) ? row : null, error:null}
+        }
         if (table === "quotes" && call.op === "select") {
           if (call.filters.some(([k]) => k === "public_token")) {
             return { data: cfg.quote === undefined ? baseQuote() : cfg.quote, error: null }

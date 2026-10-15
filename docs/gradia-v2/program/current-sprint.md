@@ -1,6 +1,6 @@
 # Program — Current Sprint
 
-> **SUPERSEDED 2026-09-03.** The single source of truth for what Gradia is and what gets built next is `platform/CONTEXT.md`. This file is history and detail reference only — do not plan from it.
+> **HISTORICAL.** Sellable MVP authority is the five September 11, 2026 documents named in `CLAUDE.md`. This file is evidence only. `CONTEXT.md` does not outrank those documents; see `docs/roadmap/CONTEXT_AUTHORITY_PROPOSAL.md`. Do not resurrect payments, full work orders, or E04–E10 scope from this file.
 
 
 _Created 2026-07-25 by the Organizer. Sprint 1 (P0 Stabilization). Started 2026-07-25 · target: alpha 2026-08-07 (**date-vs-gate policy open — Q-25 in `decision-queue.md`**; do not silently relax the P0 exit gate). Governs live sprint state; tickets in `../tickets/`, limits also mirrored in `work-in-progress.md`._

@@ -28,6 +28,7 @@
  *     through the HITL approval engine (card lands in /approvals)
  */
 
+import { servicePayload } from "@/lib/service-purpose"
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -184,7 +185,7 @@ async function handleMessage(
     if (result.ok) customerId = result.customer.id
   }
 
-  await recordInteraction(supabase, {
+  const inbound = await recordInteraction(supabase, {
     shopId: shop.id,
     customerId,
     channel: "email",
@@ -192,6 +193,7 @@ async function handleMessage(
     content: interactionContent(message),
     metadata: {
       aurinko_message_id: message.id,
+      direction: "inbound",
       from_email: senderEmail || null,
       from_name: message.fromName,
       subject: message.subject,
@@ -199,6 +201,10 @@ async function handleMessage(
     },
   })
 
+  if (inbound.ok && customerId && shop.aurinko_account_id) {
+    const evidence=await supabase.from("email_reply_evidence").insert({shop_id:shop.id,interaction_id:inbound.id,account_id:shop.aurinko_account_id,message_id:message.id,thread_id:message.threadId ?? null})
+    if(evidence.error) console.warn("[aurinko webhook] reply evidence unavailable; threaded replies will stay held")
+  }
   if (!senderEmail) return false
 
   // Inbound classification: rate-limited (inbox-flood ceiling) AND metered
@@ -315,7 +321,8 @@ async function proposeDraftEmailReply(
     .insert({
       shop_id: shop.id,
       action_type: "send_email",
-      payload: {
+      payload: await servicePayload(supabase, shop.id, {
+        category: "transactional",
         to_email: senderEmail,
         subject: draft.subject,
         body: draft.body,
@@ -324,7 +331,7 @@ async function proposeDraftEmailReply(
         reason,
         source: "email_auto_draft",
         aurinko_inbound_message_id: message.id,
-      },
+      }),
       requested_by: shop.owner_id,
     })
     .select("id")

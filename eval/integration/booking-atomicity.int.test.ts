@@ -179,10 +179,12 @@ describe.skipIf(!INTEGRATION)("P0-004A booking atomicity [integration]", () => {
       const idB = await stagePending(sb, seed.shopId, seed.ownerId, "book_appointment", bookingPayload(slot.start))
 
       // Two separate clients/connections, one Promise.all — genuinely
-      // simultaneous requests, not sequential calls pretending.
+      // simultaneous requests, not sequential calls pretending. Human-approved
+      // requests now exercise this race; autonomous booking is blocked earlier
+      // by the current policy hard floor (control-execution.int.test.ts).
       const [resA, resB] = await Promise.all([
-        executeApproval(sb, idA, seed.shopId, { userId: seed.ownerId }, { context: "automatic" }),
-        executeApproval(sb2, idB, seed.shopId, { userId: seed.ownerId }, { context: "automatic" }),
+        executeApproval(sb, idA, seed.shopId, { userId: seed.ownerId }, { context: "hitl" }),
+        executeApproval(sb2, idB, seed.shopId, { userId: seed.ownerId }, { context: "hitl" }),
       ])
 
       const winners = [resA, resB].filter((r) => r.ok)

@@ -1,3 +1,5 @@
+> **SUPERSESSION NOTE 2026-09-24.** September 11, 2026 decisions in the five governing documents replace conflicting earlier entries where they overlap: voice-first D-069, automatic customer-action defaults associated with D-068, named-agent roster B-18, and the staff-only / no-location reading of D-067. Those 15 areas are closed. Do not re-decide them here. Prices, trial caps, and seat terms were not decided on September 11 and stay unresolved in `docs/roadmap/POST_MVP_IDEAS.md`. Entries below are the historical log.
+
 # 11 — Decision Log
 
 _Approved decisions. Precedence layer 2 — beaten only by audited current behavior (what the code actually does today); wins over ADRs, principles, MVP plan, specs, and all historical docs. Open (undecided) items live in `program/decision-queue.md`, never here._

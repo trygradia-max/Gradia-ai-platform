@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { MCP_CAPABILITIES, type McpCapability } from "@/lib/mcp/capabilities"
 
 import { HelpTip } from "@/components/gradia/help-tip"
 import { STRINGS } from "@/lib/strings"
@@ -27,6 +28,7 @@ export function McpTokensCard({
 }) {
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [tokens, setTokens] = React.useState(initialTokens)
+  const [capabilities, setCapabilities] = React.useState<McpCapability[]>([])
   const [name, setName] = React.useState("")
   const [pending, setPending] = React.useState<null | "mint" | string>(null)
   const [justMinted, setJustMinted] = React.useState<{
@@ -37,7 +39,7 @@ export function McpTokensCard({
   async function handleMint(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setPending("mint")
-    const result = await mintMcpToken({ name })
+    const result = await mintMcpToken({ name, capabilities })
     setPending(null)
     if (!result.ok) {
       toast.error(result.error)
@@ -50,6 +52,7 @@ export function McpTokensCard({
         shop_id: tokens[0]?.shop_id ?? "",
         name: name.trim(),
         token_hash: "(stored)",
+        capabilities,
         created_at: new Date().toISOString(),
         last_used_at: null,
         revoked_at: null,
@@ -59,6 +62,7 @@ export function McpTokensCard({
       ...tokens,
     ])
     setName("")
+    setCapabilities([])
   }
 
   async function handleRevoke(id: string) {
@@ -160,6 +164,11 @@ export function McpTokensCard({
               disabled={pending === "mint"}
             />
           </div>
+          <fieldset disabled={pending === "mint"} className="grid gap-2">
+            <legend className="text-sm font-medium">Allowed reads and proposals</legend>
+            <p className="text-xs text-muted-foreground">Select only what this agent needs. No selection grants no access. Proposals still require current shop policy and approval. To change an existing token, revoke it and mint a replacement.</p>
+            {MCP_CAPABILITIES.map(capability => <label key={capability} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={capabilities.includes(capability)} onChange={e => setCapabilities(values => e.target.checked ? [...values, capability] : values.filter(value => value !== capability))}/>{capability.replaceAll("_", " ")}</label>)}
+          </fieldset>
           <div className="flex justify-end">
             <Button
               type="submit"
@@ -201,6 +210,7 @@ export function McpTokensCard({
                           </span>
                         ) : null}
                       </p>
+                      <p className="text-xs text-muted-foreground">Capabilities: {token.capabilities?.join(", ") || "None — replace this token to grant access"}</p>
                       <p className="text-xs text-muted-foreground">
                         Created {new Date(token.created_at).toLocaleDateString()}
                         {token.last_used_at

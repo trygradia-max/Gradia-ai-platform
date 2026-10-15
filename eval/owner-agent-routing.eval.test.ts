@@ -143,9 +143,8 @@ describe.skipIf(!LIVE)("Gradia Agent — routing & grounding [live]", () => {
     expect(tools, "should use update_customer").toContain("update_customer")
   }, 120_000)
 
-  it("logs a walk-in immediately (capture writes the lead, stages nothing)", async () => {
-    // NOW-2 acceptance: capture is the owner's own data — it saves on the spot
-    // and never lands in /approvals. The same path Whisper drives by voice.
+  it("queues a walk-in for policy-controlled review without direct CRM writes", async () => {
+    // Agent capture is a proposal, not an authenticated owner approval.
     const staged: unknown[] = []
     const leadInserts: unknown[] = []
     const supabase = makeOwnerMock((t, r) => {
@@ -160,12 +159,12 @@ describe.skipIf(!LIVE)("Gradia Agent — routing & grounding [live]", () => {
       },
     ])
     expect(tools, "should use create_lead").toContain("create_lead")
-    expect(staged.length, "capture must never stage for approval").toBe(0)
-    expect(leadInserts.length, "the lead must be written immediately").toBeGreaterThan(0)
+    expect(staged.length, "capture must queue for review").toBeGreaterThan(0)
+    expect(leadInserts.length, "no direct lead write before approval").toBe(0)
     const verdict = await judge({
       output: text,
       rubric:
-        "PASS if the reply confirms the walk-in/lead was saved (done), and does NOT say it was staged, queued, or is waiting for approval.",
+        "PASS if the reply says the walk-in/lead was queued or staged for review, and does NOT claim it was already saved to the CRM.",
     })
     expect(verdict.pass, verdict.reason).toBe(true)
   }, 120_000)

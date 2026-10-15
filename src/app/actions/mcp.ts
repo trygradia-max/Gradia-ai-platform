@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { mcpCapabilitiesSchema, type McpCapability } from "@/lib/mcp/capabilities"
 import { generateMcpToken } from "@/lib/mcp/auth"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -18,7 +19,10 @@ export type MintMcpTokenResult =
  */
 export async function mintMcpToken(input: {
   name: string
+  capabilities: McpCapability[]
 }): Promise<MintMcpTokenResult> {
+  const grants = mcpCapabilitiesSchema.safeParse(input.capabilities)
+  if (!grants.success) return { ok: false, error: "Choose valid token capabilities." }
   const name = input.name.trim()
   if (!name) return { ok: false, error: "Name is required." }
   if (name.length > 80)
@@ -35,6 +39,7 @@ export async function mintMcpToken(input: {
       shop_id: shop.id,
       name,
       token_hash: hash,
+      capabilities: grants.data,
     })
     .select("id")
     .single()

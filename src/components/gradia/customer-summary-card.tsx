@@ -29,9 +29,9 @@ export function CustomerSummaryCard({ customerId }: { customerId: string }) {
   }
 
   return (
-    <div className="rounded-md border border-border/60 bg-card p-4">
+    <div className="rounded-md bg-card p-4 ring-1 ring-border">
       <div className="flex items-center justify-between gap-3">
-        <p className="label-eyebrow text-muted-foreground/70">The short version</p>
+        <p className="label-eyebrow text-muted-foreground">The short version</p>
         <Button
           type="button"
           variant="outline"

@@ -23,6 +23,12 @@
  */
 
 export const STRINGS = {
+  communicationPurpose: {
+    guidance: "Held or edited message? Save and review its purpose before approving. Replies require a verified customer message within 48 hours.",
+    marketing: "Review as marketing",
+    reply: "Verify recent reply",
+    reviewed: "Purpose reviewed. Consent checks still apply when you approve.",
+  },
   /** Buttons: verb + object, 1–3 words. Declines get equal weight —
    *  never confirmshame. */
   actions: {
@@ -140,25 +146,9 @@ export const STRINGS = {
       leadFeedSeeAll: (total: number) => `See all ${total} in Customers`,
     },
     customers: {
-      eyebrow: "Customers",
-      title: "People on file",
-      subtitle:
-        "Search by name, phone, or email. Each file holds their vehicles, quotes, and conversations.",
-      quotes: "Quotes",
       /** PERF-001: a pipeline column past its cap says how many older cards
        *  it is not drawing — the count is real, the rows are one search away. */
       pipelineOlder: (n: number) => `${n} older — search in Customers`,
-    },
-    pipeline: {
-      eyebrow: "Pipeline",
-      title: "From first call to booked",
-      subtitle:
-        "Drag a card when the lead moves. Marking one lost always asks for a reason.",
-    },
-    quotes: {
-      eyebrow: "Quotes",
-      title: "Prices sent and waiting",
-      subtitle: "Drafts, sent quotes, and accepted work. New prices start from a customer or a pipeline card.",
     },
     approvals: {
       eyebrow: "Approvals",
@@ -190,8 +180,9 @@ export const STRINGS = {
       escalatedUnavailable:
         "Escalation tracking arrives with call transfers — nothing to filter yet.",
       whyLabel: "Why",
-      outcome: { handled: "Handled", needsYou: "Needs you", dropped: "Dropped" },
+      outcome: { handled: "Handled", needsYou: "Needs you", dropped: "Dropped", unresolved: "Not confirmed" },
       viewCall: "View call",
+      reviewResult: "Review what happened",
     },
     call: {
       eyebrow: "Call record",
@@ -207,14 +198,17 @@ export const STRINGS = {
       receptionist: "Receptionist",
     },
     conversations: {
-      eyebrow: "Inbox",
-      title: "Calls and texts",
-      subtitle: "Every customer conversation, newest first.",
+      eyebrow: "Conversations",
+      title: "Calls, texts, and questions",
+      subtitle:
+        "Customer threads on one side, straight answers about the shop on the other.",
+      threadsHeading: "Threads",
       /** Honest interim copy while the thread list ships (L4): shown
        *  when the shop already HAS call/text history. */
       threadsInterim:
         "Call and text threads land here next. Until then, every conversation lives on the customer's file.",
       threadsInterimCta: "View customers",
+      askHeading: "Ask Gradia",
     },
     receptionist: {
       eyebrow: "Receptionist",
@@ -316,6 +310,9 @@ export const STRINGS = {
         "US carriers verify every business that texts. Until they approve, calls work and texting waits.",
     },
     approvals: {
+      update_customer: "Approve applies the displayed record changes only if the reviewed record is still current.",
+      resolve_customer: "Resolve one identity without merging records or granting consent.",
+      record_interaction: "Save reported history without treating it as verified inbound evidence.",
       create_lead:
         "Approve saves this person as a lead in Customers. Nothing is sent to them.",
       add_note:

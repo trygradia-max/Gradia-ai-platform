@@ -12,7 +12,41 @@ import type { PendingActionType } from "@/lib/types/database"
  * is reconstructed or generated.
  */
 
-export type ActivityOutcome = "handled" | "needs-you" | "dropped"
+/**
+ * `unresolved` is its own outcome, never a flavour of handled: an action was
+ * approved or claimed for sending, but no execution result confirms it.
+ */
+export type ActivityOutcome = "handled" | "needs-you" | "dropped" | "unresolved"
+
+/** What the execution evidence says about one pending action. */
+export type ActionEvidence = {
+  status: string
+  result_id: string | null
+  /** The action's consumed sending claim, when one exists. */
+  claim: { completed_at: string | null } | null
+  /** False when the claim lookup itself failed: nothing can be confirmed. */
+  claimsReadable: boolean
+}
+
+/**
+ * Decides the outcome from stored evidence only. An approval is not a result:
+ * "handled" needs a recorded result, and for a message whose sending was
+ * claimed, a completed claim. Anything else stays visibly unresolved. This
+ * mirrors the Whisper inbox hold definition so the two can never disagree.
+ */
+export function resolveActionOutcome(
+  actionType: PendingActionType,
+  evidence: ActionEvidence
+): ActivityOutcome {
+  const { status, result_id, claim } = evidence
+  const message = actionType === "send_sms" || actionType === "send_email"
+  if (claim && (!claim.completed_at || !result_id || status !== "approved")) return "unresolved"
+  if (status === "pending" || status === "edit_requested") return "needs-you"
+  if (status === "rejected") return "dropped"
+  if (status !== "approved" || !result_id) return "unresolved"
+  if (message && !evidence.claimsReadable) return "unresolved"
+  return "handled"
+}
 
 export type ActivityFeedItem = {
   id: string
@@ -34,13 +68,31 @@ function truncate(s: string, n: number): string {
   return t.length <= n ? t : `${t.slice(0, n).trimEnd()}…`
 }
 
-function actionTitle(
+export function actionTitle(
   actionType: PendingActionType,
   payload: Record<string, unknown>,
-  status: string
+  status: string,
+  outcome?: ActivityOutcome
 ): string {
   const name = (payload.customer_name as string)?.trim() || "a customer"
   const staged = status === "pending" || status === "edit_requested"
+  // Never narrate an unconfirmed action in the past tense.
+  if (outcome === "unresolved") {
+    switch (actionType) {
+      case "send_sms":
+        return `Text to ${name} — delivery not confirmed`
+      case "send_email":
+        return `Email to ${name} — delivery not confirmed`
+      case "book_appointment":
+        return `Booking for ${name} — result not confirmed`
+      case "reschedule_appointment":
+        return `Reschedule for ${name} — result not confirmed`
+      case "cancel_appointment":
+        return `Cancellation for ${name} — result not confirmed`
+      default:
+        return `Action for ${name} — result not confirmed`
+    }
+  }
   switch (actionType) {
     case "send_sms":
       return staged ? `Staged a text to ${name}` : `Texted ${name}`
@@ -79,7 +131,7 @@ export async function listActivityFeed(limit = 40): Promise<ActivityFeedItem[]> 
   const [actionsRes, callsRes, runsRes] = await Promise.all([
     supabase
       .from("pending_actions")
-      .select("id, action_type, payload, status, decided_at, created_at")
+      .select("id, action_type, payload, status, result_id, decided_at, created_at")
       .eq("shop_id", shop.id)
       .order("created_at", { ascending: false })
       .limit(limit),
@@ -113,6 +165,7 @@ export async function listActivityFeed(limit = 40): Promise<ActivityFeedItem[]> 
     action_type: PendingActionType
     payload: Record<string, unknown> | null
     status: string
+    result_id: string | null
     decided_at: string | null
     created_at: string
   }
@@ -141,24 +194,54 @@ export async function listActivityFeed(limit = 40): Promise<ActivityFeedItem[]> 
     }
   }
 
+  // Consumed sending claims for exactly these actions. A failed lookup is
+  // treated as "cannot confirm", never as "nothing was claimed".
+  const claimByAction = new Map<string, { completed_at: string | null }>()
+  let claimsReadable = true
+  if (actions.length > 0) {
+    const { data: claims, error } = await supabase
+      .from("service_proof_consumptions")
+      .select("action_id, completed_at")
+      .eq("shop_id", shop.id)
+      .in(
+        "action_id",
+        actions.map((a) => a.id)
+      )
+    if (error) {
+      claimsReadable = false
+      console.error("[data/activity] claims query failed:", error)
+    }
+    for (const c of (claims as
+      | { action_id: string; completed_at: string | null }[]
+      | null) ?? []) {
+      claimByAction.set(c.action_id, { completed_at: c.completed_at })
+    }
+  }
+
   const items: ActivityFeedItem[] = []
 
   for (const a of actions) {
     const payload = a.payload ?? {}
-    const pendingLike = a.status === "pending" || a.status === "edit_requested"
+    const outcome = resolveActionOutcome(a.action_type, {
+      status: a.status,
+      result_id: a.result_id,
+      claim: claimByAction.get(a.id) ?? null,
+      claimsReadable,
+    })
     items.push({
       id: `action:${a.id}`,
       kind: "action",
       at: a.decided_at ?? a.created_at,
-      title: actionTitle(a.action_type, payload, a.status),
+      title: actionTitle(a.action_type, payload, a.status, outcome),
       detail: actionDetail(payload),
       because: decisionByAction.get(a.id) ?? null,
-      outcome: pendingLike
-        ? "needs-you"
-        : a.status === "rejected"
-          ? "dropped"
-          : "handled",
-      href: pendingLike ? "/approvals" : null,
+      outcome,
+      href:
+        outcome === "needs-you"
+          ? "/approvals"
+          : outcome === "unresolved"
+            ? `/approvals/${a.id}`
+            : null,
     })
   }
 

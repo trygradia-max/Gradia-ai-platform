@@ -65,6 +65,13 @@ describe("service-role importer inventory (sweep visibility)", () => {
   // where it fits) and add the file here in the same PR.
   const REVIEWED_IMPORTERS = new Set([
     "src/app/actions/a2p.ts",
+    // Delegated manager message approval. The service client is handed to
+    // executeApproval only as the execution client: the claim runs first on
+    // the manager's own session (claim_delegated_message proves the live
+    // grant in that shop and binds the reviewed message), and the executors
+    // scope every query to the shop id returned by that claim. The client is
+    // never used to authorize, and a refused claim never touches it.
+    "src/app/actions/delegated-approvals.ts",
     "src/app/actions/jobs.ts",
     "src/app/actions/payments.ts",
     "src/app/actions/quote-response.ts",
@@ -75,6 +82,16 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // P0-012: public uptime endpoint — one fixed service-role read of
     // cron_heartbeats (no request input, no tenant data in the response).
     "src/app/api/health/route.ts",
+    // Meta Lead Ads intake. The shop id is the unique page binding.
+    // The webhook body cannot name the tenant. Signature is checked first.
+    // record_lead_intake is service-role only and rechecks the shop row.
+    "src/app/api/intake/meta-lead-ads/route.ts",
+    // Website form intake. The shop id is the signed-in owner's active shop.
+    // A body shop_id that does not match is refused before the write.
+    // record_lead_intake is service-role only and rechecks the shop row.
+    "src/app/api/intake/website-form/route.ts",
+  // Tenant comes only from the owner-configured form; RPC rechecks binding atomically.
+  "src/app/api/intake/public-form/[formId]/route.ts",
     "src/app/api/cron/agents/route.ts",
     "src/app/api/cron/automations/route.ts",
     "src/app/api/cron/no-show-ladder/route.ts",
