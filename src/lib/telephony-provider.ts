@@ -23,7 +23,10 @@ import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
 import { precheckCredits, recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import {
+  closeSubaccount,
   createSubaccount,
+  fetchSubaccount,
+  listSubaccountsByFriendlyName,
   defaultStatusCallbackUrl,
   provisionPhoneNumber,
   releasePhoneNumber,
@@ -94,33 +97,100 @@ type SubaccountCreds = { accountSid: string; authToken: string }
  * Returns the shop's subaccount credentials, creating the subaccount on
  * first use. Only the purchase flow should trigger creation — searching
  * doesn't (no empty subaccounts when an owner abandons the wizard).
+ *
+ * One subaccount per shop, and one shop per subaccount:
+ *   - A stored SID is never replaced. If its token no longer decrypts, the
+ *     token is recovered from Twilio for that same SID (it must be named for
+ *     this shop); a new subaccount would strand the shop's number.
+ *   - With no stored SID, an active subaccount already named for this shop
+ *     (FriendlyName = shop id, e.g. one whose save failed earlier) is adopted.
+ *     More than one is refused for reconciliation; nothing new is created.
+ *   - The SID is saved only if none is stored yet. A concurrent purchase that
+ *     stored first wins: the duplicate this call just created is closed (it
+ *     has no numbers) and the winner's credentials are returned.
+ *   - The database refuses one SID on two shops (unique index, migration 96).
  */
 export async function ensureSubaccount(
   supabase: SupabaseClient,
   shop: ShopTelephonyFields
 ): Promise<SubaccountCreds> {
-  const existingToken = tryDecryptSecret(shop.twilio_subaccount_token_enc)
-  if (shop.twilio_subaccount_sid && existingToken) {
-    return { accountSid: shop.twilio_subaccount_sid, authToken: existingToken }
-  }
+  const stored = await readStoredSubaccount(supabase, shop.id)
+  if (stored.sid) return recoverStoredSubaccount(supabase, shop.id, stored)
 
-  const sub = await createSubaccount({ friendlyName: shop.id })
-  const { error } = await supabase
+  const named = await listSubaccountsByFriendlyName(shop.id)
+  if (named.length > 1) {
+    console.error(`[telephony] shop ${shop.id} has ${named.length} active subaccounts at Twilio — reconcile before purchasing`)
+    throw new Error("This business has more than one phone account at our provider. Contact support before buying a number.")
+  }
+  const adopted = named[0] ?? null
+  const sub = adopted ?? await createSubaccount({ friendlyName: shop.id })
+
+  const { data: saved, error } = await supabase
     .from("shops")
     .update({
       twilio_subaccount_sid: sub.sid,
       twilio_subaccount_token_enc: encryptSecret(sub.authToken),
     })
     .eq("id", shop.id)
+    .is("twilio_subaccount_sid", null)
+    .select("id")
   if (error) {
-    // The subaccount exists at Twilio but we couldn't persist it — surface
-    // loudly; retrying purchase would orphan another one.
+    // Still recoverable: the next attempt adopts this subaccount by name.
     console.error("[telephony] subaccount persist failed:", error)
-    throw new Error(
-      "Created the phone account but couldn't save it — try again or contact support."
+    throw new Error("Set up the phone account but couldn't save it. Try again; nothing extra will be created.")
+  }
+  if ((saved as { id: string }[] | null)?.length) {
+    if (adopted) console.warn(`[telephony] adopted existing subaccount ${sub.sid} for shop ${shop.id}`)
+    return { accountSid: sub.sid, authToken: sub.authToken }
+  }
+
+  // Another purchase stored a subaccount first. Keep the winner.
+  const winner = await readStoredSubaccount(supabase, shop.id)
+  if (!winner.sid) throw new Error("Couldn't confirm the phone account. Try again.")
+  if (winner.sid !== sub.sid && !adopted) {
+    await closeSubaccount(sub.sid).catch((err) =>
+      console.error(`[telephony] couldn't close duplicate subaccount ${sub.sid} for shop ${shop.id} — reconcile:`, err)
     )
   }
-  return { accountSid: sub.sid, authToken: sub.authToken }
+  return recoverStoredSubaccount(supabase, shop.id, winner)
+}
+
+async function readStoredSubaccount(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<{ sid: string | null; tokenEnc: string | null }> {
+  const { data, error } = await supabase
+    .from("shops")
+    .select("twilio_subaccount_sid, twilio_subaccount_token_enc")
+    .eq("id", shopId)
+    .single()
+  if (error) throw new Error("Couldn't read the phone account. Try again.")
+  const row = data as { twilio_subaccount_sid: string | null; twilio_subaccount_token_enc: string | null }
+  return { sid: row.twilio_subaccount_sid, tokenEnc: row.twilio_subaccount_token_enc }
+}
+
+/** Credentials for the stored SID, recovering its token from Twilio if needed. */
+async function recoverStoredSubaccount(
+  supabase: SupabaseClient,
+  shopId: string,
+  stored: { sid: string | null; tokenEnc: string | null }
+): Promise<SubaccountCreds> {
+  const sid = stored.sid as string
+  const token = tryDecryptSecret(stored.tokenEnc)
+  if (token) return { accountSid: sid, authToken: token }
+
+  const account = await fetchSubaccount(sid)
+  if (!account || account.status !== "active" || account.friendlyName !== shopId) {
+    console.error(`[telephony] stored subaccount ${sid} for shop ${shopId} is missing, inactive or named for another shop — reconcile`)
+    throw new Error("This business's phone account needs attention. Contact support; no new account was created.")
+  }
+  const { error } = await supabase
+    .from("shops")
+    .update({ twilio_subaccount_token_enc: encryptSecret(account.authToken) })
+    .eq("id", shopId)
+    .eq("twilio_subaccount_sid", sid)
+  if (error) console.error(`[telephony] recovered subaccount token for shop ${shopId} but couldn't save it:`, error)
+  return { accountSid: sid, authToken: account.authToken }
 }
 
 // ---------- Number search & purchase ----------
