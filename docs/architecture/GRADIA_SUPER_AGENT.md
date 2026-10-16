@@ -32,14 +32,41 @@ owner, not published memory, verified business facts or consent.
 Both default off. The migration is not applied to shared databases by this change.
 If applied where the release guard exists, the new table inherits that write hold.
 
+## Research execution slice
+
+An owner can run a saved brief only when `GRADIA_SUPER_AGENT_RESEARCH=true`.
+The route flag still has to be on. Nothing runs because a brief was saved.
+The run reads public http(s) pages named in that brief, checks them in code,
+and saves one immutable result for that run id. The same run id and brief retry
+the saved result instead of fetching again.
+
+Google rankings, Google Business Profile, cloud browsers, and schedules stay
+unavailable in the saved result. Their fields cannot be marked available by a
+model or a page. Other steps written in the brief are not performed. Page text
+is evidence. Instruction-like page text is ignored and is not stored as a
+finding. Private, local, and metadata addresses are not fetched. Fetches are
+pinned to a public address checked immediately beforehand, with no cookies or
+credentials.
+
+`GRADIA_SUPER_AGENT_RESEARCH_MODEL=true` plus `ANTHROPIC_API_KEY` lets Claude
+choose among the addresses already extracted from the brief. That call is off
+by default and has no live quality eval yet. When it is off, or credits are
+short, Gradia uses the standard checks and still saves a sourced result.
+A successful model choice uses the existing `agentic_plan` price once per saved
+run. No new price is introduced.
+
+This slice does not connect a Google account, start a browser service, publish
+memory, or add a cron. The migration is not applied to shared databases here.
+Where the release guard exists, the new tables inherit that write hold.
+
 ## Target architecture and next slices
 
 1. **Job brief (this slice):** goal, context, expected result, steps, required
    connections and open questions. Saved means saved, not running.
-2. **Research execution:** introduce persisted run/step/outcome records and one
-   bounded research skill. Claude can choose research steps within the authorized
-   goal. Save citations, uncertainty, costs and a report. Separate generated claims
-   from verified evidence. Recheck owner/workspace scope on every run.
+2. **Research execution (experimental slice above):** persisted run and step
+   outcome on the run row, one bounded public-page skill, citations, uncertainty,
+   and cost. Owner and workspace scope are rechecked around every fetch. Cloud
+   browsing, connected Google data, and schedules are still later slices.
 3. **Cloud browser:** select and configure an isolated browser service behind a
    Gradia adapter. Bind sessions to a workspace and connected account; expose only
    authorized tools. Handle login/MFA with user handoff. No shared credentials,
@@ -65,9 +92,8 @@ and what is waiting for the owner. No unsupported capability should appear activ
 
 ## Acceptance still required
 
-First running employee: a sourced SEO/Google audit or grant report against disposable
-fixtures and then an explicitly configured account. Tests must cover cross-tenant
-access, injected website instructions, timeout, cancellation, budget exhaustion,
-revoked access, repeated requests and unavailable connections. Real browser keyboard,
-mobile and zoom acceptance remains separate from server rendering and unit tests.
-This slice does not execute research, connect Google, publish changes or run schedules.
+The public-page research run is covered by fixture tests for cross-tenant access,
+injected website instructions, timeout, cancellation, budget exhaustion, revoked
+access, repeated requests, and unavailable connections. An explicitly configured
+customer account, native keyboard, mobile, and zoom acceptance are still open.
+This does not connect Google, publish changes, start a cloud browser, or run schedules.

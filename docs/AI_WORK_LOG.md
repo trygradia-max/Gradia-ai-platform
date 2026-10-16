@@ -1380,3 +1380,23 @@ for CI. A temporary localhost fixture rendered and Google-template selection pas
 fixture removed. No live Claude call, authenticated save, native keyboard/mobile/
 zoom acceptance, cloud browser, scheduling, research execution or production deploy.
 Next slices and the Gradia memory/permission boundary are in GRADIA_SUPER_AGENT.md.
+
+[AI: cursor] [DATE: 2026-10-16] [AREA: platform] [STATUS: done]
+Added an experimental public-page research run for a saved digital-employee
+brief on `cursor/seo-research-employee-b44a`. An owner starts the run only when
+`GRADIA_SUPER_AGENT_RESEARCH=true`. The run reads public http(s) pages named in
+that brief, checks them in code, and saves one immutable owner-scoped result.
+The same run id and brief replay the saved result. Rankings, Google Business
+Profile, cloud browsers, and schedules stay unavailable in the saved report.
+Optional Claude address choice is a separate default-off flag, uses the existing
+`agentic_plan` price once per saved run, and cannot add addresses or mark those
+capabilities used. Page text is evidence; instruction-like text is ignored.
+Private, local, and metadata addresses are not fetched.
+
+Validation: 1,521 unit tests passed, four skipped. Touched-file lint and
+`tsc --noEmit` passed. A temporary localhost fixture showed the saved result,
+template fill, and an explicit run that refused because the research flag was
+off; the fixture was removed. Disposable Supabase integration cases are included
+and were not executed here. No live Claude call, authenticated database save,
+real public fetch in the browser, keyboard or zoom acceptance, shared migration,
+cloud browser, Google connection, memory publication, schedule, merge, or deploy.
