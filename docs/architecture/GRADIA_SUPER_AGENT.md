@@ -74,6 +74,17 @@ There is no browser vendor client, local shell, cookie jar, or shared
 credential in this slice. The migration is not applied to shared databases here.
 Where the release guard exists, the new table inherits that write hold.
 
+## Business-note read
+
+An owner can read notes already saved for the business only when
+`GRADIA_SUPER_AGENT_MEMORY=true`. The route flag still has to be on. The read
+does not run because a brief was saved.
+
+The saved result lists up to eight existing note excerpts. It records that
+nothing was published, no lesson was created, and research results were not
+included. A failed note lookup is not stored as an empty memory. This slice
+does not embed text, search customer conversations, or write `shop_knowledge`.
+
 ## Target architecture and next slices
 
 1. **Job brief (this slice):** goal, context, expected result, steps, required
@@ -94,10 +105,11 @@ Where the release guard exists, the new table inherits that write hold.
 5. **Durable operation:** per-run budgets, cancellation, scheduling, leases, safe
    retry rules and unknown-outcome review. Do not route arbitrary jobs into the
    existing fixed-recipe CRM cron. Do not offer “always on” until this works.
-6. **Gradia memory:** retrieve current authorized business records and approved
-   memory through the existing memory architecture. Keep run evidence separate
-   from reusable learned instructions. New lessons enter candidate review; never
-   silently publish a model-generated rule or widen tenant/member access.
+6. **Gradia memory (experimental read above):** a saved brief can read notes
+   already stored for the business. Run evidence stays separate from those notes.
+   A later slice can retrieve approved memory through the existing review loop.
+   New lessons still enter candidate review. Never silently publish a
+   model-generated rule or widen tenant/member access.
 
 “Free roam” means flexible problem-solving and tool selection within the employee's
 assigned workspace and authority, not a hard-coded recipe for each goal. Retrieved
@@ -112,5 +124,7 @@ injected website instructions, timeout, cancellation, budget exhaustion, revoked
 access, repeated requests, and unavailable connections. An explicitly configured
 customer account, native keyboard, mobile, and zoom acceptance are still open.
 The cloud-browser check is covered by fixture tests that the saved result stays
-unavailable, a named provider is ignored, and no session is started. This does
-not connect Google, publish changes, open a browser, or run schedules.
+unavailable, a named provider is ignored, and no session is started. The
+business-note read is covered by fixture tests that it does not publish, does
+not include research, and does not save a failed lookup as empty memory. This
+does not connect Google, publish changes, open a browser, or run schedules.

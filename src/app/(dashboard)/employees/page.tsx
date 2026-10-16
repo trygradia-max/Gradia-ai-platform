@@ -4,6 +4,7 @@ import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { employeeBriefSchema, type EmployeeDraft } from "@/lib/super-agent/brief"
 import { listBrowserChecks } from "@/lib/super-agent/browser-store"
+import { listMemoryReads } from "@/lib/super-agent/memory-store"
 import { listResearchRuns } from "@/lib/super-agent/research-store"
 import { getPricing, priceUsage } from "@/lib/pricing"
 
@@ -25,8 +26,10 @@ export default async function EmployeesPage() {
   const planningEnabled = process.env.GRADIA_SUPER_AGENT_PLANNING === "true"
   const researchEnabled = process.env.GRADIA_SUPER_AGENT_RESEARCH === "true"
   const browserEnabled = process.env.GRADIA_SUPER_AGENT_BROWSER === "true"
+  const memoryEnabled = process.env.GRADIA_SUPER_AGENT_MEMORY === "true"
   const planningCredits = planningEnabled ? priceUsage(await getPricing(db), "agentic_plan", 1).credits : null
   const research = researchEnabled ? await listResearchRuns(db, shop.id) : { runs: [], failed: false }
   const browser = browserEnabled ? await listBrowserChecks(db, shop.id) : { checks: [], failed: false }
-  return <div className="mx-auto max-w-6xl space-y-8"><header className="space-y-3"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Gradia Super Agent · Early access</p><h1 className="text-3xl font-semibold tracking-tight">Build your digital employee</h1><p className="max-w-2xl text-muted-foreground">Give Gradia a job, tell it what matters, and decide what a good result looks like.{researchEnabled ? " When a brief is saved, you can run a public-page research check." : ""}</p></header><EmployeeBuilder drafts={drafts} runs={research.runs} loadFailed={Boolean(error) || invalid} runLoadFailed={research.failed} planningEnabled={planningEnabled} planningCredits={planningCredits} researchEnabled={researchEnabled} browserEnabled={browserEnabled} browserChecks={browser.checks} browserLoadFailed={browser.failed} /></div>
+  const memory = memoryEnabled ? await listMemoryReads(db, shop.id) : { reads: [], failed: false }
+  return <div className="mx-auto max-w-6xl space-y-8"><header className="space-y-3"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Gradia Super Agent · Early access</p><h1 className="text-3xl font-semibold tracking-tight">Build your digital employee</h1><p className="max-w-2xl text-muted-foreground">Give Gradia a job, tell it what matters, and decide what a good result looks like.{researchEnabled ? " When a brief is saved, you can run a public-page research check." : ""}</p></header><EmployeeBuilder drafts={drafts} runs={research.runs} loadFailed={Boolean(error) || invalid} runLoadFailed={research.failed} planningEnabled={planningEnabled} planningCredits={planningCredits} researchEnabled={researchEnabled} browserEnabled={browserEnabled} browserChecks={browser.checks} browserLoadFailed={browser.failed} memoryEnabled={memoryEnabled} memoryReads={memory.reads} memoryLoadFailed={memory.failed} /></div>
 }
