@@ -6,6 +6,7 @@ import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { employeeBriefSchema, employeeRequestSchema, type EmployeeBrief } from "@/lib/super-agent/brief"
 import { planEmployee } from "@/lib/super-agent/planner"
+import { RESEARCH_FIXTURES, executeResearch, researchReportSchema, type ResearchReport } from "@/lib/super-agent/research"
 import { loadShopCreditFields, precheckCredits, recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -50,4 +51,64 @@ export async function saveEmployeeDraft(input: unknown): Promise<{ ok: true } | 
   }
   revalidatePath("/employees")
   return { ok: true }
+}
+
+export async function startResearchRun(input: unknown): Promise<
+  | { ok: true; run: { id: string; draftId: string; status: "ready" | "blocked"; report: ResearchReport } }
+  | { ok: false; error: string }
+> {
+  if (process.env.NEXT_PUBLIC_GRADIA_SUPER_AGENT !== "true") {
+    return { ok: false, error: "Digital employees are not enabled here yet." }
+  }
+  const parsed = z.object({ id: z.uuid(), draftId: z.uuid() }).strict().safeParse(input)
+  if (!parsed.success) return { ok: false, error: "Choose a saved employee before running research." }
+  await requireUser()
+  const shop = await requireShop()
+  const db = await createClient()
+  const draft = await db
+    .from("super_agent_employee_drafts")
+    .select("brief")
+    .eq("id", parsed.data.draftId)
+    .eq("shop_id", shop.id)
+    .maybeSingle()
+  const brief = employeeBriefSchema.safeParse(draft.data?.brief)
+  if (!brief.success) return { ok: false, error: "That employee brief could not be read. Reload and try again." }
+  const result = executeResearch(brief.data, RESEARCH_FIXTURES)
+  const inserted = await db
+    .from("super_agent_research_runs")
+    .insert({
+      id: parsed.data.id,
+      shop_id: shop.id,
+      draft_id: parsed.data.draftId,
+      status: result.status,
+      report: result.report,
+    })
+    .select("id,status,report")
+    .single()
+  if (inserted.error) {
+    const existing = await db
+      .from("super_agent_research_runs")
+      .select("status,report,draft_id")
+      .eq("id", parsed.data.id)
+      .eq("shop_id", shop.id)
+      .maybeSingle()
+    const report = researchReportSchema.safeParse(existing.data?.report)
+    const status = existing.data?.status
+    if (!report.success || existing.data?.draft_id !== parsed.data.draftId || (status !== "ready" && status !== "blocked")) {
+      return { ok: false, error: "Research could not be confirmed. Retry this same run or reload." }
+    }
+    revalidatePath("/employees")
+    return { ok: true, run: { id: parsed.data.id, draftId: parsed.data.draftId, status, report: report.data } }
+  }
+  const saved = researchReportSchema.parse(inserted.data.report)
+  revalidatePath("/employees")
+  return {
+    ok: true,
+    run: {
+      id: parsed.data.id,
+      draftId: parsed.data.draftId,
+      status: result.status,
+      report: saved,
+    },
+  }
 }

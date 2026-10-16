@@ -18,6 +18,16 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: cursor] [DATE: 2026-10-16] [AREA: platform] [STATUS: done]
+Checkpointed the experimental Super Agent briefs already on
+`codex/super-agent-foundation`, then built the three-step onboarding flow
+(Your business, Your number, Choose your help) with saved progress, plain
+buttons, carrier and message approval status, and test-call steps. Detailing
+vehicle-size and condition fields show only when the saved business kind is
+detailing. Added the first research employee pass: starter sources, a review-only
+report, and a blocked state when a connection is missing. Did not browse the
+web, send messages, apply a shared migration, merge, or deploy.
+
 [AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
 Reconciled MVP documentation onto `codex/mvp-documentation-reconciliation`
 and opened draft PR #49. Recorded the September 11 documents as authority,

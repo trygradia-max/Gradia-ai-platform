@@ -35,4 +35,13 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("digital employee draft ownership", (
     expect((await owner.from("super_agent_employee_drafts").update({ brief: { ...brief, name: "Changed" } }).eq("id", id)).error).not.toBeNull()
     expect((await owner.from("super_agent_employee_drafts").insert({ id, shop_id: shop.shopId, brief })).error?.code).toBe("23505")
   })
+  it("lets the owner save a research report and hides it from other shops", async () => {
+    const runId = randomUUID()
+    const report = { summary: "Notes for review.", findings: [], rejected_instructions: [], missing_connections: [], approval_status: "waiting_for_review", published: false }
+    const saved = await owner.from("super_agent_research_runs").insert({ id: runId, shop_id: shop.shopId, draft_id: id, status: "ready", report }).select("id,status").single()
+    expect(saved.error).toBeNull()
+    expect((await outsider.from("super_agent_research_runs").select("*").eq("id", runId)).data).toEqual([])
+    expect((await owner.from("super_agent_research_runs").update({ status: "blocked" }).eq("id", runId)).error).not.toBeNull()
+    await db.from("super_agent_research_runs").delete().eq("id", runId)
+  })
 })

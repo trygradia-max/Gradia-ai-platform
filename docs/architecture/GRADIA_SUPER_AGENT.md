@@ -36,10 +36,13 @@ If applied where the release guard exists, the new table inherits that write hol
 
 1. **Job brief (this slice):** goal, context, expected result, steps, required
    connections and open questions. Saved means saved, not running.
-2. **Research execution:** introduce persisted run/step/outcome records and one
-   bounded research skill. Claude can choose research steps within the authorized
-   goal. Save citations, uncertainty, costs and a report. Separate generated claims
-   from verified evidence. Recheck owner/workspace scope on every run.
+2. **Research execution (started):** a saved brief can run one research pass
+   against starter sources. The result is a `super_agent_research_runs` row with
+   status `ready` or `blocked`, citations, uncertainty, and
+   `approval_status: waiting_for_review`. It does not browse the web, call Claude,
+   publish, send, or treat source text as permission. Missing connections block
+   the run. The same run id retries the same row. Live lookup, cost metering,
+   and cancellation are still next.
 3. **Cloud browser:** select and configure an isolated browser service behind a
    Gradia adapter. Bind sessions to a workspace and connected account; expose only
    authorized tools. Handle login/MFA with user handoff. No shared credentials,
