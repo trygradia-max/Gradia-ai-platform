@@ -1351,3 +1351,40 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Separate, accurate readiness for calls, texting, email and Meta. Contract:
+`docs/architecture/CHANNEL_READINESS.md`.
+
+The single `connectionStatus().connected` flag overstated readiness:
+
+- texting showed connected with A2P pending, rejected or unregistered, or with an
+  unconfirmed own number;
+- calls showed connected with only an assistant;
+- email showed connected with no inbound subscription;
+- Meta had no state at all.
+
+New pieces:
+
+- `channelReadiness` (pure). Each channel returns one state (`unavailable`,
+  `not_set_up`, `in_progress`, `action_needed`, `limited` or `ready`), with
+  reason codes and an owner message, from the evidence that gates it.
+- `loadChannelReadiness`, which uses the service client, scoped by shop, because
+  Meta bindings are service-role only. A failed read is an error, never "not set
+  up".
+- The owner action `getChannelReadiness()`, now on the reviewed service-role
+  importer list.
+
+`connectionStatus()` and the screens are unchanged; switching the UI is Cursor's.
+Gaps are recorded: no in-app BYO attestation writer, a revoked mailbox grant isn't
+detected without a provider call, and Meta's subscription is unverified.
+
+Disposable `gradia-record-fresh` stack:
+
+- `channel-readiness`: 4 of 4 twice.
+- Unit: 1,504 passed, 4 skipped, including the table of old-flag overstatements
+  and `connection-truth`.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No migration, provider call, or activation.
