@@ -509,10 +509,11 @@ export async function resendA2pVerificationText(input: {
 // ---------- A2P gate ----------
 
 /**
- * Whether outbound SMS may leave on the shop's Gradia-provisioned number.
- * Enforced in code at the send boundary — never by convention. Shops on
- * BYO credentials are not gated here (their A2P standing is their own
- * account's).
+ * Whether outbound SMS may leave from the shop's number. Enforced in code at
+ * the send boundary — never by convention. A Gradia number needs A2P
+ * approval. Any other number needs the owner's attestation, which only
+ * `attest_byo_sms_registration` writes and a number change clears
+ * (docs/architecture/BYO_SMS_ATTESTATION.md).
  */
 export function smsGateForShop(
   shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status" | "byo_sms_verified">,

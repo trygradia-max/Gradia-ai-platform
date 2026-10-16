@@ -1351,3 +1351,53 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Owner attestation for own-number (BYO) texting. Contract:
+`docs/architecture/BYO_SMS_ATTESTATION.md`. Migration `20261015150000` (95 on
+main; PRs #83, #87 and #88 hold 95–97, so the number will move at merge).
+
+`shops.byo_sms_verified` gates every text from a non-Gradia number
+(`smsGateForShop`, plus the `stage_qualification_question` mirror). Nothing wrote
+it, so every own-number text was held.
+
+New pieces:
+
+- Owner-only `attest_byo_sms_registration`, `revoke_byo_sms_registration` and
+  `read_byo_sms_attestation`. The caller must be `shops.owner_id` with an active
+  owner membership; managers and staff are refused whatever their capabilities.
+- Attesting needs `confirm: true`, the current statement version, and the exact
+  number the owner was shown. It refuses `number_changed`, `no_number` and
+  `gradia_number`.
+- An append-only `byo_sms_attestations` history records event, number, actor,
+  statement version and time.
+- A guard trigger stops a signed-in session setting the flag directly on shops,
+  on update or insert. A second trigger clears the attestation whenever
+  `twilio_phone_number` changes, through any writer.
+- Session-client server actions `getByoSmsAttestation`,
+  `attestByoSmsRegistration` and `revokeByoSmsRegistration`.
+
+The Gradia-number gate is unchanged, and a unit test pins that the flag never
+opens it. A provider-verifiable check was considered and deferred: it needs live
+calls and covers only some numbers. The `source` column leaves room for it.
+UI is Cursor's.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's 95 migrations,
+Node 22.23.2 isolated runner:
+
+- `byo-sms-attestation`: 6 of 6 in three of four runs. The other run failed
+  seed `createUser` before any test ran.
+- After a reset, 68 tests passed: this suite plus `qualification-question-staging`
+  (17), `lead-workflow-acceptance` (6), `team-permissions` (27) and
+  `tenant-isolation` (8). Those suites set the flag through the service role,
+  which still works. `approvals` was the one failure in that run.
+- The full suite failed 24 tests, then 17 on retry, all with gateway 502s,
+  statement timeouts or seed failures. A reset to origin/main on the same stack
+  showed the same thing: the same 10 tests fail in `manager-notification`,
+  `whisper-inbox`, `lead-qualification` and `customer-merge`. `approvals` passes
+  on the first run after a reset and fails 3 of 4 on the second, on main and on
+  this branch alike. These are pre-existing local-stack failures, not regressions.
+- Unit: 1,498 passed, 4 skipped, 9 of them new.
+- Lint, types before and after the offline build, and the build itself passed.
+
+No merge, deployment, shared migration, provider call or send.
