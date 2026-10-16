@@ -59,6 +59,21 @@ This slice does not connect a Google account, start a browser service, publish
 memory, or add a cron. The migration is not applied to shared databases here.
 Where the release guard exists, the new tables inherit that write hold.
 
+## Cloud browser slice
+
+An owner can record a cloud-browser check for a saved brief only when
+`GRADIA_SUPER_AGENT_BROWSER=true`. The route flag still has to be on. The check
+does not run because a brief was saved, and it does not open a browser.
+
+The only result this slice can save is `unavailable` with provider `none`.
+The record says no session started, no password was stored, and this computer
+was not used. A provider name in the environment is ignored and is not written
+into the row. Sign-in and multi-factor checks stay with the owner.
+
+There is no browser vendor client, local shell, cookie jar, or shared
+credential in this slice. The migration is not applied to shared databases here.
+Where the release guard exists, the new table inherits that write hold.
+
 ## Target architecture and next slices
 
 1. **Job brief (this slice):** goal, context, expected result, steps, required
@@ -67,11 +82,11 @@ Where the release guard exists, the new tables inherit that write hold.
    outcome on the run row, one bounded public-page skill, citations, uncertainty,
    and cost. Owner and workspace scope are rechecked around every fetch. Cloud
    browsing, connected Google data, and schedules are still later slices.
-3. **Cloud browser:** select and configure an isolated browser service behind a
-   Gradia adapter. Bind sessions to a workspace and connected account; expose only
-   authorized tools. Handle login/MFA with user handoff. No shared credentials,
-   arbitrary local shell, implicit access to the developer machine or fabricated
-   browser success. The current app has no cloud-browser adapter from this slice.
+3. **Cloud browser (experimental slice above):** an explicit check saved as
+   unavailable. A later slice can select an isolated browser service behind this
+   adapter, bind a session to a workspace and connected account, and hand login
+   or MFA back to the owner. Still forbidden: shared credentials, a local shell,
+   this computer, and a fabricated browser success.
 4. **Connected skills:** Google Business Profile read/audit first, then proposed
    changes with exact-target review. Researching grants is separate from submitting
    applications. Publishing, messages, purchases and account changes need explicit
@@ -96,4 +111,6 @@ The public-page research run is covered by fixture tests for cross-tenant access
 injected website instructions, timeout, cancellation, budget exhaustion, revoked
 access, repeated requests, and unavailable connections. An explicitly configured
 customer account, native keyboard, mobile, and zoom acceptance are still open.
-This does not connect Google, publish changes, start a cloud browser, or run schedules.
+The cloud-browser check is covered by fixture tests that the saved result stays
+unavailable, a named provider is ignored, and no session is started. This does
+not connect Google, publish changes, open a browser, or run schedules.
