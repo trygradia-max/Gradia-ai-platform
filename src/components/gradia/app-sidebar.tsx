@@ -52,6 +52,8 @@ const nav: NavItem[] = [
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/receptionist", label: "Receptionist", icon: Headset },
+  ...(process.env.NEXT_PUBLIC_GRADIA_SUPER_AGENT === "true"
+    ? [{ href: "/employees", label: "Digital employees", icon: Sparkles }] : []),
 ]
 
 const pinnedNav: NavItem[] = [
@@ -88,7 +90,7 @@ export function AppSidebar({
               Gradia
             </span>
             <span className="text-[11px] text-muted-foreground">
-              Your AI office
+              Approve what goes out
             </span>
           </div>
         </div>

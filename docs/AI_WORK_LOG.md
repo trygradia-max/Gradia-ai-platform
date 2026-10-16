@@ -18,6 +18,16 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: cursor] [DATE: 2026-10-16] [AREA: platform] [STATUS: done]
+Checkpointed the experimental Super Agent briefs already on
+`codex/super-agent-foundation`, then built the three-step onboarding flow
+(Your business, Your number, Choose your help) with saved progress, plain
+buttons, carrier and message approval status, and test-call steps. Detailing
+vehicle-size and condition fields show only when the saved business kind is
+detailing. Added the first research employee pass: starter sources, a review-only
+report, and a blocked state when a connection is missing. Did not browse the
+web, send messages, apply a shared migration, merge, or deploy.
+
 [AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
 Reconciled MVP documentation onto `codex/mvp-documentation-reconciliation`
 and opened draft PR #49. Recorded the September 11 documents as authority,
@@ -1351,3 +1361,32 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+
+[AI: codex] [DATE: 2026-10-15] [AREA: future-product docs] [STATUS: documented]
+Added the founder-requested Gradia Super Agent direction prominently to
+POST_MVP_IDEAS.md: cloud browsers, reusable skills, an Agents side dashboard and
+Do X using Y, give me Z assignments. Captured Google Business Profile management
+and grant research examples, setup fields, outputs and execution boundaries.
+Documentation only; no MVP scope expansion, implementation or provider activation.
+Validation: git diff --check and Markdown structure review.
+
+[AI: codex] [DATE: 2026-10-15] [AREA: super-agent] [STATUS: experimental foundation]
+Founder approved starting digital employees with Claude reasoning behind Gradia.
+Added an experimental employee brief builder with Google/SEO, grants and general
+research starting points, editable freeform goals/context/results, owner-scoped
+immutable draft storage and exact-ID save retry. Optional Claude setup uses one
+bounded forced-tool planning call, strict output validation, existing credit checks,
+pricing and rate limits. No model response grants runtime authority or publishes
+memory. Route/navigation and model planning have separate default-off flags.
+Migration creates one draft table with owner RLS and no anonymous/update access;
+it preserves the release freeze when that guard exists. No shared migration applied.
+
+Validation: 1,497 unit tests passed, four skipped, including eight planner boundary
+tests. Touched-file lint and typecheck passed. Offline build passed before the final
+loading-state addition; final build/typecheck will be recorded in the PR. Isolated
+PostgreSQL migration/owner/tenant/anonymous/immutability checks passed using a minimal
+auth fixture, not full Supabase. Four real Supabase integration cases are included
+for CI. A temporary localhost fixture rendered and Google-template selection passed;
+fixture removed. No live Claude call, authenticated save, native keyboard/mobile/
+zoom acceptance, cloud browser, scheduling, research execution or production deploy.
+Next slices and the Gradia memory/permission boundary are in GRADIA_SUPER_AGENT.md.
