@@ -132,7 +132,7 @@ describe("2026-10-09 token and first-slice locks", () => {
     expect(login).toContain("signInWithOAuth")
     expect(loginPage).toContain("min-h-11")
     expect(wizard).toContain("FormField")
-    expect(wizard).toContain("Step {current} of 6")
+    expect(wizard).toContain("Step {current} of 3")
     expect(wizard).toContain("fieldErrors")
     expect(wizard).toContain("saveShop")
     expect(steps).toContain("min-h-11")

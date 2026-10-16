@@ -8,11 +8,11 @@ import { deriveWizardStep } from "@/lib/onboarding"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { listVoiceOptions } from "@/lib/voice-provider"
-import type { ServiceRow, ShopRow } from "@/lib/types/database"
+import type { ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6
+type Step = 1 | 2 | 3
 
 export default async function OnboardingPage({
   searchParams,
@@ -45,25 +45,23 @@ export default async function OnboardingPage({
     if (!error && memberships?.length) redirect("/team")
   }
 
-  let services: ServiceRow[] = []
-  if (shop) {
-    const { data } = await supabase
-      .from("services")
-      .select("*")
-      .eq("shop_id", shop.id)
-      .order("created_at", { ascending: true })
-    services = (data as ServiceRow[] | null) ?? []
-  }
-
-  // ?step= override (the OAuth return lands on step 5); otherwise resume
-  // at the first incomplete step.
+  // Saved progress wins. Old links used step 5 for the number and step 6
+  // for phone help.
   const requested = Number.parseInt(stepParam ?? "", 10)
+  const requestedStep: Step | null =
+    requested === 1 || requested === 2 || requested === 3
+      ? requested
+      : requested === 5
+        ? 2
+        : requested === 6
+          ? 3
+          : null
   const initialStep: Step =
-    requested >= 1 && requested <= 6 && shop && !startFresh
-      ? (requested as Step)
+    requestedStep && shop && !startFresh
+      ? requestedStep
       : startFresh
         ? 1
-        : deriveWizardStep(shop, services.length)
+        : deriveWizardStep(shop)
 
   const isResuming = Boolean(shop) && !startFresh
   const a2pState = shop ? await getA2pState() : { status: "none" as const, failureReason: null, business: null }
@@ -78,32 +76,26 @@ export default async function OnboardingPage({
       <header className="relative max-w-xl space-y-2.5 text-center">
         <p className="label-eyebrow text-muted-foreground/70">
           {startFresh
-            ? "Add another shop"
+            ? "Add another business"
             : isResuming
-              ? "Pick up where we left off"
-              : "Set up the shop"}
+              ? "Pick up where you left off"
+              : "Set up your business"}
         </p>
         <h1 className="font-display text-[clamp(1.875rem,5vw,2.75rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
           {startFresh ? (
-            <>
-              A <span className="italic">second</span>{" "}shop, same setup.
-            </>
+            <>Another business, same setup.</>
           ) : (
-            <>
-              Let&apos;s <span className="italic">wire</span>{" "}the shop up.
-            </>
+            <>Your business, your number, your help.</>
           )}
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Six short steps — your shop, your menu, your hours, then the
-          inbox, number, and receptionist. Skip anything; we&apos;ll nudge
-          you later. Everything&apos;s editable in Settings.
+          Three steps. Your place is saved, so you can leave and come back.
+          Services and hours stay in Settings.
         </p>
       </header>
 
       <OnboardingWizard
         initialShop={shop}
-        initialServices={services}
         initialStep={initialStep}
         forceCreate={startFresh}
         a2pState={a2pState}

@@ -18,6 +18,7 @@ import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
 import { getAutomationSettings } from "@/app/actions/automations"
 import { listPublicIntakeForms } from "@/app/actions/public-intake-forms"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
+import { showsDetailingFields } from "@/lib/onboarding"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
@@ -341,7 +342,10 @@ export default async function SettingsPage({
         {/* The shop's brain (CRM C3a): one menu feeds quotes, phone answers,
             and drafts through lib/service-pricing — never edited elsewhere. */}
         <section id="services">
-          <ServiceMenuCard initialServices={services} />
+          <ServiceMenuCard
+            initialServices={services}
+            detailing={showsDetailingFields(shop?.settings)}
+          />
         </section>
 
         {/* Working hours — calendar capacity + the agent's hours line. */}

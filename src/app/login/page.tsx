@@ -27,8 +27,8 @@ export default function LoginPage() {
 
         <div className="max-w-xl space-y-3">
           <h1 className="font-display text-[clamp(2.25rem,5.5vw,3.5rem)] leading-[1.02] tracking-[-0.03em] text-foreground">
-            Your AI office,{" "}
-            <span className="italic">ready when you are</span>.
+            Ready when{" "}
+            <span className="italic">you are</span>.
           </h1>
           <p className="mx-auto max-w-md text-sm text-muted-foreground sm:text-base">
             Voice, email, SMS, DMs, the front desk — caught, drafted, queued
