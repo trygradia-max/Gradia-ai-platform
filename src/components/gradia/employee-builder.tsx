@@ -2,9 +2,12 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { checkCloudBrowser } from "@/app/actions/super-agent-browser"
 import { cancelEmployeeResearch, prepareEmployee, runEmployeeResearch, saveEmployeeDraft } from "@/app/actions/super-agent"
+import { EmployeeBrowserResult } from "@/components/gradia/employee-browser-result"
 import { EmployeeResearchResult } from "@/components/gradia/employee-result"
 import { EMPLOYEE_TEMPLATES, employeeBriefSchema, type EmployeeBrief, type EmployeeDraft } from "@/lib/super-agent/brief"
+import type { SavedBrowserCheck } from "@/lib/super-agent/browser-store"
 import type { SavedResearchRun } from "@/lib/super-agent/research-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 
 const empty: EmployeeBrief = { name: "", goal: "", deliverable: "", business_context: "", steps: ["Review the goal and identify the information needed."], connections_needed: [], questions: [] }
 
-export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, planningEnabled, planningCredits, researchEnabled }: {
+export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, planningEnabled, planningCredits, researchEnabled, browserEnabled = false, browserChecks = [], browserLoadFailed = false }: {
   drafts: EmployeeDraft[]
   runs: SavedResearchRun[]
   loadFailed: boolean
@@ -20,6 +23,9 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
   planningEnabled: boolean
   planningCredits: number | null
   researchEnabled: boolean
+  browserEnabled?: boolean
+  browserChecks?: SavedBrowserCheck[]
+  browserLoadFailed?: boolean
 }) {
   const router = useRouter()
   const [brief, setBrief] = useState<EmployeeBrief>(empty)
@@ -29,16 +35,23 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
   const [runUncertain, setRunUncertain] = useState(false)
   const [freshRuns, setFreshRuns] = useState<Record<string, SavedResearchRun>>({})
   const [runDraftId, setRunDraftId] = useState<string | null>(null)
+  const [browserUncertain, setBrowserUncertain] = useState(false)
+  const [freshChecks, setFreshChecks] = useState<Record<string, SavedBrowserCheck>>({})
+  const [browserDraftId, setBrowserDraftId] = useState<string | null>(null)
   const inFlight = useRef(false)
   const stopSent = useRef(false)
   const command = useRef<{ id: string; brief: EmployeeBrief } | null>(null)
   const runCommand = useRef<{ id: string; draftId: string } | null>(null)
+  const browserCommand = useRef<{ id: string; draftId: string } | null>(null)
   function change<K extends keyof EmployeeBrief>(key: K, value: EmployeeBrief[K]) {
     setBrief(current => ({ ...current, [key]: value }))
     setMessage("")
   }
   function latestRun(draftId: string) {
     return freshRuns[draftId] ?? runs.find(run => run.draft_id === draftId)
+  }
+  function latestCheck(draftId: string) {
+    return freshChecks[draftId] ?? browserChecks.find(check => check.draft_id === draftId)
   }
   async function plan() {
     if (inFlight.current || saveUncertain) return
@@ -85,6 +98,24 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
     } catch { setRunUncertain(true); setMessage("The run could not be confirmed. Retry this same run or reload saved results.") }
     finally { inFlight.current = false; setBusy(false) }
   }
+  async function checkBrowser(draftId: string) {
+    if (inFlight.current || saveUncertain || browserLoadFailed) return
+    if (browserUncertain && browserCommand.current?.draftId !== draftId) return
+    inFlight.current = true; setBusy(true); setMessage("Saving the cloud browser check.")
+    if (!browserCommand.current || browserCommand.current.draftId !== draftId) browserCommand.current = { id: crypto.randomUUID(), draftId }
+    const current = browserCommand.current
+    setBrowserDraftId(current.draftId)
+    try {
+      const result = await checkCloudBrowser({ id: current.id, draftId: current.draftId })
+      if (result.ok) {
+        browserCommand.current = null; setBrowserDraftId(null); setBrowserUncertain(false)
+        setFreshChecks(existing => ({ ...existing, [current.draftId]: result.check }))
+        setMessage(result.replayed ? "That browser check was already saved. Nothing was opened." : "Browser check saved. Gradia did not open a browser.")
+        router.refresh()
+      } else { setBrowserUncertain(true); setMessage(result.error) }
+    } catch { setBrowserUncertain(true); setMessage("The browser check could not be confirmed. Retry this same check or reload saved results.") }
+    finally { inFlight.current = false; setBusy(false) }
+  }
   async function stop() {
     const current = runCommand.current
     if (!current || stopSent.current) return
@@ -118,9 +149,12 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
       <h2 id="your-employees" className="text-lg font-semibold">Your employee briefs</h2>
       {loadFailed ? <p role="alert">Saved employees could not be loaded. Refresh before saving a new brief.</p> : null}
       {runLoadFailed ? <p role="alert">Saved research results could not be loaded. Refresh before running research.</p> : null}
+      {browserLoadFailed ? <p role="alert">Saved browser checks could not be loaded. Refresh before checking the cloud browser.</p> : null}
+      {browserEnabled && <p className="text-sm text-muted-foreground">A cloud browser check can be saved for a brief. It stays not connected.</p>}
       {!loadFailed && drafts.length === 0 ? <p className="text-sm text-muted-foreground">No employee briefs yet. Start with one job you’d like off your plate.</p> : null}
       {drafts.map(draft => {
         const result = latestRun(draft.id)
+        const browserCheck = latestCheck(draft.id)
         const retrying = runUncertain && runDraftId === draft.id
         return <article key={draft.id} className="break-words rounded-xl border bg-card p-5">
           <p className="text-xs font-medium text-muted-foreground">{result ? "BRIEF SAVED" : "DRAFT · NOT RUNNING"}</p>
@@ -133,6 +167,13 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
           </div>}
           {researchEnabled && <p className="mt-2 text-xs text-muted-foreground">A run checks public pages only. Other steps in the brief are not performed.</p>}
           {result && <EmployeeResearchResult run={result} />}
+          {browserEnabled && <div className="mt-4 space-y-2 border-t pt-4">
+            <p className="text-sm">Cloud browser is not connected.</p>
+            <Button type="button" variant="outline" className="min-h-11" disabled={loadFailed || browserLoadFailed || saveUncertain || (busy && browserDraftId !== draft.id) || (browserUncertain && browserDraftId !== draft.id)} onClick={() => void checkBrowser(draft.id)}>{busy && browserDraftId === draft.id ? "Saving browser check…" : browserUncertain && browserDraftId === draft.id ? "Retry this browser check" : "Check cloud browser"}</Button>
+            {browserDraftId === draft.id && message ? <p className="text-sm">{message}</p> : null}
+            <p className="text-xs text-muted-foreground">This check does not open a browser, store a password, or use this computer.</p>
+            {browserCheck && <EmployeeBrowserResult check={browserCheck} />}
+          </div>}
         </article>
       })}
       {drafts.length === 50 && <p className="text-xs text-muted-foreground">Showing the 50 most recent briefs.</p>}
