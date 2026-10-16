@@ -1351,3 +1351,11 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+
+[AI: codex] [DATE: 2026-10-15] [AREA: future-product docs] [STATUS: documented]
+Added the founder-requested Gradia Super Agent direction prominently to
+POST_MVP_IDEAS.md: cloud browsers, reusable skills, an Agents side dashboard and
+Do X using Y, give me Z assignments. Captured Google Business Profile management
+and grant research examples, setup fields, outputs and execution boundaries.
+Documentation only; no MVP scope expansion, implementation or provider activation.
+Validation: git diff --check and Markdown structure review.

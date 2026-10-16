@@ -13,10 +13,77 @@ Raw notes stay at `/Users/harryhatch/Gradia/_docs/IDEAS_NOTES.md` and in the
 handoff copy `ORIGINAL_IDEAS_NOTES.md`. Those files can be stale. Do not turn
 them into tickets from this register.
 
+## Highlighted future direction: Gradia Super Agent
+
+> **FOUNDER-REQUESTED FUTURE PRODUCT — October 15, 2026.** A Gradia Super
+> Agent with cloud browsers and reusable skills that can work across the business.
+> The owner sets the goal: **“Do X using Y, and give me Z.”** This is a highlighted
+> future direction, not an addition to the current MVP or a claim of live capability.
+
+The vision is broader than the lead-to-booking loop: an owner can delegate research,
+management and recurring business work from a side dashboard inside Gradia. Cloud
+browser sessions let the Agent work with permitted websites and business tools;
+connected APIs and reusable skills handle supported tasks. The aim is broad business
+coverage, with each assignment explicit about what it can access and do—not a
+promise that every website or task will be supported immediately.
+
+### Side dashboard: set up an agent for a business outcome
+
+An **Agents** panel lets the owner create, configure and monitor multiple named
+assignments, all powered by the same Gradia Agent and shared permission system.
+They are configurable jobs and skill bundles, not separate customer identities or
+unrestricted agents with separate business memory.
+
+Each setup captures:
+
+- **Goal:** the job to accomplish and what counts as finished.
+- **Inputs and access:** business context, connected accounts, permitted websites,
+  files and skills the assignment may use.
+- **Trigger:** run once, run on a schedule, or respond to an approved event.
+- **Actions:** research only, prepare drafts, or perform specifically permitted
+  changes; identify which actions need owner review.
+- **Deliverable:** a shortlist, report, draft, proposed update, completed change or
+  notification, including where the owner receives it.
+- **Limits:** time/spend budget, stop conditions and who handles a blocked step.
+
+Each assignment card shows its next run, progress, last result, source links,
+completed actions and anything awaiting approval. The owner can pause, edit or stop
+it. A browser task that needs a login or human intervention returns a clear handoff;
+it does not silently report success.
+
+### First examples to explore
+
+| Assignment | X: what it does | Y: what it uses | Z: what the owner receives |
+| --- | --- | --- | --- |
+| Google Business Profile manager | Review profile information, identify outdated details, prepare posts and review replies, and apply authorized updates | Connected business profile, shop hours/services, approved brand guidance and browser/API skills | A weekly profile report, drafts to approve and a record of completed updates |
+| Grant finder | Research relevant business grants, screen likely eligibility and track application deadlines | Business location, ownership/business criteria supplied by the owner, official grant sources and research skills | A sourced shortlist with amounts, deadlines, eligibility uncertainties and a document checklist; application drafts when requested |
+| Business operations researcher | Compare suppliers, products or services against the owner's criteria | Approved websites, specifications and budget | A comparison with sources, costs and a recommendation for review |
+| Recurring business assistant | Run a configured checklist and flag exceptions or unfinished work | Permitted Gradia records, connected tools and reusable workflow skills | A recurring digest of completed work, exceptions and decisions needed |
+
+Grant matches are research leads, not guarantees of eligibility or awards. Research
+and preparation do not automatically authorize application submission. Profile
+publishing, external messages, purchases and other consequential actions follow the
+assignment's explicit permissions and approval requirements.
+
+### Building blocks for the future product
+
+Cloud browser sessions should be isolated by business, with account access kept
+secure and activity traceable. Skills should have defined inputs, allowed actions
+and outputs so an owner can reuse a workflow without granting unrestricted access.
+Scheduled work needs durable progress, safe retries, budgets and visible failure
+recovery. Website content must never grant new permissions or override the owner's
+instructions. Completed work should link to evidence, and uncertain outcomes should
+remain visible rather than trigger duplicate actions.
+
+Start later with a few verified templates—Google Business Profile and grant research
+are the founder's examples—then expand the configurable agent catalog. This future
+panel does not replace the current MVP's Agent, approvals or business records.
+
 ## Preserved ideas
 
 | Idea | Disposition | Notes |
 | --- | --- | --- |
+| Gradia Super Agent: cloud browsers, skills and configurable business assignments | FOUNDER-REQUESTED FUTURE PRODUCT | Highlighted above; Google Business Profile management and grant research are initial examples. Not current MVP |
 | Shop-aware Agent across CRM | APPROVED MVP, bounded | Controlled tools, audit, approved feedback |
 | Structured memory of customers, services, staff, capacity | APPROVED MVP for structured context; broader relationship modeling ARCHITECT FOR LATER | Prices and availability stay canonical records |
 | Durable individual lead workflow | APPROVED MVP | Arbitrary long-running business goals are POST-MVP IDEA |
