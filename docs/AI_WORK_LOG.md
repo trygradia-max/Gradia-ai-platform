@@ -1351,3 +1351,42 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Resumable SMS (A2P 10DLC) registration with clear rejection and retry handling.
+Reproduced against a fake `twilio-a2p` module on the disposable stack. The previous
+flow:
+
+- saved SIDs only at the end, so a midway failure orphaned steps and a retry
+  rebuilt the whole chain;
+- allowed resubmission while carriers were reviewing or after approval;
+- recreated the messaging service when a campaign failed;
+- kept only a free-text reason.
+
+Fix:
+
+- Each step's SID is checkpointed as soon as it exists, and a resubmission with
+  the same details resumes.
+- Resubmission is refused while with carriers or approved.
+- A rejected brand or changed details start a fresh chain. A rejected campaign
+  keeps the approved brand and messaging service.
+- The messaging service is created once, and an "already attached" number
+  counts as done.
+- Sync reports a stage as advanced only once it is saved.
+- Migration 97 adds `failed_step`, `retryable`, `attempts` and
+  `last_attempt_at`.
+- `describeA2pRegistration` gives the UI one `nextAction`, exposed via
+  `getA2pState` and `refreshA2pStatus`.
+- Contract: `CHANNEL_PROVIDERS.md`.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's migrations (main's
+94 plus 97, applied from zero). Node 22.23.2 isolated runner:
+
+- `a2p-registration`: 7 of 7 twice. On the old code it failed 7 of 7.
+- `twilio-status-callback`: 12 of 12 on retry, after a seed gateway error.
+- `tenant-isolation`: 8.
+- Unit: 1,492 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No real Twilio registration, migration on a shared database, or activation.
