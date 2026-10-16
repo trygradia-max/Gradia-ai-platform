@@ -29,8 +29,9 @@ promise that every website or task will be supported immediately.
 
 **Implementation update — October 15:** the founder subsequently approved starting
 an experimental digital-employee feature with Claude behind the Gradia interface.
-The first slice is job-brief setup and storage; cloud browsing and job execution
-remain subsequent work. See [Super Agent architecture](../architecture/GRADIA_SUPER_AGENT.md).
+Job-brief setup is stored, and an experimental public-page research run can be
+started explicitly from a saved brief. Cloud browsing, Google Business Profile,
+memory publication, and scheduling remain subsequent work. See [Super Agent architecture](../architecture/GRADIA_SUPER_AGENT.md).
 
 ### Side dashboard: set up an agent for a business outcome
 
