@@ -52,6 +52,8 @@ const nav: NavItem[] = [
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/receptionist", label: "Receptionist", icon: Headset },
+  ...(process.env.NEXT_PUBLIC_GRADIA_SUPER_AGENT === "true"
+    ? [{ href: "/employees", label: "Digital employees", icon: Sparkles }] : []),
 ]
 
 const pinnedNav: NavItem[] = [
