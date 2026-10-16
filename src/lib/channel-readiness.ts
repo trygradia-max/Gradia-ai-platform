@@ -12,21 +12,26 @@ import { voiceLaunchGate } from "@/lib/voice-provider"
  *   in_progress    submitted and waiting on a third party (carrier review)
  *   action_needed  something specific blocks it; `reasons` says what
  *   limited        works, with a named gap (e.g. sends but can't receive)
+ *   ready_to_test  the gate passes only on the owner's word (an own number's
+ *                  attestation); Gradia can't verify it, so never `ready`
  *   ready          every check this code can make passes
  *
  * "ready" is never a delivery or activation claim: providers stay held by the
  * release lane, and checks that need a live provider call (a revoked mailbox
  * grant, a Meta page's webhook subscription) are named as limits instead.
+ * A checked setting alone is never `ready` (ONBOARDING_AND_BUSINESS_UX_HANDOFF.md).
+ * `readinessStatusLabel` maps each result to the handoff's status vocabulary.
  */
 export type ChannelKey = "calls" | "texting" | "email" | "meta"
-export type ReadinessState = "unavailable" | "not_set_up" | "in_progress" | "action_needed" | "limited" | "ready"
+export type ReadinessState = "unavailable" | "not_set_up" | "in_progress" | "action_needed" | "limited" | "ready_to_test" | "ready"
 
 export type ReadinessReason =
   | "server_not_configured"
   // calls
   | "no_voice_number" | "no_assistant" | "no_test_call" | "voice_addon_inactive"
   // texting
-  | "no_number" | "registration_required" | "registration_pending" | "registration_rejected" | "byo_registration_unconfirmed"
+  | "no_number" | "registration_required" | "registration_pending" | "registration_rejected"
+  | "not_own_account" | "byo_registration_unconfirmed" | "byo_owner_attested"
   // email
   | "no_mailbox" | "inbound_not_subscribed"
   // meta
@@ -42,6 +47,7 @@ export type ChannelReadiness = {
 export type ReadinessShop = Pick<
   ShopRow,
   | "twilio_phone_number" | "gradia_number_e164" | "a2p_status" | "byo_sms_verified"
+  | "twilio_account_sid_enc" | "twilio_auth_token_enc"
   | "vapi_assistant_id" | "vapi_phone_number_id" | "voice_test_called_at" | "voice_addon"
   | "aurinko_access_token_enc" | "aurinko_account_id" | "aurinko_subscription_id"
 >
@@ -79,9 +85,17 @@ export function textingReadiness(shop: ReadinessShop, configured: boolean): Chan
   if (!present(shop.twilio_phone_number)) return result("texting", "not_set_up", ["no_number"], "Get a business number to text customers.")
   const gradiaNumber = present(shop.gradia_number_e164) && shop.twilio_phone_number === shop.gradia_number_e164
   if (!gradiaNumber) {
+    // Without the shop's own Twilio credentials, a send from this number falls
+    // back to Gradia's pilot account (resolveTwilioCredentials → "env"), where the
+    // owner holds no registration. Checked before the flag, so no attestation,
+    // however it was written, counts here (BYO_SMS_ATTESTATION.md).
+    if (!present(shop.twilio_account_sid_enc) || !present(shop.twilio_auth_token_enc)) {
+      return result("texting", "action_needed", ["not_own_account"], "This number isn't on your own Twilio account, so texts from it are held. Get a Gradia number, or connect your own Twilio account.")
+    }
+    // The attestation is the owner's word, not a check Gradia made: at most "Ready to test".
     return shop.byo_sms_verified
-      ? result("texting", "ready", [], "Texting is set up on your own number.")
-      : result("texting", "action_needed", ["byo_registration_unconfirmed"], "Your own number's carrier registration hasn't been confirmed, so texts are held.")
+      ? result("texting", "ready_to_test", ["byo_owner_attested"], "You confirmed your own number's texting registration. Send a test before relying on it.")
+      : result("texting", "action_needed", ["byo_registration_unconfirmed"], "Confirm your own number's texting registration in Settings → Business Number. Until then, texts are held.")
   }
   switch (shop.a2p_status) {
     case "approved":
@@ -120,6 +134,24 @@ export function channelReadiness(shop: ReadinessShop, facts: ReadinessFacts): Re
     texting: textingReadiness(shop, facts.configured.texting),
     email: emailReadiness(shop, facts.configured.email),
     meta: metaReadiness(facts.metaPageBindings, facts.configured.meta),
+  }
+}
+
+/**
+ * The onboarding handoff's status label for a readiness result. `null` when the
+ * deployment isn't wired for the channel: that's Gradia's to fix, not a status
+ * the owner can act on. "Paused" is never derived here.
+ */
+export type HandoffStatus = "Not set up" | "Needs your details" | "Submitted for review" | "Needs a correction" | "Ready to test" | "Ready"
+export function readinessStatusLabel(r: Pick<ChannelReadiness, "state" | "reasons">): HandoffStatus | null {
+  switch (r.state) {
+    case "unavailable": return null
+    case "not_set_up": return "Not set up"
+    case "in_progress": return "Submitted for review"
+    case "action_needed": return r.reasons.includes("registration_rejected") ? "Needs a correction" : "Needs your details"
+    case "limited": return "Ready to test"
+    case "ready_to_test": return "Ready to test"
+    case "ready": return "Ready"
   }
 }
 

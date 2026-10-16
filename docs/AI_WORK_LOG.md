@@ -1388,3 +1388,39 @@ Disposable `gradia-record-fresh` stack:
   passed.
 
 No migration, provider call, or activation.
+
+[AI: claude-code] [DATE: 2026-10-16] [AREA: platform] [STATUS: review]
+PR #89 (`claude/channel-readiness`): texting readiness for an own (BYO) number
+now follows the onboarding handoff and the BYO attestation contract in PR #93
+(`docs/architecture/BYO_SMS_ATTESTATION.md`). A checked setting alone is never
+`ready`.
+
+- New state `ready_to_test`. An own number with the shop's own encrypted
+  Twilio credentials and `byo_sms_verified` reports `ready_to_test`
+  (`byo_owner_attested`), matching `byoSmsSetupStatus("confirmed")`.
+- New reason `not_own_account`. A non-Gradia number without both
+  `twilio_account_sid_enc` and `twilio_auth_token_enc` is `action_needed`
+  whatever the flag says, because its send would fall back to Gradia's pilot
+  env account. It's checked before the flag.
+- `readinessStatusLabel()` maps each state to the handoff vocabulary. The
+  mapping is documented in `CHANNEL_READINESS.md`, whose known gaps now point
+  to #93 as the writer and name the credential-presence and A2P-alone limits.
+- Unit tests check every combination of flag, credentials and A2P state for an
+  own number: none is `ready` or "Ready". The integration test adds the
+  own-number sequence from real rows.
+
+Checks, Node 22.23.2 isolated runner:
+
+- Unit: 1,546 passed, 4 skipped (`channel-readiness`: 57).
+- Lint, types before and after the offline build, the offline build, and
+  `git diff --check` all passed.
+- `channel-readiness` integration on `gradia-record-fresh`: 5 of 5 on the first
+  run. The second run hit a gateway "invalid response from upstream" on a
+  `shops` update (4 of 5), and its one retry failed in seed `createUser`
+  (suite skipped). Both are stack flakes, with no assertion failures; not
+  retried further.
+
+Merge-order note: #93's unit test that lists `src/` files mentioning
+`byo_sms_verified` will need `src/lib/channel-readiness.ts` and
+`src/lib/data/channel-readiness.ts` added as readers, whichever PR merges
+second. No migration, provider call, send, merge or deploy.
