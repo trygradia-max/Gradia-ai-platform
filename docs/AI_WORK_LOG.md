@@ -1420,3 +1420,21 @@ removed. At 390px the card stayed inside the viewport. Disposable Supabase
 integration cases were not executed. No browser vendor, live session,
 authenticated save, shared migration, Google connection, memory publication,
 schedule, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-10-16] [AREA: platform] [STATUS: done]
+Added an explicit read of notes already saved for the business on
+`cursor/employee-memory-read-b44a`. An owner starts it only when
+`GRADIA_SUPER_AGENT_MEMORY=true`. The saved result keeps up to eight excerpts
+and records that nothing was published, no lesson was created, and research
+results were not included. A failed lookup is not stored as empty memory.
+The read does not embed text, search customer conversations, or write
+`shop_knowledge`.
+
+Validation: 1,540 unit tests passed and four skipped. Touched-file lint and
+`tsc --noEmit` passed. A temporary localhost fixture showed a saved Hours note
+marked not published. Clicking the read returned “Business-note reads are not
+enabled here yet” because the server flag was off, and the same read id stayed
+available for retry. The fixture was removed. At 390px the card stayed inside
+the viewport. Disposable Supabase integration cases were not executed. No
+memory publication, customer-conversation search, Google connection, schedule,
+shared migration, merge, or deploy.

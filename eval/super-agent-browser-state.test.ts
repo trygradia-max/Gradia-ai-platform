@@ -21,6 +21,7 @@ vi.mock("react", async load => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: h.refresh }) }))
 vi.mock("@/app/actions/super-agent", () => ({ prepareEmployee: vi.fn(), saveEmployeeDraft: vi.fn(), runEmployeeResearch: vi.fn(), cancelEmployeeResearch: vi.fn() }))
 vi.mock("@/app/actions/super-agent-browser", () => ({ checkCloudBrowser: h.check }))
+vi.mock("@/app/actions/super-agent-memory", () => ({ readEmployeeMemory: vi.fn() }))
 
 const brief: EmployeeBrief = { name: "Custom researcher", goal: "Compare suppliers for my detailing business", deliverable: "A sourced comparison", business_context: "https://parts.example/catalog", steps: ["Read the public catalog"], connections_needed: [], questions: [] }
 const draft: EmployeeDraft = { id: "draft-1", created_at: "2026-10-16T00:00:00.000Z", brief }

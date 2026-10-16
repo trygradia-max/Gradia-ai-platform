@@ -31,8 +31,9 @@ promise that every website or task will be supported immediately.
 an experimental digital-employee feature with Claude behind the Gradia interface.
 Job-brief setup is stored, and an experimental public-page research run can be
 started explicitly from a saved brief. A cloud-browser check can be saved and
-stays not connected. Google Business Profile, memory publication, and scheduling
-remain subsequent work. See [Super Agent architecture](../architecture/GRADIA_SUPER_AGENT.md).
+stays not connected. A saved brief can read notes the business already saved,
+and that read is not published. Google Business Profile and scheduling remain
+subsequent work. See [Super Agent architecture](../architecture/GRADIA_SUPER_AGENT.md).
 
 ### Side dashboard: set up an agent for a business outcome
 

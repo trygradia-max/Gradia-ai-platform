@@ -3,11 +3,14 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { checkCloudBrowser } from "@/app/actions/super-agent-browser"
+import { readEmployeeMemory } from "@/app/actions/super-agent-memory"
 import { cancelEmployeeResearch, prepareEmployee, runEmployeeResearch, saveEmployeeDraft } from "@/app/actions/super-agent"
 import { EmployeeBrowserResult } from "@/components/gradia/employee-browser-result"
+import { EmployeeMemoryResult } from "@/components/gradia/employee-memory-result"
 import { EmployeeResearchResult } from "@/components/gradia/employee-result"
 import { EMPLOYEE_TEMPLATES, employeeBriefSchema, type EmployeeBrief, type EmployeeDraft } from "@/lib/super-agent/brief"
 import type { SavedBrowserCheck } from "@/lib/super-agent/browser-store"
+import type { SavedMemoryRead } from "@/lib/super-agent/memory-store"
 import type { SavedResearchRun } from "@/lib/super-agent/research-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea"
 
 const empty: EmployeeBrief = { name: "", goal: "", deliverable: "", business_context: "", steps: ["Review the goal and identify the information needed."], connections_needed: [], questions: [] }
 
-export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, planningEnabled, planningCredits, researchEnabled, browserEnabled = false, browserChecks = [], browserLoadFailed = false }: {
+export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, planningEnabled, planningCredits, researchEnabled, browserEnabled = false, browserChecks = [], browserLoadFailed = false, memoryEnabled = false, memoryReads = [], memoryLoadFailed = false }: {
   drafts: EmployeeDraft[]
   runs: SavedResearchRun[]
   loadFailed: boolean
@@ -26,6 +29,9 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
   browserEnabled?: boolean
   browserChecks?: SavedBrowserCheck[]
   browserLoadFailed?: boolean
+  memoryEnabled?: boolean
+  memoryReads?: SavedMemoryRead[]
+  memoryLoadFailed?: boolean
 }) {
   const router = useRouter()
   const [brief, setBrief] = useState<EmployeeBrief>(empty)
@@ -38,11 +44,15 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
   const [browserUncertain, setBrowserUncertain] = useState(false)
   const [freshChecks, setFreshChecks] = useState<Record<string, SavedBrowserCheck>>({})
   const [browserDraftId, setBrowserDraftId] = useState<string | null>(null)
+  const [memoryUncertain, setMemoryUncertain] = useState(false)
+  const [freshReads, setFreshReads] = useState<Record<string, SavedMemoryRead>>({})
+  const [memoryDraftId, setMemoryDraftId] = useState<string | null>(null)
   const inFlight = useRef(false)
   const stopSent = useRef(false)
   const command = useRef<{ id: string; brief: EmployeeBrief } | null>(null)
   const runCommand = useRef<{ id: string; draftId: string } | null>(null)
   const browserCommand = useRef<{ id: string; draftId: string } | null>(null)
+  const memoryCommand = useRef<{ id: string; draftId: string } | null>(null)
   function change<K extends keyof EmployeeBrief>(key: K, value: EmployeeBrief[K]) {
     setBrief(current => ({ ...current, [key]: value }))
     setMessage("")
@@ -52,6 +62,9 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
   }
   function latestCheck(draftId: string) {
     return freshChecks[draftId] ?? browserChecks.find(check => check.draft_id === draftId)
+  }
+  function latestRead(draftId: string) {
+    return freshReads[draftId] ?? memoryReads.find(read => read.draft_id === draftId)
   }
   async function plan() {
     if (inFlight.current || saveUncertain) return
@@ -116,6 +129,24 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
     } catch { setBrowserUncertain(true); setMessage("The browser check could not be confirmed. Retry this same check or reload saved results.") }
     finally { inFlight.current = false; setBusy(false) }
   }
+  async function readNotes(draftId: string) {
+    if (inFlight.current || saveUncertain || memoryLoadFailed) return
+    if (memoryUncertain && memoryCommand.current?.draftId !== draftId) return
+    inFlight.current = true; setBusy(true); setMessage("Reading saved business notes.")
+    if (!memoryCommand.current || memoryCommand.current.draftId !== draftId) memoryCommand.current = { id: crypto.randomUUID(), draftId }
+    const current = memoryCommand.current
+    setMemoryDraftId(current.draftId)
+    try {
+      const result = await readEmployeeMemory({ id: current.id, draftId: current.draftId })
+      if (result.ok) {
+        memoryCommand.current = null; setMemoryDraftId(null); setMemoryUncertain(false)
+        setFreshReads(existing => ({ ...existing, [current.draftId]: result.read }))
+        setMessage(result.replayed ? "That note read was already saved. Nothing was published." : "Business notes saved for this brief. Nothing was published.")
+        router.refresh()
+      } else { setMemoryUncertain(true); setMessage(result.error) }
+    } catch { setMemoryUncertain(true); setMessage("The note read could not be confirmed. Retry this same read or reload saved results.") }
+    finally { inFlight.current = false; setBusy(false) }
+  }
   async function stop() {
     const current = runCommand.current
     if (!current || stopSent.current) return
@@ -150,11 +181,14 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
       {loadFailed ? <p role="alert">Saved employees could not be loaded. Refresh before saving a new brief.</p> : null}
       {runLoadFailed ? <p role="alert">Saved research results could not be loaded. Refresh before running research.</p> : null}
       {browserLoadFailed ? <p role="alert">Saved browser checks could not be loaded. Refresh before checking the cloud browser.</p> : null}
+      {memoryLoadFailed ? <p role="alert">Saved business-note reads could not be loaded. Refresh before reading notes.</p> : null}
       {browserEnabled && <p className="text-sm text-muted-foreground">A cloud browser check can be saved for a brief. It stays not connected.</p>}
+      {memoryEnabled && <p className="text-sm text-muted-foreground">A brief can read notes already saved for the business. That read is not published as a new rule.</p>}
       {!loadFailed && drafts.length === 0 ? <p className="text-sm text-muted-foreground">No employee briefs yet. Start with one job you’d like off your plate.</p> : null}
       {drafts.map(draft => {
         const result = latestRun(draft.id)
         const browserCheck = latestCheck(draft.id)
+        const memoryRead = latestRead(draft.id)
         const retrying = runUncertain && runDraftId === draft.id
         return <article key={draft.id} className="break-words rounded-xl border bg-card p-5">
           <p className="text-xs font-medium text-muted-foreground">{result ? "BRIEF SAVED" : "DRAFT · NOT RUNNING"}</p>
@@ -173,6 +207,13 @@ export function EmployeeBuilder({ drafts, runs, loadFailed, runLoadFailed, plann
             {browserDraftId === draft.id && message ? <p className="text-sm">{message}</p> : null}
             <p className="text-xs text-muted-foreground">This check does not open a browser, store a password, or use this computer.</p>
             {browserCheck && <EmployeeBrowserResult check={browserCheck} />}
+          </div>}
+          {memoryEnabled && <div className="mt-4 space-y-2 border-t pt-4">
+            <p className="text-sm">Saved business notes stay in this workspace.</p>
+            <Button type="button" variant="outline" className="min-h-11" disabled={loadFailed || memoryLoadFailed || saveUncertain || (busy && memoryDraftId !== draft.id) || (memoryUncertain && memoryDraftId !== draft.id)} onClick={() => void readNotes(draft.id)}>{busy && memoryDraftId === draft.id ? "Reading notes…" : memoryUncertain && memoryDraftId === draft.id ? "Retry this note read" : "Read saved notes"}</Button>
+            {memoryDraftId === draft.id && message ? <p className="text-sm">{message}</p> : null}
+            <p className="text-xs text-muted-foreground">This reads notes the business already saved. It does not publish a lesson or add research results.</p>
+            {memoryRead && <EmployeeMemoryResult read={memoryRead} />}
           </div>}
         </article>
       })}
