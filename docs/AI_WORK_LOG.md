@@ -1401,3 +1401,40 @@ Node 22.23.2 isolated runner:
 - Lint, types before and after the offline build, and the build itself passed.
 
 No merge, deployment, shared migration, provider call or send.
+
+[AI: claude-code] [DATE: 2026-10-16] [AREA: platform] [STATUS: review]
+Reworked BYO SMS attestation (PR #93) against
+`ONBOARDING_AND_BUSINESS_UX_HANDOFF.md`, which the first pass hadn't read. Gap
+found: a non-Gradia number on a shop with no Twilio credentials of its own sends
+through Gradia's pilot `env` account (`resolveTwilioCredentials`). The first pass
+let the owner attest it, which would put texts on Gradia's account under a
+registration the owner can't hold.
+
+Changes:
+
+- Attesting now needs the shop's own encrypted credentials. Otherwise the state
+  is `not_own_account`, attesting is refused, and texts stay held.
+- A credential change or removal clears the attestation (`account_changed`).
+  Rotating only the token doesn't.
+- The statement names the owner's own account and Messaging Service. Its version
+  is now `2026-10-16`.
+- `byoSmsSetupStatus` maps states onto the handoff vocabulary. Confirmed is
+  "Ready to test", never "Ready".
+- The deferred provider check is now cited against current Twilio docs
+  (UsAppToPerson `campaign_status`).
+
+Recorded conflict: PR #89 maps the flag to texting `ready`. It should cap at
+"Ready to test" and report `not_own_account`.
+
+Disposable `gradia-record-fresh` stack, reset from 95 migrations:
+
+- Attestation suite: 8 of 8, twice.
+- Focused run: 66 of 66 across `qualification-question-staging`,
+  `lead-workflow-acceptance`, `team-permissions` and `tenant-isolation`.
+- Unit: 1,499 passed, 4 skipped.
+- Lint, types before and after the build, and the offline build passed.
+
+The full-suite local failures recorded above are unchanged and also occur on
+main.
+
+No merge, deployment, shared migration, provider call or send.

@@ -13,6 +13,9 @@ let db: SupabaseClient, owner: SupabaseClient, manager: SupabaseClient, staff: S
 let shop: Seeded, managerSeed: Seeded, staffSeed: Seeded, foreign: Seeded
 const OWN_NUMBER = "+15555550142"
 const GRADIA_NUMBER = "+15555550100"
+// Opaque placeholders, not credentials: the database only checks that the shop's own
+// encrypted Twilio credentials are present, never decrypts them, and nothing is sent.
+const OWN_ACCOUNT = { twilio_account_sid_enc: "fixture-own-account-sid", twilio_auth_token_enc: "fixture-own-account-token" }
 
 const attest = (client: SupabaseClient, phone = OWN_NUMBER, version: string = VERSION) =>
   client.rpc("attest_byo_sms_registration", { p_shop: shop.shopId, p_phone: phone, p_statement_version: version })
@@ -46,7 +49,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("owner attestation of a bring-your-ow
   })
   afterAll(async () => { for (const s of [shop, managerSeed, staffSeed, foreign]) if (s) await cleanup(db, s) })
   beforeEach(async () => {
-    await setShop({ twilio_phone_number: OWN_NUMBER, gradia_number_e164: null, a2p_status: "unregistered" })
+    await setShop({ twilio_phone_number: OWN_NUMBER, gradia_number_e164: null, a2p_status: "unregistered", ...OWN_ACCOUNT })
     if ((await shopRow()).byo_sms_verified) expect((await revoke(owner)).error).toBeNull()
   })
 
@@ -144,4 +147,30 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("owner attestation of a bring-your-ow
     expect(await history()).toHaveLength(before + 1)
   })
 
+
+  it("fails closed when the number isn't sent through the shop's own Twilio account", async () => {
+    // Without the shop's own credentials a send falls back to Gradia's account, where the owner holds no registration.
+    for (const missing of [{ twilio_account_sid_enc: null }, { twilio_auth_token_enc: null }, { twilio_account_sid_enc: " " }]) {
+      await setShop({ ...OWN_ACCOUNT, ...missing })
+      expect(byoSmsAttestationStateSchema.parse((await read(owner)).data).state).toBe("not_own_account")
+      expect(refusal(await attest(owner))).toEqual({ ok: false, code: "not_own_account" })
+      expect(await gateOpen()).toBe(false)
+    }
+    expect((await shopRow()).byo_sms_verified).toBe(false)
+  })
+
+  it("changing or removing the own-account credential clears the attestation; rotating only the token does not", async () => {
+    expect((await attest(owner)).error).toBeNull()
+    await setShop({ twilio_auth_token_enc: "fixture-rotated-token" })
+    expect((await shopRow()).byo_sms_verified).toBe(true)
+    await setShop({ twilio_account_sid_enc: "fixture-other-account-sid" })
+    expect((await shopRow()).byo_sms_verified).toBe(false)
+    expect(await gateOpen()).toBe(false)
+    expect((await history()).at(-1)).toMatchObject({ event: "cleared", source: "account_changed", phone_e164: OWN_NUMBER, actor_user_id: null })
+    await setShop(OWN_ACCOUNT)
+    expect((await attest(owner)).error).toBeNull()
+    await setShop({ twilio_auth_token_enc: null })
+    expect((await shopRow()).byo_sms_verified).toBe(false)
+    expect(byoSmsAttestationStateSchema.parse((await read(owner)).data)).toMatchObject({ state: "not_own_account", last_event: { event: "cleared", source: "account_changed" } })
+  })
 })

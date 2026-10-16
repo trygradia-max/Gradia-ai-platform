@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
-  BYO_SMS_ATTESTATION_STATEMENT_VERSION, byoSmsRefusal, type ByoSmsAttestationState,
+  BYO_SMS_ATTESTATION_STATEMENT_VERSION, byoSmsRefusal, byoSmsSetupStatus, type ByoSmsAttestationState,
 } from "@/lib/byo-sms-attestation"
 import { smsGateForShop } from "@/lib/telephony-provider"
 
@@ -57,6 +57,7 @@ describe("attestByoSmsRegistration", () => {
     for (const [error, code] of [
       [{ code: "42501", details: "forbidden" }, "forbidden"], [{ code: "PT409", details: "number_changed" }, "number_changed"],
       [{ code: "PT409", details: "gradia_number" }, "gradia_number"], [{ code: "PT409", details: "no_number" }, "no_number"],
+      [{ code: "PT409", details: "not_own_account" }, "not_own_account"],
       [{ code: "PT409", details: "something_else" }, "not_confirmed"], [{ code: "XX000", details: null }, "not_confirmed"],
     ] as const) {
       h.rpc.mockResolvedValueOnce({ data: null, error })
@@ -96,6 +97,14 @@ describe("attestation invariants", () => {
   it("the TypeScript statement version is the one the database accepts and reports", () => {
     const versions = [...sql.matchAll(/'(\d{4}-\d{2}-\d{2})'/g)].map((m) => m[1])
     expect(new Set(versions)).toEqual(new Set([BYO_SMS_ATTESTATION_STATEMENT_VERSION]))
+  })
+
+  it("maps to the onboarding status vocabulary and is never Ready on the owner's word alone", () => {
+    expect(byoSmsSetupStatus("no_number")).toBe("Not set up")
+    expect(byoSmsSetupStatus("not_own_account")).toBe("Needs your details")
+    expect(byoSmsSetupStatus("unconfirmed")).toBe("Needs your details")
+    expect(byoSmsSetupStatus("confirmed")).toBe("Ready to test")
+    expect(byoSmsSetupStatus("gradia_number")).toBeNull()
   })
 
   it("a Gradia number is never opened by the attestation flag", () => {
