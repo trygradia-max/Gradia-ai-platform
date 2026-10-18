@@ -1425,3 +1425,84 @@ one file at a time:
 - Lint, offline build, types after build, and `git diff --check` passed.
 
 Nothing was merged, deployed, migrated on a shared database, or sent.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Follow-up from the step 6 audit: a held quote send approved later, and manager
+approval of a quote-bearing message.
+
+The new `eval/integration/held-quote-send.int.test.ts` reproduced the defect on main.
+`sendQuote` updated the quote and lead itself, only when its own immediate send
+succeeded. When the SMS gate held the send, for example an unverified own number,
+a later approval from Approvals sent the quote link but left the quote as `draft`.
+The customer's link then refused any response.
+
+Fix: a shared `markQuoteSent` step in `src/lib/approvals.ts`. It runs after any
+executed `send_sms` or `send_email` carrying `quote_id`, whoever approved it. It is
+shop-scoped, idempotent and best-effort. The lead moves to `quote_sent` only from
+`new` or `needs_quote`, never back from `booked`. `sendQuote`'s inline copy was
+removed so both paths share it.
+
+Manager finding: a manager with `approvals.messages` can approve a held quote send.
+The review hash binds the owner's exact text, and a direct edit changed nothing,
+so this is delivery of an owner-priced quote, not price or discount authority.
+Whether managers should deliver quotes at all is recorded as an open product
+question. The SQL was not changed.
+
+Disposable `gradia-record-fresh` stack only, 94 migrations. Node 22.23.2 isolated
+runner, one file at a time:
+
+- `held-quote-send`: 4 of 4. Before the fix, 2 of 3 failed with the quote still
+  `draft`.
+- `delegated-message-approval`: 26 of 26.
+- `whisper-reply-context`: 19 of 19.
+- `service-proof-replay`: 15 of 15.
+- `quote-acceptance`: 17 of 17.
+- Unit: 1,469 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B4 (PR #81 review findings). Reproduced with deterministic interleavings. A test
+client runs a competing write after the code's read and before its write. Five new
+scenarios in `held-quote-send.int.test.ts` failed on the previous PR head:
+
+1. A customer's acceptance during an email quote send was overwritten back to
+   `sent`.
+2. Racing SMS and email sends lost one channel.
+3. A booking during the quote-sent stage move was regressed to `quote_sent`.
+4. A racing board move overwrote the winner and its history.
+5. A bookkeeping failure left no reconciliation record.
+
+Fix:
+
+- `markQuoteSent` is a compare-and-swap on the status, `sent_via` and `sent_at`
+  it read. It retries on a fresh read, up to 5 times. A decided quote keeps its
+  status, and SMS plus email become `both`.
+- `moveLeadToStage` writes stage, history, timer and legacy `status` in one update.
+  The update lands only if the stage and `stage_entered_at` it read are unchanged.
+  A new `from` allowlist is checked in the same update, so the quote-sent move
+  only advances from new or `needs_quote`. A lost race returns false; the board
+  now says to reload instead of blaming a migration.
+- A bookkeeping failure never resends. It is logged and recorded on the action as
+  `quote_sent_reconciliation`. Replaying the action returns already_decided.
+  Recovery is a manual repair of the quote, not a resend.
+- An email quote case was added with a fake transport.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- `held-quote-send`: 9 of 9.
+- 13 other suites that move leads or send passed, including `quote-acceptance` 17,
+  `delegated-message-approval` 26, `control-execution` 16, `agent-records` 19 on
+  retry, and `twilio-inbound-replay` 14 on retry.
+- `booking-atomicity`: 11 of 13 twice. The two concurrency tests failed in setup,
+  in `stagePending`, with "An invalid response was received from the upstream
+  server". The local gateway logged 31 such errors in 30 minutes, and this is not
+  claimed as a pass.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
