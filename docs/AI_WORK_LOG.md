@@ -1351,6 +1351,273 @@ Preserved only the allowed ghcr.io value and added fixed-category diagnostics
 (no raw CLI output or credentials). Two diagnostics regressions and lint pass.
 This is a configuration fix and improved failure visibility, not proof of the
 startup failure's root cause; the complete integration run must still pass.
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Follow-up from the step 6 audit: the booking confirmation is now staged exactly once
+per appointment. Every existing booking suite mocked the drafter to throw, so no
+test ever reached confirmation staging.
+
+The new `eval/integration/booking-confirmation.int.test.ts` reproduced the defect on
+main `93a9f4a`. When an approved booking's appointment was written but its
+confirmation was not staged, the confirmation was lost for good. That happens after
+a crash between the write and staging, or after a drafter outage. Both replay
+paths, the fast path and the serialized write's `exists` result, returned before
+the staging step.
+
+Fix (`src/lib/approvals.ts`, `ensureBookingConfirmation`): on replay, stage the
+missing confirmation, but only when:
+
+- no booking confirmation of any status exists for that appointment, which
+  includes one the owner rejected;
+- the appointment has not started yet.
+
+It is best-effort and never fails the booking. No migration, and no change to the
+send path, consent rules or the 48-hour cron.
+
+Disposable `gradia-record-fresh` stack only, 94 migrations. Node 22.23.2 isolated
+runner.
+
+- The new suite failed 2 of 6 before the fix.
+- Run one file at a time after the fix:
+  - `booking-confirmation`: 6 of 6;
+  - `booking-atomicity`: 13 of 13;
+  - `conflict-enforcement`: 6 of 6;
+  - `quote-acceptance`: 17 of 17.
+- Two combined runs had failures only in seed helpers: "An invalid response was
+  received from the upstream server". The stack's database container had also
+  restarted outside this session about 16 minutes before.
+- Unit: 1,457 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B5 (PR #79 review finding). Reproduced four stale-repair cases in
+`booking-confirmation.int.test.ts`. On the previous head, the replay repair:
+
+- confirmed an appointment rescheduled after the failed confirmation for its old
+  time;
+- confirmed a closed appointment;
+- used the customer's old phone;
+- left a stale confirmation queued when the appointment moved during the repair,
+  shown with a deterministic interleaving before the insert.
+
+Fix (`ensureBookingConfirmation`):
+
+- It drafts from the current appointment (time, length, service, timezone,
+  status) and the current customer (name, phone), never from the original
+  proposal.
+- It refuses a closed or already-started appointment, or a customer with no
+  phone. A cancelled appointment is deleted, so there is nothing to confirm.
+- After staging it re-reads the appointment. If anything changed, it deletes
+  the unsent card it just created, and the next replay drafts a fresh one.
+- Rejected confirmations are still respected.
+- The guarantee stays scoped to replays serialized by the action claim. There
+  is no database uniqueness key per appointment.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- `booking-confirmation`: 10 of 10, after one run that failed seed `createUser`
+  before any test.
+- `quote-acceptance`: 17. `conflict-enforcement`: 6. `booking-atomicity`: 13.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types after build, and `git diff --check` passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Follow-up from the step 6 audit: a held quote send approved later, and manager
+approval of a quote-bearing message.
+
+The new `eval/integration/held-quote-send.int.test.ts` reproduced the defect on main.
+`sendQuote` updated the quote and lead itself, only when its own immediate send
+succeeded. When the SMS gate held the send, for example an unverified own number,
+a later approval from Approvals sent the quote link but left the quote as `draft`.
+The customer's link then refused any response.
+
+Fix: a shared `markQuoteSent` step in `src/lib/approvals.ts`. It runs after any
+executed `send_sms` or `send_email` carrying `quote_id`, whoever approved it. It is
+shop-scoped, idempotent and best-effort. The lead moves to `quote_sent` only from
+`new` or `needs_quote`, never back from `booked`. `sendQuote`'s inline copy was
+removed so both paths share it.
+
+Manager finding: a manager with `approvals.messages` can approve a held quote send.
+The review hash binds the owner's exact text, and a direct edit changed nothing,
+so this is delivery of an owner-priced quote, not price or discount authority.
+Whether managers should deliver quotes at all is recorded as an open product
+question. The SQL was not changed.
+
+Disposable `gradia-record-fresh` stack only, 94 migrations. Node 22.23.2 isolated
+runner, one file at a time:
+
+- `held-quote-send`: 4 of 4. Before the fix, 2 of 3 failed with the quote still
+  `draft`.
+- `delegated-message-approval`: 26 of 26.
+- `whisper-reply-context`: 19 of 19.
+- `service-proof-replay`: 15 of 15.
+- `quote-acceptance`: 17 of 17.
+- Unit: 1,469 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or activated.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B4 (PR #81 review findings). Reproduced with deterministic interleavings. A test
+client runs a competing write after the code's read and before its write. Five new
+scenarios in `held-quote-send.int.test.ts` failed on the previous PR head:
+
+1. A customer's acceptance during an email quote send was overwritten back to
+   `sent`.
+2. Racing SMS and email sends lost one channel.
+3. A booking during the quote-sent stage move was regressed to `quote_sent`.
+4. A racing board move overwrote the winner and its history.
+5. A bookkeeping failure left no reconciliation record.
+
+Fix:
+
+- `markQuoteSent` is a compare-and-swap on the status, `sent_via` and `sent_at`
+  it read. It retries on a fresh read, up to 5 times. A decided quote keeps its
+  status, and SMS plus email become `both`.
+- `moveLeadToStage` writes stage, history, timer and legacy `status` in one update.
+  The update lands only if the stage and `stage_entered_at` it read are unchanged.
+  A new `from` allowlist is checked in the same update, so the quote-sent move
+  only advances from new or `needs_quote`. A lost race returns false; the board
+  now says to reload instead of blaming a migration.
+- A bookkeeping failure never resends. It is logged and recorded on the action as
+  `quote_sent_reconciliation`. Replaying the action returns already_decided.
+  Recovery is a manual repair of the quote, not a resend.
+- An email quote case was added with a fake transport.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- `held-quote-send`: 9 of 9.
+- 13 other suites that move leads or send passed, including `quote-acceptance` 17,
+  `delegated-message-approval` 26, `control-execution` 16, `agent-records` 19 on
+  retry, and `twilio-inbound-replay` 14 on retry.
+- `booking-atomicity`: 11 of 13 twice. The two concurrency tests failed in setup,
+  in `stagePending`, with "An invalid response was received from the upstream
+  server". The local gateway logged 31 such errors in 30 minutes, and this is not
+  claimed as a pass.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B6: connected qualification acceptance through delivery evidence, built on merged
+#78 with no new executor. New file:
+`eval/integration/qualification-delivery-acceptance.int.test.ts`. It covers SMS and
+email, with the real interaction history (only embeddings disabled) and fake
+Twilio and Aurinko:
+
+- one send under concurrent and exact retries;
+- exactly one outbound interaction linked to the action and customer, set as
+  `result_id`;
+- the email threaded to the customer's message;
+- `provider_accepted`, never "delivered";
+- an unknown outcome held as `claimed`, never resent, with no outbound record
+  and a replacement question refused;
+- suppression, DNC and SMS STOP after queueing held, with zero external effects
+  (no transport, token refresh, ledger entry or interaction).
+
+Added a question transition inventory to `LEAD_QUALIFICATION.md`. Three transitions
+are unsupported: a stale question at send, an asked marker, and an inbound answer.
+Each is a separate PR; the stale-at-send hold is next.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- New suite: 7 of 7 in two runs.
+- `lead-workflow-acceptance`: 6. `qualification-question-staging`: 17.
+  `whisper-reply-context`: 19.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B6 transition 1: a queued qualification question is now held at send when its
+record moved on.
+
+Reproduced first in `eval/integration/qualification-stale-at-send.int.test.ts`. The
+previous executor sent a question whose answer had been recorded after queueing.
+That happened on SMS, on email, and through delegated manager approval.
+
+Migration 95, `qualification_question_currency`, is one read-only security-definer
+function. It applies the staging rules to the action's `qualification` binding:
+revision and evidence, identity review, and still the proposed question. Callers
+are the owner, a manager with `crm.read`, or the service role.
+
+Both send executors call it first, before the token refresh, consent and proof
+checks, transport and ledger. A hold has zero external effects and returns the
+action to pending, with a published reason. Messages without a binding are
+unaffected, and a check that cannot run fails closed. The contract is in
+`LEAD_QUALIFICATION.md` → *Held at send when the record moved on*.
+`verify-lead-qualification-migration.py` now also asserts the grants and definer
+settings for migrations 94 and 95.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's 95 migrations, with
+the verifier passing. Node 22.23.2 isolated runner, one file at a time:
+
+- New suite: 7 of 7. On the old executor it failed 3 of 7.
+- Passed: `lead-workflow-acceptance` 6, `whisper-reply-context` 19,
+  `delegated-message-approval` 26, `service-proof-replay` 15, `whisper-inbox` 17,
+  `lead-qualification` 19.
+- `qualification-question-staging`: 17 of 17 on retry, after a seed `createUser`
+  failure.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Migration 95 is not applied to any shared or production database.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B7: booking length is decided from the menu at the execution boundary.
+
+Reproduced first in `eval/integration/booking-duration.int.test.ts`. On main, the
+executor booked whatever length was staged: a voice model's 30 minutes or a
+caller's 600 minutes for a 180-minute menu service. It also booked unmatched,
+ambiguous and size-dependent services at the staged length, with no hold.
+
+Fix: `src/lib/booking-duration.ts` → `resolveBookingDuration`, called by
+`executeBookAppointment` after the replay check and before the conflict gate.
+
+- **Owner length:** used as given when the owner saved the card in Approvals.
+  The editor now sets `duration_source: "owner"`.
+- **Quote length:** used as given when quote acceptance computed it server-side
+  (#76).
+- **Everything else:** exactly one matching menu service sets the length, sized
+  to the customer's single known vehicle size when the length varies by size.
+- **Holds:** an unmatched or ambiguous service, an unknown size where it matters,
+  or an unreadable menu. The owner sees the reason, and nothing is booked.
+
+Voice staging now prefers the menu over the model's duration for its staging
+snapshot. Existing booking-atomicity and conflict fixtures now state an
+owner-set 2-hour length, which is what their slot arithmetic tests. No
+migration, calendar activation or scheduler change.
+
+Disposable `gradia-record-fresh` stack, 95 migrations. Node 22.23.2 isolated runner:
+
+- New suite: 9 of 9 twice. On the old executor it failed 7 of 9.
+- `booking-atomicity` 13, `quote-acceptance` 17, `approvals` 4,
+  `control-execution` 16, `mcp-capabilities` 11, `agent-records` 19,
+  `delegated-message-approval` 26.
+- `conflict-enforcement`: 6 of 6 in two of three runs. The failing runs died in
+  `stagePending` with PostgREST connection resets, and a branch without this
+  change failed the same way on the same stack.
+- Unit: 1,494 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
 
 [AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
 Separate, accurate readiness for calls, texting, email and Meta. Contract:
