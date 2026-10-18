@@ -1511,8 +1511,40 @@ one file at a time:
 - New suite: 7 of 7 in two runs.
 - `lead-workflow-acceptance`: 6. `qualification-question-staging`: 17.
   `whisper-reply-context`: 19.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B6 transition 1: a queued qualification question is now held at send when its
+record moved on.
+
+Reproduced first in `eval/integration/qualification-stale-at-send.int.test.ts`. The
+previous executor sent a question whose answer had been recorded after queueing.
+That happened on SMS, on email, and through delegated manager approval.
+
+Migration 95, `qualification_question_currency`, is one read-only security-definer
+function. It applies the staging rules to the action's `qualification` binding:
+revision and evidence, identity review, and still the proposed question. Callers
+are the owner, a manager with `crm.read`, or the service role.
+
+Both send executors call it first, before the token refresh, consent and proof
+checks, transport and ledger. A hold has zero external effects and returns the
+action to pending, with a published reason. Messages without a binding are
+unaffected, and a check that cannot run fails closed. The contract is in
+`LEAD_QUALIFICATION.md` → *Held at send when the record moved on*.
+`verify-lead-qualification-migration.py` now also asserts the grants and definer
+settings for migrations 94 and 95.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's 95 migrations, with
+the verifier passing. Node 22.23.2 isolated runner, one file at a time:
+
+- New suite: 7 of 7. On the old executor it failed 3 of 7.
+- Passed: `lead-workflow-acceptance` 6, `whisper-reply-context` 19,
+  `delegated-message-approval` 26, `service-proof-replay` 15, `whisper-inbox` 17,
+  `lead-qualification` 19.
+- `qualification-question-staging`: 17 of 17 on retry, after a seed `createUser`
+  failure.
 - Unit: 1,489 passed, 4 skipped.
 - Lint, offline build, types before and after build, and `git diff --check`
   passed.
 
 Nothing was merged, deployed, migrated on a shared database, or sent.
+Migration 95 is not applied to any shared or production database.
