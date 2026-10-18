@@ -456,6 +456,41 @@ So a queued question for a lead with no marketing consent and no recent inbound
 message **will be held at send**. That is the existing rule and this step does not
 loosen it.
 
+### Held at send when the record moved on
+
+October 15, migration 95. The executor rechecks a queued question before it sends
+it. `qualification_question_currency(p_shop, p_action)` is read-only. It applies
+the same rules as staging to the action's `payload.qualification` binding:
+
+- the revision and evidence revision must still match;
+- no identity review may be pending;
+- the question must still be the proposed one.
+
+The check runs first in the SMS and email executors. That is before the mailbox
+token refresh, consent and proof checks, transport, and the execution ledger. So
+a hold has **zero external effects**. The action returns to pending in Approvals.
+
+| Hold | When | Approval result `error` begins | What the screen should do |
+| --- | --- | --- | --- |
+| `qualification_changed` | The record or its evidence was saved after queueing, for example the answer was recorded | "Held — this lead's qualification changed…" | Re-propose from `/intake/[workflowId]`. The old card can be rejected |
+| `review_required` | Identity or evidence now needs review | "Held — this lead needs identity or evidence review…" | Send to intake review |
+| `question_resolved` | That is no longer the proposed question | "Held — this is no longer the lead's next question…" | Re-propose |
+| Check unavailable | The function could not run | "Held — couldn't confirm this question is still current…" | Retry later. Nothing was sent |
+
+Rules:
+
+- **Applies to the owner and to delegated managers.** It applies to the owner's
+  approval and to a delegated manager's, which executes as the service role.
+- **Other messages pass unchanged.** A message without a `qualification` binding,
+  such as an ordinary Whisper reply, is never affected.
+- **Who may call the function:** the shop's owner, a manager with `crm.read`, or
+  the service role. Anyone else gets `42501`.
+- **The check is strict.** Any saved change to the record holds the queued
+  question, even an unrelated field. Re-proposing is cheap; a stale message is
+  not.
+- **A small window remains.** A change that commits after the check but before
+  the provider call can still be sent.
+
 ### Not in this step
 
 - No screen. Cursor owns the control on `/intake/[workflowId]`.
@@ -489,20 +524,37 @@ It covers:
   question;
 - a website-only lead that is refused.
 
-These transitions are **not supported** by current code. They are recorded here
-rather than tested as correct:
+`eval/integration/qualification-delivery-acceptance.int.test.ts` continues from
+the queued question to delivery evidence on **SMS and email**. It uses the real
+interaction history, with only embeddings disabled, and fake transports. It covers:
 
-- **A queued question is not withdrawn when the record moves on.** The executor
-  does not know the qualification binding. If the answer arrives, or the record
-  changes, after queueing, the owner can still approve and send the now-stale
-  question. Only the reviewer's judgment in Approvals stops it.
-- **Nothing records that a question was asked.** After a question is sent and its
-  delivery confirmed, the same proposal, with the same basis, can be queued again.
-- **The inbound reply does not update the record.** Answers are recorded by a
-  person through `update_lead_qualification`. There is no automatic parsing.
-- **Email was not exercised end to end.** The suite drives SMS only. Email staging
-  is covered by the staging tests, and the email send-time rules by the Whisper
-  reply-context tests.
+- exactly one send under concurrent and exact retries;
+- exactly one outbound interaction, linked to the action and the customer and set
+  as the action's `result_id`;
+- the email threaded to the customer's message;
+- `provider_accepted` reported, never "delivered";
+- an unknown outcome held as `claimed`, with no resend and no outbound record,
+  that also blocks a replacement question;
+- suppression, DNC and SMS STOP after queueing held, with zero external effects:
+  no transport, no token refresh, no ledger entry and no interaction.
+
+### Question transition inventory
+
+| From | Event | To | Status |
+| --- | --- | --- | --- |
+| Proposed | Owner queues it | Pending approval | Supported (`stage_qualification_question`) |
+| Proposed | Manager, staff or revoked member queues it | — | Refused by design |
+| Proposed, website-only lead with no thread | Queue | — | Refused by design. A first outbound message is a consent decision |
+| Pending | No consent and no reviewed reply purpose at send | Held, pending | Supported |
+| Pending | STOP, DNC, suppression or changed recipient before send | Held, pending | Supported |
+| Pending | Owner or delegated manager approves with proof | Sent (`provider_accepted`), one outbound interaction | Supported |
+| Pending | Provider outcome unknown | Held as `claimed`; replacement refused | Supported, no resend |
+| Pending | Owner rejects | Rejected | Supported (existing Approvals) |
+| Pending | **Record moves on: answered, resolved or new evidence** | Should be held at send | **Unsupported.** The executor sends the stale question. Next PR |
+| Sent | **Question asked** | Should be recorded as asked, so it isn't re-proposed blindly | **Unsupported.** There is no asked marker, and the same basis can be queued again |
+| Sent | **Customer replies** | Answer recorded in the qualification | **Unsupported.** Answers are recorded by a person through `update_lead_qualification`; there is no inbound parsing |
+
+Each unsupported row is a separate PR with its own published contract.
 
 ## Schema
 
@@ -532,6 +584,12 @@ Migration `20261014120000_qualification_question_staging.sql`, migration 94, add
 function only: `stage_qualification_question`. It is session-only, with a fixed
 search path, granted to `authenticated` and revoked from `anon` and `service_role`.
 It adds no table, column, index, trigger, enum value or grant on any table.
+
+Migration `20261015120000_qualification_question_currency.sql`, migration 95, adds
+one read-only function, `qualification_question_currency`. It is security definer,
+stable, with a fixed search path. It is executable by `authenticated` (owner or a
+manager with `crm.read`, checked inside) and `service_role`, and revoked from
+`anon`. It adds no table, column, index, trigger, enum value or table grant.
 
 ## Verification
 
