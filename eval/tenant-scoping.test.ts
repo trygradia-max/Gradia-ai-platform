@@ -65,6 +65,11 @@ describe("service-role importer inventory (sweep visibility)", () => {
   // where it fits) and add the file here in the same PR.
   const REVIEWED_IMPORTERS = new Set([
     "src/app/actions/a2p.ts",
+    // Channel readiness. Read-only. The shop is resolved server-side by
+    // requireShop (the signed-in owner's shop); the service client is used
+    // only afterwards, because meta_lead_page_bindings is service-role only,
+    // and loadChannelReadiness scopes both reads to that shop id.
+    "src/app/actions/channel-readiness.ts",
     // Delegated manager message approval. The service client is handed to
     // executeApproval only as the execution client: the claim runs first on
     // the manager's own session (claim_delegated_message proves the live
