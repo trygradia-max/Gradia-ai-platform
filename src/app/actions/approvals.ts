@@ -388,6 +388,8 @@ export async function updatePendingProposal(
   if (parsed.data.type === "book_appointment") {
     delete (mergedPayload as Record<string, unknown>).availability
     delete (mergedPayload as Record<string, unknown>).conflict_override
+    // The owner reviewed and saved this length: their decision, not a model's.
+    ;(mergedPayload as Record<string, unknown>).duration_source = "owner"
   }
 
   const { data: updated, error: updateErr } = await supabase

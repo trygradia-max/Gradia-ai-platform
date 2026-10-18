@@ -50,7 +50,7 @@ export async function setLeadStage(
   if (!moved) {
     return {
       ok: false,
-      error: "Couldn't move that card (is the C1 migration applied?)",
+      error: "Couldn't move that card. It may have just changed; reload and try again.",
     }
   }
   revalidatePath("/customers")
