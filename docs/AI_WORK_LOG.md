@@ -1400,3 +1400,28 @@ off; the fixture was removed. Disposable Supabase integration cases are included
 and were not executed here. No live Claude call, authenticated database save,
 real public fetch in the browser, keyboard or zoom acceptance, shared migration,
 cloud browser, Google connection, memory publication, schedule, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-10-16] [AREA: platform] [STATUS: done]
+Added an experimental cloud-browser check for a saved digital-employee brief
+on `cursor/cloud-browser-unavailable-b44a`. An owner records it only when
+`GRADIA_SUPER_AGENT_BROWSER=true`. The only result that can be saved is
+unavailable, with provider none. The record says no session started, no
+password was stored, and this computer was not used. A provider name in the
+environment is ignored and is not written down. There is no browser client,
+local shell, cookie store, or cron.
+
+Validation: 1,531 unit tests passed and four skipped, including the research
+slice. Touched-file lint and `tsc --noEmit` passed before a one-line status
+placement; the browser screen and retry tests were rerun after it. A temporary
+localhost fixture showed the saved not-connected result. Clicking the check
+returned “Cloud browser checks are not enabled here yet” because the server
+flag was off, and the button kept the same check id for retry. The fixture was
+removed. At 390px the card stayed inside the viewport. Disposable Supabase
+integration cases were not executed. No browser vendor, live session,
+authenticated save, shared migration, Google connection, memory publication,
+schedule, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-10-18] [AREA: platform] [STATUS: done]
+Recorded on `cursor/cloud-browser-unavailable-b44a` that the cloud browser
+check stays unavailable until a real browser provider exists, and that it is
+not a launch prerequisite. No provider, session, migration, merge, or deploy.
