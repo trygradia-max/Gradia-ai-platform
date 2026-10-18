@@ -120,11 +120,14 @@ describe("attestation invariants", () => {
       const p = join(dir, e)
       return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(e) ? [p] : []
     })
-    const readers: Record<string, true> = {
-      "src/lib/types/database.ts": true, "src/lib/telephony-provider.ts": true, "src/app/api/cron/roi-receipt/route.ts": true,
-      "src/lib/byo-sms-attestation.ts": true, // documentation only
-    }
-    const mentions = walk("src").filter((f) => readFileSync(f, "utf8").includes("byo_sms_verified"))
-    expect(mentions.filter((f) => !readers[f.split("\\").join("/")])).toEqual([])
+    // A write is the column as an object key ({ byo_sms_verified: true }) or an
+    // assignment. Reading it (selects, Picks, shop.byo_sms_verified) is fine.
+    const write = /\bbyo_sms_verified\s*(:|=(?!=))/
+    const typeOnly: Record<string, true> = { "src/lib/types/database.ts": true }
+    const writers = walk("src").filter((f) => !typeOnly[f.split("\\").join("/")] && write.test(readFileSync(f, "utf8")))
+    expect(writers).toEqual([])
+    expect(write.test("supabase.from(\"shops\").update({ byo_sms_verified: true })")).toBe(true)
+    expect(write.test("shop.byo_sms_verified = true")).toBe(true)
+    expect(write.test("if (shop.byo_sms_verified) return")).toBe(false)
   })
 })
