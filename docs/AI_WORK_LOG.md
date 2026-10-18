@@ -1420,3 +1420,8 @@ removed. At 390px the card stayed inside the viewport. Disposable Supabase
 integration cases were not executed. No browser vendor, live session,
 authenticated save, shared migration, Google connection, memory publication,
 schedule, merge, or deploy.
+
+[AI: cursor] [DATE: 2026-10-18] [AREA: platform] [STATUS: done]
+Recorded on `cursor/cloud-browser-unavailable-b44a` that the cloud browser
+check stays unavailable until a real browser provider exists, and that it is
+not a launch prerequisite. No provider, session, migration, merge, or deploy.

@@ -66,9 +66,10 @@ An owner can record a cloud-browser check for a saved brief only when
 does not run because a brief was saved, and it does not open a browser.
 
 The only result this slice can save is `unavailable` with provider `none`.
-The record says no session started, no password was stored, and this computer
-was not used. A provider name in the environment is ignored and is not written
-into the row. Sign-in and multi-factor checks stay with the owner.
+It stays unavailable until a real browser provider exists. It is not a launch
+prerequisite. The record says no session started, no password was stored, and
+this computer was not used. A provider name in the environment is ignored and
+is not written into the row. Sign-in and multi-factor checks stay with the owner.
 
 There is no browser vendor client, local shell, cookie jar, or shared
 credential in this slice. The migration is not applied to shared databases here.
