@@ -1,5 +1,6 @@
 "use server"
 
+import { describeA2pRegistration, type A2pRegistrationState } from "@/lib/a2p-state"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 
@@ -78,6 +79,8 @@ export type A2pState = {
   status: A2pRegistrationRow["status"] | "none"
   failureReason: string | null
   business: A2pBusinessDetails | null
+  /** What the owner can do next, which step failed and whether retrying can fix it. */
+  registration?: A2pRegistrationState
 }
 
 /** Current registration state for the wizard (no vendor calls). */
@@ -91,11 +94,12 @@ export async function getA2pState(): Promise<A2pState> {
     .eq("shop_id", shop.id)
     .maybeSingle()
   const reg = (data as A2pRegistrationRow | null) ?? null
-  if (!reg) return { status: "none", failureReason: null, business: null }
+  if (!reg) return { status: "none", failureReason: null, business: null, registration: describeA2pRegistration(null) }
   return {
     status: reg.status,
     failureReason: reg.failure_reason,
     business: reg.business,
+    registration: describeA2pRegistration(reg),
   }
 }
 
@@ -116,15 +120,18 @@ export async function refreshA2pStatus(): Promise<A2pState> {
   const shop = await loadShop()
   if (!shop) return { status: "none", failureReason: null, business: null }
 
+  const supabase = createServiceClient()
   const result = await syncA2pStatus({
-    supabase: createServiceClient(),
+    supabase,
     shop,
     origin: await resolveOrigin(),
   })
   revalidatePath("/settings")
+  const { data } = await supabase.from("a2p_registrations").select("*").eq("shop_id", shop.id).maybeSingle()
   return {
     status: result.status,
     failureReason: result.failureReason,
     business: null,
+    registration: describeA2pRegistration((data as A2pRegistrationRow | null) ?? null),
   }
 }
