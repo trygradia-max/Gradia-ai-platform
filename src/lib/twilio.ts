@@ -642,6 +642,80 @@ export async function createSubaccount(input: {
   return { sid: parsed.sid, authToken: parsed.auth_token }
 }
 
+/** A subaccount as Twilio reports it to the master account. */
+export type TwilioSubaccountRecord = {
+  sid: string
+  authToken: string
+  friendlyName: string
+  status: string
+}
+
+function masterAuth(): string {
+  const accountSid = envAccountSid()
+  const authToken = envAuthToken()
+  if (!accountSid || !authToken) {
+    throw new TwilioError(500, "Master Twilio credentials missing")
+  }
+  return "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+}
+
+function parseSubaccount(raw: unknown): TwilioSubaccountRecord | null {
+  const a = raw as { sid?: unknown; auth_token?: unknown; friendly_name?: unknown; status?: unknown } | null
+  if (!a || typeof a.sid !== "string" || typeof a.auth_token !== "string") return null
+  return {
+    sid: a.sid,
+    authToken: a.auth_token,
+    friendlyName: typeof a.friendly_name === "string" ? a.friendly_name : "",
+    status: typeof a.status === "string" ? a.status : "",
+  }
+}
+
+/**
+ * Active subaccounts whose FriendlyName is exactly `friendlyName` (the shop
+ * id). Recovers a subaccount Twilio created whose credentials Gradia failed to
+ * save, so a retry adopts it instead of creating another. Master credentials.
+ */
+export async function listSubaccountsByFriendlyName(friendlyName: string): Promise<TwilioSubaccountRecord[]> {
+  const name = friendlyName.trim()
+  if (!name) throw new TwilioError(400, "friendlyName is required")
+  const query = new URLSearchParams({ FriendlyName: name, Status: "active", PageSize: "20" })
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts.json?${query}`, {
+    headers: { Authorization: masterAuth(), Accept: "application/json" },
+  })
+  const raw = await res.text()
+  if (!res.ok) throw new TwilioError(res.status, `Twilio subaccount lookup failed: ${raw.slice(0, 300)}`)
+  const accounts = (JSON.parse(raw) as { accounts?: unknown[] }).accounts ?? []
+  return accounts
+    .map(parseSubaccount)
+    .filter((a): a is TwilioSubaccountRecord => a !== null && a.friendlyName === name && a.status === "active")
+}
+
+/** One subaccount by SID, including its current auth token. Master credentials. */
+export async function fetchSubaccount(sid: string): Promise<TwilioSubaccountRecord | null> {
+  if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) throw new TwilioError(400, "Invalid subaccount sid")
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts/${sid}.json`, {
+    headers: { Authorization: masterAuth(), Accept: "application/json" },
+  })
+  const raw = await res.text()
+  if (res.status === 404) return null
+  if (!res.ok) throw new TwilioError(res.status, `Twilio subaccount fetch failed: ${raw.slice(0, 300)}`)
+  return parseSubaccount(JSON.parse(raw))
+}
+
+/**
+ * Closes a subaccount Gradia just created and lost a race to store. It has no
+ * numbers or registrations yet. Never used on a stored subaccount.
+ */
+export async function closeSubaccount(sid: string): Promise<void> {
+  if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) throw new TwilioError(400, "Invalid subaccount sid")
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts/${sid}.json`, {
+    method: "POST",
+    headers: { Authorization: masterAuth(), "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams({ Status: "closed" }).toString(),
+  })
+  if (!res.ok) throw new TwilioError(res.status, `Twilio subaccount close failed: ${(await res.text()).slice(0, 300)}`)
+}
+
 // ---------- Usage Records (reconciliation) ----------
 
 /**
