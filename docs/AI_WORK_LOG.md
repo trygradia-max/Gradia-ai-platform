@@ -1618,3 +1618,42 @@ Disposable `gradia-record-fresh` stack, 95 migrations. Node 22.23.2 isolated run
   passed.
 
 Nothing was merged, deployed, migrated on a shared database, or sent.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+One Twilio subaccount per business. Reproduced with a fake Twilio Accounts API on
+the disposable stack.
+
+The previous `ensureSubaccount`:
+
+- created a subaccount for every concurrent purchase and overwrote the stored
+  SID, orphaning the others;
+- created a second subaccount after a failed save;
+- replaced a stored SID with a brand-new subaccount when its token stopped
+  decrypting;
+- relied on the caller's stale shop snapshot.
+
+Fix:
+
+- It reads the stored SID fresh and never replaces it, recovering the token for
+  that SID, which must be named for this shop.
+- With no SID stored, it adopts an active subaccount named for the shop and
+  refuses when there is more than one.
+- It saves only if no SID is stored, and closes a duplicate it created on losing
+  that race.
+- New Twilio helpers: list by FriendlyName, fetch, and close.
+- Migration 96 adds `shops_twilio_subaccount_sid_unique`.
+- Contract: `docs/architecture/CHANNEL_PROVIDERS.md`.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's migrations (main's
+94 plus 96, applied from zero). Node 22.23.2 isolated runner:
+
+- `twilio-subaccount`: 7 of 7 twice, after one run whose concurrency test failed
+  seed `createUser`. On the old code it failed 6 of 7.
+- `twilio-status-callback` 12, `twilio-inbound-replay` 14, `tenant-isolation` 8,
+  `tenant-relationships` 8.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No real Twilio call, number, migration on a shared database, or activation.
