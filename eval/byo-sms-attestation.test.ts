@@ -123,6 +123,8 @@ describe("attestation invariants", () => {
     const readers: Record<string, true> = {
       "src/lib/types/database.ts": true, "src/lib/telephony-provider.ts": true, "src/app/api/cron/roi-receipt/route.ts": true,
       "src/lib/byo-sms-attestation.ts": true, // documentation only
+      "src/lib/channel-readiness.ts": true,
+      "src/lib/data/channel-readiness.ts": true,
     }
     const mentions = walk("src").filter((f) => readFileSync(f, "utf8").includes("byo_sms_verified"))
     expect(mentions.filter((f) => !readers[f.split("\\").join("/")])).toEqual([])
