@@ -126,9 +126,22 @@ export type A2pRegistrationRow = {
   messaging_service_sid: string | null
   campaign_sid: string | null
   failure_reason: string | null
+  failed_step: A2pRegistrationStep | null
+  retryable: boolean | null
+  attempts: number
+  last_attempt_at: string | null
   created_at: string
   updated_at: string
 }
+
+/** A provider step of A2P registration, in order (migration 97). */
+export type A2pRegistrationStep =
+  | "profile"
+  | "trust_product"
+  | "brand"
+  | "messaging_service"
+  | "campaign"
+  | "attach_number"
 
 export type UsageEventKind =
   | "agent_run" // legacy rows only — new writers use the menu kinds below
