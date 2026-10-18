@@ -1350,6 +1350,7 @@ async function executeBookAppointment(
       // and the quote/lead bookkeeping must not leave them stale forever.
       // No-op for payloads without quote refs (voice bookings).
       await applyQuoteBookingBookkeeping(supabase, claimed, proposal, priorId)
+      await ensureBookingConfirmation(supabase, claimed, proposal, priorId)
       return {
         ok: true,
         status: "executed",
@@ -1475,6 +1476,7 @@ async function executeBookAppointment(
     )
     // P0-009: same idempotent quote/lead repair as the fast-path above.
     await applyQuoteBookingBookkeeping(supabase, claimed, proposal, appointmentId)
+    await ensureBookingConfirmation(supabase, claimed, proposal, appointmentId)
     return {
       ok: true,
       status: "executed",
@@ -1712,17 +1714,114 @@ async function executeBookAppointment(
   }
 }
 
+/** Appointment fields a repaired confirmation is drafted from and re-checked against. */
+type ConfirmationBasis = {
+  customer_id: string | null
+  scheduled_at: string
+  duration_minutes: number | null
+  service_name: string | null
+  timezone: string | null
+  status: string | null
+}
+
+async function readConfirmationBasis(
+  supabase: SupabaseClient,
+  shopId: string,
+  appointmentId: string
+): Promise<ConfirmationBasis | null> {
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("customer_id, scheduled_at, duration_minutes, service_name, timezone, status")
+    .eq("id", appointmentId)
+    .eq("shop_id", shopId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data as ConfirmationBasis | null
+}
+
+const sameConfirmationBasis = (a: ConfirmationBasis, b: ConfirmationBasis | null) =>
+  b !== null && a.customer_id === b.customer_id && Date.parse(a.scheduled_at) === Date.parse(b.scheduled_at) &&
+  a.duration_minutes === b.duration_minutes && a.service_name === b.service_name && a.timezone === b.timezone && a.status === b.status
+
+/**
+ * Replay repair: a crash or drafter outage between the appointment write and
+ * the confirmation leaves the booking without one, and the replay paths return
+ * before the normal staging step. Stage it now, at most once per appointment:
+ * any existing confirmation (pending, approved, rejected or sent) counts.
+ *
+ * Freshness: the confirmation is drafted from the appointment and customer AS
+ * THEY ARE NOW (time, length, service, timezone, phone), never from the
+ * original proposal, and a closed appointment, one already started, or a
+ * customer without a phone gets none. A cancelled appointment is deleted, so
+ * there is nothing to confirm. If the appointment changes while the repair is
+ * staging, the unsent confirmation this call just created is withdrawn; a
+ * later replay drafts a fresh one.
+ *
+ * Scope: "at most once" relies on executions of one action being serialized by
+ * its claim. There is no database uniqueness key per appointment. Best-effort,
+ * like the original: it never fails the booking.
+ */
+async function ensureBookingConfirmation(
+  supabase: SupabaseClient,
+  claimed: ClaimedAction,
+  proposal: BookingProposal,
+  appointmentId: string
+): Promise<void> {
+  try {
+    const { data: existing, error } = await supabase
+      .from("pending_actions")
+      .select("id")
+      .eq("shop_id", claimed.shop_id)
+      .eq("payload->>source", "booking_confirmation")
+      .eq("payload->>appointment_id", appointmentId)
+      .limit(1)
+    if (error || (existing as { id: string }[] | null)?.length) return
+    const basis = await readConfirmationBasis(supabase, claimed.shop_id, appointmentId)
+    if (!basis?.customer_id || basis.status === "closed" || !(Date.parse(basis.scheduled_at) > Date.now())) return
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("name, phone")
+      .eq("id", basis.customer_id)
+      .eq("shop_id", claimed.shop_id)
+      .maybeSingle()
+    const current = customer as { name: string | null; phone: string | null } | null
+    if (!current?.phone?.trim()) return
+    const shop = await loadShopWithToken(supabase, claimed.shop_id)
+    if (!shop) return
+    const staged = await queueBookingConfirmationSms(supabase, shop, {
+      ...proposal,
+      customer_name: current.name ?? proposal.customer_name,
+      phone: current.phone,
+      service: basis.service_name ?? proposal.service,
+      iso_start_time: new Date(basis.scheduled_at).toISOString(),
+      duration_minutes: basis.duration_minutes ?? proposal.duration_minutes,
+      timezone: basis.timezone ?? proposal.timezone,
+    }, basis.customer_id, appointmentId)
+    if (!staged) return
+    if (!sameConfirmationBasis(basis, await readConfirmationBasis(supabase, claimed.shop_id, appointmentId))) {
+      // Moved, closed or cancelled while drafting: withdraw the unsent card.
+      await supabase.from("pending_actions").delete().eq("id", staged).eq("shop_id", claimed.shop_id).eq("status", "pending")
+      console.warn(`[approvals] booking confirmation for appointment ${appointmentId} withdrawn: the appointment changed during repair`)
+    }
+  } catch (err) {
+    console.warn(
+      `[approvals] booking confirmation repair failed for appointment ${appointmentId} (booking still stands):`,
+      err
+    )
+  }
+}
+
 async function queueBookingConfirmationSms(
   supabase: SupabaseClient,
   shop: ShopRow,
   proposal: BookingProposal,
   customerId: string,
   appointmentId: string
-): Promise<void> {
+): Promise<string | null> {
   // Skip if the shop hasn't connected SMS — without a Twilio number
   // there's nothing for the operator to eventually approve & send.
-  if (!shop.twilio_phone_number) return
-  if (!proposal.phone?.trim()) return
+  if (!shop.twilio_phone_number) return null
+  if (!proposal.phone?.trim()) return null
 
   const draft = await draftBookingConfirmationSms({
     shopName: shop.name,
@@ -1733,7 +1832,7 @@ async function queueBookingConfirmationSms(
     timezone: proposal.timezone,
     vehicle: proposal.car_info,
   })
-  if (!draft) return
+  if (!draft) return null
 
   const reason = proposal.service?.trim()
     ? `Confirm booking · ${proposal.service.trim()}`
@@ -1765,8 +1864,9 @@ async function queueBookingConfirmationSms(
       "[approvals] booking confirmation pending_action insert failed:",
       pendingErr
     )
-    return
+    return null
   }
+  return (pending as { id: string }).id
 }
 
 export type QuoteProposal = {
