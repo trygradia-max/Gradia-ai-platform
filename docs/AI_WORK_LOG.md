@@ -1550,3 +1550,14 @@ Merge-order note: #93's unit test that lists `src/` files mentioning
 `byo_sms_verified` will need `src/lib/channel-readiness.ts` and
 `src/lib/data/channel-readiness.ts` added as readers, whichever PR merges
 second. No migration, provider call, send, merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-18] [AREA: platform] [STATUS: done]
+Separated onboarding from the duplicate Super Agent research on PR #91.
+Research stays on #85/#86 with migration `20261016040000`. Removed #91's
+`20261016053000` research migration so it no longer shares a version with #90's
+browser check. Wired setup and Settings to #88 `nextAction`, #89 channel
+readiness, and #93 owner attestation. Calls and texting have separate statuses.
+An owner-confirmed own number is Ready to test. Skipping the number still
+advances. Did not merge, deploy, apply a shared migration, or add a browser
+provider. Authenticated saves were not run here: this environment has no
+disposable Supabase.

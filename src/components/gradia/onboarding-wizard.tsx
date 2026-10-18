@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
+import type { ByoSmsAttestationState } from "@/lib/byo-sms-attestation"
+import type { ChannelKey, ChannelReadiness } from "@/lib/channel-readiness"
 import { readBusinessKind } from "@/lib/onboarding"
 import { cn } from "@/lib/utils"
 import type { ShopRow } from "@/lib/types/database"
@@ -40,6 +42,8 @@ export function OnboardingWizard({
   a2pState,
   voiceOptions,
   vapiConfigured,
+  channels = null,
+  byo = null,
 }: {
   initialShop: ShopRow | null
   initialStep: Step
@@ -49,6 +53,8 @@ export function OnboardingWizard({
   a2pState: A2pState
   voiceOptions: { id: string; label: string; description: string }[]
   vapiConfigured: boolean
+  channels?: Record<ChannelKey, ChannelReadiness> | null
+  byo?: ByoSmsAttestationState | null
 }) {
   const router = useRouter()
   const [step, setStep] = React.useState<Step>(initialStep)
@@ -75,7 +81,7 @@ export function OnboardingWizard({
   }
 
   return (
-    <Card className="w-full max-w-2xl overflow-hidden rounded-2xl border-border/60 bg-card/95 shadow-2xl shadow-black/40 ring-1 ring-foreground/5">
+    <Card className="w-full max-w-2xl overflow-hidden rounded-2xl border-border/60 bg-card/95 shadow-2xl shadow-black/40 ring-1 ring-foreground/5 max-[420px]:shadow-none">
       <CardHeader className="space-y-5 border-b border-border/40 pb-5">
         <div className="flex items-center gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25">
@@ -116,6 +122,8 @@ export function OnboardingWizard({
               <NumberStep
                 shop={liveShop}
                 a2pState={a2pState}
+                channels={channels}
+                byo={byo}
                 onBack={() => void remember(1)}
                 onSkip={() => void remember(3, true)}
                 onContinue={() => void remember(3, false)}
@@ -126,6 +134,7 @@ export function OnboardingWizard({
                 shop={liveShop}
                 voiceOptions={voiceOptions}
                 vapiConfigured={vapiConfigured}
+                channels={channels}
                 onBack={() => void remember(2)}
               />
             ) : null}

@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest"
 
+import { describeA2pRegistration } from "@/lib/a2p-state"
 import {
-  carrierApprovalCopy,
   deriveWizardStep,
   messageApprovalCopy,
   needsOnboarding,
+  registrationFromA2pState,
   showsDetailingFields,
+  textingActionCopy,
 } from "@/lib/onboarding"
 
 /**
@@ -64,12 +66,33 @@ describe("detailing fields follow the saved business kind", () => {
   })
 })
 
-describe("approval status copy", () => {
-  it("names carrier states in plain language", () => {
-    expect(carrierApprovalCopy("none").label).toBe("Not started")
-    expect(carrierApprovalCopy("brand_pending").label).toBe("Waiting for approval")
-    expect(carrierApprovalCopy("approved").label).toBe("Approved")
-    expect(carrierApprovalCopy("rejected").label).toBe("Needs a fix")
+describe("texting next action", () => {
+  it("uses the published nextAction and keeps calls out of the texting label", () => {
+    expect(textingActionCopy("submit")).toMatchObject({ label: "Not set up", button: "Submit for texting approval" })
+    expect(textingActionCopy("resume").button).toBe("Continue texting approval")
+    expect(textingActionCopy("fix_and_resubmit").label).toBe("Needs a correction")
+    expect(textingActionCopy("resubmit_campaign").button).toBe("Resubmit texting campaign")
+    expect(textingActionCopy("wait")).toMatchObject({ label: "Submitted for review", button: "Check texting status" })
+    expect(textingActionCopy("none").label).toBe("Ready")
+    for (const action of ["submit", "resume", "fix_and_resubmit", "resubmit_campaign", "wait", "none"] as const) {
+      expect(textingActionCopy(action).detail).not.toMatch(/call/i)
+    }
+  })
+
+  it("prefers a stored registration over a status-only fallback", () => {
+    const registration = describeA2pRegistration({
+      status: "rejected",
+      failed_step: "campaign",
+      retryable: false,
+      failure_reason: "Campaign refused",
+      attempts: 2,
+    })
+    expect(registrationFromA2pState({
+      status: "rejected",
+      failureReason: "Campaign refused",
+      registration,
+    }).nextAction).toBe("resubmit_campaign")
+    expect(registrationFromA2pState({ status: "brand_pending", failureReason: null }).nextAction).toBe("wait")
   })
 
   it("says texts wait for approval unless the owner turned that off", () => {

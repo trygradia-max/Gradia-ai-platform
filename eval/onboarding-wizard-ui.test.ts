@@ -55,8 +55,10 @@ describe("onboarding wizard presentation", () => {
     )
     expect(html).toContain("Skip number for now")
     expect(html).toContain("Continue to help")
-    expect(html).toContain("Waiting for approval")
-    expect(html).toContain("Carrier approval")
+    expect(html).toContain("Submitted for review")
+    expect(html).toContain("Texting")
+    expect(html).not.toContain("Calls work")
+    expect(html).not.toContain("1–3 days")
   })
 
   it("shows test-call steps and message approval on the help step", () => {

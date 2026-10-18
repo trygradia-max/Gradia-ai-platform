@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation"
 import { getA2pState } from "@/app/actions/a2p"
+import { getByoSmsAttestation } from "@/app/actions/byo-sms-attestation"
+import { getChannelReadiness } from "@/app/actions/channel-readiness"
 import { GrainOverlay } from "@/components/gradia/grain-overlay"
 import { MeshBackground } from "@/components/gradia/mesh-background"
 import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
@@ -9,6 +11,22 @@ import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { listVoiceOptions } from "@/lib/voice-provider"
 import type { ShopRow } from "@/lib/types/database"
+
+async function readChannels() {
+  try {
+    return await getChannelReadiness()
+  } catch {
+    return { ok: false as const, error: "Couldn't check channel readiness. Try again." }
+  }
+}
+
+async function readAttestation(shopId: string) {
+  try {
+    return await getByoSmsAttestation({ shopId })
+  } catch {
+    return { ok: false as const, code: "uncertain" as const }
+  }
+}
 
 export const dynamic = "force-dynamic"
 
@@ -65,6 +83,8 @@ export default async function OnboardingPage({
 
   const isResuming = Boolean(shop) && !startFresh
   const a2pState = shop ? await getA2pState() : { status: "none" as const, failureReason: null, business: null }
+  const readiness = shop ? await readChannels() : null
+  const attestation = shop ? await readAttestation(shop.id) : null
   const voiceOptions = listVoiceOptions()
   const vapiConfigured = integrationAvailability().voice
 
@@ -101,6 +121,8 @@ export default async function OnboardingPage({
         a2pState={a2pState}
         voiceOptions={voiceOptions}
         vapiConfigured={vapiConfigured}
+        channels={readiness?.ok ? readiness.channels : null}
+        byo={attestation?.ok ? attestation.attestation : null}
       />
     </div>
   )

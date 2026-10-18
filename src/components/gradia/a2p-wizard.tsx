@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { A2pFormInput } from "@/lib/a2p-schema"
+import { registrationFromA2pState, textingActionCopy } from "@/lib/onboarding"
 import type { A2pBusinessDetails } from "@/lib/types/database"
 
 const BUSINESS_TYPES = [
@@ -80,8 +81,12 @@ function formFrom(business: A2pBusinessDetails | null): A2pFormInput {
 export function A2pWizard({ initial }: { initial: A2pState }) {
   const router = useRouter()
   const [state, setState] = React.useState<A2pState>(initial)
+  const registration = registrationFromA2pState(state)
+  const action = registration.nextAction
+  const copy = textingActionCopy(action)
   const [editing, setEditing] = React.useState(
-    initial.status === "none" || initial.status === "draft"
+    registrationFromA2pState(initial).nextAction === "submit" ||
+      registrationFromA2pState(initial).nextAction === "resume"
   )
   const [form, setForm] = React.useState<A2pFormInput>(formFrom(initial.business))
   const [submitting, setSubmitting] = React.useState(false)
@@ -120,9 +125,21 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
       toast.error(result.error)
       return
     }
-    toast.success("Sent to carriers — we'll keep an eye on it from here.")
+    toast.success("Submitted for texting review.")
     setEditing(false)
-    setState((s) => ({ ...s, status: "brand_pending", failureReason: null }))
+    setState((s) => ({
+      ...s,
+      status: "brand_pending",
+      failureReason: null,
+      registration: {
+        status: "brand_pending",
+        nextAction: "wait",
+        failedStep: null,
+        retryable: null,
+        failureReason: null,
+        attempts: s.registration?.attempts ?? 0,
+      },
+    }))
     router.refresh()
   }
 
@@ -132,40 +149,40 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
     const next = await refreshA2pStatus()
     setChecking(false)
     setState(next)
-    if (next.status === "approved") {
-      toast.success("Verified — texting is unlocked on your number.")
+    if (next.registration?.nextAction === "none" || next.status === "approved") {
+      toast.success("Texting is approved.")
     }
     router.refresh()
   }
 
-  if (state.status === "approved") {
+  if (action === "none") {
     return (
       <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
           <BadgeCheck className="size-4" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
-          <p className="text-sm text-foreground">
-            Verified — texting is unlocked on our number.
-          </p>
+          <p className="label-eyebrow text-muted-foreground/70">Texting approval</p>
+          <p className="text-sm font-medium text-foreground">{copy.label}</p>
+          <p className="text-sm text-foreground">{copy.detail}</p>
         </div>
       </div>
     )
   }
 
-  if (!editing && (state.status === "brand_pending" || state.status === "campaign_pending")) {
+  if (action === "wait") {
     return (
-      <div className="flex items-center gap-3 rounded-md border border-status-warning/25 bg-status-warning-bg px-3.5 py-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-status-warning/25 bg-status-warning-bg px-3.5 py-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-warning-bg text-status-warning-fg ring-1 ring-status-warning/25">
           <Clock className="size-4" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
+          <p className="label-eyebrow text-muted-foreground/70">Texting approval</p>
+          <p className="text-sm font-medium text-foreground">{copy.label}</p>
           <p className="text-sm text-foreground">
             {isSoleProp && state.status === "brand_pending"
-              ? "Check your phone — carriers texted your cell a verification message. Answer it, then this finishes on its own (usually 1–3 days). Calls work the whole time."
-              : "Carriers are verifying the business — usually 1–3 days. Texting unlocks automatically when they approve; calls work the whole time."}
+              ? "Carriers texted your cell. Answer that message, then check status here."
+              : copy.detail}
           </p>
         </div>
         {isSoleProp && state.status === "brand_pending" ? (
@@ -189,14 +206,14 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           size="sm"
           onClick={handleRefresh}
           disabled={checking}
-          className="gap-2 shrink-0"
+          className="min-h-11 shrink-0 gap-2"
         >
           {checking ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
           ) : (
             <RefreshCw className="size-3.5" aria-hidden />
           )}
-          Check status
+          Check texting status
         </Button>
       </div>
     )
@@ -204,32 +221,29 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
 
   return (
     <div className="space-y-4">
-      {state.status === "rejected" && !editing ? (
+      {(action === "fix_and_resubmit" || action === "resubmit_campaign") && !editing ? (
         <div className="flex items-start gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-3.5 py-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-destructive/12 text-destructive ring-1 ring-destructive/25">
             <ShieldAlert className="size-4" aria-hidden />
           </div>
           <div className="min-w-0 flex-1 space-y-2">
-            <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
+            <p className="label-eyebrow text-muted-foreground/70">Texting approval</p>
+            <p className="text-sm font-medium text-foreground">{copy.label}</p>
             <p className="text-sm text-foreground">
-              Carriers couldn&apos;t verify the business.{" "}
-              {state.failureReason ??
-                "The usual fix: make sure the legal name matches the EIN exactly."}
+              {state.failureReason ?? copy.detail}
             </p>
-            <Button type="button" size="sm" onClick={() => setEditing(true)}>
-              Fix details & resubmit
+            <Button type="button" className="min-h-11" onClick={() => setEditing(true)}>
+              {copy.button}
             </Button>
           </div>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
+            <p className="label-eyebrow text-muted-foreground/70">Texting approval</p>
+            <p className="text-sm font-medium text-foreground">{copy.label}</p>
             <p className="text-sm text-muted-foreground">
-              Before our number can text customers, US carriers verify the
-              business behind it (one-time, 1–3 days). Calls work right away —
-              this unlocks texting. Use the legal details exactly as registered
-              with the IRS; mismatches are the #1 rejection cause.
+              Carriers review this business before it can text. Use the legal name as it is registered.
             </p>
           </div>
 
@@ -429,14 +443,14 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           </div>
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={submitting} className="gap-2">
+            <Button type="submit" disabled={submitting} className="min-h-11 gap-2">
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden />
                   Sending to carriers
                 </>
               ) : (
-                "Register with carriers"
+                copy.button ?? "Submit for texting approval"
               )}
             </Button>
           </div>

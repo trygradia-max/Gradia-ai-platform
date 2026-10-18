@@ -7,10 +7,15 @@ import { BadgeCheck, Loader2, Mail, Phone } from "lucide-react"
 import { toast } from "sonner"
 
 import { completeOnboarding } from "@/app/actions/onboarding"
+import { ByoSmsAttestationCard } from "@/components/gradia/byo-sms-attestation-card"
+import { ChannelStatusList } from "@/components/gradia/channel-status-list"
 import { readAutonomy } from "@/lib/autonomy"
+import type { ByoSmsAttestationState } from "@/lib/byo-sms-attestation"
+import type { ChannelKey, ChannelReadiness } from "@/lib/channel-readiness"
 import {
-  carrierApprovalCopy,
   messageApprovalCopy,
+  registrationFromA2pState,
+  textingActionCopy,
 } from "@/lib/onboarding"
 import { saveWorkingHours } from "@/app/actions/working-hours"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
@@ -58,7 +63,7 @@ function StepShell({
         <p className="text-sm text-muted-foreground">{blurb}</p>
       </div>
       {children}
-      <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border pt-4">
+      <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         {footer}
       </div>
     </div>
@@ -260,12 +265,16 @@ export function InboxStep({
 export function NumberStep({
   shop,
   a2pState,
+  channels,
+  byo,
   onBack,
   onContinue,
   onSkip,
 }: {
   shop: ShopRow
   a2pState: A2pState
+  channels: Record<ChannelKey, ChannelReadiness> | null
+  byo: ByoSmsAttestationState | null
   onBack: () => void
   onContinue: () => void
   onSkip: () => void
@@ -274,6 +283,7 @@ export function NumberStep({
   const isGradiaNumber =
     Boolean(shop.gradia_number_e164) &&
     shop.twilio_phone_number === shop.gradia_number_e164
+  const texting = textingActionCopy(registrationFromA2pState(a2pState).nextAction)
   const [picking, setPicking] = React.useState(!hasNumber)
 
   return (
@@ -282,26 +292,27 @@ export function NumberStep({
       blurb="This is the number customers call and text. Carriers must approve texting. Calls can work before that approval."
       footer={
         <>
-          <Button type="button" variant="outline" className="min-h-11" onClick={onBack}>
+          <Button type="button" variant="outline" className="min-h-11 shrink whitespace-normal" onClick={onBack}>
             Back
           </Button>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {!hasNumber ? (
-              <Button type="button" variant="outline" className="min-h-11" onClick={onSkip}>
+              <Button type="button" variant="outline" className="min-h-11 shrink whitespace-normal" onClick={onSkip}>
                 Skip number for now
               </Button>
             ) : null}
-            <Button type="button" className="min-h-11" onClick={onContinue} disabled={!hasNumber}>
+            <Button type="button" className="min-h-11 shrink whitespace-normal" onClick={onContinue} disabled={!hasNumber}>
               Continue to help
             </Button>
           </div>
         </>
       }
     >
-      <ApprovalStatus
-        label="Carrier approval"
-        status={carrierApprovalCopy(a2pState.status)}
-      />
+      {channels ? (
+        <ChannelStatusList channels={channels} />
+      ) : (
+        <ApprovalStatus label="Texting" status={texting} />
+      )}
 
       {hasNumber ? (
         <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
@@ -327,8 +338,11 @@ export function NumberStep({
       )}
 
       {/* In-flow carrier verification, the moment a Gradia number exists. */}
-      {isGradiaNumber && a2pState.status !== "approved" ? (
+      {isGradiaNumber && registrationFromA2pState(a2pState).nextAction !== "none" ? (
         <A2pWizard initial={a2pState} />
+      ) : null}
+      {!isGradiaNumber && byo ? (
+        <ByoSmsAttestationCard shopId={shop.id} initial={byo} />
       ) : null}
     </StepShell>
   )
@@ -340,11 +354,13 @@ export function ChooseHelpStep({
   shop,
   voiceOptions,
   vapiConfigured,
+  channels,
   onBack,
 }: {
   shop: ShopRow
   voiceOptions: { id: string; label: string; description: string }[]
   vapiConfigured: boolean
+  channels: Record<ChannelKey, ChannelReadiness> | null
   onBack: () => void
 }) {
   const router = useRouter()
@@ -371,16 +387,17 @@ export function ChooseHelpStep({
       blurb="Pick what Gradia should handle first. You can change this later in Settings."
       footer={
         <>
-          <Button type="button" variant="outline" className="min-h-11" onClick={onBack}>
+          <Button type="button" variant="outline" className="min-h-11 shrink whitespace-normal" onClick={onBack}>
             Back
           </Button>
-          <Button type="button" onClick={finish} disabled={finishing} className="min-h-11 gap-2">
+          <Button type="button" onClick={finish} disabled={finishing} className="min-h-11 shrink gap-2 whitespace-normal">
             {finishing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
             Finish setup
           </Button>
         </>
       }
     >
+      {channels ? <ChannelStatusList channels={channels} /> : null}
       <ApprovalStatus
         label="Message approval"
         status={messageApprovalCopy(readAutonomy(shop).default)}

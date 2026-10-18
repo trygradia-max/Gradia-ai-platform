@@ -21,7 +21,11 @@ import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { showsDetailingFields } from "@/lib/onboarding"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
+import { getByoSmsAttestation } from "@/app/actions/byo-sms-attestation"
+import { getChannelReadiness } from "@/app/actions/channel-readiness"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
+import { ByoSmsAttestationCard } from "@/components/gradia/byo-sms-attestation-card"
+import { ChannelStatusList } from "@/components/gradia/channel-status-list"
 import { SmsSettingsCard } from "@/components/gradia/sms-settings-card"
 import { StripeSettingsCard } from "@/components/gradia/stripe-settings-card"
 import { VoiceBuilderCard } from "@/components/gradia/voice-builder-card"
@@ -55,6 +59,22 @@ import { createClient } from "@/lib/supabase/server"
 import type { ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
+
+async function readChannels() {
+  try {
+    return await getChannelReadiness()
+  } catch {
+    return { ok: false as const, error: "Couldn't check channel readiness. Try again." }
+  }
+}
+
+async function readAttestation(shopId: string) {
+  try {
+    return await getByoSmsAttestation({ shopId })
+  } catch {
+    return { ok: false as const, code: "uncertain" as const }
+  }
+}
 
 async function resolveWebhookBaseUrl(): Promise<string> {
   const configured = process.env.GRADIA_DASHBOARD_URL?.trim()
@@ -178,6 +198,8 @@ export default async function SettingsPage({
 
   const usageState = await getUsageState()
   const a2pState = await getA2pState()
+  const readiness = await readChannels()
+  const attestation = await readAttestation(shopCtx.id)
   const voiceOptions = listVoiceOptions()
   const services = await listServicesForCurrentShop()
   const automationEntries = await getAutomationSettings()
@@ -240,6 +262,9 @@ export default async function SettingsPage({
 
         <div className="space-y-3">
           <p className="label-eyebrow text-muted-foreground">Channels</p>
+          {readiness.ok ? <ChannelStatusList channels={readiness.channels} /> : (
+            <p role="alert" className="text-sm text-status-danger-fg">{readiness.error}</p>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <ConnectionTile
               icon={Phone}
@@ -392,6 +417,16 @@ export default async function SettingsPage({
           {shop?.gradia_number_e164 &&
           shop.twilio_phone_number === shop.gradia_number_e164 ? (
             <A2pWizard initial={a2pState} />
+          ) : null}
+          {shop?.twilio_phone_number &&
+          shop.twilio_phone_number !== shop.gradia_number_e164 ? (
+            attestation.ok ? (
+              <ByoSmsAttestationCard shopId={shopCtx.id} initial={attestation.attestation} />
+            ) : (
+              <p role="alert" className="text-sm text-status-danger-fg">
+                Couldn&apos;t check texting confirmation. Try again.
+              </p>
+            )
           ) : null}
         </section>
 
