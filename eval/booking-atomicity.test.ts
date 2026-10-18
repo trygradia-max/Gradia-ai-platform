@@ -108,6 +108,8 @@ function mockDb(opts: {
             service: "Full Detail",
             iso_start_time: RANGE.start,
             duration_minutes: 120,
+            // An explicit owner-set length: this suite tests atomicity, not menu sizing.
+            duration_source: "owner",
             timezone: null,
             email: null,
             pin_notes: null,

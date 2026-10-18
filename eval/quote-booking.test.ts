@@ -94,6 +94,8 @@ function quotePayload(extras: Record<string, unknown> = {}) {
     service: "Full Detail",
     iso_start_time: RANGE.start,
     duration_minutes: 120,
+    // As staged by quote acceptance since #76: summed from the menu server-side.
+    duration_source: "menu",
     timezone: null,
     email: null,
     pin_notes: "Booked from quote — total 250",
@@ -283,7 +285,7 @@ describe("executeBookAppointment — quote refs resolve the EXISTING lead (P0-00
   it("no refs at all (voice booking / old in-flight payload): create path unchanged, no quote reads matter", async () => {
     const writes: Write[] = []
     const db = mockDb({
-      payload: quotePayload({ quote_id: undefined, lead_id: undefined, source: undefined }),
+      payload: quotePayload({ quote_id: undefined, lead_id: undefined, source: undefined, duration_source: "owner" }),
       writes,
     })
     const res = await executeApproval(db, "pa-1", "shop-1", { userId: "owner-1" })
