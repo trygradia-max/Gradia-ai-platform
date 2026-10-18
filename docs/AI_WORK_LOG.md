@@ -1506,3 +1506,37 @@ one file at a time:
   passed.
 
 Nothing was merged, deployed, migrated on a shared database, or sent.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B6: connected qualification acceptance through delivery evidence, built on merged
+#78 with no new executor. New file:
+`eval/integration/qualification-delivery-acceptance.int.test.ts`. It covers SMS and
+email, with the real interaction history (only embeddings disabled) and fake
+Twilio and Aurinko:
+
+- one send under concurrent and exact retries;
+- exactly one outbound interaction linked to the action and customer, set as
+  `result_id`;
+- the email threaded to the customer's message;
+- `provider_accepted`, never "delivered";
+- an unknown outcome held as `claimed`, never resent, with no outbound record
+  and a replacement question refused;
+- suppression, DNC and SMS STOP after queueing held, with zero external effects
+  (no transport, token refresh, ledger entry or interaction).
+
+Added a question transition inventory to `LEAD_QUALIFICATION.md`. Three transitions
+are unsupported: a stale question at send, an asked marker, and an inbound answer.
+Each is a separate PR; the stale-at-send hold is next.
+
+Disposable `gradia-record-fresh` stack, 94 migrations. Node 22.23.2 isolated runner,
+one file at a time:
+
+- New suite: 7 of 7 in two runs.
+- `lead-workflow-acceptance`: 6. `qualification-question-staging`: 17.
+  `whisper-reply-context`: 19.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
