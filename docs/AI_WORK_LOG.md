@@ -1390,3 +1390,90 @@ Disposable `gradia-record-fresh` stack, reset from this branch's migrations (mai
   passed.
 
 No real Twilio registration, migration on a shared database, or activation.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Owner attestation for own-number (BYO) texting. Contract:
+`docs/architecture/BYO_SMS_ATTESTATION.md`. Migration `20261015150000` (95 on
+main; PRs #83, #87 and #88 hold 95–97, so the number will move at merge).
+
+`shops.byo_sms_verified` gates every text from a non-Gradia number
+(`smsGateForShop`, plus the `stage_qualification_question` mirror). Nothing wrote
+it, so every own-number text was held.
+
+New pieces:
+
+- Owner-only `attest_byo_sms_registration`, `revoke_byo_sms_registration` and
+  `read_byo_sms_attestation`. The caller must be `shops.owner_id` with an active
+  owner membership; managers and staff are refused whatever their capabilities.
+- Attesting needs `confirm: true`, the current statement version, and the exact
+  number the owner was shown. It refuses `number_changed`, `no_number` and
+  `gradia_number`.
+- An append-only `byo_sms_attestations` history records event, number, actor,
+  statement version and time.
+- A guard trigger stops a signed-in session setting the flag directly on shops,
+  on update or insert. A second trigger clears the attestation whenever
+  `twilio_phone_number` changes, through any writer.
+- Session-client server actions `getByoSmsAttestation`,
+  `attestByoSmsRegistration` and `revokeByoSmsRegistration`.
+
+The Gradia-number gate is unchanged, and a unit test pins that the flag never
+opens it. A provider-verifiable check was considered and deferred: it needs live
+calls and covers only some numbers. The `source` column leaves room for it.
+UI is Cursor's.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's 95 migrations,
+Node 22.23.2 isolated runner:
+
+- `byo-sms-attestation`: 6 of 6 in three of four runs. The other run failed
+  seed `createUser` before any test ran.
+- After a reset, 68 tests passed: this suite plus `qualification-question-staging`
+  (17), `lead-workflow-acceptance` (6), `team-permissions` (27) and
+  `tenant-isolation` (8). Those suites set the flag through the service role,
+  which still works. `approvals` was the one failure in that run.
+- The full suite failed 24 tests, then 17 on retry, all with gateway 502s,
+  statement timeouts or seed failures. A reset to origin/main on the same stack
+  showed the same thing: the same 10 tests fail in `manager-notification`,
+  `whisper-inbox`, `lead-qualification` and `customer-merge`. `approvals` passes
+  on the first run after a reset and fails 3 of 4 on the second, on main and on
+  this branch alike. These are pre-existing local-stack failures, not regressions.
+- Unit: 1,498 passed, 4 skipped, 9 of them new.
+- Lint, types before and after the offline build, and the build itself passed.
+
+No merge, deployment, shared migration, provider call or send.
+
+[AI: claude-code] [DATE: 2026-10-16] [AREA: platform] [STATUS: review]
+Reworked BYO SMS attestation (PR #93) against
+`ONBOARDING_AND_BUSINESS_UX_HANDOFF.md`, which the first pass hadn't read. Gap
+found: a non-Gradia number on a shop with no Twilio credentials of its own sends
+through Gradia's pilot `env` account (`resolveTwilioCredentials`). The first pass
+let the owner attest it, which would put texts on Gradia's account under a
+registration the owner can't hold.
+
+Changes:
+
+- Attesting now needs the shop's own encrypted credentials. Otherwise the state
+  is `not_own_account`, attesting is refused, and texts stay held.
+- A credential change or removal clears the attestation (`account_changed`).
+  Rotating only the token doesn't.
+- The statement names the owner's own account and Messaging Service. Its version
+  is now `2026-10-16`.
+- `byoSmsSetupStatus` maps states onto the handoff vocabulary. Confirmed is
+  "Ready to test", never "Ready".
+- The deferred provider check is now cited against current Twilio docs
+  (UsAppToPerson `campaign_status`).
+
+Recorded conflict: PR #89 maps the flag to texting `ready`. It should cap at
+"Ready to test" and report `not_own_account`.
+
+Disposable `gradia-record-fresh` stack, reset from 95 migrations:
+
+- Attestation suite: 8 of 8, twice.
+- Focused run: 66 of 66 across `qualification-question-staging`,
+  `lead-workflow-acceptance`, `team-permissions` and `tenant-isolation`.
+- Unit: 1,499 passed, 4 skipped.
+- Lint, types before and after the build, and the offline build passed.
+
+The full-suite local failures recorded above are unchanged and also occur on
+main.
+
+No merge, deployment, shared migration, provider call or send.
