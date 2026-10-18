@@ -78,23 +78,31 @@ export function appendStageHistory(
  * Best-effort stage move with history + timer. Used by every auto-move hook
  * and the board itself. No-op when the C1 columns are missing or the lead is
  * already there.
+ *
+ * Conditional: the stage, its history, the timer and the legacy status are
+ * written in ONE update that lands only if the lead still has the stage and
+ * `stage_entered_at` this call read. A move that raced in between wins; this
+ * one returns false instead of overwriting it or dropping its history entry.
+ * `from` additionally limits which stages may be left (checked in the same
+ * update), so an automatic forward move cannot regress a later stage.
  */
 export async function moveLeadToStage(
   supabase: SupabaseClient,
   shopId: string,
   leadId: string,
   stage: CrmStage,
-  opts: { by?: "owner" | "system"; lostReason?: LostReason | null } = {}
+  opts: { by?: "owner" | "system"; lostReason?: LostReason | null; from?: readonly (CrmStage | null)[] } = {}
 ): Promise<boolean> {
   const { data } = await supabase
     .from("leads")
-    .select("stage, stage_history")
+    .select("stage, stage_history, stage_entered_at")
     .eq("id", leadId)
     .eq("shop_id", shopId)
     .maybeSingle()
-  const row = data as { stage: CrmStage | null; stage_history: unknown } | null
+  const row = data as { stage: CrmStage | null; stage_history: unknown; stage_entered_at: string } | null
   if (!row) return false
   if (row.stage === stage) return true
+  if (opts.from && !opts.from.includes(row.stage)) return false
 
   const now = new Date()
   const patch: Record<string, unknown> = {
@@ -109,26 +117,26 @@ export async function moveLeadToStage(
     next_action_at: nextActionAt(stage, now),
   }
   if (stage === "lost") patch.lost_reason = opts.lostReason ?? "other"
+  // Keep the legacy status coherent for pre-C2 readers (write-through).
+  const legacy: LeadStatus | null =
+    stage === "booked" ? "booked" : stage === "quote_sent" ? "quoted" : null
+  if (legacy) patch.status = legacy
 
-  const { error } = await supabase
+  let update = supabase
     .from("leads")
     .update(patch)
     .eq("id", leadId)
     .eq("shop_id", shopId)
+    .eq("stage_entered_at", row.stage_entered_at)
+  update = row.stage === null ? update.is("stage", null) : update.eq("stage", row.stage)
+  const { data: moved, error } = await update.select("id")
   if (error) {
     console.warn("[pipeline] stage move skipped (pre-C1?):", error.message)
     return false
   }
-
-  // Keep the legacy status coherent for pre-C2 readers (write-through).
-  const legacy: LeadStatus | null =
-    stage === "booked" ? "booked" : stage === "quote_sent" ? "quoted" : null
-  if (legacy) {
-    await supabase
-      .from("leads")
-      .update({ status: legacy })
-      .eq("id", leadId)
-      .eq("shop_id", shopId)
+  if (!(moved as { id: string }[] | null)?.length) {
+    console.warn(`[pipeline] stage move to ${stage} skipped for lead ${leadId}: the card changed concurrently`)
+    return false
   }
   return true
 }
