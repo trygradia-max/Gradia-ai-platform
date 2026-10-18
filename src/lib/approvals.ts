@@ -56,6 +56,7 @@ import { buildQuoteLineItem, computeQuoteTotals } from "@/lib/quotes"
 import { parseVehicle } from "@/lib/vehicle"
 import { upsertCustomerVehicle, vehiclesByCustomerIds } from "@/lib/vehicles"
 import { draftBookingConfirmationSms } from "@/lib/sms-drafter"
+import { bookingDurationHold, resolveBookingDuration } from "@/lib/booking-duration"
 import { smsGateForShop } from "@/lib/telephony-provider"
 import {
   defaultStatusCallbackUrl,
@@ -1334,8 +1335,6 @@ async function executeBookAppointment(
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: "Booking start time is not a valid ISO date" }
   }
-  const durationMinutes = Number(proposal.duration_minutes) || 90
-  const end = new Date(start.getTime() + durationMinutes * 60_000)
 
   // P0-004A replay fast-path: if THIS action already produced its durable
   // appointment (re-driven claim after a crash/retry), the booking is done —
@@ -1369,6 +1368,19 @@ async function executeBookAppointment(
       }
     }
   }
+
+  // Step 6: the booking's length comes from the menu (or the owner's own edit,
+  // or a quote's server-computed duration), never from a model or API caller.
+  // When the menu can't decide, hold for the owner rather than guess.
+  const duration = await resolveBookingDuration(supabase, claimed.shop_id, proposal)
+  if (!duration.ok) {
+    await rollbackClaim(supabase, claimed)
+    return { ok: false, error: bookingDurationHold(duration.reason, proposal.service) }
+  }
+  const durationMinutes = duration.minutes
+  // The confirmation and every later step describe the length actually booked.
+  proposal.duration_minutes = durationMinutes
+  const end = new Date(start.getTime() + durationMinutes * 60_000)
 
   // P0-004: authoritative availability re-check at claim time — data may
   // have changed since this card was staged.

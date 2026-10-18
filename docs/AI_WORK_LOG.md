@@ -1577,3 +1577,44 @@ the verifier passing. Node 22.23.2 isolated runner, one file at a time:
   passed.
 
 Migration 95 is not applied to any shared or production database.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+B7: booking length is decided from the menu at the execution boundary.
+
+Reproduced first in `eval/integration/booking-duration.int.test.ts`. On main, the
+executor booked whatever length was staged: a voice model's 30 minutes or a
+caller's 600 minutes for a 180-minute menu service. It also booked unmatched,
+ambiguous and size-dependent services at the staged length, with no hold.
+
+Fix: `src/lib/booking-duration.ts` → `resolveBookingDuration`, called by
+`executeBookAppointment` after the replay check and before the conflict gate.
+
+- **Owner length:** used as given when the owner saved the card in Approvals.
+  The editor now sets `duration_source: "owner"`.
+- **Quote length:** used as given when quote acceptance computed it server-side
+  (#76).
+- **Everything else:** exactly one matching menu service sets the length, sized
+  to the customer's single known vehicle size when the length varies by size.
+- **Holds:** an unmatched or ambiguous service, an unknown size where it matters,
+  or an unreadable menu. The owner sees the reason, and nothing is booked.
+
+Voice staging now prefers the menu over the model's duration for its staging
+snapshot. Existing booking-atomicity and conflict fixtures now state an
+owner-set 2-hour length, which is what their slot arithmetic tests. No
+migration, calendar activation or scheduler change.
+
+Disposable `gradia-record-fresh` stack, 95 migrations. Node 22.23.2 isolated runner:
+
+- New suite: 9 of 9 twice. On the old executor it failed 7 of 9.
+- `booking-atomicity` 13, `quote-acceptance` 17, `approvals` 4,
+  `control-execution` 16, `mcp-capabilities` 11, `agent-records` 19,
+  `delegated-message-approval` 26.
+- `conflict-enforcement`: 6 of 6 in two of three runs. The failing runs died in
+  `stagePending` with PostgREST connection resets, and a branch without this
+  change failed the same way on the same stack.
+- Unit: 1,494 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+Nothing was merged, deployed, migrated on a shared database, or sent.
