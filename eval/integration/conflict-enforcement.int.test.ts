@@ -75,7 +75,10 @@ function bookingPayload(startIso: string, extras: Record<string, unknown> = {}) 
     car_info: null,
     service: "Full Detail",
     iso_start_time: startIso,
+    // These suites test slot atomicity/conflicts on 2-hour slots, so the length
+    // is an explicit owner-set one rather than the menu's (Full Detail = 180).
     duration_minutes: 120,
+    duration_source: "owner",
     timezone: "UTC",
     email: null,
     pin_notes: null,
