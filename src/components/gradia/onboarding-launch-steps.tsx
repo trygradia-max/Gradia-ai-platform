@@ -343,10 +343,12 @@ export function NumberStep({
 
 export function ChooseHelpStep({
   shop,
+  readiness,
   voiceOptions,
   vapiConfigured,
   onBack,
 }: {
+  readiness?: ChannelReadinessResult
   shop: ShopRow
   voiceOptions: { id: string; label: string; description: string }[]
   vapiConfigured: boolean
@@ -386,6 +388,7 @@ export function ChooseHelpStep({
         </>
       }
     >
+      {readiness ? <ChannelReadinessPanel result={readiness} /> : null}
       <ApprovalStatus
         label="Message approval"
         status={messageApprovalCopy(readAutonomy(shop).default)}
@@ -412,7 +415,7 @@ export function ChooseHelpStep({
             Phone help is optional.
           </p>
           <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-            Phone answering is an optional add-on. Review the plan and setup before turning it on.
+            Phone answering is an optional +$29/month add-on. Review the plan and setup before turning it on.
           </p>
           <Link href="/billing" className={cn(buttonVariants(), "mt-1 min-h-11")}>
             See phone help

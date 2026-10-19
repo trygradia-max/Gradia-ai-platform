@@ -224,7 +224,8 @@ describe("UX-001 §5 — every Settings tile has an honest NOT AVAILABLE reason"
   it("unavailableReason + help on each ConnectionTile", () => {
     const src = read("src/app/(dashboard)/settings/page.tsx")
     const tiles = src.match(/<ConnectionTile[\s\S]*?\/>/g) ?? []
-    expect(tiles.length).toBeGreaterThanOrEqual(5)
+    expect(tiles.length).toBeGreaterThanOrEqual(2) // Calendar and Jobber remain connection tiles.
+    expect(src).toContain("<ChannelReadinessPanel result={readiness}") // Channels use independent setup evidence.
     for (const t of tiles) {
       expect(t).toMatch(/unavailableReason=\{STRINGS\.connections\.notAvailableReason\./)
       expect(t).toMatch(/help=\{STRINGS\.help\.settings\./)

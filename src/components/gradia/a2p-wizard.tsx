@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { registrationFromA2pState, textingActionCopy } from "@/lib/onboarding"
 import type { A2pFormInput } from "@/lib/a2p-schema"
 import type { A2pBusinessDetails } from "@/lib/types/database"
 
@@ -89,8 +90,10 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
   const [checking, setChecking] = React.useState(false)
   const [resending, setResending] = React.useState(false)
   const busy = React.useRef(false)
-  const nextAction = state.registration?.nextAction
-  const submitLabel = nextAction === "resume" ? "Resume registration" : nextAction === "resubmit_campaign" ? "Resubmit texting registration" : nextAction === "fix_and_resubmit" ? "Save corrections and resubmit" : "Submit for carrier review"
+  const registration = registrationFromA2pState(state)
+  const nextAction = registration.nextAction
+  const actionCopy = textingActionCopy(nextAction)
+  const submitLabel = actionCopy.button ?? "Submit for carrier review"
 
   /** Sole-prop registrations verify by texting the owner's cell. */
   const isSoleProp =
@@ -220,9 +223,11 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           </div>
           <div className="min-w-0 flex-1 space-y-2">
             <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
+            <p className="text-sm font-medium">{actionCopy.label}</p>
             <p className="text-sm text-foreground">
               Carriers couldn&apos;t verify the business.{" "}
-              {state.failureReason ??
+              <p className="text-sm font-medium">{actionCopy.label}</p>
+          {state.failureReason ??
                 "The usual fix: make sure the legal name matches the EIN exactly."}
             </p>
             <Button type="button" size="sm" onClick={() => setEditing(true)}>
@@ -240,6 +245,7 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
             </p>
           </div>
 
+          <p className="text-sm font-medium">{actionCopy.label}</p>
           {state.failureReason ? <p role="alert" className="text-sm text-status-warning-fg">{state.failureReason}</p> : null}
           {nextAction === "resume" ? <p className="text-sm text-muted-foreground">Your saved steps are kept. Submit the same details to resume.</p> : null}
           {nextAction === "resubmit_campaign" ? <p className="text-sm text-muted-foreground">Your approved business registration is kept when you resubmit the same details.</p> : null}

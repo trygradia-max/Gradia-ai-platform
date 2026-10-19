@@ -16,7 +16,7 @@ export function ChannelReadinessPanel({ result, channels = ["calls", "texting", 
       {channels.map(key => {
         const channel = result.channels[key]
         const label = channel.state === "ready" ? "Setup checks passed" : readinessStatusLabel(channel) ?? "Unavailable"
-        return <article key={key} className="min-w-0 rounded-lg border border-border bg-card p-4">
+        return <article data-channel={key} key={key} className="min-w-0 rounded-lg border border-border bg-card p-4">
           <h3 className="font-medium">{names[key]}</h3>
           <p className="mt-1 text-sm font-medium">{label}</p>
           <p className="mt-2 text-sm text-muted-foreground">{channel.message}</p>

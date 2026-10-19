@@ -133,6 +133,7 @@ export function OnboardingWizard({
             {step === 3 && liveShop ? (
               <ChooseHelpStep
                 shop={liveShop}
+                readiness={readiness}
                 voiceOptions={voiceOptions}
                 vapiConfigured={vapiConfigured}
                 onBack={() => void remember(2)}

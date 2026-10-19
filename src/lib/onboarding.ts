@@ -3,6 +3,7 @@
  * Your business → Your number → Choose your help.
  */
 
+import { describeA2pRegistration, type A2pNextAction, type A2pRegistrationState } from "@/lib/a2p-state"
 import type { A2pRegistrationStatus } from "@/lib/types/database"
 import type { ShopRow } from "@/lib/types/database"
 import type { AutonomyMode } from "@/lib/autonomy"
@@ -86,6 +87,74 @@ export function carrierApprovalCopy(
       return {
         label: "Needs a fix",
         detail: "Carriers rejected this registration. Update it and submit again.",
+      }
+  }
+}
+
+type A2pStateLike = {
+  status: A2pRegistrationState["status"]
+  failureReason: string | null
+  registration?: A2pRegistrationState
+}
+
+/** Prefer the published nextAction. Fall back only when an older caller has a status. */
+export function registrationFromA2pState(state: A2pStateLike): A2pRegistrationState {
+  if (state.registration) return state.registration
+  if (state.status === "none") return describeA2pRegistration(null)
+  return describeA2pRegistration({
+    status: state.status,
+    failed_step: null,
+    retryable: null,
+    failure_reason: state.failureReason,
+    attempts: 0,
+  })
+}
+
+/**
+ * Texting-only status and the one next button. Call setup is never described
+ * here. Labels match the onboarding status vocabulary.
+ */
+export function textingActionCopy(action: A2pNextAction): {
+  label: "Not set up" | "Needs your details" | "Submitted for review" | "Needs a correction" | "Ready"
+  detail: string
+  button: string | null
+} {
+  switch (action) {
+    case "submit":
+      return {
+        label: "Not set up",
+        detail: "Submit your business details for texting approval.",
+        button: "Submit for texting approval",
+      }
+    case "resume":
+      return {
+        label: "Needs your details",
+        detail: "A texting submission stopped. Continue with the same details.",
+        button: "Continue texting approval",
+      }
+    case "fix_and_resubmit":
+      return {
+        label: "Needs a correction",
+        detail: "Carriers refused these details. Correct them and submit again.",
+        button: "Fix details and resubmit",
+      }
+    case "resubmit_campaign":
+      return {
+        label: "Needs a correction",
+        detail: "The business was approved. Submit the texting campaign again.",
+        button: "Resubmit texting campaign",
+      }
+    case "wait":
+      return {
+        label: "Submitted for review",
+        detail: "Texting is with the carriers.",
+        button: "Check texting status",
+      }
+    case "none":
+      return {
+        label: "Ready",
+        detail: "Carriers approved texting. Consent, approval rules and channel controls still apply.",
+        button: null,
       }
   }
 }

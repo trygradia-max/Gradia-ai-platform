@@ -47,11 +47,11 @@ export function ByoSmsAttestationCard({ shopId, initial }: { shopId: string; ini
         <p className="text-sm text-muted-foreground">You confirmed this number&apos;s registration. Gradia has not verified it with the carrier. Consent and approval rules still apply.</p>
         <Button type="button" variant="outline" disabled={pending} onClick={() => void change(true)} className="min-h-11">Withdraw confirmation</Button>
       </> : <>
-        <label className="flex min-h-11 items-start gap-3 text-sm">
-          <input type="checkbox" className="mt-1 size-4 shrink-0 accent-primary" checked={confirmed} disabled={pending} onChange={e => setConfirmed(e.target.checked)} />
+        <label htmlFor="byo-sms-confirm" className="flex min-h-11 items-start gap-3 text-sm">
+          <input id="byo-sms-confirm" type="checkbox" className="mt-1 size-4 shrink-0 accent-primary" checked={confirmed} disabled={pending} onChange={e => setConfirmed(e.target.checked)} />
           <span>{BYO_SMS_ATTESTATION_STATEMENT}</span>
         </label>
-        <Button type="button" disabled={pending || !confirmed || state.current_statement_version !== BYO_SMS_ATTESTATION_STATEMENT_VERSION} onClick={() => void change(false)} className="min-h-11">Confirm this number</Button>
+        <Button type="button" disabled={pending || !confirmed || state.current_statement_version !== BYO_SMS_ATTESTATION_STATEMENT_VERSION} onClick={() => void change(false)} className="min-h-11">Confirm texting registration</Button>
       </>}
     </>}
     {error ? <p role="alert" className="text-sm text-status-danger-fg">{error}</p> : null}
