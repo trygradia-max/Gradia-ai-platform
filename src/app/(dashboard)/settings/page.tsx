@@ -1,8 +1,12 @@
 import {getManagerNotifications} from "@/app/actions/manager-notifications"
 import {ManagerNotificationSettings} from "@/components/gradia/manager-notification-settings"
+import { getChannelReadiness } from "@/app/actions/channel-readiness"
+import { getByoSmsAttestation } from "@/app/actions/byo-sms-attestation"
+import { ChannelReadinessPanel } from "@/components/gradia/channel-readiness-panel"
+import { ByoSmsAttestationCard } from "@/components/gradia/byo-sms-attestation-card"
 import { headers } from "next/headers"
 import Link from "next/link"
-import { Bot, Briefcase, Calendar, ChevronRight, Mail, MessageSquare, Phone, Shield } from "lucide-react"
+import { Bot, Briefcase, Calendar, ChevronRight, Shield } from "lucide-react"
 
 import { EmailSettingsCard } from "@/components/gradia/email-settings-card"
 import { JobberSettingsCard } from "@/components/gradia/jobber-settings-card"
@@ -18,6 +22,7 @@ import { WorkingHoursCard } from "@/components/gradia/working-hours-card"
 import { getAutomationSettings } from "@/app/actions/automations"
 import { listPublicIntakeForms } from "@/app/actions/public-intake-forms"
 import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
+import { showsDetailingFields } from "@/lib/onboarding"
 import { SettingsSectionNav } from "@/components/gradia/settings-section-nav"
 import { getA2pState } from "@/app/actions/a2p"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
@@ -177,6 +182,8 @@ export default async function SettingsPage({
 
   const usageState = await getUsageState()
   const a2pState = await getA2pState()
+  const readiness = await getChannelReadiness()
+  const byoState = await getByoSmsAttestation({ shopId: shopCtx.id })
   const voiceOptions = listVoiceOptions()
   const services = await listServicesForCurrentShop()
   const automationEntries = await getAutomationSettings()
@@ -237,54 +244,7 @@ export default async function SettingsPage({
           />
         </Link>
 
-        <div className="space-y-3">
-          <p className="label-eyebrow text-muted-foreground">Channels</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ConnectionTile
-              icon={Phone}
-              name="Voice"
-              description="Answers calls, quotes, and books — in our voice."
-              connected={connection.voice.connected}
-              available={availability.voice}
-              unavailableReason={STRINGS.connections.notAvailableReason.voice}
-              help={STRINGS.help.settings.voice}
-              connectedLabel="Assistant linked"
-              connectedDetail="Answering calls"
-              connectHref="#voice"
-              manageHref="#voice"
-            />
-            <ConnectionTile
-              icon={Mail}
-              name="Email"
-              description="Reads leads and drafts replies for our approval."
-              connected={connection.email.connected}
-              available={availability.email}
-              unavailableReason={STRINGS.connections.notAvailableReason.email}
-              help={STRINGS.help.settings.email}
-              connectedLabel={
-                connection.email.identity ??
-                STRINGS.connections.identityFallback.email
-              }
-              connectedDetail="Reading + drafting"
-              connectHref="/api/aurinko/auth/start"
-              popup
-              manageHref="#email"
-            />
-            <ConnectionTile
-              icon={MessageSquare}
-              name="SMS"
-              description="Catches every text and drafts a reply in a minute."
-              connected={connection.sms.connected}
-              available={availability.sms}
-              unavailableReason={STRINGS.connections.notAvailableReason.sms}
-              help={STRINGS.help.settings.sms}
-              connectedLabel={connection.sms.identity}
-              connectedDetail="Texting back"
-              connectHref="#sms"
-              manageHref="#sms"
-            />
-          </div>
-        </div>
+        <ChannelReadinessPanel result={readiness} />
 
         <div className="space-y-3">
           <p className="label-eyebrow text-muted-foreground">
@@ -341,7 +301,10 @@ export default async function SettingsPage({
         {/* The shop's brain (CRM C3a): one menu feeds quotes, phone answers,
             and drafts through lib/service-pricing — never edited elsewhere. */}
         <section id="services">
-          <ServiceMenuCard initialServices={services} />
+          <ServiceMenuCard
+            initialServices={services}
+            detailing={showsDetailingFields(shop?.settings)}
+          />
         </section>
 
         {/* Working hours — calendar capacity + the agent's hours line. */}
@@ -387,8 +350,9 @@ export default async function SettingsPage({
               BYO shops handle A2P on their own Twilio account. */}
           {shop?.gradia_number_e164 &&
           shop.twilio_phone_number === shop.gradia_number_e164 ? (
-            <A2pWizard initial={a2pState} />
+            <A2pWizard key={JSON.stringify(a2pState)} initial={a2pState} />
           ) : null}
+          <ByoSmsAttestationCard key={JSON.stringify(byoState)} shopId={shopCtx.id} initial={byoState} />
         </section>
 
         <section id="website">

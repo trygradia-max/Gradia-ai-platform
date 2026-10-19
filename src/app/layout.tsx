@@ -21,11 +21,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Gradia — AI operations for detailers",
+    default: "Gradia",
     template: "%s · Gradia",
   },
   description:
-    "The AI office that catches every lead while you're under a car.",
+    "Gradia drafts replies and bookings. You approve them before they go out.",
 }
 
 export default function RootLayout({

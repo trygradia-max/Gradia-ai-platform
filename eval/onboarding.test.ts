@@ -1,96 +1,80 @@
 import { describe, it, expect } from "vitest"
 
-import { deriveWizardStep, needsOnboarding } from "@/lib/onboarding"
-import { DEFAULT_WORKING_HOURS } from "@/lib/working-hours"
+import {
+  carrierApprovalCopy,
+  deriveWizardStep,
+  messageApprovalCopy,
+  needsOnboarding,
+  showsDetailingFields,
+} from "@/lib/onboarding"
 
 /**
- * Tier 1 — pure, deterministic. Locks the first-run wizard's resume logic
- * and the dashboard gate (GRADIA_UX_ONBOARDING_SPEC Part 1): new shops go
- * through the wizard; shops from before the flag are NEVER trapped.
- *
- * UX-001: the inbox step keys off connection truth (credential pair), not the
- * display email — a mailbox connected with no display email must not bounce
- * the owner back to step 4 forever (the founder repro shape).
- *
- * B-16: a services-and-hours step is inserted between the menu and the
- * inbox (1 shop, 2 services, 3 hours, 4 inbox, 5 number, 6 receptionist).
- * Hours always has a usable default, so it gates on whether the owner has
- * ever saved the step, not on any particular value.
+ * Three-step wizard: Your business → Your number → Choose your help.
+ * A saved onboarding_step wins over inferred completeness so a refresh
+ * returns to the same place.
  */
 
-const wired = {
-  aurinko_access_token_enc: "enc:token",
-  aurinko_account_id: 4242,
-  aurinko_account_email: "shop@gmail.com",
+const shop = {
   twilio_phone_number: "+16175550100",
-  settings: { calendar: { working_hours: DEFAULT_WORKING_HOURS } },
+  settings: { onboarding_step: 2 as const },
 }
 
-describe("deriveWizardStep — resume at the first incomplete step", () => {
-  it("no shop → step 1 (the only required step)", () => {
-    expect(deriveWizardStep(null, 0)).toBe(1)
+describe("deriveWizardStep — saved progress", () => {
+  it("no shop → step 1", () => {
+    expect(deriveWizardStep(null)).toBe(1)
   })
 
-  it("shop but empty menu → step 2", () => {
-    expect(deriveWizardStep(wired, 0)).toBe(2)
+  it("a saved step is where the owner left off", () => {
+    expect(deriveWizardStep(shop)).toBe(2)
+    expect(deriveWizardStep({ ...shop, settings: { onboarding_step: 3 } })).toBe(3)
+    expect(deriveWizardStep({ ...shop, settings: { onboarding_step: 1 } })).toBe(1)
   })
 
-  it("menu present but hours never saved → step 3", () => {
-    expect(deriveWizardStep({ ...wired, settings: {} }, 3)).toBe(3)
+  it("without a saved step, a missing number resumes at the number", () => {
     expect(
-      deriveWizardStep({ ...wired, settings: { calendar: {} } }, 3)
+      deriveWizardStep({ twilio_phone_number: null, settings: {} })
+    ).toBe(2)
+  })
+
+  it("a skipped number moves on to help", () => {
+    expect(
+      deriveWizardStep({
+        twilio_phone_number: null,
+        settings: { onboarding_number_skipped: true },
+      })
     ).toBe(3)
   })
 
-  it("hours saved but no inbox → step 4; inbox but no number → step 5", () => {
+  it("a saved number without an explicit step opens help", () => {
     expect(
-      deriveWizardStep(
-        {
-          ...wired,
-          aurinko_access_token_enc: null,
-          aurinko_account_id: null,
-          aurinko_account_email: null,
-        },
-        3
-      )
-    ).toBe(4)
-    expect(
-      deriveWizardStep({ ...wired, twilio_phone_number: null }, 3)
-    ).toBe(5)
+      deriveWizardStep({ twilio_phone_number: "+16175550100", settings: {} })
+    ).toBe(3)
+  })
+})
+
+describe("detailing fields follow the saved business kind", () => {
+  it("defaults to detailing when the kind was never saved", () => {
+    expect(showsDetailingFields({})).toBe(true)
+    expect(showsDetailingFields(null)).toBe(true)
   })
 
-  it("everything wired → step 6 (receptionist + test call)", () => {
-    expect(deriveWizardStep(wired, 3)).toBe(6)
+  it("hides vehicle fields only for a general business", () => {
+    expect(showsDetailingFields({ business_kind: "general" })).toBe(false)
+    expect(showsDetailingFields({ business_kind: "detailing" })).toBe(true)
+  })
+})
+
+describe("approval status copy", () => {
+  it("names carrier states in plain language", () => {
+    expect(carrierApprovalCopy("none").label).toBe("Not started")
+    expect(carrierApprovalCopy("brand_pending").label).toBe("Waiting for approval")
+    expect(carrierApprovalCopy("approved").label).toBe("Approved")
+    expect(carrierApprovalCopy("rejected").label).toBe("Needs a fix")
   })
 
-  it("UX-001 founder repro: credentials on file, display email null → inbox counts as done", () => {
-    const repro = { ...wired, aurinko_account_email: null }
-    expect(deriveWizardStep(repro, 3)).toBe(6)
-    expect(deriveWizardStep({ ...repro, twilio_phone_number: null }, 3)).toBe(5)
-  })
-
-  it("a stale display email without credentials does NOT count as connected", () => {
-    expect(
-      deriveWizardStep(
-        { ...wired, aurinko_access_token_enc: null, aurinko_account_id: null },
-        3
-      )
-    ).toBe(4)
-  })
-
-  it("the interim numeric working_hours_per_day (pre-B-16) also counts as saved", () => {
-    expect(
-      deriveWizardStep(
-        {
-          ...wired,
-          aurinko_access_token_enc: null,
-          aurinko_account_id: null,
-          aurinko_account_email: null,
-          settings: { calendar: { working_hours_per_day: 8 } },
-        },
-        3
-      )
-    ).toBe(4)
+  it("says texts wait for approval unless the owner turned that off", () => {
+    expect(messageApprovalCopy("suggest").label).toBe("Waiting for you")
+    expect(messageApprovalCopy("autonomous").detail).toMatch(/still wait/)
   })
 })
 

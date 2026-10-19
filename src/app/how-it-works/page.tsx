@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils"
 export const metadata: Metadata = {
   title: "How Gradia works",
   description:
-    "The AI office for auto detailers — every call, email, text, and DM becomes a one-tap approval card. $20/month, no missed leads.",
+    "Gradia catches calls, email, and texts, then waits for your approval. $20/month.",
 }
 
 type ChannelTone = "voice" | "email" | "sms" | "social" | "calendar" | "money"
@@ -164,8 +164,8 @@ export default function HowItWorksPage() {
             </span>
 
             <h1 className="font-display text-[clamp(2.5rem,7vw,5rem)] leading-[1.02] tracking-[-0.03em] text-foreground">
-              The AI office that catches every lead while you&apos;re{" "}
-              <span className="italic">under a car</span>.
+              Catch every lead, then{" "}
+              <span className="italic">approve what goes out</span>.
             </h1>
 
             <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
@@ -382,9 +382,9 @@ export default function HowItWorksPage() {
                         <span className="italic">$20</span>/month. No catch.
                       </h2>
                       <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
-                        Bring your own voice line, Gmail, texting number,
-                        and Stripe. We handle the AI office layer
-                        that ties them together. Cancel anytime — your data
+                        Bring your own phone line, email, texting number,
+                        and payments. Gradia ties them together and waits
+                        for your approval. Cancel anytime — your data
                         exports cleanly.
                       </p>
                     </div>

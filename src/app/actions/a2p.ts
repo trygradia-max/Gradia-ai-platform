@@ -71,11 +71,13 @@ export async function submitA2pRegistration(
     business: parsed.data as A2pBusinessDetails,
     origin: await resolveOrigin(),
   })
-  if (result.ok) revalidatePath("/settings")
+  revalidatePath("/settings")
+  revalidatePath("/onboarding")
   return result
 }
 
 export type A2pState = {
+  error?: string
   status: A2pRegistrationRow["status"] | "none"
   failureReason: string | null
   business: A2pBusinessDetails | null
@@ -88,11 +90,12 @@ export async function getA2pState(): Promise<A2pState> {
   const shop = await loadShop()
   if (!shop) return { status: "none", failureReason: null, business: null }
   const supabase = await createClient()
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("a2p_registrations")
     .select("*")
     .eq("shop_id", shop.id)
     .maybeSingle()
+  if (error) return { status: "none", failureReason: null, business: null, error: "Could not load carrier registration. Refresh before continuing." }
   const reg = (data as A2pRegistrationRow | null) ?? null
   if (!reg) return { status: "none", failureReason: null, business: null, registration: describeA2pRegistration(null) }
   return {
@@ -127,11 +130,13 @@ export async function refreshA2pStatus(): Promise<A2pState> {
     origin: await resolveOrigin(),
   })
   revalidatePath("/settings")
-  const { data } = await supabase.from("a2p_registrations").select("*").eq("shop_id", shop.id).maybeSingle()
+  revalidatePath("/onboarding")
+  const { data, error } = await supabase.from("a2p_registrations").select("*").eq("shop_id", shop.id).maybeSingle()
+  if (error) return { status: "none", failureReason: null, business: null, error: "Could not load carrier registration. Refresh before continuing." }
   return {
     status: result.status,
     failureReason: result.failureReason,
-    business: null,
+    business: (data as A2pRegistrationRow | null)?.business ?? null,
     registration: describeA2pRegistration((data as A2pRegistrationRow | null) ?? null),
   }
 }

@@ -7,6 +7,13 @@ import { BadgeCheck, Loader2, Mail, Phone } from "lucide-react"
 import { toast } from "sonner"
 
 import { completeOnboarding } from "@/app/actions/onboarding"
+import type { ChannelReadinessResult } from "@/app/actions/channel-readiness"
+import { ChannelReadinessPanel } from "@/components/gradia/channel-readiness-panel"
+import { readAutonomy } from "@/lib/autonomy"
+import {
+  carrierApprovalCopy,
+  messageApprovalCopy,
+} from "@/lib/onboarding"
 import { saveWorkingHours } from "@/app/actions/working-hours"
 import { A2pWizard } from "@/components/gradia/a2p-wizard"
 import { TwilioNumberPicker } from "@/components/gradia/twilio-number-picker"
@@ -255,13 +262,17 @@ export function InboxStep({
 export function NumberStep({
   shop,
   a2pState,
+  readiness,
   onBack,
   onContinue,
+  onSkip,
 }: {
   shop: ShopRow
+  readiness?: ChannelReadinessResult
   a2pState: A2pState
   onBack: () => void
   onContinue: () => void
+  onSkip: () => void
 }) {
   const hasNumber = Boolean(shop.twilio_phone_number)
   const isGradiaNumber =
@@ -272,21 +283,31 @@ export function NumberStep({
   return (
     <StepShell
       title="Your number"
-      blurb="A business line customers call and text. Carriers verify every business that texts — two minutes now, 1–3 days for their approval. Calls work right away."
+      blurb="This is the number customers call and text. Carriers must approve texting. Calls can work before that approval."
       footer={
         <>
-          <Button type="button" variant="ghost" className="min-h-11" onClick={onBack}>
+          <Button type="button" variant="outline" className="min-h-11" onClick={onBack}>
             Back
           </Button>
-          <div className="flex items-center gap-2">
-            {!hasNumber ? <LaterButton onClick={onContinue} /> : null}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {!hasNumber ? (
+              <Button type="button" variant="outline" className="min-h-11" onClick={onSkip}>
+                Skip number for now
+              </Button>
+            ) : null}
             <Button type="button" className="min-h-11" onClick={onContinue} disabled={!hasNumber}>
-              Continue
+              Continue to help
             </Button>
           </div>
         </>
       }
     >
+      {readiness ? <ChannelReadinessPanel result={readiness} channels={["calls", "texting"]} /> : null}
+      {isGradiaNumber ? <ApprovalStatus
+        label="Carrier approval"
+        status={carrierApprovalCopy(a2pState.status)}
+      /> : null}
+
       {hasNumber ? (
         <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-success-bg text-status-success-fg ring-1 ring-status-success/25">
@@ -320,7 +341,7 @@ export function NumberStep({
 
 // ---------- Step 6: Your receptionist ----------
 
-export function ReceptionistStep({
+export function ChooseHelpStep({
   shop,
   voiceOptions,
   vapiConfigured,
@@ -351,29 +372,34 @@ export function ReceptionistStep({
 
   return (
     <StepShell
-      title="Meet your receptionist"
-      blurb={
-        shop.voice_live
-          ? "You're live. Calls answered from now on — texting unlocks when carriers approve (we'll tell you)."
-          : "Tell it the facts, hear it on a test call, then go live. Bookings still wait for your approval."
-      }
+      title="Choose your help"
+      blurb="Pick what Gradia should handle first. You can change this later in Settings."
       footer={
         <>
-          <Button type="button" variant="ghost" className="min-h-11" onClick={onBack}>
+          <Button type="button" variant="outline" className="min-h-11" onClick={onBack}>
             Back
           </Button>
-          <div className="flex items-center gap-2">
-            {!shop.voice_live ? (
-              <LaterButton onClick={finish} />
-            ) : null}
-            <Button type="button" onClick={finish} disabled={finishing} className="min-h-11 gap-2">
-              {finishing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              {shop.voice_live ? "Open the dashboard" : "Finish setup"}
-            </Button>
-          </div>
+          <Button type="button" onClick={finish} disabled={finishing} className="min-h-11 gap-2">
+            {finishing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+            Finish setup
+          </Button>
         </>
       }
     >
+      <ApprovalStatus
+        label="Message approval"
+        status={messageApprovalCopy(readAutonomy(shop).default)}
+      />
+      <p className="text-sm text-muted-foreground">Before Gradia can quote or book, add your services and working hours in Settings. Finishing setup does not activate a channel.</p>
+      <div className="flex flex-wrap gap-3 text-sm">
+        <Link className="inline-flex min-h-11 items-center underline" href="/settings#services">Set up services and hours</Link>
+        <Link className="inline-flex min-h-11 items-center underline" href="/settings#email">Connect email</Link>
+      </div>
+      <ol className="list-decimal space-y-2 pl-5 text-sm text-foreground">
+        <li>Save what the phone should say.</li>
+        <li>Place a test call to your own phone and listen.</li>
+        <li>Turn it on only after that call sounds right.</li>
+      </ol>
       {shop.voice_addon ? (
         <VoiceBuilderCard
           shop={shop}
@@ -383,15 +409,13 @@ export function ReceptionistStep({
       ) : (
         <div className="space-y-3 rounded-md border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center">
           <p className="font-display text-lg text-foreground">
-            The receptionist is part of the <span className="italic">voice</span>{" "}add-on.
+            Phone help is optional.
           </p>
           <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-            +$29/month: it answers your calls, quotes from your menu, and
-            proposes bookings — business number and ~20 answered calls
-            included.
+            Phone answering is an optional add-on. Review the plan and setup before turning it on.
           </p>
           <Link href="/billing" className={cn(buttonVariants(), "mt-1 min-h-11")}>
-            Add it in Billing
+            See phone help
           </Link>
         </div>
       )}
@@ -401,5 +425,23 @@ export function ReceptionistStep({
         </p>
       ) : null}
     </StepShell>
+  )
+}
+
+function ApprovalStatus({
+  label,
+  status,
+}: {
+  label: string
+  status: { label: string; detail: string }
+}) {
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/15 px-3.5 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-medium text-foreground">{status.label}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{status.detail}</p>
+    </div>
   )
 }

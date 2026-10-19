@@ -35,11 +35,15 @@ import { cn } from "@/lib/utils"
 export function ServiceMenuCard({
   initialServices,
   onServicesChange,
+  detailing = true,
 }: {
   initialServices: ServiceRow[]
   /** Onboarding (B-16) lifts the list up to gate "Continue" on having at
    *  least one service; Settings leaves this unset. */
   onServicesChange?: (services: ServiceRow[]) => void
+  /** Vehicle size and condition pricing are optional columns. Hide them
+   *  when the saved business kind is not detailing. */
+  detailing?: boolean
 }) {
   const [services, setServices] = React.useState(initialServices)
   const [openId, setOpenId] = React.useState<string | null>(null)
@@ -89,10 +93,12 @@ export function ServiceMenuCard({
             <HelpTip label="Service menu" text={STRINGS.help.settings.services} />
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Prices by vehicle size, durations, and condition bumps. Quotes,
-            phone answers, and drafts all read from this one menu.
+            {detailing
+              ? "Set a price and how long each service takes. Add vehicle size only if you charge by it."
+              : "Set a price and how long each service takes. Quotes and drafts read this list."}
           </p>
         </div>
+        {detailing ? (
         <Button
           type="button"
           variant="outline"
@@ -104,12 +110,14 @@ export function ServiceMenuCard({
           <Sparkles className="size-4" aria-hidden />
           Start from a template
         </Button>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
         {services.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
-            No services yet. Add one below, or start from the detailer
-            template and adjust the numbers.
+            {detailing
+              ? "No services yet. Add one below, or start from the detailing template."
+              : "No services yet. Add the first one below."}
           </p>
         ) : (
           <ul className="divide-y divide-border/60 rounded-xl border border-border/60">
@@ -117,6 +125,7 @@ export function ServiceMenuCard({
               <ServiceEditorRow
                 key={s.id}
                 service={s}
+                detailing={detailing}
                 open={openId === s.id}
                 onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                 onSaved={(next) =>
@@ -133,7 +142,7 @@ export function ServiceMenuCard({
         <form action={quickAdd} className="flex items-center gap-2">
           <Input
             name="new-name"
-            placeholder="Add a service — e.g. Maintenance Wash"
+            placeholder={detailing ? "Add a service — e.g. Maintenance Wash" : "Add a service"}
             className="h-9"
             disabled={busy}
           />
@@ -151,12 +160,14 @@ type MultiplierDraft = { label: string; multiplier: string }
 
 function ServiceEditorRow({
   service,
+  detailing,
   open,
   onToggle,
   onSaved,
   onDeleted,
 }: {
   service: ServiceRow
+  detailing: boolean
   open: boolean
   onToggle: () => void
   onSaved: (next: ServiceRow) => void
@@ -220,15 +231,21 @@ function ServiceEditorRow({
       description: description || null,
       priceDollars,
       durationMinutes,
-      priceBySizeDollars: Object.fromEntries(
-        VEHICLE_SIZE_CLASSES.map((s) => [s, numOrNull(sizePrices[s] ?? "")])
-      ),
-      durationBySizeMinutes: Object.fromEntries(
-        VEHICLE_SIZE_CLASSES.map((s) => [s, numOrNull(sizeDurations[s] ?? "")])
-      ),
-      multipliers: multipliers
-        .map((m) => ({ label: m.label, multiplier: Number(m.multiplier) }))
-        .filter((m) => m.label.trim() && Number.isFinite(m.multiplier)),
+      priceBySizeDollars: detailing
+        ? Object.fromEntries(
+            VEHICLE_SIZE_CLASSES.map((s) => [s, numOrNull(sizePrices[s] ?? "")])
+          )
+        : undefined,
+      durationBySizeMinutes: detailing
+        ? Object.fromEntries(
+            VEHICLE_SIZE_CLASSES.map((s) => [s, numOrNull(sizeDurations[s] ?? "")])
+          )
+        : undefined,
+      multipliers: detailing
+        ? multipliers
+            .map((m) => ({ label: m.label, multiplier: Number(m.multiplier) }))
+            .filter((m) => m.label.trim() && Number.isFinite(m.multiplier))
+        : [],
       isAddon,
       mobileEligible,
       active,
@@ -313,9 +330,11 @@ function ServiceEditorRow({
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                Used when a size below is blank.
-              </p>
+              {detailing ? (
+                <p className="text-xs text-muted-foreground">
+                  Used when a vehicle size below is blank.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`dur-${service.id}`}>Duration (minutes)</Label>
@@ -328,9 +347,9 @@ function ServiceEditorRow({
             </div>
           </div>
 
-          <div className="space-y-2">
+          {detailing ? <div className="space-y-2">
             <p className="label-eyebrow text-muted-foreground/70">
-              Price &amp; time by vehicle size
+              Price and time by vehicle size
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {VEHICLE_SIZE_CLASSES.map((size: VehicleSizeClass) => (
@@ -361,11 +380,11 @@ function ServiceEditorRow({
                 </div>
               ))}
             </div>
-          </div>
+          </div> : null}
 
-          <div className="space-y-2">
+          {detailing ? <div className="space-y-2">
             <p className="label-eyebrow text-muted-foreground/70">
-              Condition bumps
+              Condition changes
             </p>
             {multipliers.map((m, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -418,9 +437,9 @@ function ServiceEditorRow({
               }
             >
               <Plus className="size-4" aria-hidden />
-              Add a condition bump
+              Add a condition change
             </Button>
-          </div>
+          </div> : null}
 
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-2 text-muted-foreground">

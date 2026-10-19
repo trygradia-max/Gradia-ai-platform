@@ -115,7 +115,8 @@ export function resolveTwilioCredentials(
   const gradiaNumberActive =
     Boolean(shop?.gradia_number_e164) &&
     shop?.twilio_phone_number === shop?.gradia_number_e164
-  if (shop?.twilio_subaccount_sid && subToken && gradiaNumberActive) {
+  if (gradiaNumberActive) {
+    if (!shop?.twilio_subaccount_sid || !subToken) return null
     return {
       accountSid: shop.twilio_subaccount_sid,
       authToken: subToken,
@@ -127,6 +128,8 @@ export function resolveTwilioCredentials(
   if (shopSid && shopToken) {
     return { accountSid: shopSid, authToken: shopToken, source: "byo" }
   }
+  // A configured business account must never fall back to a different account.
+  if (shop?.twilio_account_sid_enc || shop?.twilio_auth_token_enc) return null
   const envSid = envAccountSid()
   const envToken = envAuthToken()
   if (envSid && envToken) {
@@ -152,7 +155,7 @@ export function verifyTwilioSignature(input: {
   signature: string | null
   creds?: TwilioCredentials | null
 }): boolean {
-  const token = input.creds?.authToken ?? envAuthToken()
+  const token = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!token) return false
   if (!input.signature) return false
 
@@ -266,8 +269,8 @@ export async function searchAvailableNumbers(input: {
   /** Override Gradia's master Twilio creds (rare — BYO shops). */
   creds?: TwilioCredentials | null
 }): Promise<TwilioAvailableNumber[]> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -338,8 +341,8 @@ export async function provisionPhoneNumber(input: {
   friendlyName?: string | null
   creds?: TwilioCredentials | null
 }): Promise<TwilioProvisionedNumber> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -407,8 +410,8 @@ export async function findIncomingPhoneNumberSid(input: {
   phoneNumber: string
   creds?: TwilioCredentials | null
 }): Promise<string | null> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) return null
 
   const url = new URL(
@@ -439,8 +442,8 @@ export async function releasePhoneNumber(input: {
   sid: string
   creds?: TwilioCredentials | null
 }): Promise<void> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -472,8 +475,8 @@ export async function sendOutboundSms(input: {
   /** Per-shop Twilio credentials. When absent, falls back to env. */
   creds?: TwilioCredentials | null
 }): Promise<TwilioSendResult> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing")
   }
@@ -528,8 +531,8 @@ export async function getIncomingPhoneNumberConfig(input: {
   sid: string
   creds?: TwilioCredentials | null
 }): Promise<{ voiceUrl: string; smsUrl: string } | null> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) return null
 
   const auth =
@@ -552,8 +555,8 @@ export async function setNumberSmsWebhook(input: {
   smsUrl: string
   creds?: TwilioCredentials | null
 }): Promise<void> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
