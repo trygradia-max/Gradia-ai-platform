@@ -1,5 +1,5 @@
 import type { ShopRow } from "@/lib/types/database"
-import { voiceLaunchGate } from "@/lib/voice-provider"
+import { voiceLaunchGate } from "@/lib/voice-launch-gate"
 
 /**
  * Per-channel readiness for calls, texting, email and Meta, each from the

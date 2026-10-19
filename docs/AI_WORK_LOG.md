@@ -1893,3 +1893,8 @@ Local Node 22 unit run: 1,582 passed, 4 skipped; three additional attestation st
 regressions pass. Typecheck passes after the integration-test type fix. Full final
 CI/build/integration and migration upgrade validation remain required before merge.
 Browser acceptance from Cursor's fixtures is not authenticated acceptance.
+
+Integration build caught a client/server import boundary: readiness labels imported
+the provider module, pulling node:crypto into onboarding. Moved the unchanged
+voice prerequisites into a pure shared module and kept the provider re-export.
+The new audit table upgrade is verified with RLS and 63/63 ALWAYS write guards.
