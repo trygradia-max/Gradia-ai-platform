@@ -1778,3 +1778,76 @@ Disposable `gradia-record-fresh` stack, reset from this branch's migrations (mai
   passed.
 
 No real Twilio registration, migration on a shared database, or activation.
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Separate, accurate readiness for calls, texting, email and Meta. Contract:
+`docs/architecture/CHANNEL_READINESS.md`.
+
+The single `connectionStatus().connected` flag overstated readiness:
+
+- texting showed connected with A2P pending, rejected or unregistered, or with an
+  unconfirmed own number;
+- calls showed connected with only an assistant;
+- email showed connected with no inbound subscription;
+- Meta had no state at all.
+
+New pieces:
+
+- `channelReadiness` (pure). Each channel returns one state (`unavailable`,
+  `not_set_up`, `in_progress`, `action_needed`, `limited` or `ready`), with
+  reason codes and an owner message, from the evidence that gates it.
+- `loadChannelReadiness`, which uses the service client, scoped by shop, because
+  Meta bindings are service-role only. A failed read is an error, never "not set
+  up".
+- The owner action `getChannelReadiness()`, now on the reviewed service-role
+  importer list.
+
+`connectionStatus()` and the screens are unchanged; switching the UI is Cursor's.
+Gaps are recorded: no in-app BYO attestation writer, a revoked mailbox grant isn't
+detected without a provider call, and Meta's subscription is unverified.
+
+Disposable `gradia-record-fresh` stack:
+
+- `channel-readiness`: 4 of 4 twice.
+- Unit: 1,504 passed, 4 skipped, including the table of old-flag overstatements
+  and `connection-truth`.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No migration, provider call, or activation.
+
+[AI: claude-code] [DATE: 2026-10-16] [AREA: platform] [STATUS: review]
+PR #89 (`claude/channel-readiness`): texting readiness for an own (BYO) number
+now follows the onboarding handoff and the BYO attestation contract in PR #93
+(`docs/architecture/BYO_SMS_ATTESTATION.md`). A checked setting alone is never
+`ready`.
+
+- New state `ready_to_test`. An own number with the shop's own encrypted
+  Twilio credentials and `byo_sms_verified` reports `ready_to_test`
+  (`byo_owner_attested`), matching `byoSmsSetupStatus("confirmed")`.
+- New reason `not_own_account`. A non-Gradia number without both
+  `twilio_account_sid_enc` and `twilio_auth_token_enc` is `action_needed`
+  whatever the flag says, because its send would fall back to Gradia's pilot
+  env account. It's checked before the flag.
+- `readinessStatusLabel()` maps each state to the handoff vocabulary. The
+  mapping is documented in `CHANNEL_READINESS.md`, whose known gaps now point
+  to #93 as the writer and name the credential-presence and A2P-alone limits.
+- Unit tests check every combination of flag, credentials and A2P state for an
+  own number: none is `ready` or "Ready". The integration test adds the
+  own-number sequence from real rows.
+
+Checks, Node 22.23.2 isolated runner:
+
+- Unit: 1,546 passed, 4 skipped (`channel-readiness`: 57).
+- Lint, types before and after the offline build, the offline build, and
+  `git diff --check` all passed.
+- `channel-readiness` integration on `gradia-record-fresh`: 5 of 5 on the first
+  run. The second run hit a gateway "invalid response from upstream" on a
+  `shops` update (4 of 5), and its one retry failed in seed `createUser`
+  (suite skipped). Both are stack flakes, with no assertion failures; not
+  retried further.
+
+Merge-order note: #93's unit test that lists `src/` files mentioning
+`byo_sms_verified` will need `src/lib/channel-readiness.ts` and
+`src/lib/data/channel-readiness.ts` added as readers, whichever PR merges
+second. No migration, provider call, send, merge or deploy.
