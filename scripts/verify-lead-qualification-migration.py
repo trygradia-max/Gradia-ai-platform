@@ -26,6 +26,15 @@ for signature in ['lead_qualification_role(uuid,boolean)', 'lead_qualification_s
 # Reads cannot write: every read entry point and the snapshot are STABLE.
 for signature in ['read_lead_qualification(uuid,uuid)', 'list_lead_qualifications(uuid,integer)', 'read_lead_qualification_history(uuid,uuid,integer)', 'lead_qualification_snapshot(uuid,uuid)']:
     assert sql(f"SELECT provolatile FROM pg_proc WHERE oid='public.{signature}'::regprocedure") == 's'
+# Migration 94: queueing a question is session-only.
+staging = 'stage_qualification_question(uuid,uuid,uuid,integer,integer,text,uuid,text,uuid,integer,jsonb)'
+assert grants(staging) == ['f', 't', 'f'], 'Unexpected grants: stage_qualification_question'
+assert sql(f"SELECT {definer} FROM pg_proc WHERE oid='public.{staging}'::regprocedure") == 't'
+# Migration 95: the send-time currency check is read-only and also callable by
+# the service role, which executes delegated approvals.
+currency = 'qualification_question_currency(uuid,uuid)'
+assert grants(currency) == ['f', 't', 't'], 'Unexpected grants: qualification_question_currency'
+assert sql(f"SELECT {definer} AND provolatile='s' FROM pg_proc WHERE oid='public.{currency}'::regprocedure") == 't'
 manifest = {
  'lead_qualifications': 'FOREIGN KEY (shop_id, workflow_id) REFERENCES lead_workflows(shop_id, id) ON DELETE CASCADE',
  'lead_qualification_revisions': 'FOREIGN KEY (shop_id, workflow_id) REFERENCES lead_qualifications(shop_id, workflow_id) ON DELETE CASCADE',
