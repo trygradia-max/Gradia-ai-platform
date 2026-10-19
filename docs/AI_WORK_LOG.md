@@ -1870,3 +1870,26 @@ An owner-confirmed own number is Ready to test. Skipping the number still
 advances. Did not merge, deploy, apply a shared migration, or add a browser
 provider. Authenticated saves were not run here: this environment has no
 disposable Supabase.
+
+### [Codex] 2026-10-19 — Combined onboarding and telephony integration
+
+Core workflow PRs #79/#81/#82/#83/#84 passed combined Node 22 checks and database
+integration and merged as #94. This follow-up integrates #87/#88/#89/#93 and
+Cursor's reconciled #91 without the experimental employee schema or routes.
+
+Kept independent channel setup evidence, A2P saved checkpoint/next-action controls,
+and owner-only own-number confirmation. Failed/uncertain reads do not invent a
+successful registration or an unsaved attestation. Duplicate confirmations are
+blocked synchronously, number changes require a fresh confirmation, and progress
+saves compare the settings they read before writing to preserve concurrent edits.
+Onboarding resolves the active owned business rather than the oldest business.
+
+Unreadable configured Twilio credentials now fail closed, including explicit-null
+transport and signature calls; they cannot silently use the shared pilot account.
+The new audit table inherits an existing release freeze. No provider was called,
+no message sent and no public release or write unfreeze performed.
+
+Local Node 22 unit run: 1,582 passed, 4 skipped; three additional attestation state
+regressions pass. Typecheck passes after the integration-test type fix. Full final
+CI/build/integration and migration upgrade validation remain required before merge.
+Browser acceptance from Cursor's fixtures is not authenticated acceptance.

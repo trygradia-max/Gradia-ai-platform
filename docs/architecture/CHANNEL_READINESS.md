@@ -88,10 +88,9 @@ from the table. "Paused" is never derived here.
   merges, nothing in the app sets the flag.
 - **Credential presence, not ownership.** Readiness, like #93's database check,
   sees only that both encrypted credentials are present. It doesn't decrypt
-  them or ask Twilio who owns the number. If they can't be decrypted at send
-  time, `resolveTwilioCredentials` falls back to the env account while
-  `smsGateForShop` still checks only the flag. That send-path gap isn't fixed
-  here.
+  them or ask Twilio who owns the number. If they cannot be decrypted, credential resolution now returns null and
+  transport/signature verification refuse that explicit failure instead of
+  falling back to the shared account. Readiness itself remains a presence check.
 - **A Gradia number's A2P approval still reports `ready`.** The handoff says
   approval alone isn't proof of readiness while consent or release gates
   remain held. Those gates aren't in this module.
@@ -99,6 +98,6 @@ from the table. "Paused" is never derived here.
   token is next used, and no "reconnect" state is stored. Readiness can't see
   it without a provider call.
 - **Meta's page subscription and lead-detail retrieval aren't verified yet.**
-- **The UI hasn't switched over.** Moving screens from `connectionStatus()` to
-  this contract is UI work for Cursor. `eval/channel-readiness.test.ts` lists
+- **Onboarding and Settings now use this contract.** Other legacy screens may
+  still use `connectionStatus()`. `eval/channel-readiness.test.ts` lists
   the cases where the old flag said "connected" but the channel isn't ready.

@@ -112,7 +112,7 @@ export function OnboardingWizard({
             {step === 1 ? (
               <ShopStep
                 shop={shop}
-                forceCreate={forceCreate}
+                forceCreate={forceCreate && !shop}
                 onSaved={(saved) => {
                   setShop(saved)
                   setStep(2)

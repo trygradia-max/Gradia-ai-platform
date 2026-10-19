@@ -156,4 +156,12 @@ REVOKE ALL ON FUNCTION public.read_byo_sms_attestation(uuid),public.attest_byo_s
  public.revoke_byo_sms_registration(uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.read_byo_sms_attestation(uuid),public.attest_byo_sms_registration(uuid,text,text),
  public.revoke_byo_sms_registration(uuid) TO authenticated;
+-- Keep a private-review database frozen when adding this audit table.
+DO $$ BEGIN
+ IF to_regprocedure('gradia_release_guard.reject_application_writes()') IS NOT NULL THEN
+  CREATE TRIGGER gradia_release_freeze BEFORE INSERT OR UPDATE OR DELETE ON public.byo_sms_attestations
+   FOR EACH STATEMENT EXECUTE FUNCTION gradia_release_guard.reject_application_writes();
+  ALTER TABLE public.byo_sms_attestations ENABLE ALWAYS TRIGGER gradia_release_freeze;
+ END IF;
+END $$;
 COMMIT;

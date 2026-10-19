@@ -163,13 +163,11 @@ added to the check constraint without changing how owners attest.
   not `shops.owner_id` is refused.
 - Service-role code can still write the flag directly. No app code does, and
   the unit inventory test guards `src/`.
-- **Conflicts with PR #89.** Channel readiness (`CHANNEL_READINESS.md`) reads
-  the same flag. As written there, an attested own number would report texting
-  `ready`, which the handoff rules out. It should cap at "Ready to test", and
-  also report `not_own_account`. That fix belongs in #89, which is open. Its
-  "no in-app writer" gap is closed by this change.
+- Channel readiness is reconciled with #89: owner-attested numbers are at most
+  Ready to test, and missing own-account credentials require attention.
 - The TypeScript gate still checks only the flag. That stays safe because the
   database clears the flag whenever the account or credentials change. The SQL
   mirror in `stage_qualification_question` wasn't redefined, to avoid colliding
   with #83.
-- There's no UI yet. That's Cursor's lane.
+- Settings includes the owner confirmation/withdrawal control. Uncertain writes
+  are re-read and never presented as definitely unsaved.

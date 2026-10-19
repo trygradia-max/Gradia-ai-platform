@@ -584,7 +584,7 @@ export async function disconnectEmail(): Promise<DisconnectEmailResult> {
   }
 
   const supabase = await createClient()
-  const { data: current, error: readError } = await supabase
+  const { data: current } = await supabase
     .from("shops")
     .select(
       "id, aurinko_account_id, aurinko_access_token_enc, aurinko_token_expires_at, aurinko_subscription_id"
