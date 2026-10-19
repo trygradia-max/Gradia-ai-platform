@@ -10,7 +10,7 @@
 --   block   the migration will fail (and change nothing) until this is resolved
 --   decide  the migration succeeds, but the release lane must decide first
 --   info    expected state, recorded for the release notes
--- See docs/release/OCT17_MIGRATION_PREFLIGHT.md.
+-- See docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md (Migrations).
 BEGIN READ ONLY;
 
 WITH ledger AS (

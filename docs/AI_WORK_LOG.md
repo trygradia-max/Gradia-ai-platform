@@ -1851,3 +1851,37 @@ Merge-order note: #93's unit test that lists `src/` files mentioning
 `byo_sms_verified` will need `src/lib/channel-readiness.ts` and
 `src/lib/data/channel-readiness.ts` added as readers, whichever PR merges
 second. No migration, provider call, send, merge or deploy.
+
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: review]
+Twilio registration recovery and account-isolation review, plus the
+real-provider checklist: `docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md`.
+Combined `claude/twilio-review-oct19` = main `5a64eec` + #87, #88, #93, #89,
+plus the October 17 preflight, upgrade test and Cursor contract. #93 was brought
+up to date with main as `64d9df9`.
+
+Isolation holds for every customer send (gated; #93's own-account rule is load
+bearing) and for status and A2P callbacks (signed URL, per-shop credentials).
+Open: I1, free-form `twilio_phone_number` plus the pilot env fallback lets an
+owner receive inbound for an unclaimed master-account number. I5, delivery status
+is last-write-wins (a late `sent` overwrites `delivered`; pre-existing on main).
+
+Recovery gaps, R1 to R5 probed on the disposable stack with Twilio faked; each
+reproduced at least once (later runs hit seed `createUser` flakes):
+
+- double submit creates two profiles and brands;
+- concurrent status checks create two messaging services and campaigns;
+- a lost campaign response is recreated;
+- a suspended campaign after approval is never noticed;
+- R5 is the delivery-status regression above.
+
+By code reading:
+
+- rejected-campaign resubmission creates a new billed campaign instead of
+  editing (Twilio docs);
+- brand and campaign have no status callback and no cron;
+- the two status writes are non-atomic;
+- number purchase isn't single-flight.
+
+Probe file kept in the shared session notes, not committed. Combined unit:
+1,564 passed, 4 skipped. Lint and types passed. No fixes made, provider calls,
+sends or shared migrations.
