@@ -2,9 +2,10 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  // Hosts allowed to load /_next dev resources during `next dev`. Ngrok and
-  // similar tunnels are the common case for mobile/HTTPS testing.
-  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app"],
+  // Hosts allowed to load /_next dev resources during `next dev`.
+  // 127.0.0.1 is the disposable Supabase site URL, so the magic-link
+  // callback can hydrate. Ngrok covers mobile and HTTPS tunnels.
+  allowedDevOrigins: ["127.0.0.1", "localhost", "*.ngrok-free.dev", "*.ngrok-free.app"],
 };
 
 // Sentry wrapper. No-ops in dev / when SENTRY_AUTH_TOKEN is missing —
