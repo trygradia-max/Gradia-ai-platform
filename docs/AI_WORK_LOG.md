@@ -2036,3 +2036,10 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Inbox empty copy on `cursor/inbox-empty-copy-fdbe`. A first-use inbox now
+says “Your customer conversations will appear here.” Later empty pages
+still say they have no visible conversations, and a failed load is still
+not treated as empty. Did not change onboarding, dashboard, public pages,
+actions, or send behavior. No merge or deploy.
