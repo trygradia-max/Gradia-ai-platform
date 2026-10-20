@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { encryptSecret } from "@/lib/crypto"
 import { purchaseNumber, smsGateForShop } from "@/lib/telephony-provider"
 import { resolveTwilioCredentials } from "@/lib/twilio"
+import { advancesDeliveryStatus, conflictingTerminalOutcome } from "@/lib/twilio-delivery-status"
 
 /**
  * Tier 1 — pure, deterministic, no API. Locks the telephony seam's two
@@ -171,5 +172,39 @@ describe("credential resolution — subaccount wins for the Gradia number", () =
         twilio_phone_number: "+19998887777",
       })
     ).toEqual({ accountSid: "ACbyo", authToken: "byo-token", source: "byo" })
+  })
+})
+
+describe("delivery status only moves forward (I5)", () => {
+  it("ranks queued < sent < delivered/undelivered/failed and never moves back", () => {
+    expect(advancesDeliveryStatus(null, "queued")).toBe(true)
+    expect(advancesDeliveryStatus("queued", "sent")).toBe(true)
+    expect(advancesDeliveryStatus("sent", "delivered")).toBe(true)
+    expect(advancesDeliveryStatus("sent", "undelivered")).toBe(true)
+    expect(advancesDeliveryStatus("delivered", "read")).toBe(true)
+    expect(advancesDeliveryStatus("delivered", "sent")).toBe(false)
+    expect(advancesDeliveryStatus("delivered", "queued")).toBe(false)
+    expect(advancesDeliveryStatus("failed", "sent")).toBe(false)
+    expect(advancesDeliveryStatus("delivered", "delivered")).toBe(false)
+    // The first terminal outcome sticks.
+    expect(advancesDeliveryStatus("delivered", "failed")).toBe(false)
+    expect(advancesDeliveryStatus("undelivered", "delivered")).toBe(false)
+  })
+
+  it("read follows delivered only, and disagreeing terminal outcomes are flagged as a conflict", () => {
+    expect(advancesDeliveryStatus("failed", "read")).toBe(false)
+    expect(advancesDeliveryStatus("undelivered", "read")).toBe(false)
+    for (const [a, b] of [["delivered", "undelivered"], ["undelivered", "delivered"], ["failed", "delivered"], ["read", "failed"]]) {
+      expect(conflictingTerminalOutcome(a, b), `${a} then ${b}`).toBe(true)
+    }
+    for (const [a, b] of [["undelivered", "failed"], ["delivered", "read"], ["sent", "failed"], ["delivered", "sent"], [null, "failed"]] as const) {
+      expect(conflictingTerminalOutcome(a, b), `${a} then ${b}`).toBe(false)
+    }
+  })
+
+  it("an unknown status never replaces a known one, and a known one replaces an unknown one", () => {
+    expect(advancesDeliveryStatus("delivered", "mystery")).toBe(false)
+    expect(advancesDeliveryStatus(null, "mystery")).toBe(true)
+    expect(advancesDeliveryStatus("mystery", "sent")).toBe(true)
   })
 })

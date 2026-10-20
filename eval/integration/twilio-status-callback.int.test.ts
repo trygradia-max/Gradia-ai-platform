@@ -317,6 +317,52 @@ describe.skipIf(!INTEGRATION)("Twilio status callback repair [integration]", () 
     expect((await metadataOf(rowId)).twilio_status).toBe("delivered")
   })
 
+  // Regression for review probe R5 (finding I5): Twilio doesn't order
+  // callbacks, and the update used to be last-write-wins.
+  it("I5: a late 'sent' callback never overwrites 'delivered'", async () => {
+    const id = sid("byo-late-sent")
+    const rowId = await seedOutbound(byoSeed.shopId, id, "queued")
+    for (const status of ["delivered", "sent", "queued"]) {
+      const res = await post({ shopId: byoSeed.shopId, form: makeForm(id, { MessageStatus: status }), token: BYO_TOKEN })
+      expect(res.status).toBe(200)
+    }
+    expect((await metadataOf(rowId)).twilio_status).toBe("delivered")
+  })
+
+  it("I5: conflicting terminal outcomes in either order keep the first and record the second for review", async () => {
+    for (const [first, second] of [[["undelivered", "30003"], ["delivered", ""]], [["delivered", ""], ["failed", "30008"]]] as const) {
+      const id = sid(`byo-conflict-${first[0]}`)
+      const rowId = await seedOutbound(byoSeed.shopId, id, "queued")
+      const send = ([MessageStatus, ErrorCode]: readonly [string, string]) =>
+        post({ shopId: byoSeed.shopId, form: makeForm(id, ErrorCode ? { MessageStatus, ErrorCode } : { MessageStatus }), token: BYO_TOKEN })
+      expect((await send(["sent", ""])).status).toBe(200)
+      expect((await metadataOf(rowId)).twilio_status).toBe("sent")
+      expect((await send(first)).status).toBe(200)
+      expect((await send(second)).status).toBe(200)
+      expect((await send(second)).status).toBe(200) // replay: no further change
+      expect((await send(["sent", ""])).status).toBe(200)
+      const meta = await metadataOf(rowId)
+      expect(meta.twilio_status).toBe(first[0])
+      expect(meta.twilio_error_code ?? "").toBe(first[1])
+      expect(meta.twilio_status_conflict).toMatchObject({ status: second[0], error_code: second[1] || null })
+    }
+  })
+
+  it("I5: concurrent out-of-order callbacks settle on the furthest status", async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = sid(`byo-race-${round}`)
+      const rowId = await seedOutbound(byoSeed.shopId, id, "queued")
+      const results = await Promise.all(
+        ["sent", "delivered", "sent", "queued"].map((MessageStatus) =>
+          post({ shopId: byoSeed.shopId, form: makeForm(id, { MessageStatus }), token: BYO_TOKEN })
+        )
+      )
+      // A swap that keeps losing returns 5xx so Twilio retries; never a regression.
+      for (const r of results) expect([200, 500]).toContain(r.status)
+      expect((await metadataOf(rowId)).twilio_status).toBe("delivered")
+    }
+  })
+
   it("CROSS-TENANT: shop B, signing with its OWN valid token, cannot mutate shop A's message via A's MessageSid", async () => {
     const id = sid("cross-tenant")
     const rowId = await seedOutbound(subSeed.shopId, id) // belongs to shop A

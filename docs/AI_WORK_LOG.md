@@ -1913,3 +1913,16 @@ Gradia phone account. No Twilio call, no shared migration, no merge, no
 deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
 Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
 is also in that tab order while `next dev` is running.
+
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: done]
+Twilio review slice 4, delivery status (finding I5), on
+`claude/twilio-delivery-status` from main after #95. The status callback
+now only moves `twilio_status` forward (queued < sent <
+delivered/undelivered/failed), with a compare-and-swap on the status it
+read. When terminal outcomes conflict (delivered vs undelivered/failed, in
+either order), the first one stored is kept. The later one goes to
+`metadata.twilio_status_conflict` for review, as documented in the route
+and in `CHANNEL_PROVIDERS.md`. Review probe R5 is now a regression test. No
+migration, provider calls, sends, merge or deploy. Existing rows are not
+backfilled.
+Unit 135 files, lint, types and build pass. integration --fresh on the disposable stack: 512 passed, 14 failed. Those 14 are the main-schema baseline in 6 non-Twilio files; every Twilio suite passes.

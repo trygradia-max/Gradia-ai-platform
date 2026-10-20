@@ -28,11 +28,18 @@
  *
  * We look up the interaction row by `metadata.twilio_message_sid`
  * (scoped to the verified shop) and update `metadata.twilio_status` /
- * `metadata.twilio_error_code` in place. Done with a read-modify-write —
- * Supabase JS doesn't expose jsonb merge directly, and the race window
- * is small enough at pilot scale that we'd rather keep the code simple.
- * Twilio retries on non-2xx, and the writes are idempotent (last status
- * wins), so DB failures return 5xx and let the retry land the update.
+ * `metadata.twilio_error_code` in place, only ever moving the status
+ * forward (queued < sent < delivered/undelivered/failed — finding I5) with
+ * a compare-and-swap on the status it read. Twilio retries on non-2xx and
+ * a repeated or stale status is a no-op, so DB failures return 5xx and
+ * let the retry land the update.
+ *
+ * Conflicting terminal outcomes (delivered vs undelivered/failed, arriving
+ * in either order): the first one stored stays as `twilio_status`, because
+ * callbacks carry no event time to decide which is true. The later one is
+ * written to `metadata.twilio_status_conflict` ({status, error_code,
+ * received_at}) and logged, so it can be reviewed against Twilio's message
+ * log. See src/lib/twilio-delivery-status.ts and CHANNEL_PROVIDERS.md.
  *
  * Returns 200 + empty TwiML on every accepted callback so Twilio stops
  * retrying — even when we can't find a matching interaction (the row
@@ -49,6 +56,10 @@ import {
   type TwilioCredentials,
 } from "@/lib/twilio"
 import { createServiceClient } from "@/lib/supabase/service"
+import {
+  advancesDeliveryStatus,
+  conflictingTerminalOutcome,
+} from "@/lib/twilio-delivery-status"
 import type { ShopRow } from "@/lib/types/database"
 
 export const runtime = "nodejs"
@@ -109,7 +120,7 @@ export async function POST(request: Request) {
       .eq("id", shopId)
       .maybeSingle()
     if (shopErr) {
-      // 5xx keeps Twilio's retry open — the update is last-write-wins,
+      // 5xx keeps Twilio's retry open — the update only moves forward,
       // so a retry after the DB recovers is harmless.
       console.error("[twilio status] shop lookup failed:", {
         shopId,
@@ -178,62 +189,121 @@ export async function POST(request: Request) {
     status: newStatus,
   })
 
-  // Read-modify-write the JSON metadata. We match on the message SID
-  // via the existing GIN-friendly jsonb operator, scoped to the shop
-  // whose credentials verified the request — the same MessageSid (or a
-  // malicious one in the body) can never select another tenant's row.
-  // If the row hasn't been inserted yet (Twilio's callback raced our
-  // send-then-record path) we just no-op and rely on the next status
-  // transition to catch up. Twilio sends queued → sent → delivered
-  // separately.
-  let lookup = supabase
-    .from("interactions")
-    .select("id, shop_id, metadata")
-    .eq("channel", "sms")
-    .eq("metadata->>twilio_message_sid", messageSid)
-  if (shopId) lookup = lookup.eq("shop_id", shopId)
-  const { data: row, error: fetchErr } = await lookup.maybeSingle()
+  // Monotonic compare-and-swap on the JSON metadata (review finding I5).
+  // Twilio doesn't guarantee callback order, so a late `sent` can arrive
+  // after `delivered`. The update only moves a status FORWARD
+  // (deliveryStatusRank) and is conditional on the status it read, so two
+  // concurrent callbacks can't interleave a regression either. Matched on
+  // the message SID, scoped to the shop whose credentials verified the
+  // request — the same MessageSid (or a malicious one in the body) can
+  // never select another tenant's row. If the row hasn't been inserted yet
+  // (Twilio's callback raced our send-then-record path) we no-op and rely
+  // on the next transition to catch up.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let lookup = supabase
+      .from("interactions")
+      .select("id, shop_id, metadata")
+      .eq("channel", "sms")
+      .eq("metadata->>twilio_message_sid", messageSid)
+    if (shopId) lookup = lookup.eq("shop_id", shopId)
+    const { data: row, error: fetchErr } = await lookup.maybeSingle()
 
-  if (fetchErr) {
-    console.error("[twilio status] lookup failed:", {
-      shopId: shopId ?? null,
-      messageSid,
-      error: fetchErr.message,
-    })
-    return new Response("Server error", { status: 500 })
-  }
-  if (!row) {
-    // Either the send-side insert hasn't landed yet, or this is for a
-    // message we didn't send / another tenant's message (signature-
-    // verified, shop-scoped lookup found nothing). Acknowledge with
-    // zero writes — never create state just to satisfy Twilio.
-    return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
-  }
+    if (fetchErr) {
+      console.error("[twilio status] lookup failed:", {
+        shopId: shopId ?? null,
+        messageSid,
+        error: fetchErr.message,
+      })
+      return new Response("Server error", { status: 500 })
+    }
+    if (!row) {
+      // Either the send-side insert hasn't landed yet, or this is for a
+      // message we didn't send / another tenant's message (signature-
+      // verified, shop-scoped lookup found nothing). Acknowledge with
+      // zero writes — never create state just to satisfy Twilio.
+      return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+    }
 
-  const existingMetadata =
-    (row.metadata as Record<string, unknown> | null) ?? {}
-  const nextMetadata: Record<string, unknown> = {
-    ...existingMetadata,
-    twilio_status: newStatus,
-    twilio_status_updated_at: new Date().toISOString(),
-  }
-  if (errorCode) nextMetadata.twilio_error_code = errorCode
+    const existingMetadata =
+      (row.metadata as Record<string, unknown> | null) ?? {}
+    const current =
+      typeof existingMetadata.twilio_status === "string"
+        ? existingMetadata.twilio_status
+        : null
+    let nextMetadata: Record<string, unknown>
+    if (advancesDeliveryStatus(current, newStatus)) {
+      nextMetadata = {
+        ...existingMetadata,
+        twilio_status: newStatus,
+        twilio_status_updated_at: new Date().toISOString(),
+      }
+      if (errorCode) nextMetadata.twilio_error_code = errorCode
+    } else if (conflictingTerminalOutcome(current, newStatus)) {
+      // A terminal outcome that disagrees with the stored one (delivered vs
+      // undelivered/failed, either order). The first stored outcome stays;
+      // this one is recorded beside it for review. Replays are no-ops.
+      const prior = existingMetadata.twilio_status_conflict as
+        | { status?: string; error_code?: string | null }
+        | undefined
+      if (prior?.status === newStatus && (prior.error_code ?? null) === errorCode) {
+        return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+      }
+      console.warn("[twilio status] conflicting terminal outcome kept for review:", {
+        shopId: shopId ?? null,
+        messageSid,
+        stored: current,
+        received: newStatus,
+        errorCode,
+      })
+      nextMetadata = {
+        ...existingMetadata,
+        twilio_status_conflict: {
+          status: newStatus,
+          error_code: errorCode,
+          received_at: new Date().toISOString(),
+        },
+      }
+    } else {
+      console.info("[twilio status] stale transition ignored:", {
+        shopId: shopId ?? null,
+        messageSid,
+        current,
+        received: newStatus,
+      })
+      return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+    }
 
-  const { error: updateErr } = await supabase
-    .from("interactions")
-    .update({ metadata: nextMetadata })
-    .eq("id", row.id)
-    .eq("shop_id", row.shop_id)
+    let update = supabase
+      .from("interactions")
+      .update({ metadata: nextMetadata })
+      .eq("id", row.id)
+      .eq("shop_id", row.shop_id)
+    update =
+      current === null
+        ? update.is("metadata->>twilio_status", null)
+        : update.eq("metadata->>twilio_status", current)
+    const { data: updated, error: updateErr } = await update.select("id")
 
-  if (updateErr) {
-    // A lost terminal status has no later transition to self-heal from —
-    // 5xx so Twilio retries (the rewrite is idempotent).
-    console.error("[twilio status] metadata update failed:", {
-      shopId: shopId ?? null,
-      messageSid,
-      error: updateErr.message,
-    })
-    return new Response("Server error", { status: 500 })
+    if (updateErr) {
+      // A lost terminal status has no later transition to self-heal from —
+      // 5xx so Twilio retries (the swap is idempotent).
+      console.error("[twilio status] metadata update failed:", {
+        shopId: shopId ?? null,
+        messageSid,
+        error: updateErr.message,
+      })
+      return new Response("Server error", { status: 500 })
+    }
+    if (updated && updated.length > 0) break
+    // Another callback changed the status between our read and write:
+    // re-read and decide again. After 3 tries, 5xx so Twilio retries.
+    if (attempt === 2) {
+      console.error("[twilio status] status kept changing; asking Twilio to retry:", {
+        shopId: shopId ?? null,
+        messageSid,
+      })
+      return new Response("Server error", { status: 500 })
+    }
   }
 
   // Loud warning when something genuinely failed so it shows up in
