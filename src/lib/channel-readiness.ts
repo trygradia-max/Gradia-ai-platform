@@ -1,4 +1,5 @@
 import type { ShopRow } from "@/lib/types/database"
+import { a2pEvidenceFresh } from "@/lib/a2p-evidence"
 import { voiceLaunchGate } from "@/lib/voice-launch-gate"
 
 /**
@@ -31,6 +32,7 @@ export type ReadinessReason =
   | "no_voice_number" | "no_assistant" | "no_test_call" | "voice_addon_inactive"
   // texting
   | "no_number" | "registration_required" | "registration_pending" | "registration_rejected" | "registration_suspended"
+  | "registration_check_overdue"
   | "not_own_account" | "byo_registration_unconfirmed" | "byo_owner_attested"
   // email
   | "no_mailbox" | "inbound_not_subscribed"
@@ -46,7 +48,7 @@ export type ChannelReadiness = {
 
 export type ReadinessShop = Pick<
   ShopRow,
-  | "twilio_phone_number" | "gradia_number_e164" | "a2p_status" | "byo_sms_verified"
+  | "twilio_phone_number" | "gradia_number_e164" | "a2p_status" | "a2p_verified_at" | "byo_sms_verified"
   | "twilio_account_sid_enc" | "twilio_auth_token_enc"
   | "vapi_assistant_id" | "vapi_phone_number_id" | "voice_test_called_at" | "voice_addon"
   | "aurinko_access_token_enc" | "aurinko_account_id" | "aurinko_subscription_id"
@@ -80,7 +82,7 @@ export function callsReadiness(shop: ReadinessShop, configured: boolean): Channe
   return result("calls", "ready", [], "Calls are set up.")
 }
 
-export function textingReadiness(shop: ReadinessShop, configured: boolean): ChannelReadiness {
+export function textingReadiness(shop: ReadinessShop, configured: boolean, now: Date = new Date()): ChannelReadiness {
   if (!configured) return result("texting", "unavailable", ["server_not_configured"], "Texting isn't available on this deployment yet.")
   if (!present(shop.twilio_phone_number)) return result("texting", "not_set_up", ["no_number"], "Get a business number to text customers.")
   const gradiaNumber = present(shop.gradia_number_e164) && shop.twilio_phone_number === shop.gradia_number_e164
@@ -99,7 +101,11 @@ export function textingReadiness(shop: ReadinessShop, configured: boolean): Chan
   }
   switch (shop.a2p_status) {
     case "approved":
-      return result("texting", "ready", [], "Texting is approved by carriers.")
+      // Same evidence rule as smsGateForShop: approval counts only while a
+      // VERIFIED read is recent enough.
+      return a2pEvidenceFresh(shop.a2p_verified_at, now)
+        ? result("texting", "ready", [], "Texting is approved by carriers.")
+        : result("texting", "in_progress", ["registration_check_overdue"], "Gradia hasn't confirmed your carrier approval recently, so texts are held until the next successful check.")
     case "pending":
       return result("texting", "in_progress", ["registration_pending"], "Carriers are reviewing your texting registration. Texts are held until it's approved.")
     case "rejected":

@@ -115,6 +115,7 @@ describe("pipeline → gate transitions", () => {
   const shopWith = (a2p_status: "unregistered" | "pending" | "approved" | "rejected" | "suspended") => ({
     gradia_number_e164: number,
     a2p_status,
+    a2p_verified_at: new Date().toISOString(),
     byo_sms_verified: false,
   })
 

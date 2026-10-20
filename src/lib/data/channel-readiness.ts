@@ -9,7 +9,7 @@ import {
 } from "@/lib/channel-readiness"
 
 const SHOP_FIELDS = [
-  "twilio_phone_number", "gradia_number_e164", "a2p_status", "byo_sms_verified",
+  "twilio_phone_number", "gradia_number_e164", "a2p_status", "a2p_verified_at", "byo_sms_verified",
   // Presence only: whether a send uses the shop's own Twilio account. Never decrypted or returned.
   "twilio_account_sid_enc", "twilio_auth_token_enc",
   "vapi_assistant_id", "vapi_phone_number_id", "voice_test_called_at", "voice_addon",
