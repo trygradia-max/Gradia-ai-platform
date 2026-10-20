@@ -240,16 +240,27 @@ describe.skipIf(!INTEGRATION)("R8: number purchase is single-flight", () => {
   const subaccountOf = async (shopId: string) =>
     (await db.from("shops").select("twilio_subaccount_sid").eq("id", shopId).single()).data!.twilio_subaccount_sid as string
 
-  it("concurrent purchases of different numbers end with one stored, metered number; every duplicate is released", async () => {
+  // Each concurrent caller either gets the stored number or is told a
+  // purchase is in progress (the purchase claim, migration 20261020120000).
+  const settledOn = (results: { ok: boolean }[], e164: string | null) => {
+    for (const r of results) {
+      if (r.ok) expect(r).toMatchObject({ e164 })
+      else expect(r).toMatchObject({ error: expect.stringContaining("already in progress") })
+    }
+    expect(results.some((r) => r.ok)).toBe(true)
+  }
+
+  it("concurrent purchases of different numbers buy one number, stored and metered once", async () => {
     const { s, row } = await shop({ withSubaccount: true })
     twilio.provisionDelay = 250
     const results = await Promise.all(Array.from({ length: 4 }, () => buy(row, e164())))
     const stored = await storedNumber(s.shopId)
     expect(stored.gradia_number_e164).toBeTruthy()
     expect(stored.twilio_phone_number).toBe(stored.gradia_number_e164)
-    for (const r of results) expect(r).toMatchObject({ ok: true, e164: stored.gradia_number_e164 })
+    settledOn(results, stored.gradia_number_e164)
+    expect(twilio.provisions).toBe(1)
     expect(onAccount(await subaccountOf(s.shopId)).map((n) => n.sid)).toEqual([stored.gradia_number_sid])
-    expect(twilio.releases).toHaveLength(twilio.provisions - 1)
+    expect(twilio.releases).toHaveLength(0)
     expect((await metered(s.shopId)).map((u) => u.vendor_ref)).toEqual([stored.gradia_number_sid])
   })
 
@@ -258,7 +269,7 @@ describe.skipIf(!INTEGRATION)("R8: number purchase is single-flight", () => {
     twilio.provisionDelay = 250
     const number = e164()
     const results = await Promise.all(Array.from({ length: 3 }, () => buy(row, number)))
-    for (const r of results) expect(r).toMatchObject({ ok: true, e164: number })
+    settledOn(results, number)
     expect(twilio.provisions).toBe(1)
     expect(twilio.releases).toHaveLength(0)
     expect(await metered(s.shopId)).toHaveLength(1)

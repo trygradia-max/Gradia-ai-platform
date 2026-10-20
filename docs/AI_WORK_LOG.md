@@ -1930,3 +1930,27 @@ Added a cross-business inbound-isolation integration suite and a read-only
 preflight, `scripts/preflight-twilio-number-ownership.sql`. No provider
 calls, sends, shared migrations, activation, merge or deploy.
 Unit 135 files, lint, types and build pass. integration --fresh on the disposable stack: 527 passed, 14 failed. Those 14 also fail on main's schema in 6 non-Twilio files; every Twilio suite passes.
+
+[AI: claude-code] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Number-lifecycle audit of uncertain provider outcomes on
+`claude/twilio-number-release`, stacked on #98. Ran 16 scenarios against the
+disposable database with a fake Twilio. On #98's head, 5 proved gaps:
+- a second purchase while the first was still provisioning bought a second,
+  billed number;
+- a stray duplicate stayed on the subaccount after a release;
+- the BYO provision path released the number after a failed save, which
+  strands it or destroys a save that committed;
+- BYO overwrote an already stored number.
+
+Fixed:
+- Migration `20261020120000` adds a per-business purchase claim (two
+  nullable columns; existing rows unchanged).
+- `purchaseNumber` and BYO provisioning take that claim before any provider
+  call.
+- Release frees every number on the business's subaccount.
+- BYO provisioning adopts a number already on the owner's account, writes
+  only if none is stored, and never releases after a failed save.
+
+Lost or refused releases, release then re-buy, a disconnect mid-send, and
+#95's explicit-null refusals with the pilot allowlist already held. They now
+have tests. No provider calls, sends, shared migrations, merge or deploy.

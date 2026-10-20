@@ -24,6 +24,9 @@ export type ShopRow = {
   twilio_subaccount_token_enc: string | null
   gradia_number_e164: string | null
   gradia_number_sid: string | null
+  /** One number purchase at a time (migration 20261020120000). Server-written. */
+  number_purchase_claim?: string | null
+  number_purchase_claimed_at?: string | null
   a2p_status: A2pStatus
   byo_sms_verified: boolean
   timezone: string

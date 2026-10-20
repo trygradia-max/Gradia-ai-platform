@@ -17,6 +17,8 @@
  *   and the vendor ref, so margin and reconciliation are always computable.
  */
 
+import { randomUUID } from "node:crypto"
+
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
@@ -220,14 +222,73 @@ export async function searchNumbers(input: {
 }
 
 /**
+ * How long a number-purchase claim holds. Longer than a server action can
+ * run, so a live purchase is never taken over; a crashed one blocks the
+ * business for at most this long.
+ */
+export const NUMBER_PURCHASE_CLAIM_TTL_MS = 120_000
+
+export type NumberPurchaseClaim =
+  | { ok: true; claim: string }
+  | { ok: false; error: string }
+
+/**
+ * Takes the business's single number-purchase claim (migration
+ * 20261020120000) before any provider call: a compare-and-swap that succeeds
+ * only when no live claim is held. Twilio bills a number's first month at
+ * purchase, so a racing second purchase must not even start.
+ */
+export async function claimNumberPurchase(
+  supabase: SupabaseClient,
+  shopId: string,
+  ttlMs: number = NUMBER_PURCHASE_CLAIM_TTL_MS
+): Promise<NumberPurchaseClaim> {
+  const claim = randomUUID()
+  const now = Date.now()
+  const stale = new Date(now - ttlMs).toISOString()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ number_purchase_claim: claim, number_purchase_claimed_at: new Date(now).toISOString() })
+    .eq("id", shopId)
+    .or(`number_purchase_claimed_at.is.null,number_purchase_claimed_at.lt."${stale}"`)
+    .select("id")
+  if (error) {
+    console.error("[telephony] number purchase claim failed:", { shopId, error: error.message })
+    return { ok: false, error: "Couldn't start the purchase. Try again; nothing was bought." }
+  }
+  if (!(data as { id: string }[] | null)?.length) {
+    return { ok: false, error: "A number purchase is already in progress for this business. Refresh in a minute." }
+  }
+  return { ok: true, claim }
+}
+
+/** Clears the claim if it is still ours (a stale takeover keeps the new one). */
+export async function releaseNumberPurchaseClaim(
+  supabase: SupabaseClient,
+  shopId: string,
+  claim: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("shops")
+    .update({ number_purchase_claim: null, number_purchase_claimed_at: null })
+    .eq("id", shopId)
+    .eq("number_purchase_claim", claim)
+  if (error) console.error("[telephony] couldn't clear number purchase claim (expires on its own):", { shopId, error: error.message })
+}
+
+/**
  * Buys a number for the shop, end to end: credit pre-check (fail closed,
  * BEFORE any vendor call) → ensure subaccount → adopt or provision under
  * the subaccount with webhooks pointed at Gradia → persist on the shop →
  * meter `number_monthly` at retail with the vendor ref.
  *
- * Single-flight (review finding R8):
+ * Single-flight (review finding R8, plus the number-lifecycle audit):
  *   - The stored number is re-read from the database, not the caller's
  *     snapshot. A shop that already has one gets it back; nothing is bought.
+ *   - Before any provider call it takes the business's purchase claim
+ *     (`claimNumberPurchase`), so a second purchase while one is in flight
+ *     buys nothing. A call that outlives the claim's TTL is still bounded
+ *     by the rules below: one number stored, metered once, duplicate released.
  *   - Before buying, the subaccount's numbers are listed. The subaccount
  *     belongs to this shop alone, so a number already on it is one this
  *     shop bought whose save failed or whose response was lost (or a
@@ -253,8 +314,10 @@ export async function purchaseNumber(input: {
   e164: string
   /** Public origin for webhook URLs (resolve from request/env at call site). */
   origin: string
+  /** Tests only: a shorter claim TTL. */
+  claimTtlMs?: number
 }): Promise<PurchaseResult> {
-  const { supabase, shop, e164, origin } = input
+  const { supabase, shop } = input
 
   if (shop.gradia_number_e164) {
     return { ok: false, error: "This shop already has a business number." }
@@ -275,6 +338,25 @@ export async function purchaseNumber(input: {
   const check = await precheckCredits(supabase, shop, priced.credits)
   if (!check.ok) return { ok: false, error: check.reason }
 
+  const claimed = await claimNumberPurchase(supabase, shop.id, input.claimTtlMs)
+  if (!claimed.ok) return { ok: false, error: claimed.error }
+  try {
+    // A purchase that finished while we waited for the claim stored a number.
+    const stored = await readStoredNumber(supabase, shop.id)
+    if (!stored.ok) return { ok: false, error: stored.error }
+    if (stored.e164) return owned(stored.e164)
+    return await purchaseUnderClaim(input, priced, owned)
+  } finally {
+    await releaseNumberPurchaseClaim(supabase, shop.id, claimed.claim)
+  }
+}
+
+async function purchaseUnderClaim(
+  input: { supabase: SupabaseClient; shop: ShopTelephonyFields; e164: string; origin: string },
+  priced: ReturnType<typeof priceUsage>,
+  owned: (number: string) => PurchaseResult
+): Promise<PurchaseResult> {
+  const { supabase, shop, e164, origin } = input
   let creds: SubaccountCreds
   try {
     creds = await ensureSubaccount(supabase, shop)
