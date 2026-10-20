@@ -53,7 +53,13 @@ export default async function DashboardPage() {
       <section className="space-y-5">
         <SectionHeader
           eyebrow={STRINGS.chrome.waitingOnYou}
-          title={approvals.length === 0 && intake.ok && intake.queue.total === 0 ? `${a.titleAllClear}.` : "Needs your review."}
+          title={
+            approvals.length > 0
+              ? STRINGS.pages.home.repliesNeedReview(approvals.length)
+              : intake.ok && intake.queue.total === 0
+                ? STRINGS.pages.home.nothingNeedsReview
+                : "Needs your review."
+          }
           subhead={
             approvals.length === 0
               ? (!intake.ok ? "Intake status is unavailable. Check the queue below." : intake.queue.total > 0 ? "No approvals waiting, but incoming details still need identity review." : a.subtitleEmpty)

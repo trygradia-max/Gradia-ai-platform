@@ -24,8 +24,8 @@ export default async function ApprovalsPage() {
         eyebrow={STRINGS.pages.approvals.eyebrow}
         title={
           items.length === 0
-            ? `${STRINGS.pages.approvals.titleAllClear}.`
-            : `${STRINGS.pages.approvals.titleWaiting}.`
+            ? STRINGS.pages.home.nothingNeedsReview
+            : STRINGS.pages.home.repliesNeedReview(items.length)
         }
         subhead={
           items.length === 0

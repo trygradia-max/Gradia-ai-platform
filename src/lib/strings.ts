@@ -135,6 +135,14 @@ export const STRINGS = {
       kpiLeads: "Leads captured",
       kpiBooked: "Appointments booked",
       kpiNeedsReview: "Needs your review",
+      /** Real count. Approvals are drafted customer messages unless noted. */
+      repliesNeedReview: (count: number) =>
+        count === 1
+          ? "1 reply needs your review."
+          : `${count} replies need your review.`,
+      nothingNeedsReview: "Nothing needs your review.",
+      channelsConnected: (live: number, total: number) =>
+        `${live} of ${total} channels connected`,
       bookedEyebrow: "On the books",
       bookedTitle: "Today's appointments",
       bookedEmpty: "Nothing on the books today.",
@@ -152,7 +160,7 @@ export const STRINGS = {
     },
     approvals: {
       eyebrow: "Approvals",
-      titleAllClear: "All clear",
+      titleAllClear: "Nothing needs your review",
       titleWaiting: "Waiting on you",
       subtitleEmpty:
         "Nothing needs your eyes right now — anything that does lands here the moment it's staged.",
