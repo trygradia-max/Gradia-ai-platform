@@ -445,11 +445,14 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   beforeAll(async () => {
     // The route derives its public URL from GRADIA_DASHBOARD_URL /
     // forwarded headers; pin the test to the raw request URL.
-    for (const k of ["GRADIA_DASHBOARD_URL", "TWILIO_ACCOUNT_SID"]) {
+    for (const k of ["GRADIA_DASHBOARD_URL", "TWILIO_ACCOUNT_SID", "TWILIO_PILOT_SHOP_NUMBERS"]) {
       savedEnv[k] = process.env[k]
     }
     delete process.env.GRADIA_DASHBOARD_URL
     process.env.TWILIO_ACCOUNT_SID = "ACtest"
+    // The fixture shop has no credentials of its own: it is an explicitly
+    // allowlisted pilot on the master account (I1).
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = "shop-1=+15035550111"
     ;({ POST } = await import("@/app/api/twilio/sms/route"))
     claimMock = vi.mocked((await import("@/lib/provider-events")).claimProviderEvent)
     completeMock = vi.mocked((await import("@/lib/provider-events")).completeProviderEvent)
@@ -509,6 +512,18 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(res.status).toBe(401)
     expect(claimMock).not.toHaveBeenCalled()
     expect(intakeMock).not.toHaveBeenCalled()
+  })
+
+  it("a shop without its own credentials and not allowlisted is refused, even master-signed — no claim (I1)", async () => {
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = ""
+    try {
+      const res = await post(makeForm())
+      expect(res.status).toBe(401)
+      expect(claimMock).not.toHaveBeenCalled()
+      expect(intakeMock).not.toHaveBeenCalled()
+    } finally {
+      process.env.TWILIO_PILOT_SHOP_NUMBERS = "shop-1=+15035550111"
+    }
   })
 
   it("a forged request cannot poison a MessageSid — the legitimate delivery still processes", async () => {
@@ -1095,6 +1110,7 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
   let subShop: Record<string, unknown>
   let byoShop: Record<string, unknown>
   const envShop = {
+    id: ENV_SHOP_ID,
     twilio_account_sid_enc: null,
     twilio_auth_token_enc: null,
     twilio_subaccount_sid: null,
@@ -1178,12 +1194,15 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
       "GRADIA_DASHBOARD_URL",
       "TWILIO_ACCOUNT_SID",
       "ENCRYPTION_KEY",
+      "TWILIO_PILOT_SHOP_NUMBERS",
     ]) {
       savedEnv[k] = process.env[k]
     }
     // Pin the route's public-URL derivation to the raw request URL.
     delete process.env.GRADIA_DASHBOARD_URL
     process.env.TWILIO_ACCOUNT_SID = "ACtest"
+    // envShop is an allowlisted pilot on the master account (I1).
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = `${ENV_SHOP_ID}=+15035550111`
     process.env.ENCRYPTION_KEY ??= "ab".repeat(32)
 
     // Gradia-provisioned shop: subaccount active (the fixture whose absence
@@ -1279,6 +1298,20 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
     const res = await post({ shop: ENV_SHOP_ID, token: SECRETS.TWILIO_AUTH_TOKEN })
     expect(res.status).toBe(200)
     expect(updateCalls()).toHaveLength(1)
+  })
+
+  it("a shop with no credentials of its own that is NOT allowlisted is refused, even master-signed (I1)", async () => {
+    fakeDb.tables.shops = { data: { ...envShop, id: "shop-not-pilot" }, error: null }
+    const res = await post({ shop: "shop-not-pilot", token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("an allowlisted pilot shop whose stored number isn't its allowlisted number is refused (I1)", async () => {
+    fakeDb.tables.shops = { data: { ...envShop, twilio_phone_number: "+15035550999" }, error: null }
+    const res = await post({ shop: ENV_SHOP_ID, token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
   })
 
   it("legacy callback URL without ?shop=: env-master verification still works", async () => {

@@ -97,6 +97,7 @@ Provision a phone number (costs $), point the assistant's Server URL at
 |---|---|---|
 | `TWILIO_ACCOUNT_SID` | secret | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | secret | Twilio auth token |
+| `TWILIO_PILOT_SHOP_NUMBERS` | secret | Pilot allowlist: comma-separated `<shop uuid>=<E.164>` pairs. Only these shop/number pairs may send and verify inbound through the master account above. Every other shop needs its Gradia subaccount number or its own Twilio credentials; otherwise it fails closed. Unset means no pilot shops. |
 
 Buy a number, set it in `/settings`, point its messaging webhook at
 `https://YOUR_DOMAIN/api/twilio/sms`. **US: complete A2P 10DLC brand/campaign

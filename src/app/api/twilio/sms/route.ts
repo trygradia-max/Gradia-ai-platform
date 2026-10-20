@@ -144,7 +144,17 @@ export async function POST(request: Request) {
     return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
   }
 
+  // A shop with neither its own credentials nor a pilot-allowlisted number
+  // has no signer: reject, never fall back to the master token (I1).
   const creds = resolveTwilioCredentials(shop)
+  if (!creds) {
+    console.warn("[twilio sms] verification rejected:", {
+      shopId: shop.id,
+      credentialSource: "none",
+      reason: "no resolvable credentials",
+    })
+    return new Response("Invalid signature", { status: 401 })
+  }
   if (!verifyTwilioSignature({ url, form, signature, creds })) {
     return new Response("Invalid signature", { status: 401 })
   }

@@ -27,6 +27,7 @@ import {
   closeSubaccount,
   createSubaccount,
   fetchSubaccount,
+  listIncomingPhoneNumbers,
   listSubaccountsByFriendlyName,
   defaultStatusCallbackUrl,
   provisionPhoneNumber,
@@ -222,9 +223,28 @@ export async function searchNumbers(input: {
 
 /**
  * Buys a number for the shop, end to end: credit pre-check (fail closed,
- * BEFORE any vendor call) → ensure subaccount → provision under the
- * subaccount with webhooks pointed at Gradia → persist on the shop →
+ * BEFORE any vendor call) → ensure subaccount → adopt or provision under
+ * the subaccount with webhooks pointed at Gradia → persist on the shop →
  * meter `number_monthly` at retail with the vendor ref.
+ *
+ * Single-flight (review finding R8):
+ *   - The stored number is re-read from the database, not the caller's
+ *     snapshot. A shop that already has one gets it back; nothing is bought.
+ *   - Before buying, the subaccount's numbers are listed. The subaccount
+ *     belongs to this shop alone, so a number already on it is one this
+ *     shop bought whose save failed or whose response was lost (or a
+ *     concurrent purchase in flight): it is ADOPTED, never bought again.
+ *     More than one is refused for reconciliation.
+ *   - The number is written only if none is stored
+ *     (`gradia_number_e164 IS NULL`). Only the call whose write lands
+ *     meters `number_monthly`, so a number is metered once. A loser that
+ *     provisioned its own duplicate releases it and returns the winner.
+ *   - If provisioning errors, the subaccount is listed again and a number
+ *     found there is adopted (a lost response, or a concurrent purchase of
+ *     the same number).
+ *   - A failed save keeps the provisioned number on the subaccount (it is
+ *     not metered) so the retry adopts it. Releasing it instead could
+ *     release a number whose save actually committed.
  *
  * The number is voice-ready immediately; outbound SMS stays blocked until
  * A2P approval (`smsGateForShop`). One number per shop in v1.
@@ -244,6 +264,15 @@ export async function purchaseNumber(input: {
 
   const pricing = await getPricing(supabase)
   const priced = priceUsage(pricing, "number_monthly")
+  const owned = (number: string): PurchaseResult => ({
+    ok: true,
+    e164: number,
+    monthlyRetailCents: priced.retail_cost,
+  })
+
+  const before = await readStoredNumber(supabase, shop.id)
+  if (!before.ok) return { ok: false, error: before.error }
+  if (before.e164) return owned(before.e164)
 
   const check = await precheckCredits(supabase, shop, priced.credits)
   if (!check.ok) return { ok: false, error: check.reason }
@@ -258,57 +287,112 @@ export async function purchaseNumber(input: {
     }
   }
 
+  let onAccount: { sid: string; phoneNumber: string }[]
   try {
-    const provisioned = await provisionPhoneNumber({
-      phoneNumber: e164,
-      smsUrl: `${origin}/api/twilio/sms`,
-      statusCallback: defaultStatusCallbackUrl(shop.id),
-      friendlyName: shop.name,
-      creds,
-    })
-
-    const { error: persistError } = await supabase
-      .from("shops")
-      .update({
-        gradia_number_e164: provisioned.phoneNumber,
-        gradia_number_sid: provisioned.sid,
-        // The active number for sends + inbound routing. Setting it equal to
-        // gradia_number_e164 is also what flips resolveTwilioCredentials to
-        // the subaccount and arms the A2P gate at the send boundary.
-        twilio_phone_number: provisioned.phoneNumber,
-        a2p_status: "unregistered",
-      })
-      .eq("id", shop.id)
-    if (persistError) {
-      console.error("[telephony] number persist failed:", persistError)
-      // Roll the rental back rather than strand a paid number nobody can see.
-      await releasePhoneNumber({ sid: provisioned.sid, creds }).catch((e) =>
-        console.error("[telephony] rollback release failed:", e)
-      )
-      return { ok: false, error: "Couldn't save the number — nothing was charged. Try again." }
-    }
-
-    await recordUsage(supabase, shop.id, "number_monthly", {
-      credits: priced.credits,
-      wholesaleCost: priced.wholesale_cost,
-      retailCost: priced.retail_cost,
-      vendorRef: provisioned.sid,
-      refId: provisioned.phoneNumber,
-    })
-
-    return {
-      ok: true,
-      e164: provisioned.phoneNumber,
-      monthlyRetailCents: priced.retail_cost,
-    }
+    onAccount = await listIncomingPhoneNumbers({ creds })
   } catch (err) {
-    const message =
-      err instanceof TwilioError
-        ? "That number was just taken — pick another."
-        : "Couldn't purchase the number. Try again."
-    console.error("[telephony] purchase failed:", err)
-    return { ok: false, error: message }
+    // Without the list we can't rule out a number bought earlier: don't buy.
+    console.error("[telephony] couldn't list subaccount numbers before purchase:", err)
+    return { ok: false, error: "Couldn't check the phone account. Try again; nothing was bought." }
   }
+  if (onAccount.length > 1) {
+    console.error(`[telephony] subaccount ${creds.accountSid} for shop ${shop.id} holds ${onAccount.length} numbers — reconcile before purchasing`)
+    return { ok: false, error: "This business already has more than one number at our provider. Contact support; nothing new was bought." }
+  }
+
+  let number: { sid: string; phoneNumber: string }
+  let adopted = false
+  if (onAccount[0]) {
+    number = onAccount[0]
+    adopted = true
+    console.warn(`[telephony] adopting number ${number.sid} already on subaccount ${creds.accountSid} for shop ${shop.id}`)
+  } else {
+    try {
+      number = await provisionPhoneNumber({
+        phoneNumber: e164,
+        smsUrl: `${origin}/api/twilio/sms`,
+        statusCallback: defaultStatusCallbackUrl(shop.id),
+        friendlyName: shop.name,
+        creds,
+      })
+    } catch (err) {
+      // The number may exist anyway: a lost response, or a concurrent
+      // purchase of this same number on this subaccount. Look again before
+      // reporting failure; adopt it if it's there.
+      const again = await listIncomingPhoneNumbers({ creds }).catch(() => null)
+      if (again?.length === 1) {
+        number = again[0]
+        adopted = true
+        console.warn(`[telephony] provisioning errored but number ${number.sid} is on subaccount ${creds.accountSid} for shop ${shop.id}; adopting:`, err)
+      } else {
+        const message =
+          err instanceof TwilioError && err.status >= 400 && err.status < 500
+            ? "That number was just taken — pick another."
+            : "Couldn't purchase the number. Try again."
+        console.error("[telephony] purchase failed:", err)
+        return { ok: false, error: message }
+      }
+    }
+  }
+
+  const { data: saved, error: persistError } = await supabase
+    .from("shops")
+    .update({
+      gradia_number_e164: number.phoneNumber,
+      gradia_number_sid: number.sid,
+      // The active number for sends + inbound routing. Setting it equal to
+      // gradia_number_e164 is also what flips resolveTwilioCredentials to
+      // the subaccount and arms the A2P gate at the send boundary.
+      twilio_phone_number: number.phoneNumber,
+      a2p_status: "unregistered",
+    })
+    .eq("id", shop.id)
+    .is("gradia_number_e164", null)
+    .select("id")
+  if (persistError) {
+    // Kept on the subaccount, unmetered: the next attempt adopts it.
+    console.error(`[telephony] number ${number.sid} persist failed for shop ${shop.id} — the retry adopts it:`, persistError)
+    return { ok: false, error: "Got the number but couldn't save it. Try again; you won't be charged twice." }
+  }
+
+  if (!(saved as { id: string }[] | null)?.length) {
+    // Another purchase stored a number first. Keep the winner.
+    const winner = await readStoredNumber(supabase, shop.id)
+    if (!winner.ok || !winner.e164) {
+      return { ok: false, error: "Couldn't confirm the number. Try again." }
+    }
+    if (winner.sid !== number.sid) {
+      await releasePhoneNumber({ sid: number.sid, creds }).catch((err) =>
+        console.error(`[telephony] couldn't release duplicate number ${number.sid} for shop ${shop.id} — reconcile:`, err)
+      )
+    }
+    return owned(winner.e164)
+  }
+
+  await recordUsage(supabase, shop.id, "number_monthly", {
+    credits: priced.credits,
+    wholesaleCost: priced.wholesale_cost,
+    retailCost: priced.retail_cost,
+    vendorRef: number.sid,
+    refId: number.phoneNumber,
+  })
+  if (adopted) console.warn(`[telephony] adopted number ${number.sid} saved and metered for shop ${shop.id}`)
+
+  return owned(number.phoneNumber)
+}
+
+async function readStoredNumber(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<{ ok: true; e164: string | null; sid: string | null } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("shops")
+    .select("gradia_number_e164, gradia_number_sid")
+    .eq("id", shopId)
+    .single()
+  if (error || !data) return { ok: false, error: "Couldn't read the business number. Try again." }
+  const row = data as { gradia_number_e164: string | null; gradia_number_sid: string | null }
+  return { ok: true, e164: row.gradia_number_e164, sid: row.gradia_number_sid }
 }
 
 // ---------- A2P 10DLC registration pipeline ----------

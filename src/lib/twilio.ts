@@ -1,10 +1,9 @@
 /**
  * Twilio webhook utilities (server-only).
  *
- * Pilot auth model: one global Twilio account (TWILIO_ACCOUNT_SID +
- * TWILIO_AUTH_TOKEN in env), each shop owns one phone number on it.
- * Signature verification uses the global auth token, so all shops'
- * inbound traffic flows through this one endpoint.
+ * Credential model: a shop's Gradia subaccount, its own (BYO) account, or,
+ * for explicitly allowlisted pilot shops only, Gradia's global env account
+ * (TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN). See resolveTwilioCredentials.
  *
  * Signature algorithm (HMAC-SHA1, base64):
  *   1. Take the full request URL (the one Twilio called).
@@ -86,6 +85,7 @@ export type TwilioCredentials = {
 type ShopCredFields = Partial<
   Pick<
     ShopRow,
+    | "id"
     | "twilio_account_sid_enc"
     | "twilio_auth_token_enc"
     | "twilio_subaccount_sid"
@@ -103,10 +103,16 @@ type ShopCredFields = Partial<
  *    sends from it and inbound signature verification for it must use the
  *    subaccount token, never the master account's.
  * 2. BYO credentials (encrypted on the shop row).
- * 3. The pilot-mode global env account.
+ * 3. Gradia's pilot env (master) account, ONLY for a shop and number pair
+ *    listed in TWILIO_PILOT_SHOP_NUMBERS (see `pilotEnvNumberFor`). Any
+ *    other shop without its own credentials fails closed: the master token
+ *    must never verify inbound for, or send from, a number nobody proved
+ *    the shop holds (review finding I1).
  *
- * Returns null when no credentials are available anywhere — callers
- * should treat that as "Twilio not configured."
+ * Passing no shop (null/undefined) means a master-only caller (Gradia's own
+ * ops alerts, legacy status callbacks without `?shop=`), which gets the env
+ * account. Returns null when nothing applies — callers treat that as
+ * "Twilio not configured" and refuse.
  */
 export function resolveTwilioCredentials(
   shop: ShopCredFields | null | undefined
@@ -132,10 +138,35 @@ export function resolveTwilioCredentials(
   if (shop?.twilio_account_sid_enc || shop?.twilio_auth_token_enc) return null
   const envSid = envAccountSid()
   const envToken = envAuthToken()
-  if (envSid && envToken) {
-    return { accountSid: envSid, authToken: envToken, source: "env" }
+  if (!envSid || !envToken) return null
+  if (shop) {
+    const pilotNumber = shop.id ? pilotEnvNumberFor(shop.id) : null
+    if (!pilotNumber || shop.twilio_phone_number !== pilotNumber) return null
+  }
+  return { accountSid: envSid, authToken: envToken, source: "env" }
+}
+
+/**
+ * The pilot allowlist: the one number on Gradia's master account that a
+ * shop may use through the env credentials. Read from
+ * TWILIO_PILOT_SHOP_NUMBERS, comma-separated `<shop uuid>=<E.164>` pairs,
+ * e.g. `0b6f…=+15035550100`. Malformed entries are ignored (fail closed).
+ * Empty or unset means no shop uses the master account.
+ */
+export function pilotEnvNumberFor(shopId: string): string | null {
+  const raw = process.env.TWILIO_PILOT_SHOP_NUMBERS?.trim()
+  if (!raw) return null
+  for (const entry of raw.split(",")) {
+    const [id, number, ...rest] = entry.split("=").map((p) => p.trim())
+    if (rest.length || !id || !number || !/^\+\d{8,15}$/.test(number)) continue
+    if (id === shopId) return number
   }
   return null
+}
+
+/** Whether Gradia's master (env) Twilio account is configured at all. */
+export function hasMasterTwilioCredentials(): boolean {
+  return Boolean(envAccountSid() && envAuthToken())
 }
 
 /**
@@ -145,9 +176,10 @@ export function resolveTwilioCredentials(
  * the request, accounting for any proxy / Vercel host rewriting.
  *
  * When `creds` is provided, signature is verified against that auth
- * token. Otherwise the env-global token is used (legacy single-tenant
- * mode). Callers that resolve the shop after parsing the form should
- * pass the per-shop creds in to keep BYO shops verifiable.
+ * token. When the key is omitted entirely, the env-global token is used
+ * (legacy single-tenant mode). An explicit `creds: null` (a shop whose
+ * credentials didn't resolve) fails closed and never falls back to the
+ * env token (review finding I1).
  */
 export function verifyTwilioSignature(input: {
   url: string
@@ -431,6 +463,48 @@ export async function findIncomingPhoneNumberSid(input: {
     incoming_phone_numbers?: Array<{ sid?: string }>
   }
   return parsed.incoming_phone_numbers?.[0]?.sid ?? null
+}
+
+export type TwilioIncomingNumber = { sid: string; phoneNumber: string }
+
+/**
+ * Lists the IncomingPhoneNumbers on exactly the account in `creds` (never
+ * the env fallback), optionally filtered to one E.164 number. Unlike
+ * findIncomingPhoneNumberSid, a failed request THROWS instead of reading
+ * as "not found", so callers that decide ownership or purchases from the
+ * answer never act on an outage.
+ */
+export async function listIncomingPhoneNumbers(input: {
+  creds: TwilioCredentials
+  phoneNumber?: string
+}): Promise<TwilioIncomingNumber[]> {
+  const { accountSid, authToken } = input.creds
+  const url = new URL(
+    `${TWILIO_API_BASE}/Accounts/${encodeURIComponent(accountSid)}/IncomingPhoneNumbers.json`
+  )
+  url.searchParams.set("PageSize", "50")
+  if (input.phoneNumber) url.searchParams.set("PhoneNumber", input.phoneNumber)
+  const auth =
+    "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: auth, Accept: "application/json" },
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    throw new TwilioError(
+      res.status,
+      `Twilio number lookup failed: ${raw.slice(0, 300)}`
+    )
+  }
+  const parsed = JSON.parse(raw) as {
+    incoming_phone_numbers?: Array<{ sid?: string; phone_number?: string }>
+  }
+  return (parsed.incoming_phone_numbers ?? [])
+    .filter((n): n is { sid: string; phone_number: string } =>
+      Boolean(n.sid && n.phone_number)
+    )
+    .map((n) => ({ sid: n.sid, phoneNumber: n.phone_number }))
 }
 
 /**

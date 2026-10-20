@@ -11,6 +11,8 @@ import {
 import { encryptSecret } from "@/lib/crypto"
 import { normalizeReviewLink, REVIEW_LINK_KEY } from "@/lib/review-link"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
+import { saveShopTextingNumber } from "@/lib/shop-texting-number"
 import { ACTIVE_SHOP_COOKIE, getOptionalShop, requireUser } from "@/lib/shop"
 import type { ShopRow } from "@/lib/types/database"
 
@@ -285,9 +287,11 @@ export type SaveTwilioResult =
   | { ok: false; error: string }
 
 /**
- * Connects the shop to the Twilio phone number they own. Pilot model
- * uses one global Twilio account in env vars — this only records the
- * number, no auth tokens stored per shop.
+ * Connects the shop to a Twilio number it holds. The number is
+ * server-written only (I1): saveShopTextingNumber accepts it when it's the
+ * shop's Gradia number, its allowlisted pilot number, or listed on the
+ * shop's OWN Twilio account; otherwise it fails closed. getOptionalShop
+ * only returns a shop this user owns, so the service-role write is scoped.
  */
 export async function saveTwilioNumber(
   input: z.infer<typeof saveTwilioSchema>
@@ -308,28 +312,15 @@ export async function saveTwilioNumber(
     return { ok: false, error: "Finish onboarding first." }
   }
 
-  const supabase = await createClient()
-  const value = parsed.data.twilio_phone_number?.trim() || null
-
-  const { data, error } = await supabase
-    .from("shops")
-    .update({ twilio_phone_number: value })
-    .eq("id", existing.id)
-    .select("*")
-    .single()
-
-  if (error || !data) {
-    if (error?.code === "23505") {
-      return {
-        ok: false,
-        error: "That number is already connected to another shop.",
-      }
-    }
-    return { ok: false, error: error?.message ?? "Could not save." }
-  }
+  const result = await saveShopTextingNumber({
+    db: createServiceClient(),
+    shopId: existing.id,
+    value: parsed.data.twilio_phone_number?.trim() || null,
+  })
+  if (!result.ok) return { ok: false, error: result.error }
 
   revalidatePath("/settings")
-  return { ok: true, shop: data as ShopRow }
+  return { ok: true, shop: result.shop }
 }
 
 const saveTwilioCredentialsSchema = z.object({
@@ -481,7 +472,9 @@ export async function disconnectSms(): Promise<DisconnectSmsResult> {
     return { ok: false, error: "Finish onboarding first." }
   }
 
-  const supabase = await createClient()
+  // Service role: twilio_phone_number is server-written (I1). The shop is
+  // one this user owns (getOptionalShop).
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from("shops")
     .update({
