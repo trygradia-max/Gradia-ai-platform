@@ -41,6 +41,7 @@ type PushShop = Pick<
   | "twilio_phone_number"
   | "gradia_number_e164"
   | "a2p_status"
+  | "a2p_verified_at"
   | "byo_sms_verified"
   | "twilio_account_sid_enc"
   | "twilio_auth_token_enc"
@@ -67,7 +68,7 @@ async function handle(request: Request) {
   const { data, error } = await supabase
     .from("shops")
     .select(
-      "id, name, phone, twilio_phone_number, gradia_number_e164, a2p_status, byo_sms_verified, twilio_account_sid_enc, twilio_auth_token_enc, twilio_subaccount_sid, twilio_subaccount_token_enc"
+      "id, name, phone, twilio_phone_number, gradia_number_e164, a2p_status, a2p_verified_at, byo_sms_verified, twilio_account_sid_enc, twilio_auth_token_enc, twilio_subaccount_sid, twilio_subaccount_token_enc"
     )
     .eq("plan", "active")
 

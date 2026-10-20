@@ -2036,3 +2036,43 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: claude-code] [DATE: 2026-10-20] [AREA: platform] [STATUS: review]
+A2P evidence freshness, held reconciler and uncertain-outcome audit. These are
+three stacked PRs on main `6d4c235`. Merge them in order: evidence, then
+reconciler, then outcomes. Backend only; no Cursor UI files were touched.
+
+- **Evidence** (`77f2eea`, migration `20261020100000`):
+  - The send gate opens a Gradia number only when it is `approved` AND a VERIFIED
+    campaign read is younger than `A2P_EVIDENCE_MAX_AGE_HOURS` (default 72,
+    ceiling 168; missing means stale). A failed check never renews it.
+  - Check outcomes are recorded apart from carrier states.
+  - A guard stops owners setting `a2p_status = 'approved'` or forging evidence.
+    The shops row policy allowed it before.
+  - No backfill: approved shops are held until their first successful check
+    (`scripts/preflight-a2p-evidence.sql`).
+- **Reconciler** (`a730cae`, migration `20261020110000`):
+  - `GET /api/internal/a2p-reconcile` is cron-secret guarded and off unless
+    `A2P_RECONCILER_ENABLED=true`. It isn't in `vercel.json`.
+  - It is bounded and takes each due row with a compare-and-swap, then the
+    registration's claim and that shop's own subaccount.
+  - Backoff runs from 5 minutes to a cap, and every interval is at most a
+    quarter of the evidence age.
+- **Outcomes** (`83a5ed8`):
+  - The probes (`dfd7228`) reproduced a second brand and a second messaging
+    service after a lost create response.
+  - Both are now adopted from the subaccount's own lists.
+  - Provider calls time out after 30 seconds, well inside the 15-minute lease.
+  - The R9 partial TrustHub bundle is still rebuilt on retry. It's unbilled;
+    that's a follow-up.
+
+Disposable `gradia-record-fresh` stack, reset from each branch. Node 22.23.2
+isolated runner:
+
+- A2P suites: 36/36 on evidence, 43/43 on reconciler, 48/48 on outcomes.
+- Full `integration --fresh` on outcomes: 563 passed, 14 failed. Main `6d4c235`:
+  542 passed, the same 14 failed. Those are 6 non-Twilio files.
+- Unit: 1,622, 1,627 and 1,630 passed. Lint, types and offline build passed on
+  each.
+
+No provider calls, purchases, sends, shared migrations, merge or activation.
