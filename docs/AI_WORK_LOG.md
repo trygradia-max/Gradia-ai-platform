@@ -2036,3 +2036,10 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Public-page copy on `cursor/public-pages-copy-fdbe`. Login and
+`/how-it-works` no longer say every channel is live, drop “agentic”
+and the $20 “no catch” line, and treat phone as optional. Payments and
+invoices are named as not this product. Did not change billing
+checkout, onboarding, or send behavior. No merge or deploy.
