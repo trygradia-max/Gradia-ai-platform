@@ -111,6 +111,39 @@ registration. Twilio's `campaign_status` is mapped explicitly:
 - Checks still happen only on the status webhook or "Check status". No cron was
   added (R6); a suspension is noticed on the next check.
 
+**Approval evidence and the send gate** (October 20; migration
+`20261020100000_a2p_campaign_evidence.sql`; `src/lib/a2p-evidence.ts`)
+
+- Evidence is a successful provider read of the campaign that returned
+  VERIFIED. The database stamps it as `a2p_registrations.last_verified_at` and
+  `shops.a2p_verified_at`, in the same transaction as the statuses, and only for
+  the registration's claim holder.
+- `smsGateForShop` opens a Gradia number only when `a2p_status = 'approved'`
+  **and** `a2p_verified_at` is younger than the maximum age. The default is 72
+  hours, set by `A2P_EVIDENCE_MAX_AGE_HOURS` and capped at 7 days. A missing or
+  unreadable time is stale. The release lane should confirm the 72 hours.
+- Each check records `last_checked_at` (the provider answered) or
+  `last_check_failed_at` plus `last_check_failure_kind`: `provider_unreachable`
+  (timeout, network, 5xx, 429) or `provider_error` (any other refusal). A failed
+  check is never a carrier state and never renews evidence.
+- During an outage the status stays `approved` while the evidence ages. The gate
+  then closes with "Texting check overdue". Suspension still closes it
+  immediately and clears `a2p_verified_at`. A VERIFIED read reopens and renews.
+- A check that can't take the claim makes no read and renews nothing.
+- `stage_qualification_question` (SQL) still checks only `a2p_status =
+  'approved'`. Staging sends nothing; the executor's `smsGateForShop` enforces
+  freshness at send.
+- Owners can no longer set `a2p_status` (other than back to `unregistered`) or
+  `a2p_verified_at` (other than to NULL) through the shops row policy
+  (trigger `shops_a2p_guard`). Before this, an owner could approve their own
+  number.
+- **Existing data:** approved shops get NULL evidence, so their texts are held
+  until the first successful check. Count them first with
+  `scripts/preflight-a2p-evidence.sql`. A grace backfill is the release lane's
+  choice.
+- Readiness reports an approved shop with stale evidence as `in_progress`, with
+  reason `registration_check_overdue`.
+
 **What a resubmission does**
 
 | Situation | Effect |

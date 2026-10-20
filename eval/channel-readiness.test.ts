@@ -3,7 +3,7 @@ import { callsReadiness, channelReadiness, configuredChannels, emailReadiness, m
 import { connectionStatus } from "@/lib/data/connections"
 
 const shop = (patch: Partial<ReadinessShop> = {}): ReadinessShop => ({
-  twilio_phone_number: null, gradia_number_e164: null, a2p_status: null, byo_sms_verified: false,
+  twilio_phone_number: null, gradia_number_e164: null, a2p_status: null, a2p_verified_at: new Date().toISOString(), byo_sms_verified: false,
   twilio_account_sid_enc: null, twilio_auth_token_enc: null,
   vapi_assistant_id: null, vapi_phone_number_id: null, voice_test_called_at: null, voice_addon: false,
   aurinko_access_token_enc: null, aurinko_account_id: null, aurinko_subscription_id: null,
@@ -22,6 +22,8 @@ describe("texting readiness follows what actually gates a send", () => {
     [{ twilio_phone_number: GRADIA, gradia_number_e164: GRADIA, a2p_status: "rejected" }, ["action_needed", "registration_rejected"]],
     [{ twilio_phone_number: GRADIA, gradia_number_e164: GRADIA, a2p_status: "suspended" }, ["action_needed", "registration_suspended"]],
     [{ twilio_phone_number: GRADIA, gradia_number_e164: GRADIA, a2p_status: "approved" }, ["ready"]],
+    [{ twilio_phone_number: GRADIA, gradia_number_e164: GRADIA, a2p_status: "approved", a2p_verified_at: null }, ["in_progress", "registration_check_overdue"]],
+    [{ twilio_phone_number: GRADIA, gradia_number_e164: GRADIA, a2p_status: "approved", a2p_verified_at: "2026-01-01T00:00:00Z" }, ["in_progress", "registration_check_overdue"]],
     [{ twilio_phone_number: OWN, ...OWN_ACCOUNT, byo_sms_verified: false }, ["action_needed", "byo_registration_unconfirmed"]],
     [{ twilio_phone_number: OWN, ...OWN_ACCOUNT, byo_sms_verified: true }, ["ready_to_test", "byo_owner_attested"]],
     [{ twilio_phone_number: OWN, byo_sms_verified: false }, ["action_needed", "not_own_account"]],
