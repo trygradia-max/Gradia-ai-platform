@@ -168,6 +168,23 @@ route `GET /api/internal/a2p-reconcile`)
 - A registration with nothing to read (no brand SID yet) is pushed back by the
   settled interval, so it can't fill every batch.
 
+**Uncertain provider outcomes** (October 20 audit;
+`eval/integration/a2p-uncertain-outcomes.int.test.ts`)
+
+This is service-level idempotency: a database claim, plus a provider lookup
+before any create. It isn't a UI busy flag.
+
+| Case | Before | Now |
+| --- | --- | --- |
+| Lost brand create response | Retry registered a second, billed brand | The retry lists the subaccount's brands and adopts the one made from the same two bundles |
+| Lost messaging service create response | Retry created a second service; the first was orphaned | The retry lists the subaccount's services and adopts the one pointing at Gradia's inbound URL |
+| Lost campaign create response | (fixed in #97) | Adopted from the service's Usa2p list |
+| Provider call longer than the 15-minute lease | No timeout, so a second claimer could repeat the in-flight create. The stale holder's saves were already refused | Every call times out after 30 seconds (`A2P_PROVIDER_TIMEOUT_MS`), so the longest claim (about 15 calls) ends well inside the lease |
+| Partial TrustHub creation (R9): profile or trust product created, then an entity, evaluate or submit call fails | A retry builds a new bundle | **Unchanged.** The abandoned draft is unbilled clutter. Finishing it needs sub-step checkpoints inside `registerBusinessProfile`; that's a follow-up |
+
+Adoption only looks inside the shop's own subaccount, so it can't pick up
+another business's resource.
+
 **What a resubmission does**
 
 | Situation | Effect |

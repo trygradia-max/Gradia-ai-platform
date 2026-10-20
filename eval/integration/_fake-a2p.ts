@@ -66,7 +66,8 @@ export function fakeA2pModule() {
     createBrand: (c: unknown, input: { customerProfileSid: string; trustProductSid: string }) => run("brand", c, () => makeBrand(c, input)),
     createSoleProprietorBrand: (c: unknown, input: { customerProfileSid: string; trustProductSid: string }) => run("brand", c, () => makeBrand(c, input)),
     listBrandRegistrations: (c: unknown) =>
-      run("list_brands", c, () => fake.brands.filter((b) => b.accountSid === account(c)).map(({ accountSid: _a, ...b }) => ({ ...b, status: fake.brand }))),
+      run("list_brands", c, () => fake.brands.filter((b) => b.accountSid === account(c))
+        .map((b) => ({ brandSid: b.brandSid, customerProfileSid: b.customerProfileSid, trustProductSid: b.trustProductSid, status: fake.brand }))),
     createMessagingService: (c: unknown, input: { inboundSmsUrl: string }) =>
       run("messaging_service", c, () => {
         const messagingServiceSid = sid("MG")
@@ -74,7 +75,8 @@ export function fakeA2pModule() {
         return { messagingServiceSid }
       }),
     listMessagingServices: (c: unknown) =>
-      run("list_services", c, () => fake.services.filter((x) => x.accountSid === account(c)).map(({ accountSid: _a, ...x }) => x)),
+      run("list_services", c, () => fake.services.filter((x) => x.accountSid === account(c))
+        .map((x) => ({ messagingServiceSid: x.messagingServiceSid, inboundRequestUrl: x.inboundRequestUrl }))),
     createCampaign: (c: unknown, input: { messagingServiceSid: string; brandSid: string }) =>
       run("campaign", c, () => {
         const campaignSid = sid("QE")

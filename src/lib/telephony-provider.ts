@@ -44,7 +44,9 @@ import {
   createSoleProprietorBrand,
   getBrandStatus,
   getCampaignStatus,
+  listBrandRegistrations,
   listCampaigns,
+  listMessagingServices,
   registerA2pTrustProduct,
   registerBusinessProfile,
   registerSoleProprietorProfile,
@@ -513,6 +515,17 @@ async function finishA2p(supabase: SupabaseClient, shopId: string, token: string
 const CLEARED = { failure_reason: null, failed_step: null, retryable: null } as const
 
 /**
+ * A brand already registered in this shop's subaccount for exactly these two
+ * bundles: one whose create response was lost. Adopted instead of registering
+ * (and paying for) a second brand. Bundles are per submission, so a match is
+ * this submission's brand.
+ */
+async function existingBrand(creds: SubaccountCreds, customerProfileSid: string, trustProductSid: string): Promise<string | null> {
+  const brands = await listBrandRegistrations(creds)
+  return brands.find((b) => b.customerProfileSid === customerProfileSid && b.trustProductSid === trustProductSid)?.brandSid ?? null
+}
+
+/**
  * Submits (or resumes, or resubmits) carrier registration for the shop's
  * Gradia number: customer profile → A2P trust product → brand, under the
  * shop's subaccount (skill: do not reorder). See CHANNEL_PROVIDERS.md.
@@ -646,7 +659,8 @@ export async function startA2pRegistration(input: {
       }
       step = "brand"
       if (!brandSid) {
-        brandSid = (await createSoleProprietorBrand(creds, { customerProfileSid, trustProductSid })).brandSid
+        brandSid = (await existingBrand(creds, customerProfileSid, trustProductSid))
+          ?? (await createSoleProprietorBrand(creds, { customerProfileSid, trustProductSid })).brandSid
         await a2pUpdate(supabase, shop.id, token, step, { brand_sid: brandSid })
       }
     } else {
@@ -666,7 +680,8 @@ export async function startA2pRegistration(input: {
       }
       step = "brand"
       if (!brandSid) {
-        brandSid = (await createBrand(creds, { customerProfileSid, trustProductSid })).brandSid
+        brandSid = (await existingBrand(creds, customerProfileSid, trustProductSid))
+          ?? (await createBrand(creds, { customerProfileSid, trustProductSid })).brandSid
         await a2pUpdate(supabase, shop.id, token, step, { brand_sid: brandSid })
       }
     }
@@ -792,10 +807,12 @@ async function syncOnce(input: {
       step = "messaging_service"
       let messagingServiceSid = reg.messaging_service_sid
       if (!messagingServiceSid) {
-        messagingServiceSid = (await createMessagingService(creds, {
-          friendlyName: `${shop.name} — Gradia messaging`,
-          inboundSmsUrl: `${origin}/api/twilio/sms`,
-        })).messagingServiceSid
+        // Adopt a service this subaccount already has for Gradia's inbound
+        // handler (a create whose response was lost) before creating one.
+        const inboundSmsUrl = `${origin}/api/twilio/sms`
+        messagingServiceSid =
+          (await listMessagingServices(creds)).find((s) => s.inboundRequestUrl === inboundSmsUrl)?.messagingServiceSid
+          ?? (await createMessagingService(creds, { friendlyName: `${shop.name} — Gradia messaging`, inboundSmsUrl })).messagingServiceSid
         await a2pUpdate(supabase, shop.id, token, step, { messaging_service_sid: messagingServiceSid })
       }
 
