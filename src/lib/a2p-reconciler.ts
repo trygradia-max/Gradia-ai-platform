@@ -68,7 +68,7 @@ export type A2pReconcileSummary =
   | { enabled: false }
   | { enabled: true; picked: number; checked: number; failed: number; skipped: number; errors: number }
 
-type Due = Pick<A2pRegistrationRow, "shop_id" | "status" | "check_failures" | "last_checked_at" | "last_check_failed_at">
+type Due = Pick<A2pRegistrationRow, "shop_id" | "status" | "check_failures">
 
 /**
  * One reconciler run. `supabase` must be a service-role client. `origin` is
@@ -89,7 +89,7 @@ export async function reconcileA2pRegistrations(input: {
 
   const { data: due, error } = await supabase
     .from("a2p_registrations")
-    .select("shop_id, status, check_failures, last_checked_at, last_check_failed_at")
+    .select("shop_id, status, check_failures")
     .in("status", A2P_RECONCILE_STATUSES as unknown as string[])
     .or(`next_check_at.is.null,next_check_at.lte.${now().toISOString()}`)
     .order("next_check_at", { ascending: true, nullsFirst: true })
@@ -116,40 +116,38 @@ async function refreshOne(
   before: Due,
   schedule: ReturnType<typeof a2pReconcileSchedule>,
   env: Env,
-  now: () => Date
+  now_: () => Date
 ): Promise<"checked" | "failed" | "skipped"> {
   const { data: shop, error } = await supabase.from("shops").select("*").eq("id", before.shop_id).single()
   if (error || !shop) throw new Error("shop unreadable")
-  await syncA2pStatus({ supabase, shop: shop as ShopRow, origin })
+  const result = await syncA2pStatus({ supabase, shop: shop as ShopRow, origin })
 
-  const { data: after } = await supabase
-    .from("a2p_registrations")
-    .select("status, last_checked_at, last_check_failed_at, claim_token")
-    .eq("shop_id", before.shop_id)
-    .single()
-  if (!after) throw new Error("registration unreadable after check")
-  const checked = after.last_checked_at !== before.last_checked_at
-  const failed = after.last_check_failed_at !== before.last_check_failed_at
-  if (!checked && !failed) {
-    // Nothing was read. If another check holds the claim, its holder
-    // schedules: leave the row alone. Otherwise there was nothing to read
-    // (e.g. no brand SID yet): push it back so it can't starve the batch.
-    if (!after.claim_token) {
+  if (!result.check) {
+    // This call read nothing. Usually another check held the claim: its
+    // holder schedules, so leave the row alone. But a registration with
+    // nothing to read yet (no brand SID, or no campaign) would stay due
+    // forever and starve the batch: push that one back.
+    const { data: row } = await supabase
+      .from("a2p_registrations")
+      .select("status, brand_sid, messaging_service_sid, campaign_sid")
+      .eq("shop_id", before.shop_id)
+      .single()
+    const nothingToRead = row && (row.status === "brand_pending" ? !row.brand_sid : !row.messaging_service_sid || !row.campaign_sid)
+    if (nothingToRead) {
       await supabase
         .from("a2p_registrations")
-        .update({ next_check_at: new Date(now().getTime() + schedule.settledIntervalMs).toISOString() })
+        .update({ next_check_at: new Date(now_().getTime() + schedule.settledIntervalMs).toISOString() })
         .eq("shop_id", before.shop_id)
-        .is("claim_token", null)
     }
     return "skipped"
   }
-
+  const checked = result.check === "answered"
   const failures = checked ? 0 : (before.check_failures ?? 0) + 1
-  const settled = after.status === "approved" || after.status === "suspended"
+  const settled = result.status === "approved" || result.status === "suspended"
   const waitMs = failures > 0 ? a2pBackoffMs(failures, env) : settled ? schedule.settledIntervalMs : schedule.pendingIntervalMs
   await supabase
     .from("a2p_registrations")
-    .update({ check_failures: failures, next_check_at: new Date(now().getTime() + waitMs).toISOString() })
+    .update({ check_failures: failures, next_check_at: new Date(now_().getTime() + waitMs).toISOString() })
     .eq("shop_id", before.shop_id)
   return checked ? "checked" : "failed"
 }

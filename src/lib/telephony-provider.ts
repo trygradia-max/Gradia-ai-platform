@@ -688,6 +688,12 @@ export async function startA2pRegistration(input: {
 export type A2pSyncResult = {
   status: A2pRegistrationRow["status"]
   failureReason: string | null
+  /**
+   * What THIS call recorded: "answered" (the provider answered),
+   * "failed" (it didn't answer usably), or absent (no read was made or
+   * recorded, e.g. another check held the claim).
+   */
+  check?: "answered" | "failed"
 }
 
 /**
@@ -736,7 +742,11 @@ export async function syncA2pStatus(input: {
   let answered = false
   /** Writes the outcome and releases the claim; a lost claim reports what's stored and renews nothing. */
   const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<A2pSyncResult> => {
-    if (await finishA2p(supabase, shop.id, token, { check: answered ? "checked" : undefined, ...f })) return result
+    const written = { check: answered ? ("checked" as const) : undefined, ...f }
+    if (await finishA2p(supabase, shop.id, token, written)) {
+      const check = written.check === "failed" ? "failed" : written.check ? "answered" : undefined
+      return check ? { ...result, check } : result
+    }
     const now = await read()
     return { status: now?.status ?? reg.status, failureReason: now?.failure_reason ?? null }
   }
