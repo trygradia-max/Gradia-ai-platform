@@ -86,7 +86,7 @@ BEGIN
   IF p_check IS NOT NULL AND p_check NOT IN ('checked', 'verified', 'failed') THEN
     RAISE EXCEPTION 'Invalid check outcome' USING ERRCODE = '22023';
   END IF;
-  IF (p_check = 'failed') IS DISTINCT FROM (p_failure_kind IS NOT NULL) THEN
+  IF (coalesce(p_check, '') = 'failed') <> (p_failure_kind IS NOT NULL) THEN
     RAISE EXCEPTION 'A failed check needs its kind, and only a failed check has one' USING ERRCODE = '22023';
   END IF;
 
