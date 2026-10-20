@@ -2,6 +2,10 @@
 
 The production callback defaults to https://gradia-ai-platform.vercel.app. Request
 Host, forwarded headers, request origin and `next` never choose its trusted origin.
+On Vercel that default stands unless the private-review opt-in below matches.
+Off Vercel, a loopback `GRADIA_DASHBOARD_URL` (`http://127.0.0.1` or `http://localhost`,
+path ignored) is the only other trusted origin. A non-loopback value does not
+replace the production origin.
 
 A private candidate may opt in using deployment-only `GRADIA_PRIVATE_REVIEW_AUTH=1`.
 It then uses the platform-provided server `VERCEL_URL`, only when `VERCEL=1` and the

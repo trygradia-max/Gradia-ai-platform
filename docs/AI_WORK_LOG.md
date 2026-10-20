@@ -1913,3 +1913,19 @@ Gradia phone account. No Twilio call, no shared migration, no merge, no
 deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
 Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
 is also in that tab order while `next dev` is running.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Investigated the post-login redirect. `/auth/callback` never reads the
+request host. On Vercel it stays on https://gradia-ai-platform.vercel.app
+unless `GRADIA_PRIVATE_REVIEW_AUTH=1` and `VERCEL_URL` is a generated
+`gradia-ai-platform-*-gradia1.vercel.app` host. Off Vercel it now uses a
+loopback `GRADIA_DASHBOARD_URL` (`127.0.0.1` or `localhost` only). A
+non-loopback value still redirects to the production origin. Hostile
+forwarded-host headers do not change it. Auth callback tests: 101 passed.
+Verified onboarding with `next build` and `next start` on 127.0.0.1:3000
+against the disposable database only. The magic link landed on
+`/onboarding` with zero requests to the production host. Save, reload on
+Your number, skip, reload on Choose your help, rejection, and the
+phone-account refusal all held. 390px and 200% zoom did not overflow.
+Tab reached See phone help, Back, and Finish setup, without the dev overlay.
+No Twilio call, shared migration, merge, or deploy.
