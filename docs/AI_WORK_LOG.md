@@ -1950,3 +1950,36 @@ Limits: campaign edit via API is a Twilio beta; brand and campaign progress is
 still pulled only by status checks (R6); `MessageSamples` is sent as a JSON
 string in one form field, as before, to confirm on the first live run. No
 Twilio call, shared migration, merge or activation.
+
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: review]
+A2P registration slice 2: approved campaigns stay watched. Fixes findings R4
+and R7 of the October 19 Twilio review, stacked on slice 1.
+
+- R4: status checks keep re-reading `approved` and `suspended` registrations.
+  `campaign_status` is mapped explicitly. VERIFIED opens texting; SUSPENDED sets
+  `suspended`, FAILED `rejected`, and IN_PROGRESS, PENDING or anything unknown
+  `campaign_pending`. All of these close the gate. A suspended registration
+  can't be resubmitted; it reopens only when VERIFIED again.
+- R7: every status change writes the registration and `shops.a2p_status`
+  together (`a2p_finish_registration`). A verified check rewrites the gate,
+  repairing a shop left `pending` by the old two-statement write.
+- Migration `20261019140000_a2p_campaign_suspended.sql` widens both status
+  checks. Gate reason, readiness reason `registration_suspended`, onboarding
+  copy and the wizard say texting is paused and to contact support. Shown as
+  "Needs a correction", because the handoff vocabulary has no suspended label;
+  that wording is the release lane's call.
+- No scheduler or cron. A suspension is noticed on the next webhook or check
+  (R6).
+
+Disposable `gradia-record-fresh` stack, reset from this branch (main's 98
+migrations plus 20261019120000 and 20261019140000). Node 22.23.2 isolated runner:
+
+- `a2p-registration-recovery` and `a2p-registration`: 19 of 19, first run.
+- Full `integration --fresh`: 521 passed, 14 failed. The 14 failures are the
+  baseline the number-ownership session measured on main's schema on the same
+  stack (manager-notification 6, whisper-inbox 2, intake-identity 2,
+  intake-vehicle 2, lead-qualification 1, customer-merge 1). Every Twilio and
+  A2P file passed. This run covers slice 1's code too.
+- Unit: 1,591 passed, 4 skipped. Lint, types and offline build passed.
+
+No Twilio call, shared migration, merge or activation.
