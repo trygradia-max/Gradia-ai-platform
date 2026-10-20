@@ -688,12 +688,22 @@ export async function startA2pRegistration(input: {
 export type A2pSyncResult = {
   status: A2pRegistrationRow["status"]
   failureReason: string | null
-  /**
-   * What THIS call recorded: "answered" (the provider answered),
-   * "failed" (it didn't answer usably), or absent (no read was made or
-   * recorded, e.g. another check held the claim).
-   */
-  check?: "answered" | "failed"
+}
+
+/**
+ * The same, plus what THIS call recorded: "answered" (the provider answered),
+ * "failed" (it didn't answer usably) or null (no read was made or recorded,
+ * e.g. another check held the claim). For the reconciler's scheduling.
+ */
+export type A2pSyncOutcome = { result: A2pSyncResult; check: "answered" | "failed" | null }
+
+/** One status check; see syncA2pStatusDetailed below for what it does. */
+export async function syncA2pStatus(input: {
+  supabase: SupabaseClient
+  shop: ShopTelephonyFields
+  origin: string
+}): Promise<A2pSyncResult> {
+  return (await syncA2pStatusDetailed(input)).result
 }
 
 /**
@@ -713,11 +723,22 @@ export type A2pSyncResult = {
  * one transaction (R7). A temporary failure is recorded and retried on the
  * next check; a stage is only reported as advanced once it is saved.
  */
-export async function syncA2pStatus(input: {
+export async function syncA2pStatusDetailed(input: {
   supabase: SupabaseClient
   shop: ShopTelephonyFields
   origin: string
-}): Promise<A2pSyncResult> {
+}): Promise<A2pSyncOutcome> {
+  const outcome = await syncOnce(input)
+  return { result: { status: outcome.status, failureReason: outcome.failureReason }, check: outcome.check ?? null }
+}
+
+type InternalSyncResult = A2pSyncResult & { check?: "answered" | "failed" }
+
+async function syncOnce(input: {
+  supabase: SupabaseClient
+  shop: ShopTelephonyFields
+  origin: string
+}): Promise<InternalSyncResult> {
   const { supabase, shop, origin } = input
 
   const read = async () => {
@@ -741,7 +762,7 @@ export async function syncA2pStatus(input: {
   /** Whether this check got an answer from the provider (recorded as last_checked_at). */
   let answered = false
   /** Writes the outcome and releases the claim; a lost claim reports what's stored and renews nothing. */
-  const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<A2pSyncResult> => {
+  const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<InternalSyncResult> => {
     const written = { check: answered ? ("checked" as const) : undefined, ...f }
     if (await finishA2p(supabase, shop.id, token, written)) {
       const check = written.check === "failed" ? "failed" : written.check ? "answered" : undefined

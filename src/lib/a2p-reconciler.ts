@@ -9,10 +9,12 @@
  *   No cron, schedule or Event Stream calls it; the release lane decides that.
  * - Bounded: at most `batch` registrations per run (default 25, never more
  *   than 100), oldest next_check_at first.
- * - Idempotent and single-flight per shop: each refresh is syncA2pStatus,
- *   which takes the registration's claim before any provider call and uses
- *   only that shop's own subaccount credentials. A run that loses the claim
- *   calls nothing for that shop and leaves its schedule alone.
+ * - One check per shop per due period: a run first takes the due row with a
+ *   compare-and-swap on next_check_at (held 15 minutes), so concurrent runs
+ *   never both check it. The check itself is syncA2pStatusDetailed, which
+ *   takes the registration's claim before any provider call (so a manual
+ *   check at the same moment can't double it either) and uses only that
+ *   shop's own subaccount credentials.
  * - Backoff: a failed check doubles the wait from 5 minutes, capped. A
  *   successful one resets the count.
  *
@@ -25,7 +27,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { a2pEvidenceMaxAgeHours } from "@/lib/a2p-evidence"
-import { syncA2pStatus } from "@/lib/telephony-provider"
+import { syncA2pStatusDetailed } from "@/lib/telephony-provider"
 import type { A2pRegistrationRow, ShopRow } from "@/lib/types/database"
 
 type Env = Record<string, string | undefined>
@@ -110,23 +112,38 @@ export async function reconcileA2pRegistrations(input: {
   return summary
 }
 
+/** How long a run holds a due row while it checks it (longer than one check can take). */
+const SLOT_HOLD_MS = 15 * MINUTE
+
 async function refreshOne(
   supabase: SupabaseClient,
   origin: string,
   before: Due,
   schedule: ReturnType<typeof a2pReconcileSchedule>,
   env: Env,
-  now_: () => Date
+  now: () => Date
 ): Promise<"checked" | "failed" | "skipped"> {
+  // Take this due row with a compare-and-swap on next_check_at, so a second
+  // run that listed the same row skips it instead of checking it again once
+  // the first run's claim is released.
+  const at = now()
+  const { data: slot } = await supabase
+    .from("a2p_registrations")
+    .update({ next_check_at: new Date(at.getTime() + SLOT_HOLD_MS).toISOString() })
+    .eq("shop_id", before.shop_id)
+    .or(`next_check_at.is.null,next_check_at.lte.${at.toISOString()}`)
+    .select("shop_id")
+  if (!slot?.length) return "skipped"
+
   const { data: shop, error } = await supabase.from("shops").select("*").eq("id", before.shop_id).single()
   if (error || !shop) throw new Error("shop unreadable")
-  const result = await syncA2pStatus({ supabase, shop: shop as ShopRow, origin })
+  const { result, check } = await syncA2pStatusDetailed({ supabase, shop: shop as ShopRow, origin })
 
-  if (!result.check) {
-    // This call read nothing. Usually another check held the claim: its
-    // holder schedules, so leave the row alone. But a registration with
-    // nothing to read yet (no brand SID, or no campaign) would stay due
-    // forever and starve the batch: push that one back.
+  if (!check) {
+    // Nothing was read: a manual check held the claim (the slot hold makes
+    // this run retry after it), or there's nothing to read yet (no brand SID
+    // or no campaign), which waits the settled interval so it can't starve
+    // the batch.
     const { data: row } = await supabase
       .from("a2p_registrations")
       .select("status, brand_sid, messaging_service_sid, campaign_sid")
@@ -136,18 +153,19 @@ async function refreshOne(
     if (nothingToRead) {
       await supabase
         .from("a2p_registrations")
-        .update({ next_check_at: new Date(now_().getTime() + schedule.settledIntervalMs).toISOString() })
+        .update({ next_check_at: new Date(now().getTime() + schedule.settledIntervalMs).toISOString() })
         .eq("shop_id", before.shop_id)
     }
     return "skipped"
   }
-  const checked = result.check === "answered"
+
+  const checked = check === "answered"
   const failures = checked ? 0 : (before.check_failures ?? 0) + 1
   const settled = result.status === "approved" || result.status === "suspended"
   const waitMs = failures > 0 ? a2pBackoffMs(failures, env) : settled ? schedule.settledIntervalMs : schedule.pendingIntervalMs
   await supabase
     .from("a2p_registrations")
-    .update({ check_failures: failures, next_check_at: new Date(now_().getTime() + waitMs).toISOString() })
+    .update({ check_failures: failures, next_check_at: new Date(now().getTime() + waitMs).toISOString() })
     .eq("shop_id", before.shop_id)
   return checked ? "checked" : "failed"
 }

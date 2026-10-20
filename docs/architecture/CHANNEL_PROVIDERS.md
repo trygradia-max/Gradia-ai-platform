@@ -154,9 +154,11 @@ route `GET /api/internal/a2p-reconcile`)
 - **Held.** It's off unless `A2P_RECONCILER_ENABLED=true`, and off it reads
   nothing. The route sits outside `/api/cron`: it isn't in `vercel.json` or the
   cron registry, and nothing calls it. Auth is the cron bearer `CRON_SECRET`.
-- Each refresh is `syncA2pStatus`: the registration's claim, then that shop's
-  own subaccount credentials. Two concurrent runs never call the provider twice
-  for one shop. A run that loses the claim leaves that shop's schedule alone.
+- A run first takes each due row with a compare-and-swap on `next_check_at`
+  (held for 15 minutes), so two concurrent runs never check the same shop in
+  the same period. The check then takes the registration's claim (so a manual
+  check at the same moment can't double it), and uses only that shop's own
+  subaccount credentials.
 - **Schedule.** After a successful check: 1 hour for pending registrations, 6
   hours for approved or suspended ones. After a failed check: 5 minutes,
   doubling per consecutive failure, capped at 6 hours. Every interval and the
