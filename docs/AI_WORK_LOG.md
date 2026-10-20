@@ -1913,3 +1913,20 @@ Gradia phone account. No Twilio call, no shared migration, no merge, no
 deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
 Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
 is also in that tab order while `next dev` is running.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Local magic-link callbacks were leaving the loopback site for the production
+origin because `trustedOrigin()` ignored `GRADIA_DASHBOARD_URL` whenever
+private review was off. The disposable GoTrue site URL was already
+`http://127.0.0.1:3000`, so this was application code, not the provider allow
+list. Off Vercel, only a loopback dashboard URL may replace production.
+Request headers and any non-loopback dashboard URL still cannot. Commit
+`6cbcc50909add7bde451ffab8fdef1f517b3de45` on
+`cursor/auth-onboarding-acceptance-4757`, based on merged PR #95. Channel
+readiness panel and BYO uncertainty handling were not edited. Authenticated
+`next start` acceptance on the disposable stack covered owner save, resume,
+skip, reload, rejection retry without a submission claim, independent
+Unavailable channel rows, owner confirm and withdraw, failed channel and
+own-number reads, a manager, and a revoked membership. Keyboard Tab, 390px,
+320px, and Chrome 200% zoom were run on that signed-in build. No provider
+call, shared migration, merge, or deploy.
