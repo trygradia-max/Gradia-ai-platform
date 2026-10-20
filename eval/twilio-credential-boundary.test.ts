@@ -17,8 +17,15 @@ describe("business credentials fail closed", () => {
   it.each([{ twilio_account_sid_enc: "broken", twilio_auth_token_enc: "broken" }, { twilio_account_sid_enc: "broken" }])("does not replace configured but unreadable own-account credentials with the shared account", fields => {
     expect(resolveTwilioCredentials(fields)).toBeNull()
   })
-  it("retains explicitly unconfigured legacy pilot accounts", () => {
-    expect(resolveTwilioCredentials({})).toMatchObject({ accountSid: "ACshared", source: "env" })
+  it("an unconfigured business uses the shared account only as an allowlisted pilot shop and number (I1)", () => {
+    expect(resolveTwilioCredentials({})).toBeNull()
+    expect(resolveTwilioCredentials({ id: "shop-pilot", twilio_phone_number: "+15555550100" })).toBeNull()
+    vi.stubEnv("TWILIO_PILOT_SHOP_NUMBERS", "shop-pilot=+15555550100")
+    expect(resolveTwilioCredentials({ id: "shop-pilot", twilio_phone_number: "+15555550100" })).toMatchObject({ accountSid: "ACshared", source: "env" })
+    expect(resolveTwilioCredentials({ id: "shop-pilot", twilio_phone_number: "+15555550199" })).toBeNull()
+    expect(resolveTwilioCredentials({ id: "shop-other", twilio_phone_number: "+15555550100" })).toBeNull()
+    // Gradia's own master-only callers pass no shop at all.
+    expect(resolveTwilioCredentials(null)).toMatchObject({ accountSid: "ACshared", source: "env" })
   })
   it("an explicit failed resolution cannot fall back inside the transport", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch)

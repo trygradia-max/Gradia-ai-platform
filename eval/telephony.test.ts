@@ -1,10 +1,12 @@
-import { afterEach, beforeAll, describe, it, expect, vi } from "vitest"
+import { createHmac } from "node:crypto"
+
+import { afterAll, afterEach, beforeAll, describe, it, expect, vi } from "vitest"
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { encryptSecret } from "@/lib/crypto"
 import { purchaseNumber, smsGateForShop } from "@/lib/telephony-provider"
-import { resolveTwilioCredentials } from "@/lib/twilio"
+import { pilotEnvNumberFor, resolveTwilioCredentials, verifyTwilioSignature } from "@/lib/twilio"
 
 /**
  * Tier 1 — pure, deterministic, no API. Locks the telephony seam's two
@@ -25,6 +27,12 @@ function mockSupabase(spentRows: { credits: number }[]): SupabaseClient {
             gte: () =>
               Promise.resolve({
                 data: table === "credit_grants" ? [] : spentRows,
+                error: null,
+              }),
+            // shops: the stored number, re-read before any spend (R8).
+            single: () =>
+              Promise.resolve({
+                data: { gradia_number_e164: null, gradia_number_sid: null },
                 error: null,
               }),
           }),
@@ -173,3 +181,59 @@ describe("credential resolution — subaccount wins for the Gradia number", () =
     ).toEqual({ accountSid: "ACbyo", authToken: "byo-token", source: "byo" })
   })
 })
+
+describe("pilot env fallback is scoped to an explicit allowlist (I1)", () => {
+  const saved: Record<string, string | undefined> = {}
+  beforeAll(() => {
+    for (const k of ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PILOT_SHOP_NUMBERS"]) saved[k] = process.env[k]
+    process.env.TWILIO_ACCOUNT_SID = "ACmaster"
+    process.env.TWILIO_AUTH_TOKEN = "master-token"
+  })
+  afterEach(() => {
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = ""
+  })
+  afterAll(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  const bare = (id: string, number: string | null) => ({ id, twilio_phone_number: number })
+  const env = { accountSid: "ACmaster", authToken: "master-token", source: "env" }
+
+  it("a shop without its own credentials gets no credentials unless allowlisted", () => {
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = ""
+    expect(resolveTwilioCredentials(bare("shop-a", "+15035550100"))).toBeNull()
+  })
+
+  it("an allowlisted shop gets the env account only for its allowlisted number", () => {
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = "shop-b=+15035550101, shop-a=+15035550100"
+    expect(resolveTwilioCredentials(bare("shop-a", "+15035550100"))).toEqual(env)
+    expect(resolveTwilioCredentials(bare("shop-a", "+15035550199"))).toBeNull()
+    expect(resolveTwilioCredentials(bare("shop-a", null))).toBeNull()
+    expect(resolveTwilioCredentials(bare("shop-c", "+15035550100"))).toBeNull()
+    expect(resolveTwilioCredentials({ twilio_phone_number: "+15035550100" })).toBeNull()
+  })
+
+  it("malformed allowlist entries are ignored (fail closed)", () => {
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = "shop-a,shop-a=5035550100,shop-a=+15035550100=x,=+15035550100"
+    expect(pilotEnvNumberFor("shop-a")).toBeNull()
+    expect(resolveTwilioCredentials(bare("shop-a", "+15035550100"))).toBeNull()
+  })
+
+  it("master-only callers (no shop) still get the env account", () => {
+    expect(resolveTwilioCredentials(null)).toEqual(env)
+  })
+
+  it("explicit null credentials never verify with the env token", () => {
+    const url = "https://app.test/api/twilio/sms"
+    const form = new URLSearchParams({ MessageSid: "SM1", To: "+15035550100" })
+    let signed = url
+    for (const k of [...form.keys()].sort()) signed += k + (form.get(k) ?? "")
+    const signature = createHmac("sha1", "master-token").update(signed).digest("base64")
+    expect(verifyTwilioSignature({ url, form, signature })).toBe(true)
+    expect(verifyTwilioSignature({ url, form, signature, creds: null })).toBe(false)
+  })
+})
+

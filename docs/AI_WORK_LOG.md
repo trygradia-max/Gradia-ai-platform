@@ -1913,3 +1913,20 @@ Gradia phone account. No Twilio call, no shared migration, no merge, no
 deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
 Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
 is also in that tab order while `next dev` is running.
+
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: done]
+Twilio review slice 3, number ownership and purchase (findings I1 and R8 in
+`docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md`), on
+`claude/twilio-number-ownership` from main after #95. Gradia's master
+(env) account now serves a business only when `TWILIO_PILOT_SHOP_NUMBERS`
+lists that shop and number. #95's explicit-null refusals are kept; only the
+`{}` fallback is narrowed. Migration `20261019130000` makes
+`shops.twilio_phone_number` server-written (guard trigger like #93's). The
+owner number form saves only the shop's Gradia number, its listed pilot
+number, or a number on its own Twilio account, checked with those
+credentials. `purchaseNumber` re-reads the stored number, adopts a number
+already on the subaccount, writes only if none is stored, and meters once.
+Added a cross-business inbound-isolation integration suite and a read-only
+preflight, `scripts/preflight-twilio-number-ownership.sql`. No provider
+calls, sends, shared migrations, activation, merge or deploy.
+Unit 135 files, lint, types and build pass. integration --fresh on the disposable stack: 527 passed, 14 failed. Those 14 also fail on main's schema in 6 non-Twilio files; every Twilio suite passes.

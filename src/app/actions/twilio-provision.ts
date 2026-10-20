@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 
 import {
   findIncomingPhoneNumberSid,
+  hasMasterTwilioCredentials,
   provisionPhoneNumber,
   releasePhoneNumber,
   resolveTwilioCredentials,
@@ -70,8 +71,13 @@ export async function searchTwilioNumbers(input: {
   const shop = await loadShop()
   if (!shop) return { ok: false, error: "Finish onboarding first." }
 
-  const creds = resolveTwilioCredentials(shop)
-  if (!creds) {
+  // BYO shops search their own account. Everyone else searches the
+  // account-independent pool through the master account (as
+  // telephony-provider searchNumbers does); the purchase itself happens on
+  // the shop's subaccount. Credentials for SENDING stay scoped (I1).
+  const byo = Boolean(shop.twilio_account_sid_enc)
+  const creds = byo ? resolveTwilioCredentials(shop) : undefined
+  if (byo ? !creds : !hasMasterTwilioCredentials()) {
     return {
       ok: false,
       error: "We're finishing texting setup on our side — check back soon.",
@@ -85,7 +91,6 @@ export async function searchTwilioNumbers(input: {
       limit: 8,
       creds,
     })
-    const byo = Boolean(shop.twilio_account_sid_enc)
     const monthlyRetailCents = byo
       ? null
       : (await getPricing(createServiceClient())).number_monthly.retail_cents
@@ -160,7 +165,10 @@ export async function provisionTwilioNumber(input: {
       creds,
     })
 
-    const supabase = await createClient()
+    // Service role: twilio_phone_number is server-written (I1). The number
+    // was just provisioned on the shop's own account; the shop is the
+    // owner's (requireShop).
+    const supabase = createServiceClient()
     const { error } = await supabase
       .from("shops")
       .update({ twilio_phone_number: provisioned.phoneNumber })
@@ -241,7 +249,7 @@ export async function releaseTwilioNumber(): Promise<ReleaseTwilioNumberResult> 
       await releasePhoneNumber({ sid, creds })
     }
 
-    const supabase = await createClient()
+    const supabase = createServiceClient()
     const { error } = await supabase
       .from("shops")
       .update({

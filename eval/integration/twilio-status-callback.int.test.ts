@@ -44,7 +44,7 @@ let POST: (req: Request) => Promise<Response>
 let sb: SupabaseClient
 let subSeed: Seeded // shop A — Gradia-provisioned (subaccount creds)
 let byoSeed: Seeded // shop B — BYO creds
-let envSeed: Seeded // shop C — no per-shop creds (env master)
+let envSeed: Seeded // shop C — no per-shop creds (allowlisted env master pilot)
 
 const savedEnv: Record<string, string | undefined> = {}
 
@@ -144,6 +144,7 @@ describe.skipIf(!INTEGRATION)("Twilio status callback repair [integration]", () 
       "TWILIO_ACCOUNT_SID",
       "TWILIO_AUTH_TOKEN",
       "ENCRYPTION_KEY",
+      "TWILIO_PILOT_SHOP_NUMBERS",
     ]) {
       savedEnv[k] = process.env[k]
     }
@@ -189,6 +190,10 @@ describe.skipIf(!INTEGRATION)("Twilio status callback repair [integration]", () 
       const { error } = await sb.from("shops").update(patch).eq("id", seed.shopId)
       if (error) throw new Error(`shop cred update failed: ${error.message}`)
     }
+
+    // Shop C has no credentials of its own: it's an allowlisted pilot on the
+    // master account (I1). Unlisted shops fail closed (tested below).
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = `${envSeed.shopId}=+15035550188`
 
     ;({ POST } = await import("@/app/api/twilio/sms/status/route"))
   })
@@ -315,6 +320,19 @@ describe.skipIf(!INTEGRATION)("Twilio status callback repair [integration]", () 
     const res = await post({ form: makeForm(id), token: MASTER_TOKEN })
     expect(res.status).toBe(200)
     expect((await metadataOf(rowId)).twilio_status).toBe("delivered")
+  })
+
+  it("I1: a shop with no credentials of its own that isn't allowlisted is refused, even master-signed", async () => {
+    const id = sid("env-unlisted")
+    const rowId = await seedOutbound(envSeed.shopId, id)
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = ""
+    try {
+      const res = await post({ shopId: envSeed.shopId, form: makeForm(id), token: MASTER_TOKEN })
+      expect(res.status).toBe(401)
+    } finally {
+      process.env.TWILIO_PILOT_SHOP_NUMBERS = `${envSeed.shopId}=+15035550188`
+    }
+    expect((await metadataOf(rowId)).twilio_status).toBe("sent")
   })
 
   it("CROSS-TENANT: shop B, signing with its OWN valid token, cannot mutate shop A's message via A's MessageSid", async () => {

@@ -22,9 +22,13 @@ type for nurture and replies) is its own follow-up task.
 Two supported modes:
 
 **Pilot mode (global account)** — one Twilio account owns numbers for
-multiple shops; only the env-level `TWILIO_ACCOUNT_SID` /
-`TWILIO_AUTH_TOKEN` are stored. Each shop just configures the number
-they own on that account. Quickest path to first pilot.
+a few named pilot shops; only the env-level `TWILIO_ACCOUNT_SID` /
+`TWILIO_AUTH_TOKEN` are stored. Each pilot shop and its number must be
+listed in `TWILIO_PILOT_SHOP_NUMBERS` (`<shop uuid>=<E.164>,...`); a shop
+that isn't listed can't use the master account and fails closed (review
+finding I1). Owners can't type in a master-account number: the number is
+server-written, and the settings form only accepts the shop's Gradia
+number, its listed pilot number, or a number on its own Twilio account.
 
 **BYO mode (per-shop credentials)** — each shop plugs in their own
 Twilio account SID + auth token via `/settings#sms`. Encrypted at

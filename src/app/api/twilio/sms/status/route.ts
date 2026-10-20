@@ -9,7 +9,7 @@
  * Credential resolution (P0-008): the callback URL carries `?shop=<id>`
  * (appended by every send/provision path), and the shop's credentials
  * resolve in the SAME order as the inbound webhook — subaccount → BYO →
- * env master (`resolveTwilioCredentials`). Gradia-provisioned numbers
+ * env master for allowlisted pilot shops only (`resolveTwilioCredentials`). Gradia-provisioned numbers
  * live on the shop's subaccount, so Twilio signs their callbacks with
  * the SUBACCOUNT token; resolving only BYO columns (the pre-P0-008 bug)
  * made every subaccount callback fail verification silently.
@@ -59,10 +59,11 @@ const TWIML_HEADERS = { "Content-Type": "text/xml; charset=utf-8" }
 /** The shop columns credential resolution needs — includes the
  *  subaccount + Gradia-number fields the pre-P0-008 select omitted. */
 const SHOP_CRED_COLUMNS =
-  "twilio_account_sid_enc, twilio_auth_token_enc, twilio_subaccount_sid, twilio_subaccount_token_enc, twilio_phone_number, gradia_number_e164"
+  "id, twilio_account_sid_enc, twilio_auth_token_enc, twilio_subaccount_sid, twilio_subaccount_token_enc, twilio_phone_number, gradia_number_e164"
 
 type ShopCredRow = Pick<
   ShopRow,
+  | "id"
   | "twilio_account_sid_enc"
   | "twilio_auth_token_enc"
   | "twilio_subaccount_sid"
