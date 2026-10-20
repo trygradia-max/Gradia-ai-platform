@@ -80,6 +80,11 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/app/actions/jobs.ts",
     "src/app/actions/payments.ts",
     "src/app/actions/quote-response.ts",
+    // I1: shops.twilio_phone_number is server-written. saveTwilioNumber and
+    // disconnectSms write it with the service role, scoped to the shop id
+    // getOptionalShop returned (a shop this user owns); the number itself is
+    // checked against the shop's own account first (shop-texting-number.ts).
+    "src/app/actions/shop.ts",
     "src/app/actions/twilio-provision.ts",
     "src/app/actions/voice-builder.ts",
     "src/app/api/admin/margin-report/route.ts",

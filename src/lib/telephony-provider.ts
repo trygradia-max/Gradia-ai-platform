@@ -27,6 +27,7 @@ import {
   closeSubaccount,
   createSubaccount,
   fetchSubaccount,
+  listIncomingPhoneNumbers,
   listSubaccountsByFriendlyName,
   defaultStatusCallbackUrl,
   provisionPhoneNumber,
@@ -42,10 +43,12 @@ import {
   createSoleProprietorBrand,
   getBrandStatus,
   getCampaignStatus,
+  listCampaigns,
   registerA2pTrustProduct,
   registerBusinessProfile,
   registerSoleProprietorProfile,
   resendSoleProprietorOtp,
+  updateCampaign,
 } from "@/lib/twilio-a2p"
 import type {
   A2pBusinessDetails,
@@ -220,9 +223,28 @@ export async function searchNumbers(input: {
 
 /**
  * Buys a number for the shop, end to end: credit pre-check (fail closed,
- * BEFORE any vendor call) → ensure subaccount → provision under the
- * subaccount with webhooks pointed at Gradia → persist on the shop →
+ * BEFORE any vendor call) → ensure subaccount → adopt or provision under
+ * the subaccount with webhooks pointed at Gradia → persist on the shop →
  * meter `number_monthly` at retail with the vendor ref.
+ *
+ * Single-flight (review finding R8):
+ *   - The stored number is re-read from the database, not the caller's
+ *     snapshot. A shop that already has one gets it back; nothing is bought.
+ *   - Before buying, the subaccount's numbers are listed. The subaccount
+ *     belongs to this shop alone, so a number already on it is one this
+ *     shop bought whose save failed or whose response was lost (or a
+ *     concurrent purchase in flight): it is ADOPTED, never bought again.
+ *     More than one is refused for reconciliation.
+ *   - The number is written only if none is stored
+ *     (`gradia_number_e164 IS NULL`). Only the call whose write lands
+ *     meters `number_monthly`, so a number is metered once. A loser that
+ *     provisioned its own duplicate releases it and returns the winner.
+ *   - If provisioning errors, the subaccount is listed again and a number
+ *     found there is adopted (a lost response, or a concurrent purchase of
+ *     the same number).
+ *   - A failed save keeps the provisioned number on the subaccount (it is
+ *     not metered) so the retry adopts it. Releasing it instead could
+ *     release a number whose save actually committed.
  *
  * The number is voice-ready immediately; outbound SMS stays blocked until
  * A2P approval (`smsGateForShop`). One number per shop in v1.
@@ -242,6 +264,15 @@ export async function purchaseNumber(input: {
 
   const pricing = await getPricing(supabase)
   const priced = priceUsage(pricing, "number_monthly")
+  const owned = (number: string): PurchaseResult => ({
+    ok: true,
+    e164: number,
+    monthlyRetailCents: priced.retail_cost,
+  })
+
+  const before = await readStoredNumber(supabase, shop.id)
+  if (!before.ok) return { ok: false, error: before.error }
+  if (before.e164) return owned(before.e164)
 
   const check = await precheckCredits(supabase, shop, priced.credits)
   if (!check.ok) return { ok: false, error: check.reason }
@@ -256,57 +287,112 @@ export async function purchaseNumber(input: {
     }
   }
 
+  let onAccount: { sid: string; phoneNumber: string }[]
   try {
-    const provisioned = await provisionPhoneNumber({
-      phoneNumber: e164,
-      smsUrl: `${origin}/api/twilio/sms`,
-      statusCallback: defaultStatusCallbackUrl(shop.id),
-      friendlyName: shop.name,
-      creds,
-    })
-
-    const { error: persistError } = await supabase
-      .from("shops")
-      .update({
-        gradia_number_e164: provisioned.phoneNumber,
-        gradia_number_sid: provisioned.sid,
-        // The active number for sends + inbound routing. Setting it equal to
-        // gradia_number_e164 is also what flips resolveTwilioCredentials to
-        // the subaccount and arms the A2P gate at the send boundary.
-        twilio_phone_number: provisioned.phoneNumber,
-        a2p_status: "unregistered",
-      })
-      .eq("id", shop.id)
-    if (persistError) {
-      console.error("[telephony] number persist failed:", persistError)
-      // Roll the rental back rather than strand a paid number nobody can see.
-      await releasePhoneNumber({ sid: provisioned.sid, creds }).catch((e) =>
-        console.error("[telephony] rollback release failed:", e)
-      )
-      return { ok: false, error: "Couldn't save the number — nothing was charged. Try again." }
-    }
-
-    await recordUsage(supabase, shop.id, "number_monthly", {
-      credits: priced.credits,
-      wholesaleCost: priced.wholesale_cost,
-      retailCost: priced.retail_cost,
-      vendorRef: provisioned.sid,
-      refId: provisioned.phoneNumber,
-    })
-
-    return {
-      ok: true,
-      e164: provisioned.phoneNumber,
-      monthlyRetailCents: priced.retail_cost,
-    }
+    onAccount = await listIncomingPhoneNumbers({ creds })
   } catch (err) {
-    const message =
-      err instanceof TwilioError
-        ? "That number was just taken — pick another."
-        : "Couldn't purchase the number. Try again."
-    console.error("[telephony] purchase failed:", err)
-    return { ok: false, error: message }
+    // Without the list we can't rule out a number bought earlier: don't buy.
+    console.error("[telephony] couldn't list subaccount numbers before purchase:", err)
+    return { ok: false, error: "Couldn't check the phone account. Try again; nothing was bought." }
   }
+  if (onAccount.length > 1) {
+    console.error(`[telephony] subaccount ${creds.accountSid} for shop ${shop.id} holds ${onAccount.length} numbers — reconcile before purchasing`)
+    return { ok: false, error: "This business already has more than one number at our provider. Contact support; nothing new was bought." }
+  }
+
+  let number: { sid: string; phoneNumber: string }
+  let adopted = false
+  if (onAccount[0]) {
+    number = onAccount[0]
+    adopted = true
+    console.warn(`[telephony] adopting number ${number.sid} already on subaccount ${creds.accountSid} for shop ${shop.id}`)
+  } else {
+    try {
+      number = await provisionPhoneNumber({
+        phoneNumber: e164,
+        smsUrl: `${origin}/api/twilio/sms`,
+        statusCallback: defaultStatusCallbackUrl(shop.id),
+        friendlyName: shop.name,
+        creds,
+      })
+    } catch (err) {
+      // The number may exist anyway: a lost response, or a concurrent
+      // purchase of this same number on this subaccount. Look again before
+      // reporting failure; adopt it if it's there.
+      const again = await listIncomingPhoneNumbers({ creds }).catch(() => null)
+      if (again?.length === 1) {
+        number = again[0]
+        adopted = true
+        console.warn(`[telephony] provisioning errored but number ${number.sid} is on subaccount ${creds.accountSid} for shop ${shop.id}; adopting:`, err)
+      } else {
+        const message =
+          err instanceof TwilioError && err.status >= 400 && err.status < 500
+            ? "That number was just taken — pick another."
+            : "Couldn't purchase the number. Try again."
+        console.error("[telephony] purchase failed:", err)
+        return { ok: false, error: message }
+      }
+    }
+  }
+
+  const { data: saved, error: persistError } = await supabase
+    .from("shops")
+    .update({
+      gradia_number_e164: number.phoneNumber,
+      gradia_number_sid: number.sid,
+      // The active number for sends + inbound routing. Setting it equal to
+      // gradia_number_e164 is also what flips resolveTwilioCredentials to
+      // the subaccount and arms the A2P gate at the send boundary.
+      twilio_phone_number: number.phoneNumber,
+      a2p_status: "unregistered",
+    })
+    .eq("id", shop.id)
+    .is("gradia_number_e164", null)
+    .select("id")
+  if (persistError) {
+    // Kept on the subaccount, unmetered: the next attempt adopts it.
+    console.error(`[telephony] number ${number.sid} persist failed for shop ${shop.id} — the retry adopts it:`, persistError)
+    return { ok: false, error: "Got the number but couldn't save it. Try again; you won't be charged twice." }
+  }
+
+  if (!(saved as { id: string }[] | null)?.length) {
+    // Another purchase stored a number first. Keep the winner.
+    const winner = await readStoredNumber(supabase, shop.id)
+    if (!winner.ok || !winner.e164) {
+      return { ok: false, error: "Couldn't confirm the number. Try again." }
+    }
+    if (winner.sid !== number.sid) {
+      await releasePhoneNumber({ sid: number.sid, creds }).catch((err) =>
+        console.error(`[telephony] couldn't release duplicate number ${number.sid} for shop ${shop.id} — reconcile:`, err)
+      )
+    }
+    return owned(winner.e164)
+  }
+
+  await recordUsage(supabase, shop.id, "number_monthly", {
+    credits: priced.credits,
+    wholesaleCost: priced.wholesale_cost,
+    retailCost: priced.retail_cost,
+    vendorRef: number.sid,
+    refId: number.phoneNumber,
+  })
+  if (adopted) console.warn(`[telephony] adopted number ${number.sid} saved and metered for shop ${shop.id}`)
+
+  return owned(number.phoneNumber)
+}
+
+async function readStoredNumber(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<{ ok: true; e164: string | null; sid: string | null } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("shops")
+    .select("gradia_number_e164, gradia_number_sid")
+    .eq("id", shopId)
+    .single()
+  if (error || !data) return { ok: false, error: "Couldn't read the business number. Try again." }
+  const row = data as { gradia_number_e164: string | null; gradia_number_sid: string | null }
+  return { ok: true, e164: row.gradia_number_e164, sid: row.gradia_number_sid }
 }
 
 // ---------- A2P 10DLC registration pipeline ----------
@@ -338,31 +424,92 @@ function stepFailure(step: A2pRegistrationStep, err: unknown): A2pStepError {
   return new A2pStepError(step, true, "Carrier registration hit a temporary problem on our side. Try again; finished steps are kept.")
 }
 
-async function a2pUpdate(supabase: SupabaseClient, shopId: string, step: A2pRegistrationStep, patch: Record<string, unknown>) {
-  const { error } = await supabase
+/**
+ * Claim lease. Longer than any server function can run (Vercel caps a
+ * function far below this), so a live holder always finishes or dies before
+ * the lease lapses; a crashed holder only delays the next attempt.
+ */
+const A2P_CLAIM_SECONDS = 15 * 60
+
+/** Statuses a status check may advance or re-check (R4: approved keeps being watched). */
+const A2P_SYNC_STATUSES = ["brand_pending", "campaign_pending", "approved", "suspended"] as const
+
+/**
+ * Takes the registration's single-flight claim with a compare-and-swap
+ * before any provider call (R1, R2). Returns the token, or null when the row
+ * isn't in one of `statuses` or someone else holds a live claim.
+ */
+async function claimA2p(supabase: SupabaseClient, shopId: string, statuses: readonly string[]): Promise<string | null> {
+  const { data, error } = await supabase.rpc("a2p_claim_registration", {
+    p_shop_id: shopId,
+    p_statuses: statuses,
+    p_lease_seconds: A2P_CLAIM_SECONDS,
+  })
+  if (error) {
+    console.error("[telephony] a2p claim failed:", error)
+    return null
+  }
+  return typeof data === "string" ? data : null
+}
+
+/** A checkpoint, written only while `token` still holds the claim. */
+async function a2pUpdate(supabase: SupabaseClient, shopId: string, token: string, step: A2pRegistrationStep, patch: Record<string, unknown>) {
+  const { data, error } = await supabase
     .from("a2p_registrations")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("shop_id", shopId)
-  if (error) {
-    console.error(`[telephony] a2p checkpoint failed at ${step}:`, error)
+    .eq("claim_token", token)
+    .select("shop_id")
+  if (error || !data?.length) {
+    console.error(`[telephony] a2p checkpoint failed at ${step}:`, error ?? "claim lost")
     throw new A2pStepError(step, true, "Couldn't save registration progress. Try again; finished steps are kept.")
   }
 }
+
+type A2pFinish = {
+  status?: A2pRegistrationRow["status"]
+  shopStatus?: ShopRow["a2p_status"]
+  patch?: Partial<Pick<A2pRegistrationRow, "failure_reason" | "failed_step" | "retryable" | "campaign_sid">>
+}
+
+/**
+ * Releases the claim and, in one transaction, writes the registration
+ * status and shops.a2p_status (R7). False when the claim was already lost.
+ */
+async function finishA2p(supabase: SupabaseClient, shopId: string, token: string, finish: A2pFinish = {}): Promise<boolean> {
+  const { data, error } = await supabase.rpc("a2p_finish_registration", {
+    p_shop_id: shopId,
+    p_token: token,
+    p_status: finish.status ?? null,
+    p_shop_status: finish.shopStatus ?? null,
+    p_patch: finish.patch ?? {},
+  })
+  if (error) console.error("[telephony] a2p finish failed:", error)
+  return !error && data === true
+}
+
+const CLEARED = { failure_reason: null, failed_step: null, retryable: null } as const
 
 /**
  * Submits (or resumes, or resubmits) carrier registration for the shop's
  * Gradia number: customer profile → A2P trust product → brand, under the
  * shop's subaccount (skill: do not reorder). See CHANNEL_PROVIDERS.md.
  *
+ * Single-flight: the registration is claimed before any provider call, and
+ * every checkpoint is written only while the claim is held, so a double
+ * submit creates one profile and one brand; the loser is told a submission
+ * is already in progress.
+ *
  * Resumable: each step's SID is saved the moment it exists. Submitting the
  * same details again after a temporary failure continues after the last
  * completed step instead of creating a second profile or brand.
- *   - With carriers (brand/campaign pending) or approved: refused; nothing
- *     is created.
+ *   - With carriers (brand/campaign pending), approved or suspended:
+ *     refused; nothing is created.
  *   - Rejected brand, or changed details: a fresh chain (TrustHub bundles
  *     are immutable once reviewed).
- *   - Rejected campaign with the same details: the approved brand is kept;
- *     the next status check creates a new campaign.
+ *   - Rejected campaign with the same details: the approved brand and the
+ *     failed campaign are kept; the next status check edits and resubmits
+ *     that campaign instead of creating a new one.
  * A failure records the step, whether retrying can fix it, and the reason,
  * and leaves the row in `draft`, never half-registered.
  */
@@ -389,61 +536,80 @@ export async function startA2pRegistration(input: {
     return { ok: false, error: "Carrier registration isn't configured on the server yet." }
   }
 
-  const { data: existingData, error: readError } = await supabase
-    .from("a2p_registrations")
-    .select("*")
-    .eq("shop_id", shop.id)
-    .maybeSingle()
-  if (readError) return { ok: false, error: "Couldn't read your registration — try again." }
-  const existing = (existingData as A2pRegistrationRow | null) ?? null
-  if (existing && ["brand_pending", "campaign_pending", "approved"].includes(existing.status)) {
-    return {
-      ok: false,
-      error: existing.status === "approved"
-        ? "Texting is already approved for this number."
-        : "Your registration is already with the carriers. Check status instead of submitting again.",
+  const readRow = async () => {
+    const { data, error } = await supabase.from("a2p_registrations").select("*").eq("shop_id", shop.id).maybeSingle()
+    return { row: (data as A2pRegistrationRow | null) ?? null, error }
+  }
+  const refusal = (row: A2pRegistrationRow | null): A2pStartResult | null => {
+    if (!row) return null
+    if (row.status === "approved") return { ok: false, error: "Texting is already approved for this number." }
+    if (row.status === "suspended") return { ok: false, error: "Carriers suspended texting on this number. Contact support — resubmitting won't lift a suspension." }
+    if (row.status === "brand_pending" || row.status === "campaign_pending") {
+      return { ok: false, error: "Your registration is already with the carriers. Check status instead of submitting again." }
+    }
+    return null
+  }
+
+  const first = await readRow()
+  if (first.error) return { ok: false, error: "Couldn't read your registration — try again." }
+  const early = refusal(first.row)
+  if (early) return early
+  if (!first.row) {
+    // A placeholder row to claim. A concurrent first submit inserts nothing.
+    const { error } = await supabase.from("a2p_registrations")
+      .upsert({ shop_id: shop.id, status: "draft", business }, { onConflict: "shop_id", ignoreDuplicates: true })
+    if (error) {
+      console.error("[telephony] a2p insert failed:", error)
+      return { ok: false, error: "Couldn't save your details — try again." }
     }
   }
-  const sameDetails = existing !== null && sameBusinessDetails(existing.business, business)
-  const now = new Date().toISOString()
-  const attempt = { attempts: (existing?.attempts ?? 0) + 1, last_attempt_at: now, failure_reason: null, failed_step: null, retryable: null, updated_at: now }
 
-  // Carriers rejected only the campaign: keep the approved brand.
-  if (existing?.status === "rejected" && existing.failed_step === "campaign" && existing.brand_sid && sameDetails) {
-    const { error } = await supabase.from("a2p_registrations")
-      .update({ ...attempt, status: "brand_pending", campaign_sid: null })
-      .eq("shop_id", shop.id).eq("status", "rejected")
-    if (error) return { ok: false, error: "Couldn't save your resubmission — try again." }
-    await supabase.from("shops").update({ a2p_status: "pending" }).eq("id", shop.id)
-    return { ok: true }
+  const token = await claimA2p(supabase, shop.id, ["draft", "rejected"])
+  const claimed = await readRow()
+  if (!token) {
+    return refusal(claimed.row) ?? {
+      ok: false,
+      error: "A submission for this number is already in progress. Wait a minute, then check status.",
+    }
+  }
+  const existing = claimed.row
+  if (claimed.error || !existing) {
+    await finishA2p(supabase, shop.id, token)
+    return { ok: false, error: "Couldn't read your registration — try again." }
   }
 
-  // Resume only a draft with the same details; anything else starts fresh.
-  const resume = existing?.status === "draft" && sameDetails
-  const sids = resume
-    ? { customer_profile_sid: existing.customer_profile_sid, trust_product_sid: existing.trust_product_sid, brand_sid: existing.brand_sid }
-    : { customer_profile_sid: null, trust_product_sid: null, brand_sid: null }
-  // Persist the submitted details first so a mid-pipeline failure never
-  // loses the owner's form input.
-  const { error: upsertError } = await supabase.from("a2p_registrations").upsert(
-    {
-      shop_id: shop.id,
+  const sameDetails = sameBusinessDetails(existing.business, business)
+  // A placeholder row inserted just now has attempts 0, so this counts as the first.
+  const attempt = { attempts: (existing.attempts ?? 0) + 1, last_attempt_at: new Date().toISOString(), ...CLEARED }
+  const statusCallback = `${origin}/api/twilio/a2p/status?shop=${encodeURIComponent(shop.id)}`
+  let step: A2pRegistrationStep = "profile"
+  try {
+    // Carriers rejected only the campaign: keep the approved brand and the
+    // failed campaign; the next status check edits and resubmits it (R5).
+    if (existing.status === "rejected" && existing.failed_step === "campaign" && existing.brand_sid && sameDetails) {
+      step = "campaign"
+      await a2pUpdate(supabase, shop.id, token, step, attempt)
+      if (!(await finishA2p(supabase, shop.id, token, { status: "brand_pending", shopStatus: "pending" }))) {
+        return { ok: false, error: "Couldn't save your resubmission — try again." }
+      }
+      return { ok: true }
+    }
+
+    // Resume only a draft with the same details; anything else starts fresh.
+    const resume = existing.status === "draft" && sameDetails
+    const sids = resume
+      ? { customer_profile_sid: existing.customer_profile_sid, trust_product_sid: existing.trust_product_sid, brand_sid: existing.brand_sid }
+      : { customer_profile_sid: null, trust_product_sid: null, brand_sid: null }
+    // Persist the submitted details first so a mid-pipeline failure never
+    // loses the owner's form input.
+    await a2pUpdate(supabase, shop.id, token, step, {
       status: "draft",
       business,
       ...sids,
       ...(resume ? {} : { messaging_service_sid: null, campaign_sid: null }),
       ...attempt,
-    },
-    { onConflict: "shop_id" }
-  )
-  if (upsertError) {
-    console.error("[telephony] a2p upsert failed:", upsertError)
-    return { ok: false, error: "Couldn't save your details — try again." }
-  }
+    })
 
-  const statusCallback = `${origin}/api/twilio/a2p/status?shop=${encodeURIComponent(shop.id)}`
-  let step: A2pRegistrationStep = "profile"
-  try {
     // The fork (twilio-isv-telephony skill): EIN → Low-Volume Standard;
     // no EIN → SOLE_PROPRIETOR with mobile OTP verification.
     let customerProfileSid = sids.customer_profile_sid
@@ -454,17 +620,17 @@ export async function startA2pRegistration(input: {
         const profile = await registerSoleProprietorProfile(creds, business, { statusCallback, friendlyName: business.legal_name })
         customerProfileSid = profile.customerProfileSid
         trustProductSid = profile.trustProductSid
-        await a2pUpdate(supabase, shop.id, step, { customer_profile_sid: customerProfileSid, trust_product_sid: trustProductSid })
+        await a2pUpdate(supabase, shop.id, token, step, { customer_profile_sid: customerProfileSid, trust_product_sid: trustProductSid })
       }
       step = "brand"
       if (!brandSid) {
         brandSid = (await createSoleProprietorBrand(creds, { customerProfileSid, trustProductSid })).brandSid
-        await a2pUpdate(supabase, shop.id, step, { brand_sid: brandSid })
+        await a2pUpdate(supabase, shop.id, token, step, { brand_sid: brandSid })
       }
     } else {
       if (!customerProfileSid) {
         customerProfileSid = (await registerBusinessProfile(creds, business, { primaryProfileSid, statusCallback, friendlyName: business.legal_name })).customerProfileSid
-        await a2pUpdate(supabase, shop.id, step, { customer_profile_sid: customerProfileSid })
+        await a2pUpdate(supabase, shop.id, token, step, { customer_profile_sid: customerProfileSid })
       }
       step = "trust_product"
       if (!trustProductSid) {
@@ -474,25 +640,25 @@ export async function startA2pRegistration(input: {
           friendlyName: `${business.legal_name} — A2P`,
           statusCallback,
         })).trustProductSid
-        await a2pUpdate(supabase, shop.id, step, { trust_product_sid: trustProductSid })
+        await a2pUpdate(supabase, shop.id, token, step, { trust_product_sid: trustProductSid })
       }
       step = "brand"
       if (!brandSid) {
         brandSid = (await createBrand(creds, { customerProfileSid, trustProductSid })).brandSid
-        await a2pUpdate(supabase, shop.id, step, { brand_sid: brandSid })
+        await a2pUpdate(supabase, shop.id, token, step, { brand_sid: brandSid })
       }
     }
 
-    await a2pUpdate(supabase, shop.id, step, { status: "brand_pending" })
-    await supabase.from("shops").update({ a2p_status: "pending" }).eq("id", shop.id)
+    if (!(await finishA2p(supabase, shop.id, token, { status: "brand_pending", shopStatus: "pending" }))) {
+      throw new A2pStepError(step, true, "Couldn't save registration progress. Try again; finished steps are kept.")
+    }
     return { ok: true }
   } catch (err) {
     const failure = stepFailure(step, err)
     console.error(`[telephony] a2p registration failed at ${failure.step}:`, err)
-    await supabase
-      .from("a2p_registrations")
-      .update({ failure_reason: failure.message, failed_step: failure.step, retryable: failure.retryable, updated_at: new Date().toISOString() })
-      .eq("shop_id", shop.id)
+    await finishA2p(supabase, shop.id, token, {
+      patch: { failure_reason: failure.message, failed_step: failure.step, retryable: failure.retryable },
+    })
     return { ok: false, error: failure.message }
   }
 }
@@ -503,13 +669,21 @@ export type A2pSyncResult = {
 }
 
 /**
- * Advances the registration pipeline one stage if Twilio has moved:
- * brand approved → messaging service (created once, inbound stays on Gradia's
- * SMS handler) → campaign; campaign verified → attach the number and open
- * the SMS gate (the ONLY place a2p_status becomes 'approved'). Idempotent —
- * safe from the status webhook, a manual refresh, and cron alike. A temporary
- * failure in a later step is recorded and retried on the next check; a stage
- * is only reported as advanced once it is saved.
+ * Advances the registration pipeline one stage if Twilio has moved, and keeps
+ * watching once approved:
+ *   brand approved → messaging service (created once, inbound stays on
+ *   Gradia's SMS handler) → campaign: one already on the service is adopted
+ *   (a create whose response was lost) or, if it failed, edited and
+ *   resubmitted; only when none exists is one created (R3, R5);
+ *   campaign VERIFIED → attach the number and open the SMS gate (the ONLY
+ *   place a2p_status becomes 'approved');
+ *   approved or suspended → re-checked every time: SUSPENDED closes the gate
+ *   as 'suspended', FAILED as 'rejected', anything else that isn't VERIFIED
+ *   (PENDING, IN_PROGRESS, unknown) as pending (R4).
+ * Single-flight: a check that can't take the claim makes no provider call
+ * and reports the stored status. Status and the shop's gate are written in
+ * one transaction (R7). A temporary failure is recorded and retried on the
+ * next check; a stage is only reported as advanced once it is saved.
  */
 export async function syncA2pStatus(input: {
   supabase: SupabaseClient
@@ -518,83 +692,129 @@ export async function syncA2pStatus(input: {
 }): Promise<A2pSyncResult> {
   const { supabase, shop, origin } = input
 
-  const { data } = await supabase
-    .from("a2p_registrations")
-    .select("*")
-    .eq("shop_id", shop.id)
-    .maybeSingle()
-  const reg = (data as A2pRegistrationRow | null) ?? null
-  if (!reg) return { status: "draft", failureReason: null }
+  const read = async () => {
+    const { data } = await supabase.from("a2p_registrations").select("*").eq("shop_id", shop.id).maybeSingle()
+    return (data as A2pRegistrationRow | null) ?? null
+  }
+  const stored = await read()
+  if (!stored) return { status: "draft", failureReason: null }
   const creds = subaccountCredsOrNull(shop)
-  if (!creds) return { status: reg.status, failureReason: reg.failure_reason }
-
-  const reject = async (step: A2pRegistrationStep, reason: string): Promise<A2pSyncResult> => {
-    await a2pUpdate(supabase, shop.id, step, { status: "rejected", failure_reason: reason, failed_step: step, retryable: false })
-    await supabase.from("shops").update({ a2p_status: "rejected" }).eq("id", shop.id)
-    return { status: "rejected", failureReason: reason }
+  if (!creds || !(A2P_SYNC_STATUSES as readonly string[]).includes(stored.status)) {
+    return { status: stored.status, failureReason: stored.failure_reason }
+  }
+  const token = await claimA2p(supabase, shop.id, A2P_SYNC_STATUSES)
+  if (!token) return { status: stored.status, failureReason: stored.failure_reason }
+  const reg = await read()
+  if (!reg) {
+    await finishA2p(supabase, shop.id, token)
+    return { status: stored.status, failureReason: stored.failure_reason }
   }
 
-  let step: A2pRegistrationStep = reg.status === "campaign_pending" ? "campaign" : "brand"
+  /** Writes the outcome and releases the claim; a lost claim reports what's stored. */
+  const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<A2pSyncResult> => {
+    if (await finishA2p(supabase, shop.id, token, f)) return result
+    const now = await read()
+    return { status: now?.status ?? reg.status, failureReason: now?.failure_reason ?? null }
+  }
+  const unchanged = () => finish({}, { status: reg.status, failureReason: reg.failure_reason })
+  const reject = (step: A2pRegistrationStep, reason: string) =>
+    finish({ status: "rejected", shopStatus: "rejected", patch: { failure_reason: reason, failed_step: step, retryable: false } },
+      { status: "rejected", failureReason: reason })
+
+  let step: A2pRegistrationStep = reg.status === "brand_pending" ? "brand" : "campaign"
   try {
     if (reg.status === "brand_pending" && reg.brand_sid) {
       const brand = await getBrandStatus(creds, reg.brand_sid)
       if (brand.status === "FAILED") {
-        return reject("brand",
+        return await reject("brand",
           brand.failureReason ??
             "Carriers couldn't verify the business — double-check the legal name matches the EIN exactly."
         )
       }
-      if (brand.status === "APPROVED") {
-        step = "messaging_service"
-        let messagingServiceSid = reg.messaging_service_sid
-        if (!messagingServiceSid) {
-          messagingServiceSid = (await createMessagingService(creds, {
-            friendlyName: `${shop.name} — Gradia messaging`,
-            inboundSmsUrl: `${origin}/api/twilio/sms`,
-          })).messagingServiceSid
-          await a2pUpdate(supabase, shop.id, step, { messaging_service_sid: messagingServiceSid })
+      if (brand.status !== "APPROVED") return await unchanged()
+
+      step = "messaging_service"
+      let messagingServiceSid = reg.messaging_service_sid
+      if (!messagingServiceSid) {
+        messagingServiceSid = (await createMessagingService(creds, {
+          friendlyName: `${shop.name} — Gradia messaging`,
+          inboundSmsUrl: `${origin}/api/twilio/sms`,
+        })).messagingServiceSid
+        await a2pUpdate(supabase, shop.id, token, step, { messaging_service_sid: messagingServiceSid })
+      }
+
+      step = "campaign"
+      // Never create a campaign the service already has: adopt it, or edit
+      // and resubmit it if it failed (one vetting fee per campaign).
+      const onService = await listCampaigns(creds, messagingServiceSid)
+      const existing =
+        onService.find((c) => c.campaignSid === reg.campaign_sid) ??
+        onService.find((c) => c.brandSid === reg.brand_sid) ??
+        null
+      let campaignSid: string
+      if (existing) {
+        campaignSid = existing.campaignSid
+        if (existing.status === "FAILED") {
+          await updateCampaign(creds, { messagingServiceSid, campaignSid, shopName: shop.name })
         }
-        step = "campaign"
-        const { campaignSid } = await createCampaign(creds, {
+      } else {
+        campaignSid = (await createCampaign(creds, {
           messagingServiceSid,
           brandSid: reg.brand_sid,
           shopName: shop.name,
-          useCase:
-            reg.business?.has_ein === false ? "SOLE_PROPRIETOR" : "LOW_VOLUME",
-        })
-        await a2pUpdate(supabase, shop.id, step, { status: "campaign_pending", campaign_sid: campaignSid, failed_step: null, retryable: null, failure_reason: null })
-        return { status: "campaign_pending", failureReason: null }
+          useCase: reg.business?.has_ein === false ? "SOLE_PROPRIETOR" : "LOW_VOLUME",
+        })).campaignSid
       }
-      return { status: "brand_pending", failureReason: reg.failure_reason }
+      return await finish(
+        { status: "campaign_pending", patch: { campaign_sid: campaignSid, ...CLEARED } },
+        { status: "campaign_pending", failureReason: null }
+      )
     }
 
-    if (reg.status === "campaign_pending" && reg.messaging_service_sid && reg.campaign_sid) {
+    if (reg.status !== "brand_pending" && reg.messaging_service_sid && reg.campaign_sid) {
       const campaign = await getCampaignStatus(creds, reg.messaging_service_sid, reg.campaign_sid)
       if (campaign.status === "FAILED") {
-        return reject("campaign",
+        return await reject("campaign",
           campaign.errors ??
             "Carriers rejected the campaign — contact support and we'll adjust the registration."
         )
       }
-      if (campaign.status === "VERIFIED") {
-        step = "attach_number"
-        if (shop.gradia_number_sid) {
-          try {
-            await attachNumberToMessagingService(creds, {
-              messagingServiceSid: reg.messaging_service_sid,
-              phoneNumberSid: shop.gradia_number_sid,
-            })
-          } catch (err) {
-            // A retry after an attach whose result was lost: already attached is done.
-            if (!(err instanceof TwilioError && /already/i.test(err.message))) throw err
-          }
-        }
-        await a2pUpdate(supabase, shop.id, step, { status: "approved", failure_reason: null, failed_step: null, retryable: null })
-        await supabase.from("shops").update({ a2p_status: "approved" }).eq("id", shop.id)
-        return { status: "approved", failureReason: null }
+      if (campaign.status === "SUSPENDED") {
+        const reason = "Carriers suspended this number's texting campaign. Texting is paused — contact support, and don't send this traffic another way while it's under review."
+        return await finish(
+          { status: "suspended", shopStatus: "suspended", patch: { failure_reason: reason, failed_step: "campaign", retryable: false } },
+          { status: "suspended", failureReason: reason }
+        )
       }
-      return { status: "campaign_pending", failureReason: reg.failure_reason }
+      if (campaign.status !== "VERIFIED") {
+        // PENDING, IN_PROGRESS or a status we don't know: texting stays closed.
+        if (reg.status === "campaign_pending") return await unchanged()
+        return await finish(
+          { status: "campaign_pending", shopStatus: "pending", patch: CLEARED },
+          { status: "campaign_pending", failureReason: null }
+        )
+      }
+
+      step = "attach_number"
+      if (reg.status !== "approved" && shop.gradia_number_sid) {
+        try {
+          await attachNumberToMessagingService(creds, {
+            messagingServiceSid: reg.messaging_service_sid,
+            phoneNumberSid: shop.gradia_number_sid,
+          })
+        } catch (err) {
+          // A retry after an attach whose result was lost: already attached is done.
+          if (!(err instanceof TwilioError && /already/i.test(err.message))) throw err
+        }
+      }
+      // Writing the gate on every verified check also repairs a shop status
+      // left behind by the old two-statement write.
+      return await finish(
+        { status: "approved", shopStatus: "approved", patch: CLEARED },
+        { status: "approved", failureReason: null }
+      )
     }
+    return await unchanged()
   } catch (err) {
     // Temporary: keep the current stage, record the step, retry on the next check.
     const failure = stepFailure(step, err)
@@ -602,14 +822,11 @@ export async function syncA2pStatus(input: {
     const reason = failure.retryable
       ? "A temporary problem stopped the next registration step. It will be retried on the next status check."
       : failure.message
-    await supabase
-      .from("a2p_registrations")
-      .update({ failed_step: failure.step, retryable: true, failure_reason: reason, updated_at: new Date().toISOString() })
-      .eq("shop_id", shop.id)
-    return { status: reg.status, failureReason: reason }
+    return await finish(
+      { patch: { failed_step: failure.step, retryable: failure.retryable, failure_reason: reason } },
+      { status: reg.status, failureReason: reason }
+    )
   }
-
-  return { status: reg.status, failureReason: reg.failure_reason }
 }
 
 export type ResendOtpResult = { ok: true } | { ok: false; error: string }
@@ -680,6 +897,8 @@ export function smsGateForShop(
     reason:
       shop.a2p_status === "rejected"
         ? "Carrier registration was rejected — review your business details in Settings → Business Number."
-        : "Your number is still being verified by carriers (1–3 days). Texting unlocks when it's approved.",
+        : shop.a2p_status === "suspended"
+          ? "Carriers suspended texting on this number. Contact support before sending again."
+          : "Your number is still being verified by carriers (1–3 days). Texting unlocks when it's approved.",
   }
 }

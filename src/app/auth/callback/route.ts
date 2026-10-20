@@ -6,15 +6,34 @@ import { NextResponse } from "next/server"
 const PRODUCTION_ORIGIN = "https://gradia-ai-platform.vercel.app"
 const DEFAULT_PATH = "/dashboard"
 
+// Off Vercel, the operator-configured loopback dashboard is the only origin
+// that may replace production. A non-loopback value does not.
+function loopbackDashboardOrigin(): string | null {
+  if (process.env.VERCEL === "1") return null
+  const raw = process.env.GRADIA_DASHBOARD_URL?.trim() ?? ""
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    if (url.username || url.password) return null
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null
+    if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") return null
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
 // Opt-in is deployment-local. VERCEL_URL is server/platform configuration, never
 // request authority. Restrict it to this project's generated deployment hostnames.
 function trustedOrigin(): string | null {
   const mode = process.env.GRADIA_PRIVATE_REVIEW_AUTH
-  if (!mode || mode === "0") return PRODUCTION_ORIGIN
-  const host = process.env.VERCEL_URL ?? ""
-  if (mode !== "1" || process.env.VERCEL !== "1" ||
-      !/^gradia-ai-platform-[a-z0-9]+-gradia1\.vercel\.app$/.test(host)) return null
-  return `https://${host}`
+  if (mode && mode !== "0") {
+    const host = process.env.VERCEL_URL ?? ""
+    if (mode !== "1" || process.env.VERCEL !== "1" ||
+        !/^gradia-ai-platform-[a-z0-9]+-gradia1\.vercel\.app$/.test(host)) return null
+    return `https://${host}`
+  }
+  return loopbackDashboardOrigin() ?? PRODUCTION_ORIGIN
 }
 
 function safeDestination(next: string | null, callback: URL, origin: string): URL {

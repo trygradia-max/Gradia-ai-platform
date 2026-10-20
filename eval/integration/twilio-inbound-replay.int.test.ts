@@ -207,6 +207,7 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
       "GRADIA_DASHBOARD_URL",
       "TWILIO_ACCOUNT_SID",
       "TWILIO_AUTH_TOKEN",
+      "TWILIO_PILOT_SHOP_NUMBERS",
     ]) {
       savedEnv[k] = process.env[k]
     }
@@ -227,6 +228,8 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
         .eq("id", s.shopId)
       if (error) throw new Error(`shop number update failed: ${error.message}`)
     }
+    // Both shops sign with the master token: allowlisted pilots (I1).
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = `${seed.shopId}=${SHOP_NUMBER},${seedB.shopId}=${SHOP_B_NUMBER}`
 
     ;({ POST } = await import("@/app/api/twilio/sms/route"))
   })
@@ -605,5 +608,97 @@ describe.skipIf(!INTEGRATION)("Twilio inbound replay protection [integration]", 
     expect(await pendingFor(firstId, seed.shopId)).toBe(0)
     expect(await pendingFor(secondId, seed.shopId)).toBe(0)
     expect(await countRows("customer_channel_permissions", { shop_id: seed.shopId })).toBe(consentBefore)
+  })
+})
+
+// Review finding I1: inbound is verified only with credentials the
+// receiving business provably holds. Nothing here reaches Twilio.
+describe.skipIf(!INTEGRATION)("cross-business inbound isolation (I1) [integration]", () => {
+  const BYO_TOKEN = "int-i1-byo-token"
+  const PILOT_NUMBER = `+1458555${String(1000 + Math.floor(Math.random() * 8999))}`
+  const BYO_NUMBER = `+1541555${String(1000 + Math.floor(Math.random() * 8999))}`
+  const UNLISTED_NUMBER = `+1360555${String(1000 + Math.floor(Math.random() * 8999))}`
+  let pilot: Seeded // no own credentials, allowlisted with PILOT_NUMBER
+  let byo: Seeded // its own Twilio account
+  let unlisted: Seeded // no own credentials, NOT allowlisted (a legacy or squatted row)
+  const saved: Record<string, string | undefined> = {}
+
+  const signed = (form: URLSearchParams, token: string) => {
+    let s = ROUTE_URL
+    for (const k of [...form.keys()].sort()) s += k + (form.get(k) ?? "")
+    return POST(new Request(ROUTE_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": createHmac("sha1", token).update(s).digest("base64") },
+      body: form.toString(),
+    }))
+  }
+  const text = (to: string, label: string) => makeForm({ To: to, MessageSid: sid(`iso-${label}`) })
+  const nothingRecorded = async (label: string, ...shops: Seeded[]) => {
+    expect(await providerEvent(sid(`iso-${label}`))).toBeNull()
+    for (const s of shops) expect(await interactionsFor(sid(`iso-${label}`), s.shopId)).toBe(0)
+  }
+
+  beforeAll(async () => {
+    for (const k of ["GRADIA_DASHBOARD_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PILOT_SHOP_NUMBERS", "ENCRYPTION_KEY"]) saved[k] = process.env[k]
+    process.env.GRADIA_DASHBOARD_URL = "https://gradia-int.test"
+    process.env.TWILIO_ACCOUNT_SID = "ACinttest"
+    process.env.TWILIO_AUTH_TOKEN = TOKEN // Gradia's master account
+    process.env.ENCRYPTION_KEY ??= "ab".repeat(32)
+    const { encryptSecret } = await import("@/lib/crypto")
+    sb = serviceClient()
+    pilot = await seedShop(sb); byo = await seedShop(sb); unlisted = await seedShop(sb)
+    for (const [s, patch] of [
+      [pilot, { twilio_phone_number: PILOT_NUMBER }],
+      [byo, { twilio_phone_number: BYO_NUMBER, twilio_account_sid_enc: encryptSecret("AC" + "7".repeat(32)), twilio_auth_token_enc: encryptSecret(BYO_TOKEN) }],
+      [unlisted, { twilio_phone_number: UNLISTED_NUMBER }],
+    ] as const) {
+      const { error } = await sb.from("shops").update(patch).eq("id", s.shopId)
+      if (error) throw new Error(`shop setup failed: ${error.message}`)
+    }
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = `${pilot.shopId}=${PILOT_NUMBER}`
+    ;({ POST } = await import("@/app/api/twilio/sms/route"))
+  })
+  afterAll(async () => {
+    if (sb) {
+      await sb.from("provider_events").delete().like("event_id", `${RUN}-iso-%`)
+      for (const s of [pilot, byo, unlisted]) if (s) await cleanup(sb, s)
+    }
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+  beforeEach(() => { cls.calls = 0; cls.fail = false; cls.isLead = false })
+
+  it("a master-signed text to a business that never proved its number is refused, with nothing recorded anywhere", async () => {
+    const res = await signed(text(UNLISTED_NUMBER, "unlisted"), TOKEN)
+    expect(res.status).toBe(401)
+    await nothingRecorded("unlisted", unlisted, pilot, byo)
+    expect(cls.calls).toBe(0)
+  })
+
+  it("a business signing with its own account can't inject a text into another business's number", async () => {
+    for (const [to, label] of [[PILOT_NUMBER, "byo-into-pilot"], [UNLISTED_NUMBER, "byo-into-unlisted"]] as const) {
+      expect((await signed(text(to, label), BYO_TOKEN)).status).toBe(401)
+      await nothingRecorded(label, pilot, byo, unlisted)
+    }
+  })
+
+  it("the master account can't sign for a business's own-account number", async () => {
+    expect((await signed(text(BYO_NUMBER, "master-into-byo"), TOKEN)).status).toBe(401)
+    await nothingRecorded("master-into-byo", byo, pilot)
+  })
+
+  it("each business's own signer lands its text in that business only", async () => {
+    expect((await signed(text(BYO_NUMBER, "byo-own"), BYO_TOKEN)).status).toBe(200)
+    expect(await interactionsFor(sid("iso-byo-own"), byo.shopId)).toBe(1)
+    expect((await signed(text(PILOT_NUMBER, "pilot-own"), TOKEN)).status).toBe(200)
+    expect(await interactionsFor(sid("iso-pilot-own"), pilot.shopId)).toBe(1)
+    for (const s of [unlisted]) {
+      expect(await interactionsFor(sid("iso-byo-own"), s.shopId)).toBe(0)
+      expect(await interactionsFor(sid("iso-pilot-own"), s.shopId)).toBe(0)
+    }
+    expect(await interactionsFor(sid("iso-byo-own"), pilot.shopId)).toBe(0)
+    expect(await interactionsFor(sid("iso-pilot-own"), byo.shopId)).toBe(0)
   })
 })

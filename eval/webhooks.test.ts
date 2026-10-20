@@ -445,11 +445,14 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   beforeAll(async () => {
     // The route derives its public URL from GRADIA_DASHBOARD_URL /
     // forwarded headers; pin the test to the raw request URL.
-    for (const k of ["GRADIA_DASHBOARD_URL", "TWILIO_ACCOUNT_SID"]) {
+    for (const k of ["GRADIA_DASHBOARD_URL", "TWILIO_ACCOUNT_SID", "TWILIO_PILOT_SHOP_NUMBERS"]) {
       savedEnv[k] = process.env[k]
     }
     delete process.env.GRADIA_DASHBOARD_URL
     process.env.TWILIO_ACCOUNT_SID = "ACtest"
+    // The fixture shop has no credentials of its own: it is an explicitly
+    // allowlisted pilot on the master account (I1).
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = "shop-1=+15035550111"
     ;({ POST } = await import("@/app/api/twilio/sms/route"))
     claimMock = vi.mocked((await import("@/lib/provider-events")).claimProviderEvent)
     completeMock = vi.mocked((await import("@/lib/provider-events")).completeProviderEvent)
@@ -509,6 +512,18 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(res.status).toBe(401)
     expect(claimMock).not.toHaveBeenCalled()
     expect(intakeMock).not.toHaveBeenCalled()
+  })
+
+  it("a shop without its own credentials and not allowlisted is refused, even master-signed — no claim (I1)", async () => {
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = ""
+    try {
+      const res = await post(makeForm())
+      expect(res.status).toBe(401)
+      expect(claimMock).not.toHaveBeenCalled()
+      expect(intakeMock).not.toHaveBeenCalled()
+    } finally {
+      process.env.TWILIO_PILOT_SHOP_NUMBERS = "shop-1=+15035550111"
+    }
   })
 
   it("a forged request cannot poison a MessageSid — the legitimate delivery still processes", async () => {
@@ -1095,6 +1110,7 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
   let subShop: Record<string, unknown>
   let byoShop: Record<string, unknown>
   const envShop = {
+    id: ENV_SHOP_ID,
     twilio_account_sid_enc: null,
     twilio_auth_token_enc: null,
     twilio_subaccount_sid: null,
@@ -1178,12 +1194,15 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
       "GRADIA_DASHBOARD_URL",
       "TWILIO_ACCOUNT_SID",
       "ENCRYPTION_KEY",
+      "TWILIO_PILOT_SHOP_NUMBERS",
     ]) {
       savedEnv[k] = process.env[k]
     }
     // Pin the route's public-URL derivation to the raw request URL.
     delete process.env.GRADIA_DASHBOARD_URL
     process.env.TWILIO_ACCOUNT_SID = "ACtest"
+    // envShop is an allowlisted pilot on the master account (I1).
+    process.env.TWILIO_PILOT_SHOP_NUMBERS = `${ENV_SHOP_ID}=+15035550111`
     process.env.ENCRYPTION_KEY ??= "ab".repeat(32)
 
     // Gradia-provisioned shop: subaccount active (the fixture whose absence
@@ -1222,6 +1241,8 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
       data: interactionRow(SUB_SHOP_ID),
       error: null,
     }
+    // The conditional status update matched one row.
+    fakeDb.ops.interactions = { update: { data: [{ id: "int-out-1" }], error: null } }
   })
 
   it("subaccount shop: a callback signed with the SUBACCOUNT token verifies and records the status (the case that shipped broken)", async () => {
@@ -1279,6 +1300,20 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
     const res = await post({ shop: ENV_SHOP_ID, token: SECRETS.TWILIO_AUTH_TOKEN })
     expect(res.status).toBe(200)
     expect(updateCalls()).toHaveLength(1)
+  })
+
+  it("a shop with no credentials of its own that is NOT allowlisted is refused, even master-signed (I1)", async () => {
+    fakeDb.tables.shops = { data: { ...envShop, id: "shop-not-pilot" }, error: null }
+    const res = await post({ shop: "shop-not-pilot", token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
+  })
+
+  it("an allowlisted pilot shop whose stored number isn't its allowlisted number is refused (I1)", async () => {
+    fakeDb.tables.shops = { data: { ...envShop, twilio_phone_number: "+15035550999" }, error: null }
+    const res = await post({ shop: ENV_SHOP_ID, token: SECRETS.TWILIO_AUTH_TOKEN })
+    expect(res.status).toBe(401)
+    expect(interactionCalls()).toHaveLength(0)
   })
 
   it("legacy callback URL without ?shop=: env-master verification still works", async () => {
@@ -1418,17 +1453,57 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
     expect(updateCalls()).toHaveLength(1) // attempted, refused, surfaced
   })
 
-  it("replaying the identical callback is harmless — same terminal metadata both times", async () => {
+  it("replaying the identical callback is harmless — the second is a no-op", async () => {
     const first = await post({ shop: SUB_SHOP_ID })
-    const second = await post({ shop: SUB_SHOP_ID })
     expect(first.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+    fakeDb.tables.interactions = {
+      data: { ...interactionRow(SUB_SHOP_ID), metadata: updatedMetadata(0) },
+      error: null,
+    }
+    const second = await post({ shop: SUB_SHOP_ID })
     expect(second.status).toBe(200)
-    expect(updateCalls()).toHaveLength(2)
-    const a = { ...updatedMetadata(0) }
-    const b = { ...updatedMetadata(1) }
-    delete a.twilio_status_updated_at
-    delete b.twilio_status_updated_at
-    expect(b).toEqual(a)
+    expect(updateCalls()).toHaveLength(1)
+  })
+
+  it("a late 'sent' after 'delivered' never moves the status back (I5)", async () => {
+    fakeDb.tables.interactions = {
+      data: { ...interactionRow(SUB_SHOP_ID), metadata: { twilio_message_sid: SID, twilio_status: "delivered" } },
+      error: null,
+    }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageStatus: "sent" }) })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(0)
+  })
+
+  it("a failure after 'delivered' keeps 'delivered' and records the conflicting outcome (I5)", async () => {
+    fakeDb.tables.interactions = {
+      data: { ...interactionRow(SUB_SHOP_ID), metadata: { twilio_message_sid: SID, twilio_status: "delivered" } },
+      error: null,
+    }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageStatus: "failed", ErrorCode: "30008" }) })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+    expect(updatedMetadata().twilio_status).toBe("delivered")
+    expect(updatedMetadata().twilio_status_conflict).toMatchObject({ status: "failed", error_code: "30008" })
+  })
+
+  it("the update is a compare-and-swap on the status it read (I5)", async () => {
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(200)
+    const update = fakeDb.calls.findIndex((c) => c.table === "interactions" && c.method === "update")
+    expect(
+      fakeDb.calls.slice(update).some(
+        (c) => c.method === "eq" && c.args[0] === "metadata->>twilio_status" && c.args[1] === "sent"
+      )
+    ).toBe(true)
+  })
+
+  it("a status that keeps changing under the swap returns 5xx after three tries so Twilio retries (I5)", async () => {
+    fakeDb.ops.interactions = { update: { data: [], error: null } }
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(500)
+    expect(updateCalls()).toHaveLength(3)
   })
 
   it("terminal failure statuses record the ErrorCode", async () => {

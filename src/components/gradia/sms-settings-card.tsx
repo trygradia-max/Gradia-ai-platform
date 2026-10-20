@@ -439,7 +439,7 @@ export function SmsSettingsCard({
             <div className="space-y-3 border-t border-border/30 pt-4">
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  Paste a number you already own
+                  Paste a number from your Twilio account
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Point its webhook at{" "}
