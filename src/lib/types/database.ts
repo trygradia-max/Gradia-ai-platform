@@ -25,6 +25,8 @@ export type ShopRow = {
   gradia_number_e164: string | null
   gradia_number_sid: string | null
   a2p_status: A2pStatus
+  /** Last VERIFIED campaign read (database time). The gate needs it fresh; see a2p-evidence.ts. */
+  a2p_verified_at: string | null
   byo_sms_verified: boolean
   timezone: string
   quiet_hours_start: number
@@ -135,6 +137,13 @@ export type A2pRegistrationRow = {
   /** Single-flight claim (migration 20261019120000); only its holder may write progress. */
   claim_token: string | null
   claimed_until: string | null
+  /** Last successful provider read, whatever it returned. */
+  last_checked_at: string | null
+  /** Last read that returned VERIFIED. */
+  last_verified_at: string | null
+  /** Last check the provider didn't answer usably, and why. */
+  last_check_failed_at: string | null
+  last_check_failure_kind: "provider_unreachable" | "provider_error" | null
   created_at: string
   updated_at: string
 }

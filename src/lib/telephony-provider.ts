@@ -20,6 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
+import { a2pEvidenceFresh } from "@/lib/a2p-evidence"
 import { sameBusinessDetails } from "@/lib/a2p-state"
 import { precheckCredits, recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -470,6 +471,25 @@ type A2pFinish = {
   status?: A2pRegistrationRow["status"]
   shopStatus?: ShopRow["a2p_status"]
   patch?: Partial<Pick<A2pRegistrationRow, "failure_reason" | "failed_step" | "retryable" | "campaign_sid">>
+  /**
+   * The provider read this check made: "checked" (answered, not VERIFIED),
+   * "verified" (the campaign read VERIFIED; renews the send gate's evidence)
+   * or "failed" (no usable answer; renews nothing). Omitted: no read.
+   */
+  check?: "checked" | "verified" | "failed"
+  failureKind?: A2pCheckFailureKind
+}
+
+/**
+ * Why a status check got no usable answer. Never a carrier state: SUSPENDED
+ * and FAILED are statuses the provider reported, not failures to check.
+ */
+export type A2pCheckFailureKind = "provider_unreachable" | "provider_error"
+
+/** Timeouts, network errors, 5xx and 429 are "unreachable"; any other refusal is an "error". */
+export function a2pCheckFailureKind(err: unknown): A2pCheckFailureKind {
+  if (err instanceof TwilioError) return err.status >= 500 || err.status === 429 ? "provider_unreachable" : "provider_error"
+  return "provider_unreachable"
 }
 
 /**
@@ -483,6 +503,8 @@ async function finishA2p(supabase: SupabaseClient, shopId: string, token: string
     p_status: finish.status ?? null,
     p_shop_status: finish.shopStatus ?? null,
     p_patch: finish.patch ?? {},
+    p_check: finish.check ?? null,
+    p_failure_kind: finish.failureKind ?? null,
   })
   if (error) console.error("[telephony] a2p finish failed:", error)
   return !error && data === true
@@ -710,9 +732,11 @@ export async function syncA2pStatus(input: {
     return { status: stored.status, failureReason: stored.failure_reason }
   }
 
-  /** Writes the outcome and releases the claim; a lost claim reports what's stored. */
+  /** Whether this check got an answer from the provider (recorded as last_checked_at). */
+  let answered = false
+  /** Writes the outcome and releases the claim; a lost claim reports what's stored and renews nothing. */
   const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<A2pSyncResult> => {
-    if (await finishA2p(supabase, shop.id, token, f)) return result
+    if (await finishA2p(supabase, shop.id, token, { check: answered ? "checked" : undefined, ...f })) return result
     const now = await read()
     return { status: now?.status ?? reg.status, failureReason: now?.failure_reason ?? null }
   }
@@ -725,6 +749,7 @@ export async function syncA2pStatus(input: {
   try {
     if (reg.status === "brand_pending" && reg.brand_sid) {
       const brand = await getBrandStatus(creds, reg.brand_sid)
+      answered = true
       if (brand.status === "FAILED") {
         return await reject("brand",
           brand.failureReason ??
@@ -773,6 +798,7 @@ export async function syncA2pStatus(input: {
 
     if (reg.status !== "brand_pending" && reg.messaging_service_sid && reg.campaign_sid) {
       const campaign = await getCampaignStatus(creds, reg.messaging_service_sid, reg.campaign_sid)
+      answered = true
       if (campaign.status === "FAILED") {
         return await reject("campaign",
           campaign.errors ??
@@ -808,22 +834,27 @@ export async function syncA2pStatus(input: {
         }
       }
       // Writing the gate on every verified check also repairs a shop status
-      // left behind by the old two-statement write.
+      // left behind by the old two-statement write, and renews the evidence.
       return await finish(
-        { status: "approved", shopStatus: "approved", patch: CLEARED },
+        { status: "approved", shopStatus: "approved", patch: CLEARED, check: "verified" },
         { status: "approved", failureReason: null }
       )
     }
     return await unchanged()
   } catch (err) {
     // Temporary: keep the current stage, record the step, retry on the next check.
+    // An approved registration stays 'approved'; its evidence isn't renewed, so
+    // the send gate closes as "check overdue" once it ages past the maximum.
     const failure = stepFailure(step, err)
     console.error(`[telephony] a2p sync failed at ${failure.step}:`, err)
     const reason = failure.retryable
       ? "A temporary problem stopped the next registration step. It will be retried on the next status check."
       : failure.message
     return await finish(
-      { patch: { failed_step: failure.step, retryable: failure.retryable, failure_reason: reason } },
+      {
+        patch: { failed_step: failure.step, retryable: failure.retryable, failure_reason: reason },
+        ...(answered ? {} : { check: "failed" as const, failureKind: a2pCheckFailureKind(err) }),
+      },
       { status: reg.status, failureReason: reason }
     )
   }
@@ -870,13 +901,15 @@ export async function resendA2pVerificationText(input: {
 /**
  * Whether outbound SMS may leave from the shop's number. Enforced in code at
  * the send boundary — never by convention. A Gradia number needs A2P
- * approval. Any other number needs the owner's attestation, which only
- * `attest_byo_sms_registration` writes and a number change clears
- * (docs/architecture/BYO_SMS_ATTESTATION.md).
+ * approval backed by fresh evidence: a VERIFIED campaign read within the
+ * maximum age (src/lib/a2p-evidence.ts). Any other number needs the owner's
+ * attestation, which only `attest_byo_sms_registration` writes and a number
+ * change clears (docs/architecture/BYO_SMS_ATTESTATION.md).
  */
 export function smsGateForShop(
-  shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status" | "byo_sms_verified">,
-  fromNumber: string
+  shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status" | "byo_sms_verified" | "a2p_verified_at">,
+  fromNumber: string,
+  now: Date = new Date()
 ): SmsGate {
   const isGradiaNumber =
     Boolean(shop.gradia_number_e164) && fromNumber === shop.gradia_number_e164
@@ -891,7 +924,13 @@ export function smsGateForShop(
         "Confirm your own number is registered for A2P 10DLC in Settings → Business Number before texting through it.",
     }
   }
-  if (shop.a2p_status === "approved") return { allowed: true }
+  if (shop.a2p_status === "approved") {
+    if (a2pEvidenceFresh(shop.a2p_verified_at, now)) return { allowed: true }
+    return {
+      allowed: false,
+      reason: "Texting check overdue: Gradia hasn't confirmed this number's carrier approval recently, so texts are held until the next successful check.",
+    }
+  }
   return {
     allowed: false,
     reason:
@@ -899,6 +938,6 @@ export function smsGateForShop(
         ? "Carrier registration was rejected — review your business details in Settings → Business Number."
         : shop.a2p_status === "suspended"
           ? "Carriers suspended texting on this number. Contact support before sending again."
-          : "Your number is still being verified by carriers (1–3 days). Texting unlocks when it's approved.",
+          : "Your number is still being verified by carriers. Texting unlocks when it's approved.",
   }
 }
