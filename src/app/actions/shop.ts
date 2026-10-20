@@ -55,9 +55,10 @@ export async function setActiveShop(
 }
 
 const saveShopSchema = z.object({
-  name: z.string().min(1, "Shop name is required").max(120),
+  name: z.string().min(1, "Business name is required").max(120),
   location: z.string().max(200).nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
+  businessKind: z.enum(["detailing", "general"]).optional(),
   /** When true, always insert a new shop row (used by the "add
    *  another shop" path from the sidebar switcher). Without this,
    *  saveShop updates the user's currently-pinned shop. */
@@ -97,12 +98,25 @@ export async function saveShop(
     location: parsed.data.location?.trim() || null,
     phone: parsed.data.phone?.trim() || null,
   }
+  const businessKind = parsed.data.businessKind ?? "detailing"
 
   if (existing) {
+    const { data: current, error: readError } = await supabase
+      .from("shops")
+      .select("settings")
+      .eq("id", existing.id)
+      .single()
+    if (readError || !current) return { ok: false, error: "Could not load your settings. Refresh and try again." }
+    const settings = {
+      ...(((current as { settings?: Record<string, unknown> } | null)?.settings) ??
+        {}),
+      ...(parsed.data.businessKind ? { business_kind: parsed.data.businessKind, onboarding_step: 2 } : {}),
+    }
     const { data, error } = await supabase
       .from("shops")
-      .update(fields)
+      .update({ ...fields, settings })
       .eq("id", existing.id)
+      .eq("settings", JSON.stringify(current.settings ?? {}))
       .select("*")
       .single()
 
@@ -122,7 +136,11 @@ export async function saveShop(
     .insert({
       ...fields,
       owner_id: user.id,
-      settings: { onboarding_done: false },
+      settings: {
+        onboarding_done: false,
+        onboarding_step: 2,
+        business_kind: businessKind,
+      },
     })
     .select("*")
     .single()

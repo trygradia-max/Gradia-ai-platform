@@ -115,7 +115,8 @@ export function resolveTwilioCredentials(
   const gradiaNumberActive =
     Boolean(shop?.gradia_number_e164) &&
     shop?.twilio_phone_number === shop?.gradia_number_e164
-  if (shop?.twilio_subaccount_sid && subToken && gradiaNumberActive) {
+  if (gradiaNumberActive) {
+    if (!shop?.twilio_subaccount_sid || !subToken) return null
     return {
       accountSid: shop.twilio_subaccount_sid,
       authToken: subToken,
@@ -127,6 +128,8 @@ export function resolveTwilioCredentials(
   if (shopSid && shopToken) {
     return { accountSid: shopSid, authToken: shopToken, source: "byo" }
   }
+  // A configured business account must never fall back to a different account.
+  if (shop?.twilio_account_sid_enc || shop?.twilio_auth_token_enc) return null
   const envSid = envAccountSid()
   const envToken = envAuthToken()
   if (envSid && envToken) {
@@ -152,7 +155,7 @@ export function verifyTwilioSignature(input: {
   signature: string | null
   creds?: TwilioCredentials | null
 }): boolean {
-  const token = input.creds?.authToken ?? envAuthToken()
+  const token = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!token) return false
   if (!input.signature) return false
 
@@ -266,8 +269,8 @@ export async function searchAvailableNumbers(input: {
   /** Override Gradia's master Twilio creds (rare — BYO shops). */
   creds?: TwilioCredentials | null
 }): Promise<TwilioAvailableNumber[]> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -338,8 +341,8 @@ export async function provisionPhoneNumber(input: {
   friendlyName?: string | null
   creds?: TwilioCredentials | null
 }): Promise<TwilioProvisionedNumber> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -407,8 +410,8 @@ export async function findIncomingPhoneNumberSid(input: {
   phoneNumber: string
   creds?: TwilioCredentials | null
 }): Promise<string | null> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) return null
 
   const url = new URL(
@@ -439,8 +442,8 @@ export async function releasePhoneNumber(input: {
   sid: string
   creds?: TwilioCredentials | null
 }): Promise<void> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -472,8 +475,8 @@ export async function sendOutboundSms(input: {
   /** Per-shop Twilio credentials. When absent, falls back to env. */
   creds?: TwilioCredentials | null
 }): Promise<TwilioSendResult> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing")
   }
@@ -528,8 +531,8 @@ export async function getIncomingPhoneNumberConfig(input: {
   sid: string
   creds?: TwilioCredentials | null
 }): Promise<{ voiceUrl: string; smsUrl: string } | null> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) return null
 
   const auth =
@@ -552,8 +555,8 @@ export async function setNumberSmsWebhook(input: {
   smsUrl: string
   creds?: TwilioCredentials | null
 }): Promise<void> {
-  const accountSid = input.creds?.accountSid ?? envAccountSid()
-  const authToken = input.creds?.authToken ?? envAuthToken()
+  const accountSid = input.creds === undefined ? envAccountSid() : input.creds?.accountSid
+  const authToken = input.creds === undefined ? envAuthToken() : input.creds?.authToken
   if (!accountSid || !authToken) {
     throw new TwilioError(500, "Twilio credentials missing")
   }
@@ -640,6 +643,80 @@ export async function createSubaccount(input: {
     throw new TwilioError(500, "Twilio subaccount response missing sid/token")
   }
   return { sid: parsed.sid, authToken: parsed.auth_token }
+}
+
+/** A subaccount as Twilio reports it to the master account. */
+export type TwilioSubaccountRecord = {
+  sid: string
+  authToken: string
+  friendlyName: string
+  status: string
+}
+
+function masterAuth(): string {
+  const accountSid = envAccountSid()
+  const authToken = envAuthToken()
+  if (!accountSid || !authToken) {
+    throw new TwilioError(500, "Master Twilio credentials missing")
+  }
+  return "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+}
+
+function parseSubaccount(raw: unknown): TwilioSubaccountRecord | null {
+  const a = raw as { sid?: unknown; auth_token?: unknown; friendly_name?: unknown; status?: unknown } | null
+  if (!a || typeof a.sid !== "string" || typeof a.auth_token !== "string") return null
+  return {
+    sid: a.sid,
+    authToken: a.auth_token,
+    friendlyName: typeof a.friendly_name === "string" ? a.friendly_name : "",
+    status: typeof a.status === "string" ? a.status : "",
+  }
+}
+
+/**
+ * Active subaccounts whose FriendlyName is exactly `friendlyName` (the shop
+ * id). Recovers a subaccount Twilio created whose credentials Gradia failed to
+ * save, so a retry adopts it instead of creating another. Master credentials.
+ */
+export async function listSubaccountsByFriendlyName(friendlyName: string): Promise<TwilioSubaccountRecord[]> {
+  const name = friendlyName.trim()
+  if (!name) throw new TwilioError(400, "friendlyName is required")
+  const query = new URLSearchParams({ FriendlyName: name, Status: "active", PageSize: "20" })
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts.json?${query}`, {
+    headers: { Authorization: masterAuth(), Accept: "application/json" },
+  })
+  const raw = await res.text()
+  if (!res.ok) throw new TwilioError(res.status, `Twilio subaccount lookup failed: ${raw.slice(0, 300)}`)
+  const accounts = (JSON.parse(raw) as { accounts?: unknown[] }).accounts ?? []
+  return accounts
+    .map(parseSubaccount)
+    .filter((a): a is TwilioSubaccountRecord => a !== null && a.friendlyName === name && a.status === "active")
+}
+
+/** One subaccount by SID, including its current auth token. Master credentials. */
+export async function fetchSubaccount(sid: string): Promise<TwilioSubaccountRecord | null> {
+  if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) throw new TwilioError(400, "Invalid subaccount sid")
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts/${sid}.json`, {
+    headers: { Authorization: masterAuth(), Accept: "application/json" },
+  })
+  const raw = await res.text()
+  if (res.status === 404) return null
+  if (!res.ok) throw new TwilioError(res.status, `Twilio subaccount fetch failed: ${raw.slice(0, 300)}`)
+  return parseSubaccount(JSON.parse(raw))
+}
+
+/**
+ * Closes a subaccount Gradia just created and lost a race to store. It has no
+ * numbers or registrations yet. Never used on a stored subaccount.
+ */
+export async function closeSubaccount(sid: string): Promise<void> {
+  if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) throw new TwilioError(400, "Invalid subaccount sid")
+  const res = await fetch(`${TWILIO_API_BASE}/Accounts/${sid}.json`, {
+    method: "POST",
+    headers: { Authorization: masterAuth(), "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams({ Status: "closed" }).toString(),
+  })
+  if (!res.ok) throw new TwilioError(res.status, `Twilio subaccount close failed: ${(await res.text()).slice(0, 300)}`)
 }
 
 // ---------- Usage Records (reconciliation) ----------

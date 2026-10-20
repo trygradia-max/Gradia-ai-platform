@@ -1618,3 +1618,298 @@ Disposable `gradia-record-fresh` stack, 95 migrations. Node 22.23.2 isolated run
   passed.
 
 Nothing was merged, deployed, migrated on a shared database, or sent.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+One Twilio subaccount per business. Reproduced with a fake Twilio Accounts API on
+the disposable stack.
+
+The previous `ensureSubaccount`:
+
+- created a subaccount for every concurrent purchase and overwrote the stored
+  SID, orphaning the others;
+- created a second subaccount after a failed save;
+- replaced a stored SID with a brand-new subaccount when its token stopped
+  decrypting;
+- relied on the caller's stale shop snapshot.
+
+Fix:
+
+- It reads the stored SID fresh and never replaces it, recovering the token for
+  that SID, which must be named for this shop.
+- With no SID stored, it adopts an active subaccount named for the shop and
+  refuses when there is more than one.
+- It saves only if no SID is stored, and closes a duplicate it created on losing
+  that race.
+- New Twilio helpers: list by FriendlyName, fetch, and close.
+- Migration 96 adds `shops_twilio_subaccount_sid_unique`.
+- Contract: `docs/architecture/CHANNEL_PROVIDERS.md`.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's migrations (main's
+94 plus 96, applied from zero). Node 22.23.2 isolated runner:
+
+- `twilio-subaccount`: 7 of 7 twice, after one run whose concurrency test failed
+  seed `createUser`. On the old code it failed 6 of 7.
+- `twilio-status-callback` 12, `twilio-inbound-replay` 14, `tenant-isolation` 8,
+  `tenant-relationships` 8.
+- Unit: 1,489 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No real Twilio call, number, migration on a shared database, or activation.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Resumable SMS (A2P 10DLC) registration with clear rejection and retry handling.
+Reproduced against a fake `twilio-a2p` module on the disposable stack. The previous
+flow:
+
+- saved SIDs only at the end, so a midway failure orphaned steps and a retry
+  rebuilt the whole chain;
+- allowed resubmission while carriers were reviewing or after approval;
+- recreated the messaging service when a campaign failed;
+- kept only a free-text reason.
+
+Fix:
+
+- Each step's SID is checkpointed as soon as it exists, and a resubmission with
+  the same details resumes.
+- Resubmission is refused while with carriers or approved.
+- A rejected brand or changed details start a fresh chain. A rejected campaign
+  keeps the approved brand and messaging service.
+- The messaging service is created once, and an "already attached" number
+  counts as done.
+- Sync reports a stage as advanced only once it is saved.
+- Migration 97 adds `failed_step`, `retryable`, `attempts` and
+  `last_attempt_at`.
+- `describeA2pRegistration` gives the UI one `nextAction`, exposed via
+  `getA2pState` and `refreshA2pStatus`.
+- Contract: `CHANNEL_PROVIDERS.md`.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's migrations (main's
+94 plus 97, applied from zero). Node 22.23.2 isolated runner:
+
+- `a2p-registration`: 7 of 7 twice. On the old code it failed 7 of 7.
+- `twilio-status-callback`: 12 of 12 on retry, after a seed gateway error.
+- `tenant-isolation`: 8.
+- Unit: 1,492 passed, 4 skipped.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No real Twilio registration, migration on a shared database, or activation.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Owner attestation for own-number (BYO) texting. Contract:
+`docs/architecture/BYO_SMS_ATTESTATION.md`. Migration `20261015150000` (95 on
+main; PRs #83, #87 and #88 hold 95–97, so the number will move at merge).
+
+`shops.byo_sms_verified` gates every text from a non-Gradia number
+(`smsGateForShop`, plus the `stage_qualification_question` mirror). Nothing wrote
+it, so every own-number text was held.
+
+New pieces:
+
+- Owner-only `attest_byo_sms_registration`, `revoke_byo_sms_registration` and
+  `read_byo_sms_attestation`. The caller must be `shops.owner_id` with an active
+  owner membership; managers and staff are refused whatever their capabilities.
+- Attesting needs `confirm: true`, the current statement version, and the exact
+  number the owner was shown. It refuses `number_changed`, `no_number` and
+  `gradia_number`.
+- An append-only `byo_sms_attestations` history records event, number, actor,
+  statement version and time.
+- A guard trigger stops a signed-in session setting the flag directly on shops,
+  on update or insert. A second trigger clears the attestation whenever
+  `twilio_phone_number` changes, through any writer.
+- Session-client server actions `getByoSmsAttestation`,
+  `attestByoSmsRegistration` and `revokeByoSmsRegistration`.
+
+The Gradia-number gate is unchanged, and a unit test pins that the flag never
+opens it. A provider-verifiable check was considered and deferred: it needs live
+calls and covers only some numbers. The `source` column leaves room for it.
+UI is Cursor's.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's 95 migrations,
+Node 22.23.2 isolated runner:
+
+- `byo-sms-attestation`: 6 of 6 in three of four runs. The other run failed
+  seed `createUser` before any test ran.
+- After a reset, 68 tests passed: this suite plus `qualification-question-staging`
+  (17), `lead-workflow-acceptance` (6), `team-permissions` (27) and
+  `tenant-isolation` (8). Those suites set the flag through the service role,
+  which still works. `approvals` was the one failure in that run.
+- The full suite failed 24 tests, then 17 on retry, all with gateway 502s,
+  statement timeouts or seed failures. A reset to origin/main on the same stack
+  showed the same thing: the same 10 tests fail in `manager-notification`,
+  `whisper-inbox`, `lead-qualification` and `customer-merge`. `approvals` passes
+  on the first run after a reset and fails 3 of 4 on the second, on main and on
+  this branch alike. These are pre-existing local-stack failures, not regressions.
+- Unit: 1,498 passed, 4 skipped, 9 of them new.
+- Lint, types before and after the offline build, and the build itself passed.
+
+No merge, deployment, shared migration, provider call or send.
+
+[AI: claude-code] [DATE: 2026-10-16] [AREA: platform] [STATUS: review]
+Reworked BYO SMS attestation (PR #93) against
+`ONBOARDING_AND_BUSINESS_UX_HANDOFF.md`, which the first pass hadn't read. Gap
+found: a non-Gradia number on a shop with no Twilio credentials of its own sends
+through Gradia's pilot `env` account (`resolveTwilioCredentials`). The first pass
+let the owner attest it, which would put texts on Gradia's account under a
+registration the owner can't hold.
+
+Changes:
+
+- Attesting now needs the shop's own encrypted credentials. Otherwise the state
+  is `not_own_account`, attesting is refused, and texts stay held.
+- A credential change or removal clears the attestation (`account_changed`).
+  Rotating only the token doesn't.
+- The statement names the owner's own account and Messaging Service. Its version
+  is now `2026-10-16`.
+- `byoSmsSetupStatus` maps states onto the handoff vocabulary. Confirmed is
+  "Ready to test", never "Ready".
+- The deferred provider check is now cited against current Twilio docs
+  (UsAppToPerson `campaign_status`).
+
+Recorded conflict: PR #89 maps the flag to texting `ready`. It should cap at
+"Ready to test" and report `not_own_account`.
+
+Disposable `gradia-record-fresh` stack, reset from 95 migrations:
+
+- Attestation suite: 8 of 8, twice.
+- Focused run: 66 of 66 across `qualification-question-staging`,
+  `lead-workflow-acceptance`, `team-permissions` and `tenant-isolation`.
+- Unit: 1,499 passed, 4 skipped.
+- Lint, types before and after the build, and the offline build passed.
+
+The full-suite local failures recorded above are unchanged and also occur on
+main.
+
+No merge, deployment, shared migration, provider call or send.
+
+
+[AI: claude-code] [DATE: 2026-10-15] [AREA: platform] [STATUS: review]
+Separate, accurate readiness for calls, texting, email and Meta. Contract:
+`docs/architecture/CHANNEL_READINESS.md`.
+
+The single `connectionStatus().connected` flag overstated readiness:
+
+- texting showed connected with A2P pending, rejected or unregistered, or with an
+  unconfirmed own number;
+- calls showed connected with only an assistant;
+- email showed connected with no inbound subscription;
+- Meta had no state at all.
+
+New pieces:
+
+- `channelReadiness` (pure). Each channel returns one state (`unavailable`,
+  `not_set_up`, `in_progress`, `action_needed`, `limited` or `ready`), with
+  reason codes and an owner message, from the evidence that gates it.
+- `loadChannelReadiness`, which uses the service client, scoped by shop, because
+  Meta bindings are service-role only. A failed read is an error, never "not set
+  up".
+- The owner action `getChannelReadiness()`, now on the reviewed service-role
+  importer list.
+
+`connectionStatus()` and the screens are unchanged; switching the UI is Cursor's.
+Gaps are recorded: no in-app BYO attestation writer, a revoked mailbox grant isn't
+detected without a provider call, and Meta's subscription is unverified.
+
+Disposable `gradia-record-fresh` stack:
+
+- `channel-readiness`: 4 of 4 twice.
+- Unit: 1,504 passed, 4 skipped, including the table of old-flag overstatements
+  and `connection-truth`.
+- Lint, offline build, types before and after build, and `git diff --check`
+  passed.
+
+No migration, provider call, or activation.
+
+[AI: claude-code] [DATE: 2026-10-16] [AREA: platform] [STATUS: review]
+PR #89 (`claude/channel-readiness`): texting readiness for an own (BYO) number
+now follows the onboarding handoff and the BYO attestation contract in PR #93
+(`docs/architecture/BYO_SMS_ATTESTATION.md`). A checked setting alone is never
+`ready`.
+
+- New state `ready_to_test`. An own number with the shop's own encrypted
+  Twilio credentials and `byo_sms_verified` reports `ready_to_test`
+  (`byo_owner_attested`), matching `byoSmsSetupStatus("confirmed")`.
+- New reason `not_own_account`. A non-Gradia number without both
+  `twilio_account_sid_enc` and `twilio_auth_token_enc` is `action_needed`
+  whatever the flag says, because its send would fall back to Gradia's pilot
+  env account. It's checked before the flag.
+- `readinessStatusLabel()` maps each state to the handoff vocabulary. The
+  mapping is documented in `CHANNEL_READINESS.md`, whose known gaps now point
+  to #93 as the writer and name the credential-presence and A2P-alone limits.
+- Unit tests check every combination of flag, credentials and A2P state for an
+  own number: none is `ready` or "Ready". The integration test adds the
+  own-number sequence from real rows.
+
+Checks, Node 22.23.2 isolated runner:
+
+- Unit: 1,546 passed, 4 skipped (`channel-readiness`: 57).
+- Lint, types before and after the offline build, the offline build, and
+  `git diff --check` all passed.
+- `channel-readiness` integration on `gradia-record-fresh`: 5 of 5 on the first
+  run. The second run hit a gateway "invalid response from upstream" on a
+  `shops` update (4 of 5), and its one retry failed in seed `createUser`
+  (suite skipped). Both are stack flakes, with no assertion failures; not
+  retried further.
+
+Merge-order note: #93's unit test that lists `src/` files mentioning
+`byo_sms_verified` will need `src/lib/channel-readiness.ts` and
+`src/lib/data/channel-readiness.ts` added as readers, whichever PR merges
+second. No migration, provider call, send, merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-18] [AREA: platform] [STATUS: done]
+Separated onboarding from the duplicate Super Agent research on PR #91.
+Research stays on #85/#86 with migration `20261016040000`. Removed #91's
+`20261016053000` research migration so it no longer shares a version with #90's
+browser check. Wired setup and Settings to #88 `nextAction`, #89 channel
+readiness, and #93 owner attestation. Calls and texting have separate statuses.
+An owner-confirmed own number is Ready to test. Skipping the number still
+advances. Did not merge, deploy, apply a shared migration, or add a browser
+provider. Authenticated saves were not run here: this environment has no
+disposable Supabase.
+
+### [Codex] 2026-10-19 — Combined onboarding and telephony integration
+
+Core workflow PRs #79/#81/#82/#83/#84 passed combined Node 22 checks and database
+integration and merged as #94. This follow-up integrates #87/#88/#89/#93 and
+Cursor's reconciled #91 without the experimental employee schema or routes.
+
+Kept independent channel setup evidence, A2P saved checkpoint/next-action controls,
+and owner-only own-number confirmation. Failed/uncertain reads do not invent a
+successful registration or an unsaved attestation. Duplicate confirmations are
+blocked synchronously, number changes require a fresh confirmation, and progress
+saves compare the settings they read before writing to preserve concurrent edits.
+Onboarding resolves the active owned business rather than the oldest business.
+
+Unreadable configured Twilio credentials now fail closed, including explicit-null
+transport and signature calls; they cannot silently use the shared pilot account.
+The new audit table inherits an existing release freeze. No provider was called,
+no message sent and no public release or write unfreeze performed.
+
+Local Node 22 unit run: 1,582 passed, 4 skipped; three additional attestation state
+regressions pass. Typecheck passes after the integration-test type fix. Full final
+CI/build/integration and migration upgrade validation remain required before merge.
+Browser acceptance from Cursor's fixtures is not authenticated acceptance.
+
+Integration build caught a client/server import boundary: readiness labels imported
+the provider module, pulling node:crypto into onboarding. Moved the unchanged
+voice prerequisites into a pure shared module and kept the provider re-export.
+The new audit table upgrade is verified with RLS and 63/63 ALWAYS write guards.
+[AI: cursor] [DATE: 2026-10-19] [AREA: platform] [STATUS: done]
+Signed-in onboarding acceptance against the disposable Supabase stack
+(`gradia-isolated-tests` only). `next dev` must list `127.0.0.1` in
+`allowedDevOrigins` or the login page never hydrates at the stack's site URL
+and the magic-link form does a full reload. After that, an owner session
+saved North Shore Auto, reloaded on Your number, skipped the number, and
+reloaded on Choose your help. Calls and texting stayed separate rows. With
+no telephony provider configured they both read Unavailable, not Ready.
+A rejected campaign row seeded only in that disposable database opened Needs
+a correction with the saved legal name. Resubmit did not claim "Submitted
+for texting review"; the server refused because the number is not on a
+Gradia phone account. No Twilio call, no shared migration, no merge, no
+deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
+Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
+is also in that tab order while `next dev` is running.

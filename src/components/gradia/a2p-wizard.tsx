@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner"
 
 import {
+  getA2pState,
   refreshA2pStatus,
   resendA2pOtp,
   submitA2pRegistration,
@@ -27,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { registrationFromA2pState, textingActionCopy } from "@/lib/onboarding"
 import type { A2pFormInput } from "@/lib/a2p-schema"
 import type { A2pBusinessDetails } from "@/lib/types/database"
 
@@ -87,6 +89,11 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
   const [submitting, setSubmitting] = React.useState(false)
   const [checking, setChecking] = React.useState(false)
   const [resending, setResending] = React.useState(false)
+  const busy = React.useRef(false)
+  const registration = registrationFromA2pState(state)
+  const nextAction = registration.nextAction
+  const actionCopy = textingActionCopy(nextAction)
+  const submitLabel = actionCopy.button ?? "Submit for carrier review"
 
   /** Sole-prop registrations verify by texting the owner's cell. */
   const isSoleProp =
@@ -112,31 +119,36 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (submitting) return
-    setSubmitting(true)
-    const result = await submitA2pRegistration(form)
-    setSubmitting(false)
-    if (!result.ok) {
-      toast.error(result.error)
-      return
-    }
-    toast.success("Sent to carriers — we'll keep an eye on it from here.")
-    setEditing(false)
-    setState((s) => ({ ...s, status: "brand_pending", failureReason: null }))
-    router.refresh()
+    if (busy.current) return
+    busy.current = true; setSubmitting(true)
+    try {
+      const result = await submitA2pRegistration(form)
+      // Both success and failure can persist checkpoints. Never invent a pending state.
+      const fresh = await getA2pState()
+      setState(fresh)
+      setEditing(fresh.status === "none" || fresh.status === "draft")
+      if (!result.ok) toast.error(result.error)
+      else toast.success("Registration saved. Review its status below.")
+      router.refresh()
+    } catch {
+      setState(s => ({ ...s, error: "Could not confirm registration progress. Refresh before trying again." }))
+    } finally { busy.current = false; setSubmitting(false) }
   }
 
   async function handleRefresh() {
-    if (checking) return
-    setChecking(true)
-    const next = await refreshA2pStatus()
-    setChecking(false)
-    setState(next)
-    if (next.status === "approved") {
-      toast.success("Verified — texting is unlocked on your number.")
-    }
-    router.refresh()
+    if (busy.current) return
+    busy.current = true; setChecking(true)
+    try {
+      const next = await refreshA2pStatus()
+      setState(next)
+      if (next.business) setForm(formFrom(next.business))
+      router.refresh()
+    } catch {
+      setState(s => ({ ...s, error: "Could not check carrier status. Refresh and try again." }))
+    } finally { busy.current = false; setChecking(false) }
   }
+
+  if (state.error) return <p role="alert" className="text-sm text-status-danger-fg">{state.error}</p>
 
   if (state.status === "approved") {
     return (
@@ -147,7 +159,7 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
         <div className="min-w-0 flex-1">
           <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
           <p className="text-sm text-foreground">
-            Verified — texting is unlocked on our number.
+            Carrier registration approved. Consent, message approval and channel controls still apply.
           </p>
         </div>
       </div>
@@ -156,7 +168,7 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
 
   if (!editing && (state.status === "brand_pending" || state.status === "campaign_pending")) {
     return (
-      <div className="flex items-center gap-3 rounded-md border border-status-warning/25 bg-status-warning-bg px-3.5 py-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-status-warning/25 bg-status-warning-bg px-3.5 py-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-status-warning-bg text-status-warning-fg ring-1 ring-status-warning/25">
           <Clock className="size-4" aria-hidden />
         </div>
@@ -164,8 +176,8 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
           <p className="text-sm text-foreground">
             {isSoleProp && state.status === "brand_pending"
-              ? "Check your phone — carriers texted your cell a verification message. Answer it, then this finishes on its own (usually 1–3 days). Calls work the whole time."
-              : "Carriers are verifying the business — usually 1–3 days. Texting unlocks automatically when they approve; calls work the whole time."}
+              ? "Check your phone for the carrier verification text. Answer it, then check status here. Review time varies; calls have separate setup checks."
+              : "Your registration is under review. Review time varies. Check status here; calls have separate setup checks."}
           </p>
         </div>
         {isSoleProp && state.status === "brand_pending" ? (
@@ -211,13 +223,15 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           </div>
           <div className="min-w-0 flex-1 space-y-2">
             <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
+            <p className="text-sm font-medium">{actionCopy.label}</p>
             <p className="text-sm text-foreground">
               Carriers couldn&apos;t verify the business.{" "}
-              {state.failureReason ??
+              <p className="text-sm font-medium">{actionCopy.label}</p>
+          {state.failureReason ??
                 "The usual fix: make sure the legal name matches the EIN exactly."}
             </p>
             <Button type="button" size="sm" onClick={() => setEditing(true)}>
-              Fix details & resubmit
+              {submitLabel}
             </Button>
           </div>
         </div>
@@ -226,13 +240,15 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           <div className="space-y-1">
             <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
             <p className="text-sm text-muted-foreground">
-              Before our number can text customers, US carriers verify the
-              business behind it (one-time, 1–3 days). Calls work right away —
-              this unlocks texting. Use the legal details exactly as registered
-              with the IRS; mismatches are the #1 rejection cause.
+              US carriers review the business behind your number before texting.
+              Use your legal business details. Review time varies, and calls have separate setup checks.
             </p>
           </div>
 
+          <p className="text-sm font-medium">{actionCopy.label}</p>
+          {state.failureReason ? <p role="alert" className="text-sm text-status-warning-fg">{state.failureReason}</p> : null}
+          {nextAction === "resume" ? <p className="text-sm text-muted-foreground">Your saved steps are kept. Submit the same details to resume.</p> : null}
+          {nextAction === "resubmit_campaign" ? <p className="text-sm text-muted-foreground">Your approved business registration is kept when you resubmit the same details.</p> : null}
           {/* The fork: EIN → Low-Volume Standard; no EIN → sole prop with
               mobile OTP. Asked first because it changes what we collect. */}
           <div className="space-y-1.5">
@@ -273,7 +289,7 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
                 id="a2p-legal-name"
                 value={form.legal_name}
                 onChange={(e) => set({ legal_name: e.target.value })}
-                placeholder={form.has_ein === false ? "Pristine Detailing" : "Pristine Detailing LLC"}
+                placeholder={form.has_ein === false ? "Example Services" : "Example Services LLC"}
                 required
               />
             </div>
@@ -327,7 +343,7 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
                 id="a2p-website"
                 value={form.website_url ?? ""}
                 onChange={(e) => set({ website_url: e.target.value })}
-                placeholder="https://pristinedetailing.com"
+                placeholder="https://example.com"
               />
             </div>
           </div>
@@ -429,14 +445,14 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
           </div>
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={submitting} className="gap-2">
+            <Button type="submit" disabled={submitting} className="min-h-11 gap-2">
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden />
                   Sending to carriers
                 </>
               ) : (
-                "Register with carriers"
+                submitLabel
               )}
             </Button>
           </div>

@@ -88,7 +88,7 @@ export function AppSidebar({
               Gradia
             </span>
             <span className="text-[11px] text-muted-foreground">
-              Your AI office
+              Approve what goes out
             </span>
           </div>
         </div>

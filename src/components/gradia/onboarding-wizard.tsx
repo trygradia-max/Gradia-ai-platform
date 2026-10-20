@@ -7,60 +7,48 @@ import {
   motion,
   useReducedMotion,
 } from "framer-motion"
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Loader2,
-  Sparkles,
-} from "lucide-react"
+import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react"
 
+import { saveOnboardingProgress } from "@/app/actions/onboarding"
 import { saveShop } from "@/app/actions/shop"
+import type { ChannelReadinessResult } from "@/app/actions/channel-readiness"
 import type { A2pState } from "@/app/actions/a2p"
 import {
-  HoursStep,
-  InboxStep,
+  ChooseHelpStep,
   NumberStep,
-  ReceptionistStep,
 } from "@/components/gradia/onboarding-launch-steps"
-import { ServiceMenuCard } from "@/components/gradia/service-menu-card"
 import { FormField } from "@/components/gradia/form-field"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
-import { connectionStatus } from "@/lib/data/connections"
-import { readWorkingHours } from "@/lib/working-hours"
+import { readBusinessKind } from "@/lib/onboarding"
 import { cn } from "@/lib/utils"
-import type { ServiceRow, ShopRow } from "@/lib/types/database"
+import type { ShopRow } from "@/lib/types/database"
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6
+type Step = 1 | 2 | 3
 
 const STEP_LABELS: Record<Step, string> = {
-  1: "Our shop",
-  2: "What we offer",
-  3: "Our hours",
-  4: "Your inbox",
-  5: "Your number",
-  6: "Your receptionist",
+  1: "Your business",
+  2: "Your number",
+  3: "Choose your help",
 }
 
 export function OnboardingWizard({
   initialShop,
-  initialServices,
   initialStep,
   forceCreate = false,
   a2pState,
+  readiness,
   voiceOptions,
   vapiConfigured,
 }: {
   initialShop: ShopRow | null
-  initialServices: ServiceRow[]
   initialStep: Step
   /** "Add another shop" path — insert a new shop row even if the user
    *  already owns one. */
   forceCreate?: boolean
+  readiness?: ChannelReadinessResult
   a2pState: A2pState
   voiceOptions: { id: string; label: string; description: string }[]
   vapiConfigured: boolean
@@ -68,9 +56,9 @@ export function OnboardingWizard({
   const router = useRouter()
   const [step, setStep] = React.useState<Step>(initialStep)
   const [shop, setShop] = React.useState<ShopRow | null>(initialShop)
-  const [services, setServices] =
-    React.useState<ServiceRow[]>(initialServices)
+  const [progressError, setProgressError] = React.useState<string | null>(null)
 
+  const progressBusy = React.useRef(false)
   const reduce = useReducedMotion()
 
   // Steps 3–5 embed live cards (OAuth, purchase, voice) that refresh the
@@ -78,9 +66,20 @@ export function OnboardingWizard({
   // there over the step-1 client copy.
   const liveShop = initialShop ?? shop
 
-  const goTo = (next: Step) => {
-    setStep(next)
-    router.refresh() // keep server-derived props current between steps
+  async function remember(next: Step, numberSkipped?: boolean) {
+    if (progressBusy.current) return false
+    progressBusy.current = true
+    setProgressError(null)
+    try {
+      const result = await saveOnboardingProgress({ step: next, numberSkipped })
+      if (!result.ok) { setProgressError(result.error); return false }
+      setStep(next)
+      router.refresh()
+      return true
+    } catch {
+      setProgressError("Could not confirm your saved place. Refresh before continuing.")
+      return false
+    } finally { progressBusy.current = false }
   }
 
   return (
@@ -105,53 +104,39 @@ export function OnboardingWizard({
             exit={reduce ? { opacity: 0 } : { opacity: 0, x: -16 }}
             transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
           >
+            {progressError ? (
+              <p className="mb-4 text-sm text-status-danger-fg" role="alert">
+                {progressError}
+              </p>
+            ) : null}
             {step === 1 ? (
               <ShopStep
                 shop={shop}
-                forceCreate={forceCreate}
+                forceCreate={forceCreate && !shop}
                 onSaved={(saved) => {
                   setShop(saved)
                   setStep(2)
+                  router.refresh()
                 }}
               />
             ) : null}
-            {step === 2 ? (
-              <ServicesStep
-                services={services}
-                onServicesChange={setServices}
-                onBack={() => setStep(1)}
-                onContinue={() => goTo(3)}
-              />
-            ) : null}
-            {step === 3 ? (
-              <HoursStep
-                initialHours={readWorkingHours(liveShop?.settings)}
-                onBack={() => goTo(2)}
-                onContinue={() => goTo(4)}
-              />
-            ) : null}
-            {step === 4 ? (
-              <InboxStep
-                connected={connectionStatus(liveShop).email.connected}
-                connectedEmail={connectionStatus(liveShop).email.identity}
-                onBack={() => goTo(3)}
-                onContinue={() => goTo(5)}
-              />
-            ) : null}
-            {step === 5 && liveShop ? (
+            {step === 2 && liveShop ? (
               <NumberStep
                 shop={liveShop}
                 a2pState={a2pState}
-                onBack={() => goTo(4)}
-                onContinue={() => goTo(6)}
+                readiness={readiness}
+                onBack={() => void remember(1)}
+                onSkip={() => void remember(3, true)}
+                onContinue={() => void remember(3, false)}
               />
             ) : null}
-            {step === 6 && liveShop ? (
-              <ReceptionistStep
+            {step === 3 && liveShop ? (
+              <ChooseHelpStep
                 shop={liveShop}
+                readiness={readiness}
                 voiceOptions={voiceOptions}
                 vapiConfigured={vapiConfigured}
-                onBack={() => goTo(5)}
+                onBack={() => void remember(2)}
               />
             ) : null}
           </motion.div>
@@ -170,15 +155,15 @@ function StepIndicator({
   current: Step
   reduce: boolean
 }) {
-  const steps: Step[] = [1, 2, 3, 4, 5, 6]
+  const steps: Step[] = [1, 2, 3]
   return (
     <nav
       className="space-y-3.5"
-      aria-label={`Onboarding progress, step ${current} of 6: ${STEP_LABELS[current]}`}
+      aria-label={`Onboarding progress, step ${current} of 3: ${STEP_LABELS[current]}`}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="label-eyebrow text-muted-foreground">
-          Step {current} of 6
+          Step {current} of 3
         </p>
         <p className="text-xs font-medium tracking-tight text-foreground">
           {STEP_LABELS[current]}
@@ -333,12 +318,14 @@ function ShopStep({
     const name = String(fd.get("name") ?? "").trim()
     const location = String(fd.get("location") ?? "").trim() || null
     const phone = String(fd.get("phone") ?? "").trim() || null
+    const kind = fd.get("businessKind") === "general" ? "general" : "detailing"
 
     setPending(true)
     const result = await saveShop({
       name,
       location,
       phone,
+      businessKind: kind,
       createNew: forceCreate,
     })
     setPending(false)
@@ -355,15 +342,15 @@ function ShopStep({
   return (
     <form className="grid gap-5" onSubmit={handleSubmit}>
       <div className="space-y-1">
-        <h2 className="font-display text-2xl tracking-tight text-foreground">Our shop</h2>
+        <h2 className="font-display text-2xl tracking-tight text-foreground">Your business</h2>
         <p className="text-sm text-muted-foreground">
-          Just the basics so we can quote, book, and follow up correctly.
+          Name, place, and what you do. You can edit this later in Settings.
         </p>
       </div>
       <FormField
         id="shop-name"
-        label="Shop name"
-        hint="Shown on quotes and the receptionist greeting."
+        label="Business name"
+        hint="Shown on quotes and the phone greeting."
         error={fieldErrors.name?.[0]}
       >
         <Input
@@ -378,8 +365,8 @@ function ShopStep({
       </FormField>
       <FormField
         id="shop-location"
-        label="Location"
-        hint="City, region, or ‘mobile’ is enough."
+        label="Where you work"
+        hint="A city, or say that you travel to customers."
         error={fieldErrors.location?.[0]}
       >
         <Input
@@ -405,6 +392,34 @@ function ShopStep({
           className="h-11"
         />
       </FormField>
+      <fieldset className="grid gap-2">
+        <legend className="text-sm font-medium text-foreground">
+          What kind of business is this?
+        </legend>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="businessKind"
+            value="detailing"
+            defaultChecked={readBusinessKind(shop?.settings) === "detailing"}
+            className="size-4 accent-primary"
+          />
+          Detailing
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="businessKind"
+            value="general"
+            defaultChecked={readBusinessKind(shop?.settings) === "general"}
+            className="size-4 accent-primary"
+          />
+          Something else
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Detailing service menus include optional vehicle-size and condition pricing.
+        </p>
+      </fieldset>
       {error ? (
         <p className="text-sm text-status-danger-fg" role="alert">
           {error}
@@ -418,69 +433,9 @@ function ShopStep({
         {pending ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
         ) : null}
-        Continue
+        Save and continue
         <ArrowRight className="size-4" aria-hidden />
       </Button>
     </form>
-  )
-}
-
-// --- Step 2: Services -------------------------------------------------------
-
-function ServicesStep({
-  services,
-  onServicesChange,
-  onBack,
-  onContinue,
-}: {
-  services: ServiceRow[]
-  onServicesChange: (services: ServiceRow[]) => void
-  onBack: () => void
-  onContinue: () => void
-}) {
-  return (
-    <div className="grid gap-5">
-      <div className="space-y-1">
-        <h2 className="font-display text-2xl tracking-tight text-foreground">What we offer</h2>
-        <p className="text-sm text-muted-foreground">
-          Our service menu — prices by vehicle size, durations, and condition
-          bumps. The AI uses this to quote and book accurately. We can edit
-          anytime.
-        </p>
-      </div>
-
-      <ServiceMenuCard
-        initialServices={services}
-        onServicesChange={onServicesChange}
-      />
-
-      {services.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-          Heads up — the AI needs at least one service to quote a customer.
-        </p>
-      ) : null}
-
-      <Separator />
-
-      <div className="grid grid-cols-2 gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onBack}
-          className="min-h-11 gap-2"
-        >
-          <ArrowLeft className="size-4" aria-hidden />
-          Back
-        </Button>
-        <Button
-          type="button"
-          onClick={onContinue}
-          className="min-h-11 gap-2 transition-transform duration-(--duration-fast) active:scale-[0.99]"
-        >
-          Continue
-          <ArrowRight className="size-4" aria-hidden />
-        </Button>
-      </div>
-    </div>
   )
 }
