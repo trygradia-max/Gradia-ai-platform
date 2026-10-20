@@ -11,6 +11,7 @@ import {
   type WhisperThread,
   threadListSchema,
 } from "@/lib/whisper-inbox"
+import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 import type { z } from "zod"
 
@@ -250,7 +251,14 @@ export function WhisperConversationList({
             ) : (
               <EmptyState
                 className="px-4 py-6"
-                title="No visible conversations on this page."
+                title={
+                  page <= 1
+                    ? STRINGS.empty.conversationsFirstUseTitle
+                    : STRINGS.empty.conversationsPageEmpty
+                }
+                description={
+                  page <= 1 ? STRINGS.empty.conversationsFirstUse : undefined
+                }
               />
             )}
             <Pagination
