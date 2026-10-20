@@ -13,9 +13,12 @@ import type { A2pRegistrationRow, A2pRegistrationStep } from "@/lib/types/databa
  *                     kept and the failed campaign is edited and resubmitted
  *   wait              with carriers; check status (a temporary problem in a
  *                     later step is retried automatically on the next check)
- *   none              approved: texting is open
+ *   contact_support   carriers suspended the campaign after approval; texting
+ *                     is closed, resubmitting can't lift it, and status is
+ *                     still re-checked
+ *   none              approved: texting is open (and still re-checked)
  */
-export type A2pNextAction = "submit" | "resume" | "fix_and_resubmit" | "resubmit_campaign" | "wait" | "none"
+export type A2pNextAction = "submit" | "resume" | "fix_and_resubmit" | "resubmit_campaign" | "wait" | "contact_support" | "none"
 
 export type A2pRegistrationState = {
   status: A2pRegistrationRow["status"] | "none"
@@ -34,6 +37,8 @@ export function describeA2pRegistration(reg: RowFields | null): A2pRegistrationS
   switch (reg.status) {
     case "approved":
       return { ...base, nextAction: "none" }
+    case "suspended":
+      return { ...base, nextAction: "contact_support" }
     case "brand_pending":
     case "campaign_pending":
       return { ...base, nextAction: "wait" }

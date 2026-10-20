@@ -15,6 +15,7 @@ describe("SMS registration state the owner sees", () => {
     expect(describeA2pRegistration(row({ status: "rejected", failed_step: "brand", retryable: false })).nextAction).toBe("fix_and_resubmit")
     expect(describeA2pRegistration(row({ status: "rejected", failed_step: "campaign", retryable: false })).nextAction).toBe("resubmit_campaign")
     expect(describeA2pRegistration(row({ status: "approved" })).nextAction).toBe("none")
+    expect(describeA2pRegistration(row({ status: "suspended", failed_step: "campaign", retryable: false })).nextAction).toBe("contact_support")
   })
   it("carries the failed step, whether retrying can fix it, and the reason", () => {
     expect(describeA2pRegistration(row({ failed_step: "brand", retryable: false, failure_reason: "EIN mismatch", attempts: 2 })))

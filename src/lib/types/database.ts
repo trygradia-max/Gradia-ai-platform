@@ -62,7 +62,7 @@ export type ShopRow = {
   updated_at: string
 }
 
-export type A2pStatus = "unregistered" | "pending" | "approved" | "rejected"
+export type A2pStatus = "unregistered" | "pending" | "approved" | "rejected" | "suspended"
 
 /**
  * Voice receptionist builder form answers (guardrailed form — never a
@@ -89,6 +89,8 @@ export type A2pRegistrationStatus =
   | "campaign_pending"
   | "approved"
   | "rejected"
+  /** Carriers suspended the campaign after approval; texting is closed and still re-checked. */
+  | "suspended"
 
 /** Owner-submitted compliance details, kept verbatim for resubmission.
  *  has_ein forks the carrier path: true → Low-Volume Standard;

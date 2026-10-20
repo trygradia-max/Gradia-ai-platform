@@ -89,11 +89,33 @@ webhook or the "Check status" button.
   required fields. If Twilio refuses the edit (campaign edit via API is a Twilio
   beta), the refusal is recorded and no new campaign is created.
 
+**Approved registrations keep being checked** (findings R4, R7; migration
+`20261019140000_a2p_campaign_suspended.sql`)
+
+Every status check re-reads the campaign of an `approved` or `suspended`
+registration. Twilio's `campaign_status` is mapped explicitly:
+
+| `campaign_status` | Registration | `shops.a2p_status` (gate) |
+| --- | --- | --- |
+| `VERIFIED` | `approved` | `approved` (open) |
+| `SUSPENDED` | `suspended` | `suspended` (closed) |
+| `FAILED` | `rejected` | `rejected` (closed) |
+| `IN_PROGRESS`, `PENDING`, anything else | `campaign_pending` | `pending` (closed) |
+
+- Both statuses are written in one transaction. A verified check also rewrites
+  the gate, which repairs a shop left `pending` by the old two-statement write.
+- A suspended registration can't be resubmitted. It reopens only when the
+  campaign reads `VERIFIED` again.
+- A temporary error while re-checking an approved registration is recorded and
+  leaves the gate as it was.
+- Checks still happen only on the status webhook or "Check status". No cron was
+  added (R6); a suspension is noticed on the next check.
+
 **What a resubmission does**
 
 | Situation | Effect |
 | --- | --- |
-| With carriers (`brand_pending`, `campaign_pending`) or `approved` | Refused. Nothing is created |
+| With carriers (`brand_pending`, `campaign_pending`), `approved` or `suspended` | Refused. Nothing is created |
 | Another submit holds the claim | Refused as already in progress. Nothing is created |
 | `draft` with a recorded failure, same details | Resume |
 | Changed details, or a rejected brand | Fresh chain. TrustHub bundles can't change once reviewed |
@@ -134,7 +156,8 @@ is saved.
 | `fix_and_resubmit` | Details refused or brand rejected | Show the reason; edit, then submit |
 | `resubmit_campaign` | Only the campaign was rejected | Show the reason; resubmit keeps the brand and edits the campaign |
 | `wait` | With carriers | "Check status". A later-step problem retries itself |
-| `none` | Approved | Texting open |
+| `contact_support` | Carriers suspended the campaign | Texting paused; contact support. "Check status" still re-checks |
+| `none` | Approved | Texting open, still re-checked |
 
 **Limits**
 

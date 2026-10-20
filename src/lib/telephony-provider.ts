@@ -347,8 +347,8 @@ function stepFailure(step: A2pRegistrationStep, err: unknown): A2pStepError {
  */
 const A2P_CLAIM_SECONDS = 15 * 60
 
-/** Statuses a status check may advance. */
-const A2P_SYNC_STATUSES = ["brand_pending", "campaign_pending"] as const
+/** Statuses a status check may advance or re-check (R4: approved keeps being watched). */
+const A2P_SYNC_STATUSES = ["brand_pending", "campaign_pending", "approved", "suspended"] as const
 
 /**
  * Takes the registration's single-flight claim with a compare-and-swap
@@ -419,8 +419,8 @@ const CLEARED = { failure_reason: null, failed_step: null, retryable: null } as 
  * Resumable: each step's SID is saved the moment it exists. Submitting the
  * same details again after a temporary failure continues after the last
  * completed step instead of creating a second profile or brand.
- *   - With carriers (brand/campaign pending) or approved: refused; nothing
- *     is created.
+ *   - With carriers (brand/campaign pending), approved or suspended:
+ *     refused; nothing is created.
  *   - Rejected brand, or changed details: a fresh chain (TrustHub bundles
  *     are immutable once reviewed).
  *   - Rejected campaign with the same details: the approved brand and the
@@ -459,6 +459,7 @@ export async function startA2pRegistration(input: {
   const refusal = (row: A2pRegistrationRow | null): A2pStartResult | null => {
     if (!row) return null
     if (row.status === "approved") return { ok: false, error: "Texting is already approved for this number." }
+    if (row.status === "suspended") return { ok: false, error: "Carriers suspended texting on this number. Contact support — resubmitting won't lift a suspension." }
     if (row.status === "brand_pending" || row.status === "campaign_pending") {
       return { ok: false, error: "Your registration is already with the carriers. Check status instead of submitting again." }
     }
@@ -584,16 +585,20 @@ export type A2pSyncResult = {
 }
 
 /**
- * Advances the registration pipeline one stage if Twilio has moved:
+ * Advances the registration pipeline one stage if Twilio has moved, and keeps
+ * watching once approved:
  *   brand approved → messaging service (created once, inbound stays on
  *   Gradia's SMS handler) → campaign: one already on the service is adopted
  *   (a create whose response was lost) or, if it failed, edited and
  *   resubmitted; only when none exists is one created (R3, R5);
  *   campaign VERIFIED → attach the number and open the SMS gate (the ONLY
- *   place a2p_status becomes 'approved').
+ *   place a2p_status becomes 'approved');
+ *   approved or suspended → re-checked every time: SUSPENDED closes the gate
+ *   as 'suspended', FAILED as 'rejected', anything else that isn't VERIFIED
+ *   (PENDING, IN_PROGRESS, unknown) as pending (R4).
  * Single-flight: a check that can't take the claim makes no provider call
  * and reports the stored status. Status and the shop's gate are written in
- * one transaction with the claim's release. A temporary failure is recorded and retried on the
+ * one transaction (R7). A temporary failure is recorded and retried on the
  * next check; a stage is only reported as advanced once it is saved.
  */
 export async function syncA2pStatus(input: {
@@ -682,7 +687,7 @@ export async function syncA2pStatus(input: {
       )
     }
 
-    if (reg.status === "campaign_pending" && reg.messaging_service_sid && reg.campaign_sid) {
+    if (reg.status !== "brand_pending" && reg.messaging_service_sid && reg.campaign_sid) {
       const campaign = await getCampaignStatus(creds, reg.messaging_service_sid, reg.campaign_sid)
       if (campaign.status === "FAILED") {
         return await reject("campaign",
@@ -690,10 +695,24 @@ export async function syncA2pStatus(input: {
             "Carriers rejected the campaign — contact support and we'll adjust the registration."
         )
       }
-      if (campaign.status !== "VERIFIED") return await unchanged()
+      if (campaign.status === "SUSPENDED") {
+        const reason = "Carriers suspended this number's texting campaign. Texting is paused — contact support, and don't send this traffic another way while it's under review."
+        return await finish(
+          { status: "suspended", shopStatus: "suspended", patch: { failure_reason: reason, failed_step: "campaign", retryable: false } },
+          { status: "suspended", failureReason: reason }
+        )
+      }
+      if (campaign.status !== "VERIFIED") {
+        // PENDING, IN_PROGRESS or a status we don't know: texting stays closed.
+        if (reg.status === "campaign_pending") return await unchanged()
+        return await finish(
+          { status: "campaign_pending", shopStatus: "pending", patch: CLEARED },
+          { status: "campaign_pending", failureReason: null }
+        )
+      }
 
       step = "attach_number"
-      if (shop.gradia_number_sid) {
+      if (reg.status !== "approved" && shop.gradia_number_sid) {
         try {
           await attachNumberToMessagingService(creds, {
             messagingServiceSid: reg.messaging_service_sid,
@@ -704,6 +723,8 @@ export async function syncA2pStatus(input: {
           if (!(err instanceof TwilioError && /already/i.test(err.message))) throw err
         }
       }
+      // Writing the gate on every verified check also repairs a shop status
+      // left behind by the old two-statement write.
       return await finish(
         { status: "approved", shopStatus: "approved", patch: CLEARED },
         { status: "approved", failureReason: null }
@@ -792,6 +813,8 @@ export function smsGateForShop(
     reason:
       shop.a2p_status === "rejected"
         ? "Carrier registration was rejected — review your business details in Settings → Business Number."
-        : "Your number is still being verified by carriers (1–3 days). Texting unlocks when it's approved.",
+        : shop.a2p_status === "suspended"
+          ? "Carriers suspended texting on this number. Contact support before sending again."
+          : "Your number is still being verified by carriers (1–3 days). Texting unlocks when it's approved.",
   }
 }

@@ -30,7 +30,7 @@ export type ReadinessReason =
   // calls
   | "no_voice_number" | "no_assistant" | "no_test_call" | "voice_addon_inactive"
   // texting
-  | "no_number" | "registration_required" | "registration_pending" | "registration_rejected"
+  | "no_number" | "registration_required" | "registration_pending" | "registration_rejected" | "registration_suspended"
   | "not_own_account" | "byo_registration_unconfirmed" | "byo_owner_attested"
   // email
   | "no_mailbox" | "inbound_not_subscribed"
@@ -104,6 +104,8 @@ export function textingReadiness(shop: ReadinessShop, configured: boolean): Chan
       return result("texting", "in_progress", ["registration_pending"], "Carriers are reviewing your texting registration. Texts are held until it's approved.")
     case "rejected":
       return result("texting", "action_needed", ["registration_rejected"], "Carriers rejected your texting registration. Review the reason and resubmit.")
+    case "suspended":
+      return result("texting", "action_needed", ["registration_suspended"], "Carriers suspended texting on this number. Texts are held; contact support.")
     default:
       return result("texting", "action_needed", ["registration_required"], "Register your business with carriers before texting customers.")
   }
@@ -148,7 +150,7 @@ export function readinessStatusLabel(r: Pick<ChannelReadiness, "state" | "reason
     case "unavailable": return null
     case "not_set_up": return "Not set up"
     case "in_progress": return "Submitted for review"
-    case "action_needed": return r.reasons.includes("registration_rejected") ? "Needs a correction" : "Needs your details"
+    case "action_needed": return r.reasons.includes("registration_rejected") || r.reasons.includes("registration_suspended") ? "Needs a correction" : "Needs your details"
     case "limited": return "Ready to test"
     case "ready_to_test": return "Ready to test"
     case "ready": return "Ready"

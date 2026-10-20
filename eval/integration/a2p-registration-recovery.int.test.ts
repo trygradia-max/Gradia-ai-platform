@@ -3,8 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { INTEGRATION, serviceClient, seedShop, cleanup, type Seeded } from "./_db"
 import { TwilioError } from "@/lib/twilio"
 
-// Regression tests for the October 19 Twilio review (findings R1, R2, R3 and
-// R5 in docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md). They began as
+// Regression tests for the October 19 Twilio review (findings R1 to R5 and
+// R7 in docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md). They began as
 // the review's probes, which reproduced each finding; here they assert the
 // fixed behaviour. Real Postgres on the disposable stack; Twilio is faked at
 // the twilio-a2p module boundary, so nothing reaches Twilio.
@@ -62,7 +62,7 @@ const business = () => ({
   contact: { first_name: "Fic", last_name: "Tional", email: "owner@example.test", phone: "+15555550100", job_position: "Owner" },
 })
 
-describe.skipIf(!INTEGRATION)("A2P registration recovery under concurrency and lost responses", () => {
+describe.skipIf(!INTEGRATION)("A2P registration recovery under concurrency, lost responses and suspension", () => {
   let db: SupabaseClient
   let provider: typeof import("@/lib/telephony-provider")
   let encrypt: typeof import("@/lib/crypto").encryptSecret
@@ -82,6 +82,23 @@ describe.skipIf(!INTEGRATION)("A2P registration recovery under concurrency and l
   const reg = async (id: string) => (await db.from("a2p_registrations").select("*").eq("shop_id", id).single()).data
   const shopRow = async (id: string) => (await db.from("shops").select("*").eq("id", id).single()).data
   const count = (name: string) => a2p.calls.filter((c) => c === name).length
+  const gateOpen = async (id: string) => {
+    const s = await shopRow(id)
+    return provider.smsGateForShop(s, s.gradia_number_e164).allowed
+  }
+  /** A registration through to an approved, verified campaign. */
+  async function approvedShop() {
+    const shop = await numberedShop()
+    expect((await start(shop)).ok).toBe(true)
+    a2p.brand = "APPROVED"
+    expect((await sync(shop)).status).toBe("campaign_pending")
+    a2p.campaign = "VERIFIED"
+    expect((await sync(shop)).status).toBe("approved")
+    expect(await gateOpen(shop.id)).toBe(true)
+    a2p.calls.length = 0
+    return shop
+  }
+
   beforeAll(async () => {
     process.env.ENCRYPTION_KEY ??= "ab".repeat(32)
     process.env.TWILIO_PRIMARY_PROFILE_SID = "BU" + "9".repeat(32)
@@ -132,6 +149,61 @@ describe.skipIf(!INTEGRATION)("A2P registration recovery under concurrency and l
     expect(count("messaging_service")).toBe(1)
     const row = await reg(shop.id)
     expect(row.campaign_sid).toBe(a2p.onService.get(row.messaging_service_sid)![0].campaignSid)
+  })
+
+  it("R4: a campaign suspended after approval closes texting, keeps being checked, and reopens only when verified again", async () => {
+    const shop = await approvedShop()
+    a2p.campaign = "SUSPENDED"
+    expect((await sync(shop)).status).toBe("suspended")
+    expect(await reg(shop.id)).toMatchObject({ status: "suspended", failed_step: "campaign", retryable: false })
+    expect((await shopRow(shop.id)).a2p_status).toBe("suspended")
+    expect(await gateOpen(shop.id)).toBe(false)
+    expect(await start(shop)).toMatchObject({ ok: false, error: expect.stringContaining("suspended") })
+    expect(a2p.calls).toEqual([])
+
+    a2p.campaign = "VERIFIED"
+    expect(await sync(shop)).toEqual({ status: "approved", failureReason: null })
+    expect(await gateOpen(shop.id)).toBe(true)
+    expect(count("campaign")).toBe(0)
+  })
+
+  it("R4: an approved campaign that turns FAILED is rejected, and IN_PROGRESS holds texting as pending", async () => {
+    const failed = await approvedShop()
+    a2p.campaign = "FAILED"
+    expect((await sync(failed)).status).toBe("rejected")
+    expect((await shopRow(failed.id)).a2p_status).toBe("rejected")
+    expect(await gateOpen(failed.id)).toBe(false)
+
+    a2p.campaign = "VERIFIED"
+    const reviewing = await approvedShop()
+    a2p.campaign = "IN_PROGRESS"
+    expect((await sync(reviewing)).status).toBe("campaign_pending")
+    expect((await shopRow(reviewing.id)).a2p_status).toBe("pending")
+    expect(await gateOpen(reviewing.id)).toBe(false)
+  })
+
+  it("R4: an approved registration still verified stays approved, without re-attaching the number", async () => {
+    const shop = await approvedShop()
+    expect(await sync(shop)).toEqual({ status: "approved", failureReason: null })
+    expect(a2p.calls).toEqual([])
+    expect(await gateOpen(shop.id)).toBe(true)
+  })
+
+  it("R7: a shop gate left behind by a split write is repaired on the next verified check", async () => {
+    const shop = await approvedShop()
+    // What a crash between the old two statements left: registration approved, shop pending.
+    expect((await db.from("shops").update({ a2p_status: "pending" }).eq("id", shop.id)).error).toBeNull()
+    expect(await sync(shop)).toEqual({ status: "approved", failureReason: null })
+    expect((await shopRow(shop.id)).a2p_status).toBe("approved")
+  })
+
+  it("R7: every status change writes the registration and the shop gate together", async () => {
+    const shop = await approvedShop()
+    for (const [campaign, status, gate] of [["SUSPENDED", "suspended", "suspended"], ["IN_PROGRESS", "campaign_pending", "pending"], ["VERIFIED", "approved", "approved"], ["FAILED", "rejected", "rejected"]] as const) {
+      a2p.campaign = campaign
+      await sync(shop)
+      expect([(await reg(shop.id)).status, (await shopRow(shop.id)).a2p_status], campaign).toEqual([status, gate])
+    }
   })
 
   it("R5: a rejected campaign is edited and resubmitted in place; no second campaign is created", async () => {

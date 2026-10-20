@@ -166,6 +166,35 @@ export function A2pWizard({ initial }: { initial: A2pState }) {
     )
   }
 
+  if (state.status === "suspended") {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-3.5 py-3">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-destructive/12 text-destructive ring-1 ring-destructive/25">
+          <ShieldAlert className="size-4" aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="label-eyebrow text-muted-foreground/70">Carrier verification</p>
+          <p className="text-sm text-foreground">{actionCopy.detail}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={checking}
+          className="gap-2 shrink-0"
+        >
+          {checking ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : (
+            <RefreshCw className="size-3.5" aria-hidden />
+          )}
+          Check status
+        </Button>
+      </div>
+    )
+  }
+
   if (!editing && (state.status === "brand_pending" || state.status === "campaign_pending")) {
     return (
       <div className="flex flex-wrap items-center gap-3 rounded-md border border-status-warning/25 bg-status-warning-bg px-3.5 py-3">

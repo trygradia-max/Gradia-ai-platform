@@ -88,6 +88,11 @@ export function carrierApprovalCopy(
         label: "Needs a fix",
         detail: "Carriers rejected this registration. Update it and submit again.",
       }
+    case "suspended":
+      return {
+        label: "Suspended",
+        detail: "Carriers suspended texting on this number. Texts are paused; contact support.",
+      }
   }
 }
 
@@ -148,6 +153,12 @@ export function textingActionCopy(action: A2pNextAction): {
       return {
         label: "Submitted for review",
         detail: "Texting is with the carriers.",
+        button: "Check texting status",
+      }
+    case "contact_support":
+      return {
+        label: "Needs a correction",
+        detail: "Carriers suspended texting on this number. Texts are paused; contact support. Resubmitting won't lift a suspension.",
         button: "Check texting status",
       }
     case "none":
