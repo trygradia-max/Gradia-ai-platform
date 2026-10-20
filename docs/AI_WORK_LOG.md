@@ -1898,3 +1898,18 @@ Integration build caught a client/server import boundary: readiness labels impor
 the provider module, pulling node:crypto into onboarding. Moved the unchanged
 voice prerequisites into a pure shared module and kept the provider re-export.
 The new audit table upgrade is verified with RLS and 63/63 ALWAYS write guards.
+[AI: cursor] [DATE: 2026-10-19] [AREA: platform] [STATUS: done]
+Signed-in onboarding acceptance against the disposable Supabase stack
+(`gradia-isolated-tests` only). `next dev` must list `127.0.0.1` in
+`allowedDevOrigins` or the login page never hydrates at the stack's site URL
+and the magic-link form does a full reload. After that, an owner session
+saved North Shore Auto, reloaded on Your number, skipped the number, and
+reloaded on Choose your help. Calls and texting stayed separate rows. With
+no telephony provider configured they both read Unavailable, not Ready.
+A rejected campaign row seeded only in that disposable database opened Needs
+a correction with the saved legal name. Resubmit did not claim "Submitted
+for texting review"; the server refused because the number is not on a
+Gradia phone account. No Twilio call, no shared migration, no merge, no
+deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
+Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
+is also in that tab order while `next dev` is running.
