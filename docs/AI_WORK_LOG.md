@@ -1913,3 +1913,40 @@ Gradia phone account. No Twilio call, no shared migration, no merge, no
 deploy. At 390px and at 200% zoom the wizard did not overflow horizontally.
 Tab reached See phone help, Back, and Finish setup. The Next.js dev overlay
 is also in that tab order while `next dev` is running.
+
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: review]
+A2P registration slice 1: single-flight and no duplicate campaigns. Fixes
+findings R1, R2, R3 and R5 of the October 19 Twilio review
+(`docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md`). Built on PR #95
+(`6644e53`). The review's probes reproduced each finding on the old code.
+
+- R1, R2: submit and status check take the registration's claim with a
+  compare-and-swap lease (`a2p_claim_registration`, 15 minutes) before any
+  provider call. A caller that can't take it calls nothing. Checkpoints are
+  written only while the claim is held. `a2p_finish_registration` releases it
+  and writes the registration status and `shops.a2p_status` in one transaction.
+- R3: before creating a campaign, the messaging service's existing Usa2p
+  campaigns are listed, and one found there is adopted.
+- R5: a campaign-only rejection keeps the failed campaign and edits it in place
+  (Usa2p update, all seven required fields; Twilio errors 30899, 30901, 30909).
+  A refused edit is recorded; no second campaign is created.
+- Migration `20261019120000_a2p_registration_claim.sql`: two columns and two
+  functions executable by `service_role` only. Additive.
+- Regression tests: `a2p-registration-recovery.int.test.ts` (the probes, now
+  asserting the fix) and `twilio-a2p-campaign.test.ts` (wire contract with fetch
+  faked). The existing suite's campaign-resubmission test now expects the edit.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's migrations.
+Node 22.23.2 isolated runner:
+
+- `a2p-registration-recovery` and `a2p-registration`: 14 of 14, first run.
+- Unit: 1,588 passed, 4 skipped. Lint, types and offline build passed.
+- Full `integration --fresh`: not completed. The stack stopped answering
+  partway (ECONNREFUSED, seed `createUser` failures) and the Docker daemon
+  stopped. Every failure was a connection or seed error, none an assertion.
+  Rerun once Docker is back.
+
+Limits: campaign edit via API is a Twilio beta; brand and campaign progress is
+still pulled only by status checks (R6); `MessageSamples` is sent as a JSON
+string in one form field, as before, to confirm on the first live run. No
+Twilio call, shared migration, merge or activation.
