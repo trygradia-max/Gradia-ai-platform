@@ -377,9 +377,29 @@ export async function createMessagingService(
 }
 
 /**
- * The campaign. Samples must look like real Gradia drafts — vague samples
- * are a top rejection cause. Customer-care/mixed traffic at detailer volume
- * fits the LOW_VOLUME use case.
+ * The campaign text. Samples must look like real Gradia drafts — vague
+ * samples are a top rejection cause. Shared by create and edit, so a
+ * resubmission sends the same fields the original did.
+ */
+function campaignContent(shopName: string): Record<string, string> {
+  return {
+    Description: `Customer care and appointment messaging for ${shopName}, an auto detailing business: quote follow-ups, booking confirmations, appointment reminders, and replies to customer questions. All recipients are existing customers or people who contacted the business first.`,
+    MessageFlow:
+      "Customers opt in by texting or calling the business first, or by providing their phone number when requesting a quote or booking an appointment (by phone, web form, or in person). Opt-in is confirmed in the first reply, and every message supports STOP to unsubscribe and HELP for assistance.",
+    MessageSamples: JSON.stringify([
+      `Hi Jordan — confirming your interior detail this Saturday at 3pm. Reply YES to confirm or STOP to opt out. — Gradia at ${shopName}`,
+      `Hi Sam, following up on the ceramic coating quote we sent over. Want us to hold a spot next week? Reply STOP to opt out. — Gradia at ${shopName}`,
+    ]),
+    HasEmbeddedLinks: "false",
+    HasEmbeddedPhone: "false",
+  }
+}
+
+/**
+ * Creates the campaign. Creating a Usa2p "submits the Campaign for review
+ * and incurs fees" (Twilio Usa2p docs) — callers must first look for an
+ * existing one with listCampaigns. Customer-care/mixed traffic at detailer
+ * volume fits the LOW_VOLUME use case.
  */
 export async function createCampaign(
   creds: TwilioCredentials,
@@ -398,15 +418,7 @@ export async function createCampaign(
     {
       BrandRegistrationSid: input.brandSid,
       UsAppToPersonUsecase: input.useCase ?? "LOW_VOLUME",
-      Description: `Customer care and appointment messaging for ${input.shopName}, an auto detailing business: quote follow-ups, booking confirmations, appointment reminders, and replies to customer questions. All recipients are existing customers or people who contacted the business first.`,
-      MessageFlow:
-        "Customers opt in by texting or calling the business first, or by providing their phone number when requesting a quote or booking an appointment (by phone, web form, or in person). Opt-in is confirmed in the first reply, and every message supports STOP to unsubscribe and HELP for assistance.",
-      "MessageSamples": JSON.stringify([
-        `Hi Jordan — confirming your interior detail this Saturday at 3pm. Reply YES to confirm or STOP to opt out. — Gradia at ${input.shopName}`,
-        `Hi Sam, following up on the ceramic coating quote we sent over. Want us to hold a spot next week? Reply STOP to opt out. — Gradia at ${input.shopName}`,
-      ]),
-      HasEmbeddedLinks: "false",
-      HasEmbeddedPhone: "false",
+      ...campaignContent(input.shopName),
       OptOutKeywords: JSON.stringify(["STOP"]),
       HelpKeywords: JSON.stringify(["HELP"]),
     }
@@ -414,8 +426,37 @@ export async function createCampaign(
   return { campaignSid: requireSid(campaign, "Usa2p campaign") }
 }
 
+/**
+ * Edits a FAILED campaign in place, which resubmits it for review. Twilio's
+ * guidance (errors 30899, 30901, 30909): edit the rejected campaign rather
+ * than delete and recreate it; the vetting fee is charged once per campaign.
+ * The update requires all seven fields below, even unchanged ones; the four
+ * booleans must match the original create. (Twilio documents campaign edit
+ * via API as a beta: an account without it refuses the call, which the
+ * caller records as a refusal instead of creating a second campaign.)
+ */
+export async function updateCampaign(
+  creds: TwilioCredentials,
+  input: { messagingServiceSid: string; campaignSid: string; shopName: string }
+): Promise<void> {
+  await call(
+    creds,
+    "POST",
+    `${MESSAGING_BASE}/Services/${input.messagingServiceSid}/Compliance/Usa2p/${input.campaignSid}`,
+    { ...campaignContent(input.shopName), AgeGated: "false", DirectLending: "false" }
+  )
+}
+
+/** Twilio's campaign_status, mapped explicitly. Anything but VERIFIED keeps texting closed. */
+export type CampaignState = "VERIFIED" | "FAILED" | "SUSPENDED" | "IN_PROGRESS" | "PENDING" | "UNKNOWN"
+
+function campaignState(raw: unknown): CampaignState {
+  const s = typeof raw === "string" ? raw.toUpperCase() : ""
+  return s === "VERIFIED" || s === "FAILED" || s === "SUSPENDED" || s === "IN_PROGRESS" || s === "PENDING" ? s : "UNKNOWN"
+}
+
 export type CampaignStatus = {
-  status: "VERIFIED" | "FAILED" | "PENDING"
+  status: CampaignState
   errors: string | null
 }
 
@@ -429,16 +470,36 @@ export async function getCampaignStatus(
     "GET",
     `${MESSAGING_BASE}/Services/${messagingServiceSid}/Compliance/Usa2p/${campaignSid}`
   )
-  const raw =
-    typeof campaign.campaign_status === "string"
-      ? campaign.campaign_status.toUpperCase()
-      : ""
-  const status =
-    raw === "VERIFIED" ? "VERIFIED" : raw === "FAILED" ? "FAILED" : "PENDING"
   return {
-    status,
+    status: campaignState(campaign.campaign_status),
     errors: campaign.errors ? JSON.stringify(campaign.errors).slice(0, 500) : null,
   }
+}
+
+export type ExistingCampaign = { campaignSid: string; brandSid: string | null; status: CampaignState }
+
+/**
+ * The campaigns already on a messaging service. Read before creating one, so
+ * a create whose response was lost is adopted instead of submitted (and
+ * billed) again.
+ */
+export async function listCampaigns(
+  creds: TwilioCredentials,
+  messagingServiceSid: string
+): Promise<ExistingCampaign[]> {
+  const page = await call(
+    creds,
+    "GET",
+    `${MESSAGING_BASE}/Services/${messagingServiceSid}/Compliance/Usa2p?PageSize=50`
+  )
+  const rows = Array.isArray(page.compliance) ? (page.compliance as Record<string, unknown>[]) : []
+  return rows
+    .filter((r) => typeof r.sid === "string")
+    .map((r) => ({
+      campaignSid: r.sid as string,
+      brandSid: typeof r.brand_registration_sid === "string" ? r.brand_registration_sid : null,
+      status: campaignState(r.campaign_status),
+    }))
 }
 
 /** Final step: the number joins the campaign's messaging service. */

@@ -1930,3 +1930,72 @@ Unavailable channel rows, owner confirm and withdraw, failed channel and
 own-number reads, a manager, and a revoked membership. Keyboard Tab, 390px,
 320px, and Chrome 200% zoom were run on that signed-in build. No provider
 call, shared migration, merge, or deploy.
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: review]
+A2P registration slice 1: single-flight and no duplicate campaigns. Fixes
+findings R1, R2, R3 and R5 of the October 19 Twilio review
+(`docs/release/TWILIO_REVIEW_AND_PROVIDER_CHECKLIST.md`). Built on PR #95
+(`6644e53`). The review's probes reproduced each finding on the old code.
+
+- R1, R2: submit and status check take the registration's claim with a
+  compare-and-swap lease (`a2p_claim_registration`, 15 minutes) before any
+  provider call. A caller that can't take it calls nothing. Checkpoints are
+  written only while the claim is held. `a2p_finish_registration` releases it
+  and writes the registration status and `shops.a2p_status` in one transaction.
+- R3: before creating a campaign, the messaging service's existing Usa2p
+  campaigns are listed, and one found there is adopted.
+- R5: a campaign-only rejection keeps the failed campaign and edits it in place
+  (Usa2p update, all seven required fields; Twilio errors 30899, 30901, 30909).
+  A refused edit is recorded; no second campaign is created.
+- Migration `20261019120000_a2p_registration_claim.sql`: two columns and two
+  functions executable by `service_role` only. Additive.
+- Regression tests: `a2p-registration-recovery.int.test.ts` (the probes, now
+  asserting the fix) and `twilio-a2p-campaign.test.ts` (wire contract with fetch
+  faked). The existing suite's campaign-resubmission test now expects the edit.
+
+Disposable `gradia-record-fresh` stack, reset from this branch's migrations.
+Node 22.23.2 isolated runner:
+
+- `a2p-registration-recovery` and `a2p-registration`: 14 of 14, first run.
+- Unit: 1,588 passed, 4 skipped. Lint, types and offline build passed.
+- Full `integration --fresh`: not completed. The stack stopped answering
+  partway (ECONNREFUSED, seed `createUser` failures) and the Docker daemon
+  stopped. Every failure was a connection or seed error, none an assertion.
+  Rerun once Docker is back.
+
+Limits: campaign edit via API is a Twilio beta; brand and campaign progress is
+still pulled only by status checks (R6); `MessageSamples` is sent as a JSON
+string in one form field, as before, to confirm on the first live run. No
+Twilio call, shared migration, merge or activation.
+
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: review]
+A2P registration slice 2: approved campaigns stay watched. Fixes findings R4
+and R7 of the October 19 Twilio review, stacked on slice 1.
+
+- R4: status checks keep re-reading `approved` and `suspended` registrations.
+  `campaign_status` is mapped explicitly. VERIFIED opens texting; SUSPENDED sets
+  `suspended`, FAILED `rejected`, and IN_PROGRESS, PENDING or anything unknown
+  `campaign_pending`. All of these close the gate. A suspended registration
+  can't be resubmitted; it reopens only when VERIFIED again.
+- R7: every status change writes the registration and `shops.a2p_status`
+  together (`a2p_finish_registration`). A verified check rewrites the gate,
+  repairing a shop left `pending` by the old two-statement write.
+- Migration `20261019140000_a2p_campaign_suspended.sql` widens both status
+  checks. Gate reason, readiness reason `registration_suspended`, onboarding
+  copy and the wizard say texting is paused and to contact support. Shown as
+  "Needs a correction", because the handoff vocabulary has no suspended label;
+  that wording is the release lane's call.
+- No scheduler or cron. A suspension is noticed on the next webhook or check
+  (R6).
+
+Disposable `gradia-record-fresh` stack, reset from this branch (main's 98
+migrations plus 20261019120000 and 20261019140000). Node 22.23.2 isolated runner:
+
+- `a2p-registration-recovery` and `a2p-registration`: 19 of 19, first run.
+- Full `integration --fresh`: 521 passed, 14 failed. The 14 failures are the
+  baseline the number-ownership session measured on main's schema on the same
+  stack (manager-notification 6, whisper-inbox 2, intake-identity 2,
+  intake-vehicle 2, lead-qualification 1, customer-merge 1). Every Twilio and
+  A2P file passed. This run covers slice 1's code too.
+- Unit: 1,591 passed, 4 skipped. Lint, types and offline build passed.
+
+No Twilio call, shared migration, merge or activation.

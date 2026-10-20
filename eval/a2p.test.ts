@@ -112,7 +112,7 @@ describe("the EIN fork — sole proprietors register without a tax ID", () => {
 
 describe("pipeline → gate transitions", () => {
   const number = "+16175550142"
-  const shopWith = (a2p_status: "unregistered" | "pending" | "approved" | "rejected") => ({
+  const shopWith = (a2p_status: "unregistered" | "pending" | "approved" | "rejected" | "suspended") => ({
     gradia_number_e164: number,
     a2p_status,
     byo_sms_verified: false,
@@ -127,5 +127,10 @@ describe("pipeline → gate transitions", () => {
   it("only approval — syncA2pStatus's terminal success — opens the gate", () => {
     expect(smsGateForShop(shopWith("approved"), number).allowed).toBe(true)
     expect(smsGateForShop(shopWith("rejected"), number).allowed).toBe(false)
+  })
+
+  it("a campaign suspended after approval closes the gate with its own reason", () => {
+    const gate = smsGateForShop(shopWith("suspended"), number)
+    expect(gate).toEqual({ allowed: false, reason: expect.stringContaining("suspended") })
   })
 })
