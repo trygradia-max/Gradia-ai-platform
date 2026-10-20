@@ -65,7 +65,7 @@ export type ShopRow = {
   updated_at: string
 }
 
-export type A2pStatus = "unregistered" | "pending" | "approved" | "rejected"
+export type A2pStatus = "unregistered" | "pending" | "approved" | "rejected" | "suspended"
 
 /**
  * Voice receptionist builder form answers (guardrailed form — never a
@@ -92,6 +92,8 @@ export type A2pRegistrationStatus =
   | "campaign_pending"
   | "approved"
   | "rejected"
+  /** Carriers suspended the campaign after approval; texting is closed and still re-checked. */
+  | "suspended"
 
 /** Owner-submitted compliance details, kept verbatim for resubmission.
  *  has_ein forks the carrier path: true → Low-Volume Standard;
@@ -133,6 +135,9 @@ export type A2pRegistrationRow = {
   retryable: boolean | null
   attempts: number
   last_attempt_at: string | null
+  /** Single-flight claim (migration 20261019120000); only its holder may write progress. */
+  claim_token: string | null
+  claimed_until: string | null
   created_at: string
   updated_at: string
 }

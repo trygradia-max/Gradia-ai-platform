@@ -9,7 +9,9 @@ const a2p = vi.hoisted(() => ({
   calls: [] as string[],
   fail: new Map<string, unknown>(),
   brand: "PENDING" as "PENDING" | "APPROVED" | "FAILED",
-  campaign: "PENDING" as "PENDING" | "VERIFIED" | "FAILED",
+  campaign: "PENDING" as "PENDING" | "IN_PROGRESS" | "VERIFIED" | "FAILED" | "SUSPENDED",
+  /** Campaigns that exist at the fake Twilio, per messaging service. */
+  onService: new Map<string, { campaignSid: string; brandSid: string }[]>(),
 }))
 vi.mock("@/lib/twilio-a2p", () => {
   let n = 0
@@ -27,7 +29,13 @@ vi.mock("@/lib/twilio-a2p", () => {
     createBrand: step("brand", () => ({ brandSid: sid("BN") })),
     createSoleProprietorBrand: step("brand", () => ({ brandSid: sid("BN") })),
     createMessagingService: step("messaging_service", () => ({ messagingServiceSid: sid("MG") })),
-    createCampaign: step("campaign", () => ({ campaignSid: sid("QE") })),
+    createCampaign: async (_c: unknown, input: { messagingServiceSid: string; brandSid: string }) => {
+      const { campaignSid } = await step("campaign", () => ({ campaignSid: sid("QE") }))()
+      a2p.onService.set(input.messagingServiceSid, [...(a2p.onService.get(input.messagingServiceSid) ?? []), { campaignSid, brandSid: input.brandSid }])
+      return { campaignSid }
+    },
+    listCampaigns: async (_c: unknown, mg: string) => (a2p.onService.get(mg) ?? []).map((c) => ({ ...c, status: a2p.campaign })),
+    updateCampaign: step("update_campaign", () => ({})),
     attachNumberToMessagingService: step("attach_number", () => ({})),
     getBrandStatus: async () => ({ status: a2p.brand, failureReason: a2p.brand === "FAILED" ? "Legal name does not match the EIN" : null }),
     getCampaignStatus: async () => ({ status: a2p.campaign, errors: a2p.campaign === "FAILED" ? "Sample messages missing opt-out" : null }),
@@ -71,7 +79,7 @@ describe.skipIf(!INTEGRATION)("resumable SMS (A2P) registration", () => {
     ;({ encryptSecret: encrypt } = await import("@/lib/crypto"))
     db = serviceClient()
   })
-  beforeEach(() => { a2p.calls.length = 0; a2p.fail.clear(); a2p.brand = "PENDING"; a2p.campaign = "PENDING" })
+  beforeEach(() => { a2p.calls.length = 0; a2p.fail.clear(); a2p.brand = "PENDING"; a2p.campaign = "PENDING"; a2p.onService.clear() })
   afterAll(async () => { for (const s of shops) await cleanup(db, s) })
 
   it("a temporary failure midway keeps finished steps; resubmitting the same details resumes without a second profile", async () => {
@@ -157,7 +165,7 @@ describe.skipIf(!INTEGRATION)("resumable SMS (A2P) registration", () => {
     expect((await reg(shop.id)).brand_sid).not.toBe(before.brand_sid)
   })
 
-  it("a rejected campaign keeps the approved brand and messaging service; resubmitting creates only a new campaign", async () => {
+  it("a rejected campaign keeps the approved brand, messaging service and campaign; resubmitting edits that campaign instead of creating one", async () => {
     const shop = await numberedShop()
     await start({ supabase: db, shop, business: business(), origin })
     a2p.brand = "APPROVED"
@@ -169,10 +177,26 @@ describe.skipIf(!INTEGRATION)("resumable SMS (A2P) registration", () => {
     a2p.calls.length = 0
     expect(await start({ supabase: db, shop, business: business(), origin })).toEqual({ ok: true })
     expect(a2p.calls).toEqual([])
-    expect(await reg(shop.id)).toMatchObject({ status: "brand_pending", brand_sid: pending.brand_sid, campaign_sid: null, attempts: 2 })
-    a2p.campaign = "PENDING"
+    expect(await reg(shop.id)).toMatchObject({ status: "brand_pending", brand_sid: pending.brand_sid, campaign_sid: pending.campaign_sid, attempts: 2 })
+    expect(await shopStatus(shop.id)).toBe("pending")
     expect((await sync({ supabase: db, shop, origin })).status).toBe("campaign_pending")
-    expect(a2p.calls).toEqual(["campaign"])
-    expect((await reg(shop.id)).messaging_service_sid).toBe(pending.messaging_service_sid)
+    expect(a2p.calls).toEqual(["update_campaign"])
+    expect(await reg(shop.id)).toMatchObject({ messaging_service_sid: pending.messaging_service_sid, campaign_sid: pending.campaign_sid })
+  })
+
+  it("Twilio refusing the campaign edit is recorded, and no second campaign is created", async () => {
+    const shop = await numberedShop()
+    await start({ supabase: db, shop, business: business(), origin })
+    a2p.brand = "APPROVED"
+    await sync({ supabase: db, shop, origin })
+    a2p.campaign = "FAILED"
+    await sync({ supabase: db, shop, origin })
+    await start({ supabase: db, shop, business: business(), origin })
+    a2p.calls.length = 0
+    a2p.fail.set("update_campaign", refused("Campaign edits are not enabled for this account"))
+    expect(await sync({ supabase: db, shop, origin })).toEqual({ status: "brand_pending", failureReason: "Campaign edits are not enabled for this account" })
+    expect(a2p.calls).toEqual(["update_campaign"])
+    expect(await reg(shop.id)).toMatchObject({ status: "brand_pending", failed_step: "campaign", retryable: false })
+    expect(await shopStatus(shop.id)).toBe("pending")
   })
 })

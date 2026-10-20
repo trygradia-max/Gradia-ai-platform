@@ -50,6 +50,39 @@ describe.each(["production", "private review"])("%s authentication callback", mo
 })
 
 
+describe("local dashboard origin", () => {
+  beforeEach(() => {
+    vi.stubEnv("VERCEL", "")
+    vi.stubEnv("GRADIA_PRIVATE_REVIEW_AUTH", "")
+  })
+  it("stays on a configured loopback origin and ignores request headers", async () => {
+    vi.stubEnv("GRADIA_DASHBOARD_URL", "http://127.0.0.1:3000/dashboard")
+    const url = new URL("http://127.0.0.1:3000/auth/callback?code=synthetic-exchange-code&next=%2Fonboarding")
+    const response = await GET(new Request(url, {
+      headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "x-forwarded-host": "evil.example" },
+    }))
+    expect(response.headers.get("location")).toBe("http://127.0.0.1:3000/onboarding")
+    expect(mocks.exchange).toHaveBeenCalledExactlyOnceWith("synthetic-exchange-code")
+  })
+  it("accepts localhost and drops a path on the configured URL", async () => {
+    vi.stubEnv("GRADIA_DASHBOARD_URL", "http://localhost:3000/dashboard")
+    expect(await redirect("/customers")).toBe("http://localhost:3000/customers")
+  })
+  it("keeps an external next path on the loopback origin", async () => {
+    vi.stubEnv("GRADIA_DASHBOARD_URL", "http://127.0.0.1:3000")
+    expect(await redirect("https://evil.example/phish")).toBe("http://127.0.0.1:3000/dashboard")
+  })
+  it("keeps a non-loopback dashboard URL on the production origin", async () => {
+    vi.stubEnv("GRADIA_DASHBOARD_URL", "https://evil.example/dashboard")
+    expect(await redirect("/onboarding")).toBe(productionOrigin + "/onboarding")
+  })
+  it("does not let a loopback dashboard URL override a Vercel deployment", async () => {
+    vi.stubEnv("VERCEL", "1")
+    vi.stubEnv("GRADIA_DASHBOARD_URL", "http://127.0.0.1:3000")
+    expect(await redirect("/onboarding")).toBe(productionOrigin + "/onboarding")
+  })
+})
+
 describe("private review configuration", () => {
   it.each([
     "", "external.example", "gradia-ai-platform.vercel.app",

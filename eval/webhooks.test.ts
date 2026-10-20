@@ -1241,6 +1241,8 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
       data: interactionRow(SUB_SHOP_ID),
       error: null,
     }
+    // The conditional status update matched one row.
+    fakeDb.ops.interactions = { update: { data: [{ id: "int-out-1" }], error: null } }
   })
 
   it("subaccount shop: a callback signed with the SUBACCOUNT token verifies and records the status (the case that shipped broken)", async () => {
@@ -1451,17 +1453,57 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
     expect(updateCalls()).toHaveLength(1) // attempted, refused, surfaced
   })
 
-  it("replaying the identical callback is harmless — same terminal metadata both times", async () => {
+  it("replaying the identical callback is harmless — the second is a no-op", async () => {
     const first = await post({ shop: SUB_SHOP_ID })
-    const second = await post({ shop: SUB_SHOP_ID })
     expect(first.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+    fakeDb.tables.interactions = {
+      data: { ...interactionRow(SUB_SHOP_ID), metadata: updatedMetadata(0) },
+      error: null,
+    }
+    const second = await post({ shop: SUB_SHOP_ID })
     expect(second.status).toBe(200)
-    expect(updateCalls()).toHaveLength(2)
-    const a = { ...updatedMetadata(0) }
-    const b = { ...updatedMetadata(1) }
-    delete a.twilio_status_updated_at
-    delete b.twilio_status_updated_at
-    expect(b).toEqual(a)
+    expect(updateCalls()).toHaveLength(1)
+  })
+
+  it("a late 'sent' after 'delivered' never moves the status back (I5)", async () => {
+    fakeDb.tables.interactions = {
+      data: { ...interactionRow(SUB_SHOP_ID), metadata: { twilio_message_sid: SID, twilio_status: "delivered" } },
+      error: null,
+    }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageStatus: "sent" }) })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(0)
+  })
+
+  it("a failure after 'delivered' keeps 'delivered' and records the conflicting outcome (I5)", async () => {
+    fakeDb.tables.interactions = {
+      data: { ...interactionRow(SUB_SHOP_ID), metadata: { twilio_message_sid: SID, twilio_status: "delivered" } },
+      error: null,
+    }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageStatus: "failed", ErrorCode: "30008" }) })
+    expect(res.status).toBe(200)
+    expect(updateCalls()).toHaveLength(1)
+    expect(updatedMetadata().twilio_status).toBe("delivered")
+    expect(updatedMetadata().twilio_status_conflict).toMatchObject({ status: "failed", error_code: "30008" })
+  })
+
+  it("the update is a compare-and-swap on the status it read (I5)", async () => {
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(200)
+    const update = fakeDb.calls.findIndex((c) => c.table === "interactions" && c.method === "update")
+    expect(
+      fakeDb.calls.slice(update).some(
+        (c) => c.method === "eq" && c.args[0] === "metadata->>twilio_status" && c.args[1] === "sent"
+      )
+    ).toBe(true)
+  })
+
+  it("a status that keeps changing under the swap returns 5xx after three tries so Twilio retries (I5)", async () => {
+    fakeDb.ops.interactions = { update: { data: [], error: null } }
+    const res = await post({ shop: SUB_SHOP_ID })
+    expect(res.status).toBe(500)
+    expect(updateCalls()).toHaveLength(3)
   })
 
   it("terminal failure statuses record the ErrorCode", async () => {
