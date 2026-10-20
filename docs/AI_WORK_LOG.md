@@ -2027,3 +2027,12 @@ and in `CHANNEL_PROVIDERS.md`. Review probe R5 is now a regression test. No
 migration, provider calls, sends, merge or deploy. Existing rows are not
 backfilled.
 Unit 135 files, lint, types and build pass. integration --fresh on the disposable stack: 512 passed, 14 failed. Those 14 are the main-schema baseline in 6 non-Twilio files; every Twilio suite passes.
+
+[AI: codex] [DATE: 2026-10-20] [AREA: platform] [STATUS: review]
+Combined #96/#97/#98/#99/#100 in an isolated branch; preserved both appended work
+logs and all conflicting tests. Reviewed trusted auth origin, registration leases,
+atomic status checkpoints, number adoption/isolation and delivery conflicts.
+See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
+remaining activation blockers and three-migration upgrade gate. No experimental
+employee work included. Final combined CI is required before merge/deployment;
+no provider activation, live calls or write unfreeze is authorized by this review.
