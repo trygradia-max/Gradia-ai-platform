@@ -2036,3 +2036,13 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: in-progress]
+Onboarding copy and skippable welcome transition on
+`cursor/onboarding-welcome-copy-fdbe`. Help step asks “What would you like
+help with first?” Finish setup opens `/dashboard?welcome=1` with
+“Welcome to Gradia, [business name].” Continue is immediate — no timer,
+progress bar, or “everything is connected.” Particles respect reduced
+motion. Handoff recorded in `docs/handoffs/CURSOR_UI_COPY_AND_MOTION_2026-10-20.md`.
+Did not change dashboard review copy, inbox empty states, public pages,
+actions, or send behavior. No merge or deploy.
