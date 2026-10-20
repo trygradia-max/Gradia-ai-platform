@@ -130,6 +130,9 @@ export type A2pRegistrationRow = {
   retryable: boolean | null
   attempts: number
   last_attempt_at: string | null
+  /** Single-flight claim (migration 20261019120000); only its holder may write progress. */
+  claim_token: string | null
+  claimed_until: string | null
   created_at: string
   updated_at: string
 }

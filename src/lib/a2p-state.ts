@@ -10,7 +10,7 @@ import type { A2pRegistrationRow, A2pRegistrationStep } from "@/lib/types/databa
  *                     the same details continues after the last completed step
  *   fix_and_resubmit  carriers or Twilio refused the details; edit, then submit
  *   resubmit_campaign carriers rejected only the campaign; the approved brand is
- *                     kept and a new campaign is created on resubmit
+ *                     kept and the failed campaign is edited and resubmitted
  *   wait              with carriers; check status (a temporary problem in a
  *                     later step is retried automatically on the next check)
  *   none              approved: texting is open
