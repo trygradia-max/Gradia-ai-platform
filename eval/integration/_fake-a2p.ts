@@ -18,13 +18,16 @@ export const fake = {
   campaign: "PENDING" as Campaign,
   /** Campaigns that exist at the fake Twilio, per messaging service. */
   onService: new Map<string, { campaignSid: string; brandSid: string }[]>(),
+  /** Brands and messaging services that exist at the fake Twilio, per subaccount. */
+  brands: [] as { accountSid: string; brandSid: string; customerProfileSid: string; trustProductSid: string }[],
+  services: [] as { accountSid: string; messagingServiceSid: string; inboundRequestUrl: string }[],
   /** Fail every call made with this subaccount, until cleared (one tenant's outage). */
   failAccount: new Map<string, unknown>(),
   /** Credentials each call was made with (tenant isolation checks). */
   accounts: [] as { step: string; accountSid: string }[],
   reset() {
     this.calls.length = 0; this.fail.clear(); this.lost.clear(); this.slow.clear(); this.onService.clear()
-    this.accounts.length = 0; this.failAccount.clear(); this.delay = 0; this.brand = "PENDING"; this.campaign = "PENDING"
+    this.accounts.length = 0; this.failAccount.clear(); this.brands.length = 0; this.services.length = 0; this.delay = 0; this.brand = "PENDING"; this.campaign = "PENDING"
   },
   count(step: string) { return this.calls.filter((c) => c === step).length },
 }
@@ -48,14 +51,30 @@ async function run<T>(step: string, creds: unknown, make: () => T): Promise<T> {
   return result
 }
 
+const account = (c: unknown) => (c as { accountSid?: string } | null)?.accountSid ?? ""
+function makeBrand(c: unknown, input: { customerProfileSid: string; trustProductSid: string }) {
+  const brandSid = sid("BN")
+  fake.brands.push({ accountSid: account(c), brandSid, customerProfileSid: input.customerProfileSid, trustProductSid: input.trustProductSid })
+  return { brandSid }
+}
+
 export function fakeA2pModule() {
   return {
     registerBusinessProfile: (c: unknown) => run("profile", c, () => ({ customerProfileSid: sid("BU") })),
     registerA2pTrustProduct: (c: unknown) => run("trust_product", c, () => ({ trustProductSid: sid("BU") })),
     registerSoleProprietorProfile: (c: unknown) => run("profile", c, () => ({ customerProfileSid: sid("BU"), trustProductSid: sid("BU") })),
-    createBrand: (c: unknown) => run("brand", c, () => ({ brandSid: sid("BN") })),
-    createSoleProprietorBrand: (c: unknown) => run("brand", c, () => ({ brandSid: sid("BN") })),
-    createMessagingService: (c: unknown) => run("messaging_service", c, () => ({ messagingServiceSid: sid("MG") })),
+    createBrand: (c: unknown, input: { customerProfileSid: string; trustProductSid: string }) => run("brand", c, () => makeBrand(c, input)),
+    createSoleProprietorBrand: (c: unknown, input: { customerProfileSid: string; trustProductSid: string }) => run("brand", c, () => makeBrand(c, input)),
+    listBrandRegistrations: (c: unknown) =>
+      run("list_brands", c, () => fake.brands.filter((b) => b.accountSid === account(c)).map(({ accountSid: _a, ...b }) => ({ ...b, status: fake.brand }))),
+    createMessagingService: (c: unknown, input: { inboundSmsUrl: string }) =>
+      run("messaging_service", c, () => {
+        const messagingServiceSid = sid("MG")
+        fake.services.push({ accountSid: account(c), messagingServiceSid, inboundRequestUrl: input.inboundSmsUrl })
+        return { messagingServiceSid }
+      }),
+    listMessagingServices: (c: unknown) =>
+      run("list_services", c, () => fake.services.filter((x) => x.accountSid === account(c)).map(({ accountSid: _a, ...x }) => x)),
     createCampaign: (c: unknown, input: { messagingServiceSid: string; brandSid: string }) =>
       run("campaign", c, () => {
         const campaignSid = sid("QE")
