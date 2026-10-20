@@ -2015,3 +2015,15 @@ Added a cross-business inbound-isolation integration suite and a read-only
 preflight, `scripts/preflight-twilio-number-ownership.sql`. No provider
 calls, sends, shared migrations, activation, merge or deploy.
 Unit 135 files, lint, types and build pass. integration --fresh on the disposable stack: 527 passed, 14 failed. Those 14 also fail on main's schema in 6 non-Twilio files; every Twilio suite passes.
+[AI: claude-code] [DATE: 2026-10-19] [AREA: platform] [STATUS: done]
+Twilio review slice 4, delivery status (finding I5), on
+`claude/twilio-delivery-status` from main after #95. The status callback
+now only moves `twilio_status` forward (queued < sent <
+delivered/undelivered/failed), with a compare-and-swap on the status it
+read. When terminal outcomes conflict (delivered vs undelivered/failed, in
+either order), the first one stored is kept. The later one goes to
+`metadata.twilio_status_conflict` for review, as documented in the route
+and in `CHANNEL_PROVIDERS.md`. Review probe R5 is now a regression test. No
+migration, provider calls, sends, merge or deploy. Existing rows are not
+backfilled.
+Unit 135 files, lint, types and build pass. integration --fresh on the disposable stack: 512 passed, 14 failed. Those 14 are the main-schema baseline in 6 non-Twilio files; every Twilio suite passes.

@@ -170,3 +170,40 @@ is saved.
 - `MessageSamples` and the keyword lists are sent as a JSON string inside one
   form field, as before. Twilio's form encoding repeats the key per array item;
   confirm this on the first live registration.
+  webhook was added.
+
+## SMS delivery status (review finding I5)
+
+Twilio posts each outbound message's status to `/api/twilio/sms/status`
+(`?shop=` inside the signed URL). It doesn't guarantee the order of those
+callbacks, so `interactions.metadata.twilio_status` only moves forward:
+
+| Rank | Statuses |
+| --- | --- |
+| 0 | `accepted`, `scheduled` |
+| 1 | `queued` |
+| 2 | `sending` |
+| 3 | `sent` |
+| 4 (terminal) | `delivered`, `undelivered`, `failed`, `canceled` |
+| 5 | `read` (only after `delivered`) |
+
+- A status of lower or equal rank never replaces the stored one. A late
+  `sent` after `delivered` is ignored, and a replay is a no-op.
+- The write is a compare-and-swap on the status the handler read. If
+  another callback changed it first, the handler re-reads and decides
+  again; after three lost swaps it returns 5xx so Twilio retries.
+- An unknown status never replaces a known one.
+
+**Conflicting terminal outcomes.** `delivered` (or `read`) and
+`undelivered`/`failed`/`canceled` can both arrive for one message, in either
+order. Callbacks carry no event time, so arrival order can't say which is
+true. The first terminal outcome stored stays as `twilio_status` (with its
+`twilio_error_code`). The later one doesn't replace it. It is written to
+`metadata.twilio_status_conflict` as `{status, error_code, received_at}` and
+logged as a warning, so the disagreement can be checked against Twilio's
+message log. Two terminal failures (for example `undelivered` then `failed`)
+aren't a conflict: the first one stays and the second is ignored.
+
+**Limits.** Rows stored before this change aren't backfilled. A message
+whose callbacks all arrive before the send path records the interaction
+keeps the status from the send response until a later callback arrives.
