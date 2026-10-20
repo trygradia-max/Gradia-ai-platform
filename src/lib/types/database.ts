@@ -144,6 +144,9 @@ export type A2pRegistrationRow = {
   /** Last check the provider didn't answer usably, and why. */
   last_check_failed_at: string | null
   last_check_failure_kind: "provider_unreachable" | "provider_error" | null
+  /** Held reconciler schedule (migration 20261020110000). */
+  next_check_at: string | null
+  check_failures: number
   created_at: string
   updated_at: string
 }

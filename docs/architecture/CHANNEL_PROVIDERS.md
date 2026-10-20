@@ -144,6 +144,28 @@ registration. Twilio's `campaign_status` is mapped explicitly:
 - Readiness reports an approved shop with stale evidence as `in_progress`, with
   reason `registration_check_overdue`.
 
+**Held status reconciler** (October 20; migration
+`20261020110000_a2p_status_reconciler.sql`; `src/lib/a2p-reconciler.ts`;
+route `GET /api/internal/a2p-reconcile`)
+
+- It refreshes registrations in `brand_pending`, `campaign_pending`, `approved`
+  or `suspended` without a click. It takes them oldest `next_check_at` first,
+  at most `A2P_RECONCILE_BATCH` per run (default 25, never more than 100).
+- **Held.** It's off unless `A2P_RECONCILER_ENABLED=true`, and off it reads
+  nothing. The route sits outside `/api/cron`: it isn't in `vercel.json` or the
+  cron registry, and nothing calls it. Auth is the cron bearer `CRON_SECRET`.
+- Each refresh is `syncA2pStatus`: the registration's claim, then that shop's
+  own subaccount credentials. Two concurrent runs never call the provider twice
+  for one shop. A run that loses the claim leaves that shop's schedule alone.
+- **Schedule.** After a successful check: 1 hour for pending registrations, 6
+  hours for approved or suspended ones. After a failed check: 5 minutes,
+  doubling per consecutive failure, capped at 6 hours. Every interval and the
+  cap are at most a quarter of the evidence maximum age, so a reconciler
+  scheduled at least that often gets several tries to renew evidence before the
+  gate closes as "check overdue". UI polling is then not the only safety net.
+- A registration with nothing to read (no brand SID yet) is pushed back by the
+  settled interval, so it can't fill every batch.
+
 **What a resubmission does**
 
 | Situation | Effect |

@@ -18,11 +18,13 @@ export const fake = {
   campaign: "PENDING" as Campaign,
   /** Campaigns that exist at the fake Twilio, per messaging service. */
   onService: new Map<string, { campaignSid: string; brandSid: string }[]>(),
+  /** Fail every call made with this subaccount, until cleared (one tenant's outage). */
+  failAccount: new Map<string, unknown>(),
   /** Credentials each call was made with (tenant isolation checks). */
   accounts: [] as { step: string; accountSid: string }[],
   reset() {
     this.calls.length = 0; this.fail.clear(); this.lost.clear(); this.slow.clear(); this.onService.clear()
-    this.accounts.length = 0; this.delay = 0; this.brand = "PENDING"; this.campaign = "PENDING"
+    this.accounts.length = 0; this.failAccount.clear(); this.delay = 0; this.brand = "PENDING"; this.campaign = "PENDING"
   },
   count(step: string) { return this.calls.filter((c) => c === step).length },
 }
@@ -36,6 +38,8 @@ async function run<T>(step: string, creds: unknown, make: () => T): Promise<T> {
   if (accountSid) fake.accounts.push({ step, accountSid })
   const wait = fake.slow.get(step) ?? fake.delay
   if (wait) await new Promise((r) => setTimeout(r, wait))
+  const down = accountSid ? fake.failAccount.get(accountSid) : undefined
+  if (down) throw down
   const failure = fake.fail.get(step)
   if (failure) { fake.fail.delete(step); throw failure }
   const result = make()
