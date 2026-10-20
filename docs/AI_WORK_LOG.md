@@ -2036,3 +2036,11 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Dashboard review copy on `cursor/dashboard-review-copy-fdbe`. Home and
+Approvals now say “3 replies need your review.” with a real count, or
+“Nothing needs your review.” when the queue is empty. Channel line is
+always “N of M channels connected” — it no longer says all channels are
+live. Did not change onboarding, inbox, public pages, actions, or send
+behavior. No merge or deploy.
