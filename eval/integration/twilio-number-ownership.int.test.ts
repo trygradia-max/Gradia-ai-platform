@@ -73,6 +73,11 @@ async function fakeTwilio(input: string | URL | Request, init?: RequestInit): Pr
     return json(n, 201)
   }
   const pn = url.pathname.match(/\/IncomingPhoneNumbers\/(PN[0-9a-f]{32})\.json$/)?.[1]
+  if (account && pn && method === "POST") {
+    // Webhook update (SmsUrl), used when an adopted number is re-pointed.
+    const n = twilio.numbers.get(pn)
+    return n && n.account === account ? json(n) : json({ message: "not found" }, 404)
+  }
   if (account && pn && method === "DELETE") {
     if (twilio.numbers.get(pn)?.account !== account) return json({ message: "not found" }, 404)
     twilio.numbers.delete(pn)

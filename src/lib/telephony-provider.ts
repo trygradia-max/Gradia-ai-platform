@@ -31,6 +31,7 @@ import {
   fetchSubaccount,
   listIncomingPhoneNumbers,
   listSubaccountsByFriendlyName,
+  setNumberSmsWebhook,
   defaultStatusCallbackUrl,
   provisionPhoneNumber,
   releasePhoneNumber,
@@ -414,6 +415,18 @@ async function purchaseUnderClaim(
         console.error("[telephony] purchase failed:", err)
         return { ok: false, error: message }
       }
+    }
+  }
+
+  if (adopted) {
+    // An adopted number's routing isn't known: point inbound back at Gradia
+    // before storing it. If that fails it stays on the subaccount, unmetered,
+    // and the retry adopts it again.
+    try {
+      await setNumberSmsWebhook({ sid: number.sid, smsUrl: `${origin}/api/twilio/sms`, creds })
+    } catch (err) {
+      console.error(`[telephony] couldn't re-point adopted number ${number.sid} for shop ${shop.id}:`, err)
+      return { ok: false, error: "Couldn't finish setting up the number. Try again; you won't be charged twice." }
     }
   }
 

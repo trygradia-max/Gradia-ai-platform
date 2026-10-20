@@ -213,6 +213,7 @@ describe.skipIf(!INTEGRATION)("purchase: a provisioning call still in flight", (
     // A stray number on the shop's subaccount, as a failed duplicate release leaves it.
     fake.addNumber(sub, e164())
     expect(await buy(s)).toMatchObject({ ok: true }) // adopts the stray (one number on the subaccount)
+    expect(fake.onAccount(sub)[0].sms_url).toBe("https://gradia.test/api/twilio/sms") // routing re-pointed on adoption
     fake.addNumber(sub, e164()) // and another stray appears later
     expect(await actions.releaseTwilioNumber()).toEqual({ ok: true })
     expect(fake.onAccount(sub)).toHaveLength(0)
