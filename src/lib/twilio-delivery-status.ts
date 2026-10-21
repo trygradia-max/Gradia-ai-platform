@@ -56,3 +56,34 @@ export function conflictingTerminalOutcome(current: string | null, next: string)
   if (from === null || to === null || from < 4 || to < 4) return false
   return FAILED_OUTCOMES.has(current!.toLowerCase()) !== FAILED_OUTCOMES.has(next.toLowerCase())
 }
+
+export type SmsDeliveryState =
+  | { state: "conflicting"; recorded: string; conflict: string; errorCode: string | null; conflictErrorCode: string | null }
+  | { state: "delivered" | "failed" | "sent" | "queued" | "unknown"; errorCode: string | null }
+
+/**
+ * What an outbound SMS's delivery metadata may truthfully say. A message
+ * with a recorded conflicting terminal outcome (metadata.twilio_status_conflict)
+ * is "conflicting", never "delivered" or "failed" on its own: show both
+ * outcomes, and point to the delivery review (list_delivery_conflicts).
+ */
+export function smsDeliveryState(metadata: Record<string, unknown> | null | undefined): SmsDeliveryState {
+  const meta = metadata ?? {}
+  const status = typeof meta.twilio_status === "string" ? meta.twilio_status.toLowerCase() : ""
+  const errorCode = meta.twilio_error_code != null ? String(meta.twilio_error_code) : null
+  const conflict = meta.twilio_status_conflict as { status?: unknown; error_code?: unknown } | undefined
+  if (conflict && typeof conflict === "object" && typeof conflict.status === "string") {
+    return {
+      state: "conflicting",
+      recorded: status || "unknown",
+      conflict: conflict.status.toLowerCase(),
+      errorCode,
+      conflictErrorCode: conflict.error_code != null ? String(conflict.error_code) : null,
+    }
+  }
+  if (status === "delivered" || status === "read") return { state: "delivered", errorCode }
+  if (FAILED_OUTCOMES.has(status)) return { state: "failed", errorCode }
+  if (status === "sent" || status === "sending") return { state: "sent", errorCode }
+  if (status === "queued" || status === "accepted" || status === "scheduled") return { state: "queued", errorCode }
+  return { state: "unknown", errorCode }
+}
