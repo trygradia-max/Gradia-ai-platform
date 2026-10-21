@@ -2036,3 +2036,13 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: codex] [DATE: 2026-10-21] [AREA: operations] [STATUS: foundation]
+Recorded the approved operations OS roadmap, lane ownership, release boundaries and
+exact continuation steps in docs/roadmap/AGENTIC_OS_EXECUTION_PLAN.md. Added a pure,
+unused pending-action queue projection: mixed-shop input fails closed; missing claim
+evidence and terminal delivery conflicts remain unresolved; counts describe only the
+loaded window; no payloads or execution paths. Not yet connected to an authorized
+loader or UI. No migration/provider/shared-state changes. Isolated Node 22: 1,622 unit
+passed, 4 skipped; full lint, types, offline build passed. Database integration is
+still required when the authorized loader is added, and for the separate release batch.
