@@ -1,6 +1,5 @@
 import { readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-// @ts-expect-error -- plain ESM script module, no type declarations
 import { TEST_FIXTURES } from "../scripts/test-fixtures.mjs"
 
 describe("disposable test fixtures", () => {
