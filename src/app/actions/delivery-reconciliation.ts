@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireUser } from '@/lib/shop'
 import { createClient } from '@/lib/supabase/server'
-import { reconciliationCommandSchema } from '@/lib/delivery-reconciliation'
+import { conflictResolutionCommandSchema, reconciliationCommandSchema } from '@/lib/delivery-reconciliation'
 
 export async function recordDeliveryReconciliation(input: unknown): Promise<{ok: boolean; message: string}> {
   const parsed = reconciliationCommandSchema.safeParse(input)
@@ -18,6 +18,27 @@ export async function recordDeliveryReconciliation(input: unknown): Promise<{ok:
     revalidatePath(`/approvals/${c.actionId}`)
     revalidatePath('/team/delivery-reviews')
     return {ok: true, message: 'Review recorded. Nothing was sent and sending authority remains consumed.'}
+  } catch {
+    return {ok: false, message: 'Result uncertain. Refresh and check history before recording another review.'}
+  }
+}
+
+/** Records a human assessment of a message with conflicting delivery
+ *  results. Evidence only: the message, its holds and sending authority are
+ *  never changed, and nothing is sent. */
+export async function recordDeliveryConflictResolution(input: unknown): Promise<{ok: boolean; message: string}> {
+  const parsed = conflictResolutionCommandSchema.safeParse(input)
+  if (!parsed.success) return {ok: false, message: 'Choose a review outcome and add 10–2,000 characters of evidence notes.'}
+  await requireUser()
+  const db = await createClient(), c = parsed.data
+  try {
+    const {data, error} = await db.rpc('record_delivery_conflict_resolution', {
+      p_shop: c.shopId, p_interaction: c.interactionId, p_command: c.commandId,
+      p_revision: c.revision, p_conflict_received_at: c.conflictReceivedAt, p_outcome: c.outcome, p_note: c.note,
+    })
+    if (error || data !== c.commandId) return {ok: false, message: 'Review not confirmed. Refresh: the delivery evidence, review history or your access may have changed.'}
+    revalidatePath('/team/delivery-reviews')
+    return {ok: true, message: 'Review recorded. The delivery evidence is kept as it was and nothing was sent.'}
   } catch {
     return {ok: false, message: 'Result uncertain. Refresh and check history before recording another review.'}
   }
