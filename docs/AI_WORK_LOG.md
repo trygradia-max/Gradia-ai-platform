@@ -2091,3 +2091,50 @@ authority, on `claude/sms-delivery-conflict-review` from main `6d4c235`.
 
 Full integration with the test fixtures: 565 passed, 0 failed. No sends,
 shared DB, merge or deploy.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: review]
+PR3, delivery lifecycle acceptance:
+`eval/integration/delivery-lifecycle-acceptance.int.test.ts`. One business's
+message runs end to end on the real disposable database:
+
+1. intake;
+2. qualification;
+3. an owner-queued question with reply purpose;
+4. manager or owner approval, sending exactly once;
+5. a signed terminal callback arriving **before** the interaction is saved (kept
+   and applied, #113);
+6. a failed delivery, never resent;
+7. cross-business signer misuse refused;
+8. an uncertain send held across owner, manager and service retries, with no
+   replacement queued;
+9. contradictory delivered and undelivered results shown as `conflicting` on the
+   delivery-review surface and resolved by the manager, with the revoked member
+   refused (#114);
+10. a STOP through the signed inbound route holding a queued send with zero
+    transport.
+
+Real: interactions, the SMS gate, the status and inbound routes, consent
+keywords, approvals and delegated review. Faked: Twilio transport, the
+classifier and drafter, and embeddings. No poller, reconciler or provider is
+activated.
+
+One wrong expectation was fixed in the test, not the product: after an
+executed approval, a manager approval correctly returns `already_decided` and
+sends nothing.
+
+Cursor handoff: `docs/architecture/CURSOR_DELIVERY_STATUS_HANDOFF.md`. It
+covers the actual delivery, review, conflict and readiness states with their
+conditions, and flags `interaction-timeline.tsx` showing Delivered for a
+conflicted text.
+
+Depends on #112 (fixtures), #113 and #114.
+
+Results:
+
+- Lifecycle suite: 5 of 5, twice.
+- Full integration `--fresh` with fixtures: 56 of 56 files, 579 passed,
+  1 todo, 0 failed.
+- Unit: 1,619 passed, 4 skipped.
+- Lint, offline build, and types after the build passed.
+
+No migration of its own, provider call, shared database change or send.
