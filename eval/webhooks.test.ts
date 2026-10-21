@@ -138,7 +138,7 @@ const fakeDb = {
   client() {
     return {
       rpc: async (name:string,args:unknown) => {
-        if(name!=="record_sms_keyword") throw new Error("Unexpected RPC")
+        if(name!=="record_sms_keyword"&&name!=="record_sms_status_evidence") throw new Error("Unexpected RPC")
         fakeDb.calls.push({table:name,method:"rpc",args:[args]})
         return fakeDb.tables[name] ?? {data:null,error:null}
       },
@@ -1435,6 +1435,41 @@ describe("Twilio SMS status callback route — subaccount credential repair (P0-
     expect(res.status).toBe(200)
     expect(await res.text()).toContain("<Response></Response>")
     expect(updateCalls()).toHaveLength(0)
+  })
+
+  const TWILIO_SID = "SM" + "a".repeat(32)
+  const evidenceCalls = () => fakeDb.calls.filter((c) => c.table === "record_sms_status_evidence")
+
+  it("a callback before the interaction exists is kept as shop-scoped evidence, never written to interactions", async () => {
+    fakeDb.tables.interactions = { data: null, error: null }
+    fakeDb.tables.record_sms_status_evidence = { data: "stored", error: null }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageSid: TWILIO_SID, MessageStatus: "Delivered", ErrorCode: "" }) })
+    expect(res.status).toBe(200)
+    expect(evidenceCalls()).toHaveLength(1)
+    expect(evidenceCalls()[0].args[0]).toEqual({ p_shop: SUB_SHOP_ID, p_sid: TWILIO_SID, p_status: "delivered", p_error: null })
+    expect(updateCalls()).toHaveLength(0)
+  })
+
+  it("if storing that evidence fails, 5xx so Twilio retries — the only copy is never dropped", async () => {
+    fakeDb.tables.interactions = { data: null, error: null }
+    fakeDb.tables.record_sms_status_evidence = { data: null, error: { message: "pg down" } }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageSid: TWILIO_SID }) })
+    expect(res.status).toBe(500)
+  })
+
+  it("an interaction inserted meanwhile sends the route back to apply the status; if it never appears, 5xx", async () => {
+    fakeDb.tables.interactions = { data: null, error: null }
+    fakeDb.tables.record_sms_status_evidence = { data: "interaction_exists", error: null }
+    const res = await post({ shop: SUB_SHOP_ID, form: makeForm({ MessageSid: TWILIO_SID }) })
+    expect(res.status).toBe(500)
+    expect(evidenceCalls()).toHaveLength(3)
+  })
+
+  it("no evidence for a legacy URL without ?shop= or a SID that isn't Twilio-shaped", async () => {
+    fakeDb.tables.interactions = { data: null, error: null }
+    expect((await post({ token: SECRETS.TWILIO_AUTH_TOKEN, form: makeForm({ MessageSid: TWILIO_SID }) })).status).toBe(200)
+    expect((await post({ shop: SUB_SHOP_ID })).status).toBe(200) // SID "SM_p0008_test"
+    expect(evidenceCalls()).toHaveLength(0)
   })
 
   it("interaction lookup failure returns 5xx so Twilio retries (replay-safe)", async () => {
