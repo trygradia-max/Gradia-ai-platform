@@ -2036,3 +2036,27 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: review]
+Diagnosed the "14 baseline" local integration failures, in the same six files
+every run (manager-notification 6, whisper-inbox 2, intake-identity 2,
+intake-vehicle 2, lead-qualification 1, customer-merge 1). They weren't defects.
+
+CI's `scripts/test-stack.mjs` applies five test-only SQL fixtures from
+`tests/sql/` after every reset: injected failures and a notification clock. The
+local `gradia-record-fresh` procedure (`supabase db reset` directly) never
+applied them. Missing helpers surfaced as `PGRST202`, for example
+`test_notification_clock`.
+
+Fix:
+
+- The fixture list is now shared (`scripts/test-fixtures.mjs`), so CI's script
+  and local resets can't drift. CI behavior is unchanged.
+- A new `scripts/record-fresh-reset.mjs` resets the unlinked record-fresh stack
+  and applies the fixtures.
+- `eval/test-fixtures.test.ts` fails if a `tests/sql` file is left off the list.
+
+Result: main `6d4c235` with fixtures, full integration `--fresh`: 53 of 53
+files, 556 passed, 1 todo, 0 failed. Unit: 1,612 passed, 4 skipped. Lint passed.
+Earlier entries citing "14 baseline failures" should be read as this missing
+setup. No migration, provider call or shared database change.
