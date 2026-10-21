@@ -2075,3 +2075,19 @@ fail there.
 
 Full integration with the test fixtures: 565 passed, 0 failed. No provider
 calls, sends, shared DB, merge or deploy.
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Operator-visible terminal delivery conflicts on the existing delivery-review
+authority, on `claude/sms-delivery-conflict-review` from main `6d4c235`.
+
+- Migration `20261021110000` adds `list_delivery_conflicts`,
+  `read_delivery_conflict` and an append-only, audited
+  `record_delivery_conflict_resolution`. A conflicted message reads as
+  `conflicting`, never `delivered`.
+- The backend contract for Cursor is in
+  `docs/architecture/DELIVERY_CONFLICT_REVIEW.md`, with `smsDeliveryState()`
+  for other readers.
+- No UI files changed. The interaction timeline still needs to adopt the
+  helper.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No sends,
+shared DB, merge or deploy.
