@@ -2036,3 +2036,19 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+SMS status callbacks that arrive before the outbound interaction is saved, on
+`claude/sms-callback-evidence` from main `6d4c235`. Previously the callback
+was acknowledged and dropped, which was reproduced on main: 5 of 9 new tests
+fail there.
+
+- Migration `20261021100000` stores verified callbacks as shop-scoped
+  evidence keyed by MessageSid.
+- A trigger on `interactions` applies that evidence when any send path writes
+  the row, using #99's rules mirrored in SQL. Both sides take one advisory
+  lock.
+- The route returns 5xx when storing fails.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No provider
+calls, sends, shared DB, merge or deploy.
