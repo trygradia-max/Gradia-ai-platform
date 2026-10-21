@@ -2036,3 +2036,20 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Operator-visible terminal delivery conflicts on the existing delivery-review
+authority, on `claude/sms-delivery-conflict-review` from main `6d4c235`.
+
+- Migration `20261021110000` adds `list_delivery_conflicts`,
+  `read_delivery_conflict` and an append-only, audited
+  `record_delivery_conflict_resolution`. A conflicted message reads as
+  `conflicting`, never `delivered`.
+- The backend contract for Cursor is in
+  `docs/architecture/DELIVERY_CONFLICT_REVIEW.md`, with `smsDeliveryState()`
+  for other readers.
+- No UI files changed. The interaction timeline still needs to adopt the
+  helper.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No sends,
+shared DB, merge or deploy.
