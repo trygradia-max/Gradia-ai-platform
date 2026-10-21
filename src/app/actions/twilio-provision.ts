@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache"
 import {
   findIncomingPhoneNumberSid,
   hasMasterTwilioCredentials,
+  listIncomingPhoneNumbers,
+  setNumberSmsWebhook,
   provisionPhoneNumber,
   releasePhoneNumber,
   resolveTwilioCredentials,
@@ -16,7 +18,11 @@ import { getPricing } from "@/lib/pricing"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
-import { purchaseNumber } from "@/lib/telephony-provider"
+import {
+  claimNumberPurchase,
+  purchaseNumber,
+  releaseNumberPurchaseClaim,
+} from "@/lib/telephony-provider"
 import type { ShopRow } from "@/lib/types/database"
 
 async function resolveOrigin(): Promise<string> {
@@ -120,9 +126,9 @@ export type ProvisionTwilioNumberResult =
  * the owner is already authorized via requireShop, and pricing_config /
  * the purchase write-path are server-only.
  *
- * BYO shops keep the legacy path: provision on their own account, wire
- * the SmsUrl + StatusCallback at Gradia, persist the number. (Their
- * rental bills to their Twilio account, so no Gradia metering.)
+ * BYO shops provision on their own account (provisionOwnAccountNumber),
+ * single-flight like purchaseNumber, wiring SmsUrl + StatusCallback at
+ * Gradia. (Their rental bills to their Twilio account, so no metering.)
  */
 export async function provisionTwilioNumber(input: {
   phoneNumber: string
@@ -153,56 +159,104 @@ export async function provisionTwilioNumber(input: {
   }
 
   const origin = await resolveOrigin()
+  const result = await provisionOwnAccountNumber({
+    supabase: createServiceClient(),
+    shop,
+    creds,
+    phoneNumber: input.phoneNumber,
+    origin,
+  })
+  if (result.ok) revalidatePath("/settings")
+  return result
+}
+
+/**
+ * BYO provisioning, single-flight like purchaseNumber (number-lifecycle
+ * audit). Under the business's purchase claim it:
+ *   - refuses if a texting number is already stored (no silent overwrite
+ *     that strands the old number on the owner's account);
+ *   - adopts the number if it is already on the owner's account (a save
+ *     that failed, or a response lost in transit), instead of buying again;
+ *   - writes only if no number is stored, and releases its own duplicate if
+ *     another provision stored first;
+ *   - never answers a failed save by releasing the number: the save may have
+ *     committed, and a failed release would strand it. The retry adopts it.
+ * The rental bills to the owner's Twilio account, so nothing is metered.
+ */
+async function provisionOwnAccountNumber(input: {
+  supabase: ReturnType<typeof createServiceClient>
+  shop: ShopRow
+  creds: NonNullable<ReturnType<typeof resolveTwilioCredentials>>
+  phoneNumber: string
+  origin: string
+}): Promise<ProvisionTwilioNumberResult> {
+  const { supabase, shop, creds, phoneNumber, origin } = input
   const smsUrl = `${origin}/api/twilio/sms`
   const statusCallback = `${origin}/api/twilio/sms/status?shop=${encodeURIComponent(shop.id)}`
+  const alreadyHasNumber = { ok: false as const, error: "This business already has a texting number. Disconnect or release it first." }
 
+  const claimed = await claimNumberPurchase(supabase, shop.id)
+  if (!claimed.ok) return { ok: false, error: claimed.error }
   try {
-    const provisioned = await provisionPhoneNumber({
-      phoneNumber: input.phoneNumber,
-      smsUrl,
-      statusCallback,
-      friendlyName: shop.name ?? null,
-      creds,
-    })
-
-    // Service role: twilio_phone_number is server-written (I1). The number
-    // was just provisioned on the shop's own account; the shop is the
-    // owner's (requireShop).
-    const supabase = createServiceClient()
-    const { error } = await supabase
+    const { data: current, error: readError } = await supabase
       .from("shops")
-      .update({ twilio_phone_number: provisioned.phoneNumber })
+      .select("twilio_phone_number")
       .eq("id", shop.id)
+      .single()
+    if (readError || !current) return { ok: false, error: "Couldn't read the business number. Try again." }
+    if ((current as { twilio_phone_number: string | null }).twilio_phone_number) return alreadyHasNumber
 
+    let number: { sid: string; phoneNumber: string }
+    let adopted = false
+    const onAccount = async () =>
+      (await listIncomingPhoneNumbers({ creds, phoneNumber })).find((n) => n.phoneNumber === phoneNumber) ?? null
+    try {
+      const existing = await onAccount()
+      if (existing) {
+        number = existing
+        adopted = true
+        // Our earlier provision set these; set them again so inbound routes here.
+        await setNumberSmsWebhook({ sid: existing.sid, smsUrl, creds })
+      } else {
+        try {
+          number = await provisionPhoneNumber({ phoneNumber, smsUrl, statusCallback, friendlyName: shop.name ?? null, creds })
+        } catch (err) {
+          const found = await onAccount().catch(() => null)
+          if (!found) throw err
+          number = found
+          adopted = true
+          console.warn("[twilio-provision] provisioning errored but the number is on the owner's account; adopting:", { shopId: shop.id })
+        }
+      }
+    } catch (err) {
+      console.error("[twilio-provision] provision failed:", err)
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't buy the number — try again." }
+    }
+
+    // Service role: twilio_phone_number is server-written (I1). The number is
+    // on the shop's own account; the shop is the owner's (requireShop).
+    const { data: saved, error } = await supabase
+      .from("shops")
+      .update({ twilio_phone_number: number.phoneNumber })
+      .eq("id", shop.id)
+      .is("twilio_phone_number", null)
+      .select("id")
     if (error) {
-      // Best-effort rollback — release the number we just bought so
-      // we don't pay rent on a number that isn't linked to any shop.
-      try {
-        await releasePhoneNumber({ sid: provisioned.sid, creds })
-      } catch (rollbackErr) {
-        console.error(
-          "[twilio-provision] rollback release failed:",
-          rollbackErr
+      console.error(`[twilio-provision] number ${number.sid} saved at Twilio but not here — the retry adopts it:`, error)
+      return { ok: false, error: "Got the number but couldn't save it. Try again with the same number; it won't be bought twice." }
+    }
+    if (!(saved as { id: string }[] | null)?.length) {
+      // Another provision stored a number first.
+      if (!adopted) {
+        await releasePhoneNumber({ sid: number.sid, creds }).catch((err) =>
+          console.error(`[twilio-provision] couldn't release duplicate number ${number.sid} for shop ${shop.id} — reconcile:`, err)
         )
       }
-      return {
-        ok: false,
-        error:
-          "Couldn't save the number to our shop — released it. Try again.",
-      }
+      return alreadyHasNumber
     }
-
-    revalidatePath("/settings")
-    return { ok: true, phoneNumber: provisioned.phoneNumber }
-  } catch (err) {
-    console.error("[twilio-provision] provision failed:", err)
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : "Couldn't buy the number — try again.",
-    }
+    return { ok: true, phoneNumber: number.phoneNumber }
+  } finally {
+    await releaseNumberPurchaseClaim(supabase, shop.id, claimed.claim)
   }
 }
 
@@ -239,14 +293,25 @@ export async function releaseTwilioNumber(): Promise<ReleaseTwilioNumberResult> 
     shop.twilio_phone_number === shop.gradia_number_e164
 
   try {
-    const sid =
-      (isGradiaNumber ? shop.gradia_number_sid : null) ??
-      (await findIncomingPhoneNumberSid({
+    if (isGradiaNumber) {
+      // The subaccount belongs to this business alone, so every number on it
+      // is this business's: release them all, including a duplicate a
+      // concurrent purchase failed to release, so none stays billed. A 404
+      // (already released, e.g. a lost response earlier) counts as released.
+      // Any failure leaves the row as it is, and the retry finishes the job.
+      const sids = new Set(
+        (await listIncomingPhoneNumbers({ creds })).map((n) => n.sid)
+      )
+      if (shop.gradia_number_sid) sids.add(shop.gradia_number_sid)
+      for (const sid of sids) await releasePhoneNumber({ sid, creds })
+    } else {
+      const sid = await findIncomingPhoneNumberSid({
         phoneNumber: shop.twilio_phone_number,
         creds,
-      }))
-    if (sid) {
-      await releasePhoneNumber({ sid, creds })
+      })
+      if (sid) {
+        await releasePhoneNumber({ sid, creds })
+      }
     }
 
     const supabase = createServiceClient()

@@ -2036,3 +2036,27 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: claude-code] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Number-lifecycle audit of uncertain provider outcomes on
+`claude/twilio-number-release`, on main after #102 (which merged #98). Ran 16 scenarios against the
+disposable database with a fake Twilio. On #98's head, 5 proved gaps:
+- a second purchase while the first was still provisioning bought a second,
+  billed number;
+- a stray duplicate stayed on the subaccount after a release;
+- the BYO provision path released the number after a failed save, which
+  strands it or destroys a save that committed;
+- BYO overwrote an already stored number.
+
+Fixed:
+- Migration `20261020120000` adds a per-business purchase claim (two
+  nullable columns; existing rows unchanged).
+- `purchaseNumber` and BYO provisioning take that claim before any provider
+  call.
+- Release frees every number on the business's subaccount.
+- BYO provisioning adopts a number already on the owner's account, writes
+  only if none is stored, and never releases after a failed save.
+
+Lost or refused releases, release then re-buy, a disconnect mid-send, and
+#95's explicit-null refusals with the pilot allowlist already held. They now
+have tests. No provider calls, sends, shared migrations, merge or deploy.
