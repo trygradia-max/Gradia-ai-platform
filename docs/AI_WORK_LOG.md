@@ -2036,3 +2036,10 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Remaining signed-in empty copy on `cursor/app-empty-copy-fdbe`. Customers
+now say “Your customers will appear here.” Activity and Approvals empty
+states are the same voice, without claiming live channels. Did not change
+onboarding, dashboard counts, inbox, public pages, actions, or send
+behavior. No merge or deploy.

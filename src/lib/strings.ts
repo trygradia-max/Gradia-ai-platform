@@ -59,12 +59,13 @@ export const STRINGS = {
     conversationsNoResults: "Nothing matches those filters.",
     reviewQueueEmpty:
       "Nothing needs you right now. Gradia will flag anything it's unsure about.",
+    customersFirstUseTitle: "Your customers will appear here.",
     customersFirstUse:
-      "Customers appear here automatically after their first call or text.",
+      "People land here after a text, form, or call — or you can import them.",
     activityFirstUse:
-      "Everything your receptionist does shows up here — calls answered, texts staged, bookings proposed.",
+      "Calls, drafts, and bookings show up here as they happen.",
     approvalsEmpty:
-      "Nothing waiting on you. Anything your receptionist wants to send lands here first.",
+      "Nothing waiting on you. Drafts that need a yes land here first.",
   },
 
   /** Toasts: past-tense fact + undo where reversible. */
