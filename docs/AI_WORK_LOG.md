@@ -2062,3 +2062,17 @@ Node 22.22.0: 1,626 unit passed / 4 skipped, lint/types/offline build passed. Fu
 integration reached 560 passed / 1 gateway-seed failure / 1 todo; the unrelated
 booking file passed 13/13 on immediate rerun. No shared migration, UI, executor,
 provider/cron activation, send, deploy, write unfreeze or public promotion.
+
+[AI: codex] [DATE: 2026-10-22] [AREA: platform] [STATUS: done]
+Extended draft PR #111's authorized operations read model across unresolved intake
+without adding a task store or executor. The mixed-source cursor is stable, completed
+sends cannot starve a page, linked workflow/action evidence groups as one work item,
+and source provenance points only to existing permission-checking routes. Added a
+server-observed deterministic brief contract with explicit unavailable and partial
+coverage states, plus a manager loader that validates the requested workspace against
+the signed-in `team_workspaces` result before the RPC rechecks live grants. Disposable
+reset applied 103 migrations; the expanded real-session suite passed 8/8. Node
+22.23.4: 1,630 unit passed / 4 skipped; lint, types and offline build passed. Full
+integration reached 562 passed / 1 gateway-seed failure / 1 todo; the complete
+unrelated callback file passed 16/16 on immediate rerun. No UI, source mutation,
+shared database, provider/cron activity, send, deploy, write unfreeze or promotion.

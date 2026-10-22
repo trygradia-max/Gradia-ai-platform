@@ -25,10 +25,10 @@ Private candidate: https://gradia-ai-platform-4rojr4e8k-gradia1.vercel.app/dashb
 Signed-in hosted acceptance remains outstanding; a deployed login page is not
 end-to-end acceptance.
 
-Current GitHub review on 2026-10-21: #107–#110 remain open and green. Claude's
+Current GitHub review reverified on 2026-10-22: #107–#110 remain open and green. Claude's
 #112 fixture repair, #113 callback evidence, #114 conflict review and stacked #115
 lifecycle acceptance are also open and green; none is on main. Cursor's #101 and
-#103–#106 remain draft/conflicting. Check GitHub again before integrating. The prior
+#103–#106 remain separate green drafts updated on October 22. Check GitHub again before integrating. The prior
 98-baseline migration work is completed evidence, not permission to replay it on
 the current shared database. Preserve both work logs and every relevant test.
 
@@ -113,36 +113,47 @@ current, with concrete commits and test results; never infer another lane is fin
 Worktree: /Users/harryhatch/Gradia/worktrees/operations-foundation
 Branch: codex/operations-foundation
 
-Implemented the pending-action projection and its authorized read boundary:
+Implemented the pending-action/intake projection and its authorized read boundary:
 
 - `src/lib/operations-queue.ts` remains pure and contains no auth/server imports.
-- migration `20261021120000_operations_queue_read.sql` adds a bounded, keyset-paged,
-  read-only RPC. It returns no payloads, destinations or proof claims. Owners see
-  candidate action rows; managers see only ordinary pending messages under
-  `approvals.messages` and uncertain/conflicting sends under `delivery.reconcile`.
-  Staff, revoked members, cross-shop owners, anonymous users and sessionless service
-  callers are denied on every read.
+- migrations `20261021120000_operations_queue_read.sql` and
+  `20261022120000_operations_queue_intake_brief.sql` add a bounded, mixed-source,
+  keyset-paged read-only RPC. It returns no payloads, destinations, intake text,
+  provider evidence references or proof claims. Owners see candidate action and
+  unresolved intake rows. Managers see intake only under `crm.read`, ordinary
+  pending messages only under `crm.read` + `approvals.messages`, and uncertain or
+  conflicting sends only under `crm.read` + `delivery.reconcile`. Staff, revoked
+  members, cross-shop owners, anonymous users and sessionless service callers are
+  denied on every read.
 - `src/lib/operations-queue-reader.ts` validates the complete RPC response and turns
   refused, failed, thrown or inconsistent evidence reads into `unavailable`, never
-  an empty all-clear. `src/lib/data/operations-queue.ts` is the server-only owner
-  loader and derives the shop from the authenticated request.
-- No UI/runtime page calls the loader yet. This is not a universal queue or daily
-  brief, and it adds no task store, executor, source mutation or provider call.
+  an empty all-clear. Completed sends no longer occupy a page before being hidden by
+  projection. Equal-time action/intake cursors remain stable. Qualification actions
+  and their source workflow share one work key and retain both provenance links.
+- `src/lib/data/operations-queue.ts` has server-only owner and team-workspace
+  overview loaders. Owner identity comes from the request. A manager's URL workspace
+  candidate must first match the authenticated `team_workspaces` result, then the
+  RPC independently rechecks current membership and grants.
+- `OperationsOverview` is the tested Cursor contract: a queue page plus a
+  deterministic brief observed at the same server time. Brief counts describe the
+  loaded window only; `coverage: partial` remains visible when another page exists;
+  unavailable data is never an empty brief. Source links target the existing
+  permission-checking Approvals, delivery-review and intake routes.
+- No UI/runtime page calls the loaders yet. This is not a universal queue, task
+  store, executor, source mutation or provider call.
 
 Next exact steps:
 1. Review migration order and conflict semantics again after #113/#114 land; do not
    copy or replace Claude's delivery-conflict RPCs. The queue already reads the shared
    `pending_action_id` evidence shape.
-2. Give Cursor `OperationsQueuePage`, cursor semantics and the permission fixture
-   matrix. A manager-facing server loader must first derive a validated workspace
-   from `team_workspaces`; it must not accept a raw shop selector as authorization.
-3. Extend read model to intake workflows without duplicating the action for the same
-   work; define grouping/provenance, then generate a deterministic brief from that model.
-4. Add source links only after their target routes and permissions are specified.
-   Keep UI off until the loader contract and unavailable/empty fixtures are reviewed.
-5. Reconcile onto the final backend tree after #107–#115 decisions, then run final
+2. Give Cursor `OperationsOverview`, mixed-source cursor semantics and the permission
+   fixture matrix. Keep UI off until unavailable/empty/partial states and source-link
+   behavior are reviewed; Cursor still owns the components and copy.
+3. Reconcile onto the final backend tree after #107–#115 decisions, then run final
    combined CI, migration upgrade/freeze checks and signed-in private acceptance.
-6. Public promotion, write unfreeze, provider/cron activation and live Twilio remain
+4. Add exception-desk presentation only after #114's final conflict contract is
+   reconciled. Do not add retry controls for uncertain sends.
+5. Public promotion, write unfreeze, provider/cron activation and live Twilio remain
    separate explicit decisions.
 
 ## Validation and recovery instructions
@@ -181,3 +192,17 @@ the documented local gateway error while seeding a booking-concurrency fixture, 
 that entire unrelated file passed 13/13 immediately on one targeted rerun. An earlier
 Node 24 run similarly hit three BYO gateway errors and passed that file 8/8 on rerun.
 No shared database, provider, cron, deploy, write freeze or public traffic changed.
+
+### Validation checkpoint — mixed queue and daily brief read contract
+
+2026-10-22, Node 22.23.4: 1,630 unit tests passed / 4 skipped across 137 files;
+lint, TypeScript before and after build, and the offline Next.js 16.2.6 production
+build passed. A disposable reset applied exactly 103 migrations through
+`20261022120000`; the one queue RPC is security-definer with an empty search path,
+granted to `authenticated` only. Its expanded real-session suite passed 8/8,
+including unresolved intake, manager grant separation, stable equal-time mixed-source
+pagination, completed-send exclusion and the prior authorization/evidence cases.
+The full integration run reached 562 passed / 1 failed / 1 todo; the one failure was
+an unrelated local gateway error while seeding a Twilio callback case. That complete
+file passed 16/16 immediately on a targeted rerun. No shared migration, UI, executor,
+provider call, send, cron, deploy, write unfreeze or public promotion occurred.

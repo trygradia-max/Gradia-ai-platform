@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { readOperationsQueuePage } from "@/lib/operations-queue-reader"
+import { recordLeadIntake } from "@/lib/lead-intake"
 import {
   INTEGRATION_WITH_SESSION,
   anonClient,
@@ -19,7 +20,8 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("operations queue read authority", ()
   let shop: Seeded, managerShop: Seeded, foreign: Seeded, memberId: string
   const password = randomUUID()
   const read = (client: SupabaseClient, patch: Record<string, unknown> = {}) => client.rpc("list_operations_queue", {
-    p_shop: shop.shopId, p_before_created_at: null, p_before_id: null, p_limit: 20, ...patch,
+    p_shop: shop.shopId, p_before_observed_at: null, p_before_source_kind: null,
+    p_before_source_id: null, p_limit: 20, ...patch,
   })
 
   beforeAll(async () => {
@@ -55,7 +57,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("operations queue read authority", ()
     const result = await read(owner)
     expect(result.error).toBeNull()
     expect(result.data.viewer_role).toBe("owner")
-    expect(result.data.items.some((item: { id: string }) => item.id === own)).toBe(true)
+    expect(result.data.items.some((item: { source_id: string }) => item.source_id === own)).toBe(true)
     expect(JSON.stringify(result.data)).not.toContain("private owner payload")
     expect(JSON.stringify(result.data)).not.toContain("foreign payload")
     expect(JSON.stringify(result.data)).not.toContain("claims")
@@ -72,15 +74,48 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("operations queue read authority", ()
     expect((await setMember("manager", true, ["crm.read", "approvals.messages"])).error).toBeNull()
     const approvals = await read(manager)
     expect(approvals.error).toBeNull()
-    expect(approvals.data.items.map((item: { id: string }) => item.id)).toContain(approval)
-    expect(approvals.data.items.map((item: { id: string }) => item.id)).not.toContain(uncertain)
-    expect(approvals.data.items.map((item: { id: string }) => item.id)).not.toContain(ownerOnly)
+    expect(approvals.data.items.map((item: { source_id: string }) => item.source_id)).toContain(approval)
+    expect(approvals.data.items.map((item: { source_id: string }) => item.source_id)).not.toContain(uncertain)
+    expect(approvals.data.items.map((item: { source_id: string }) => item.source_id)).not.toContain(ownerOnly)
 
     expect((await setMember("manager", true, ["crm.read", "delivery.reconcile"])).error).toBeNull()
     const holds = await read(manager)
     expect(holds.error).toBeNull()
-    expect(holds.data.items.map((item: { id: string }) => item.id)).toContain(uncertain)
-    expect(holds.data.items.map((item: { id: string }) => item.id)).not.toContain(approval)
+    expect(holds.data.items.map((item: { source_id: string }) => item.source_id)).toContain(uncertain)
+    expect(holds.data.items.map((item: { source_id: string }) => item.source_id)).not.toContain(approval)
+  })
+
+  it("adds unresolved intake only for owners and managers with the actual CRM read grant", async () => {
+    const recorded = await recordLeadIntake(db, {
+      shopId: shop.shopId,
+      channel: "synthetic",
+      provider: "synthetic",
+      providerEventId: randomUUID(),
+      receivedAt: "2026-10-22T18:00:00Z",
+      evidenceRef: "private-evidence-ref",
+      threadKey: null,
+      payload: { display_name: "Fictional inquiry", message: "Private inquiry text" },
+    })
+    const ownerResult = await readOperationsQueuePage(owner, shop.shopId)
+    expect(ownerResult.status).toBe("ready")
+    if (ownerResult.status === "ready") {
+      expect(ownerResult.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          workKey: `lead_workflow:${recorded.workflowId}`,
+          sources: [expect.objectContaining({ kind: "intake_workflow", id: recorded.workflowId })],
+        }),
+      ]))
+      expect(JSON.stringify(ownerResult)).not.toContain("Private inquiry text")
+      expect(JSON.stringify(ownerResult)).not.toContain("private-evidence-ref")
+    }
+
+    expect((await setMember("manager", true, ["crm.read"])).error).toBeNull()
+    const managerResult = await readOperationsQueuePage(manager, shop.shopId)
+    expect(managerResult.status).toBe("ready")
+    if (managerResult.status === "ready") {
+      expect(managerResult.items.some((item) => item.workKey === `lead_workflow:${recorded.workflowId}`)).toBe(true)
+      expect(managerResult.items.every((item) => item.sources.every((source) => source.kind === "intake_workflow"))).toBe(true)
+    }
   })
 
   it("denies staff, revoked members, foreign owners, anonymous users, and the sessionless service role", async () => {
@@ -106,11 +141,37 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("operations queue read authority", ()
     const second = await readOperationsQueuePage(owner, shop.shopId, { limit: 2, cursor: first.nextCursor })
     expect(second.status).toBe("ready")
     if (second.status === "ready") {
-      expect(second.items.map((item) => item.sourceId).some((id) => first.items.some((firstItem) => firstItem.sourceId === id))).toBe(false)
+      const firstSources = new Set(first.items.flatMap((item) => item.sources.map((source) => `${source.kind}:${source.id}`)))
+      expect(second.items.flatMap((item) => item.sources).some((source) => firstSources.has(`${source.kind}:${source.id}`))).toBe(false)
     }
     expect((await readOperationsQueuePage(foreignOwner, shop.shopId)).status).toBe("unavailable")
     const malformed = { rpc: async () => ({ data: { viewer_role: "owner", items: [{ shop_id: shop.shopId }] }, error: null }) } as never
     expect((await readOperationsQueuePage(malformed, shop.shopId)).status).toBe("unavailable")
+  })
+
+  it("keeps equal-time mixed sources stable across page boundaries", async () => {
+    const observedAt = "2026-10-23T12:00:00.000Z"
+    const action = await stagePending(db, shop.shopId, shop.ownerId, "send_email", { body: "same-time" })
+    expect((await db.from("pending_actions").update({ created_at: observedAt }).eq("id", action)).error).toBeNull()
+    const recorded = await recordLeadIntake(db, {
+      shopId: shop.shopId,
+      channel: "synthetic",
+      provider: "synthetic",
+      providerEventId: randomUUID(),
+      receivedAt: observedAt,
+      evidenceRef: null,
+      threadKey: null,
+      payload: { message: "Same-time intake" },
+    })
+    const first = await readOperationsQueuePage(owner, shop.shopId, { limit: 1 })
+    expect(first.status).toBe("ready")
+    if (first.status !== "ready") return
+    expect(first.items[0].sources[0]).toMatchObject({ kind: "pending_action", id: action })
+    const second = await readOperationsQueuePage(owner, shop.shopId, { limit: 1, cursor: first.nextCursor })
+    expect(second.status).toBe("ready")
+    if (second.status === "ready") {
+      expect(second.items[0].sources[0]).toMatchObject({ kind: "intake_workflow", id: recorded.workflowId })
+    }
   })
 
   it("keeps conflict evidence visible without changing source records", async () => {
@@ -121,9 +182,21 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("operations queue read authority", ()
     const projected = await readOperationsQueuePage(owner, shop.shopId)
     expect(projected.status).toBe("ready")
     if (projected.status === "ready") {
-      expect(projected.items.find((item) => item.sourceId === action)?.state).toBe("outcome_unconfirmed")
+      expect(projected.items.find((item) => item.sources.some((source) => source.id === action))?.state).toBe("outcome_unconfirmed")
     }
     const source = await db.from("pending_actions").select("status,result_id").eq("id", action).single()
     expect(source.data).toMatchObject({ status: "approved" })
+  })
+
+  it("does not let completed sends consume a queue page", async () => {
+    const action = await stagePending(db, shop.shopId, shop.ownerId, "send_sms", { body: "completed" })
+    await db.from("pending_actions").update({ status: "approved", result_id: randomUUID() }).eq("id", action)
+    expect((await db.from("service_proof_consumptions").insert({
+      proof_id: randomUUID(), shop_id: shop.shopId, action_id: action,
+      claims: { synthetic: true }, completed_at: new Date().toISOString(),
+    })).error).toBeNull()
+    const result = await read(owner, { p_limit: 50 })
+    expect(result.error).toBeNull()
+    expect(result.data.items.some((item: { source_id: string }) => item.source_id === action)).toBe(false)
   })
 })
