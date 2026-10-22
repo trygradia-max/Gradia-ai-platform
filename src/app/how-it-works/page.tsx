@@ -3,10 +3,8 @@ import Link from "next/link"
 import {
   ArrowRight,
   BookOpen,
-  Bot,
   Calendar,
   Check,
-  CreditCard,
   Globe,
   Inbox,
   Mail,
@@ -30,10 +28,10 @@ import { cn } from "@/lib/utils"
 export const metadata: Metadata = {
   title: "How Gradia works",
   description:
-    "Gradia catches calls, email, and texts, then waits for your approval. $20/month.",
+    "Gradia drafts replies from texts, forms, and connected inboxes, then waits for your yes.",
 }
 
-type ChannelTone = "voice" | "email" | "sms" | "social" | "calendar" | "money"
+type ChannelTone = "voice" | "email" | "sms" | "calendar"
 
 const CHANNELS: {
   icon: LucideIcon
@@ -42,34 +40,28 @@ const CHANNELS: {
   tone: ChannelTone
 }[] = [
   {
-    icon: Phone,
-    label: "Voice",
-    body: "A real receptionist takes the call, quotes services from your menu, and proposes bookings — even when you're under a car.",
-    tone: "voice",
+    icon: MessageSquare,
+    label: "Texts",
+    body: "Customer texts to your business number become drafted replies in Approvals. Nothing sends until you say so.",
+    tone: "sms",
   },
   {
     icon: Mail,
     label: "Email",
-    body: "Connected to Gmail. Every inbound inquiry is classified, an on-brand reply is drafted, one tap in Approvals sends it.",
+    body: "When the inbox is connected, inbound mail is drafted for your review. Connecting email also connects the calendar.",
     tone: "email",
-  },
-  {
-    icon: MessageSquare,
-    label: "SMS",
-    body: "Your business number captures texts, auto-drafts replies, and sends booking reminders 24 hours before each appointment.",
-    tone: "sms",
   },
   {
     icon: Calendar,
     label: "Calendar",
-    body: "Approved bookings drop straight into your Google Calendar. One Gmail connection covers email and calendar.",
+    body: "Approved bookings can land on the connected calendar. Hard conflicts still wait for you.",
     tone: "calendar",
   },
   {
-    icon: CreditCard,
-    label: "Payments",
-    body: "Stripe Connect. Whisper “charge Smith $450 for ceramic” from your phone — we draft the invoice, you approve, Stripe sends it.",
-    tone: "money",
+    icon: Phone,
+    label: "Phone",
+    body: "Phone answering is optional. It stays off until a test call sounds right.",
+    tone: "voice",
   },
 ]
 
@@ -79,66 +71,61 @@ const CHANNEL_TILE: Record<ChannelTone, string> = {
   email: "bg-sky-500/12 text-sky-500 ring-sky-500/25 dark:text-sky-400",
   sms:
     "bg-amber-500/12 text-amber-500 ring-amber-500/25 dark:text-amber-400",
-  social:
-    "bg-pink-500/12 text-pink-500 ring-pink-500/25 dark:text-pink-400",
   calendar:
     "bg-indigo-500/12 text-indigo-500 ring-indigo-500/25 dark:text-indigo-400",
-  money: "bg-primary/12 text-primary ring-primary/25",
 }
 
 const PILLARS: { icon: LucideIcon; label: string; body: string }[] = [
   {
-    icon: Bot,
-    label: "Agentic with guardrails",
-    body: "Gradia drafts everything — leads, replies, invoices, reminders. Nothing outbound ships until you approve it. One bad message is real money, so a human is always in the loop.",
+    icon: ShieldCheck,
+    label: "You approve what goes out",
+    body: "Gradia can draft a reply, a quote, or a booking. Customer-facing sends wait for you unless you turn a specific action on.",
   },
   {
     icon: BookOpen,
     label: "Grounded in your shop",
-    body: "Paste your deposit rules, weather policy, hours, brand voice — Gradia quotes your actual words, not Claude's training data.",
+    body: "Services, hours, and the notes you save are what drafts draw from — not a generic script.",
   },
   {
     icon: Sparkles,
-    label: "Proactive co-owner",
-    body: "Open the dashboard and Gradia tells you who to follow up on — hot leads, customers gone quiet, appointments coming up. One tap drafts the message.",
+    label: "One place to look",
+    body: "Replies to review, customers, and recent activity sit on one dashboard so the next yes is obvious.",
   },
   {
-    icon: ShieldCheck,
-    label: "Honest scoring",
-    body: "Heat score is a transparent heuristic — age, status, recent activity, inbound response, repeat-customer signal. No black-box ML claiming to predict the future.",
+    icon: Inbox,
+    label: "Honest status",
+    body: "A channel is ready only when the evidence says so. Setup is never described as live.",
   },
 ]
 
 const FLOW: { title: string; body: string }[] = [
   {
-    title: "They reach out",
-    body: "A call, an email, a text, a DM. We catch it on every channel, no matter which one.",
+    title: "A customer writes in",
+    body: "A text, a website form, or a connected inbox. Gradia files the person and the request.",
   },
   {
-    title: "We draft the reply",
-    body: "Classified, recorded in shared memory, and answered on-brand using your shop's voice — not generic AI English.",
+    title: "A reply is drafted",
+    body: "The draft uses the shop's services and voice. Nothing is sent yet.",
   },
   {
-    title: "You approve in one tap",
-    body: "A card lands in Approvals — on your phone or desk. Approve, tweak, or drop it. One tap.",
+    title: "You review it",
+    body: "Approvals holds the card. Approve, edit, or drop it.",
   },
   {
-    title: "It goes out",
-    body: "Message sends, lead lands, calendar updates, invoice ships. Every touch on the same customer record.",
+    title: "Then it can go out",
+    body: "Only the action you approved runs. The customer record stays in one place.",
   },
 ]
 
 const FEATURES: string[] = [
-  "Voice receptionist — books, quotes, captures leads",
-  "Email + Calendar — inbound classifier + auto-drafts",
-  "Business-number texting — inbound + outbound + delivery receipts",
-  "Shared customer memory across every channel",
-  "Heat-scored lead pipeline",
-  "Co-owner widget — proactive nudges on what to do next",
-  "Ask Gradia — plain-English BI for your shop",
-  "Custom agents — schedule or event-triggered workflows",
-  "Shop knowledge RAG — drafters cite your real policies",
-  "In-app approvals with Approve / Edit & approve / Dismiss",
+  "Drafted texts waiting in Approvals",
+  "Website form intake",
+  "Connected email drafts, when email is set up",
+  "Customers, vehicles, and conversation history",
+  "Quotes and bookings from the shop menu",
+  "Ask Gradia for shop questions — it does not text customers",
+  "Optional phone answering after a test call",
+  "You approve what leaves the shop",
 ]
 
 export default function HowItWorksPage() {
@@ -169,10 +156,8 @@ export default function HowItWorksPage() {
             </h1>
 
             <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Gradia answers your phone, reads your inbox, replies to your
-              DMs, and texts back leads — then puts everything in front of
-              you as a one-tap approval. No more missed calls,
-              forgotten quotes, or &ldquo;I&apos;ll get back to you tomorrow.&rdquo;
+              Gradia drafts replies from texts, website forms, and a connected
+              inbox, then waits for your yes before anything leaves the shop.
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
@@ -210,7 +195,7 @@ export default function HowItWorksPage() {
                   <span className="italic">reach you</span>.
                 </>
               }
-              subtitle="Gradia plugs into the tools you already use — your phone line, Gmail, and texting. Everything lands in the same approval queue."
+              subtitle="Start with texts and website forms. Email, calendar, and phone each have their own setup — none of them turn on just because you signed in."
             />
             <RevealOnScroll
               as="ul"
@@ -255,11 +240,11 @@ export default function HowItWorksPage() {
               eyebrow="How a lead flows"
               title={
                 <>
-                  Inquiry to invoice, with you in the{" "}
-                  <span className="italic">loop</span>{" "}the whole way.
+                  From the first message to a booking, with you in the{" "}
+                  <span className="italic">loop</span>.
                 </>
               }
-              subtitle="Every step is something Gradia drafts and queues. The decision is always yours."
+              subtitle="Gradia drafts. You decide. Customer-facing sends wait for approval."
             />
             <RevealOnScroll className="relative">
               {/* Connecting rail behind the step dots. */}
@@ -336,11 +321,11 @@ export default function HowItWorksPage() {
               eyebrow="What you get"
               title={
                 <>
-                  The whole office,{" "}
-                  <span className="italic">one dashboard</span>.
+                  What the pilot actually{" "}
+                  <span className="italic">covers</span>.
                 </>
               }
-              subtitle="Everything that ships with the pilot, in one list."
+              subtitle="The working loop for a detailing shop. Payments, full work orders, and review-request texts are not part of this."
             />
             <RevealOnScroll
               as="ul"
@@ -379,13 +364,12 @@ export default function HowItWorksPage() {
                         </p>
                       </div>
                       <h2 className="font-display text-[clamp(2rem,5.5vw,3.25rem)] leading-[1.02] tracking-[-0.025em] text-foreground">
-                        <span className="italic">$20</span>/month. No catch.
+                        Come in, then{" "}
+                        <span className="italic">approve what goes out</span>.
                       </h2>
                       <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
-                        Bring your own phone line, email, texting number,
-                        and payments. Gradia ties them together and waits
-                        for your approval. Cancel anytime — your data
-                        exports cleanly.
+                        Sign in to finish setup. Channels are connected
+                        one at a time, and nothing sends until you approve it.
                       </p>
                     </div>
                     <Link
