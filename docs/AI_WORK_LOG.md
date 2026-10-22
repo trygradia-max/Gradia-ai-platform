@@ -2046,3 +2046,13 @@ progress bar, or “everything is connected.” Particles respect reduced
 motion. Handoff recorded in `docs/handoffs/CURSOR_UI_COPY_AND_MOTION_2026-10-20.md`.
 Did not change dashboard review copy, inbox empty states, public pages,
 actions, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: platform] [STATUS: in-progress]
+Rebased #101 onto current main (`6d4c235` / #102) and kept both appended
+work logs. Retargeted the 2026-10-09 design-token lock so the wizard
+still says “Step N of 3” and phone help still names +$29/month, now
+through `STRINGS.pages.onboarding`. Added source locks for skip,
+Escape, reduced motion, mobile chrome, and onboarding error recovery —
+fixture checks, not signed-in browser acceptance. No disposable
+Supabase in this environment. No merge, deploy, permission change, or
+provider activation.
