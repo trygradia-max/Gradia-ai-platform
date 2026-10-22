@@ -2056,3 +2056,22 @@ Escape, reduced motion, mobile chrome, and onboarding error recovery —
 fixture checks, not signed-in browser acceptance. No disposable
 Supabase in this environment. No merge, deploy, permission change, or
 provider activation.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: platform] [STATUS: in-progress]
+Rebased #103, #104, #105 and #106 onto current main and kept both
+appended work logs. Local copy tests passed on each rebased branch.
+Signed-in onboarding/welcome browser acceptance is still blocked here:
+no Docker, no Supabase CLI, no `.env.local`, and no disposable
+`gradia-isolated-tests` stack. Skip, Escape, reduced motion, mobile
+chrome, and error recovery are locked as source/fixture checks on #101,
+not as Chrome sessions.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: marketing] [STATUS: blocked]
+Audited `trygradia-max/Gradia-Web-Cursor` `site-v2` against the October
+20 copy brief. Prepared `cursor/marketing-copy-audit-fdbe` locally
+(commit `581ce59`): drop $20 / founding / July launch, replace trial
+CTAs with Request pilot access, stop claiming live channels and
+payments. Push and PR were refused — `cursor[bot]` has no write access
+to that repo. Patch saved at
+`/opt/cursor/artifacts/marketing-copy-audit-fdbe.patch`. Did not merge,
+deploy, change backend permissions, or activate providers.
