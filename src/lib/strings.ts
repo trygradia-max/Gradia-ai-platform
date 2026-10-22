@@ -54,8 +54,13 @@ export const STRINGS = {
   /** Empty states teach, never blank (Language Pack §2). Distinguish
    *  first-use vs no-results vs all-done. */
   empty: {
+    conversationsFirstUseTitle: "Your customer conversations will appear here.",
     conversationsFirstUse:
-      "No calls yet. Forward your number and your receptionist starts answering.",
+      "Texts, emails, and calls from customers land here after they write in.",
+    conversationsPageEmpty: "No visible conversations on this page.",
+    conversationsChoose: "Choose a conversation",
+    conversationsChooseBody:
+      "The list stays on the left. Opening a thread does not send, mark it read, or grant consent.",
     conversationsNoResults: "Nothing matches those filters.",
     reviewQueueEmpty:
       "Nothing needs you right now. Gradia will flag anything it's unsure about.",
