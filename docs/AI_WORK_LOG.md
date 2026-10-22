@@ -2046,3 +2046,19 @@ loaded window; no payloads or execution paths. Not yet connected to an authorize
 loader or UI. No migration/provider/shared-state changes. Isolated Node 22: 1,622 unit
 passed, 4 skipped; full lint, types, offline build passed. Database integration is
 still required when the authorized loader is added, and for the separate release batch.
+
+[AI: codex] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Finished the authorized pending-action operations loader on
+`codex/operations-foundation` / draft PR #111. Migration `20261021120000` adds a
+bounded read RPC over existing pending actions, sending claims and conflict evidence;
+it returns no payloads or proof claims. Live membership is checked on every page.
+Owners receive their shop only; managers are filtered by the existing
+`approvals.messages` and `delivery.reconcile` grants; staff, revoked, foreign,
+anonymous and sessionless service callers fail closed. The server-only owner loader
+derives its shop from the authenticated request, and strict response validation makes
+failed or inconsistent evidence unavailable rather than empty. No page uses it yet.
+Disposable reset: 102 migrations through `20261021120000`; new integration 5/5.
+Node 22.22.0: 1,626 unit passed / 4 skipped, lint/types/offline build passed. Full
+integration reached 560 passed / 1 gateway-seed failure / 1 todo; the unrelated
+booking file passed 13/13 on immediate rerun. No shared migration, UI, executor,
+provider/cron activation, send, deploy, write unfreeze or public promotion.

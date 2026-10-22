@@ -25,8 +25,10 @@ Private candidate: https://gradia-ai-platform-4rojr4e8k-gradia1.vercel.app/dashb
 Signed-in hosted acceptance remains outstanding; a deployed login page is not
 end-to-end acceptance.
 
-Pending backend review at planning time: #108 → #109 → #110, plus #107. Check GitHub
-again before integrating: CI, migration heads and branches can change. The prior
+Current GitHub review on 2026-10-21: #107–#110 remain open and green. Claude's
+#112 fixture repair, #113 callback evidence, #114 conflict review and stacked #115
+lifecycle acceptance are also open and green; none is on main. Cursor's #101 and
+#103–#106 remain draft/conflicting. Check GitHub again before integrating. The prior
 98-baseline migration work is completed evidence, not permission to replay it on
 the current shared database. Preserve both work logs and every relevant test.
 
@@ -111,25 +113,37 @@ current, with concrete commits and test results; never infer another lane is fin
 Worktree: /Users/harryhatch/Gradia/worktrees/operations-foundation
 Branch: codex/operations-foundation
 
-Implemented first slice: src/lib/operations-queue.ts and eval/operations-queue.test.ts.
-This is an internal pure projection of pending actions, NOT a wired app feature, new
-database, universal queue or daily brief. It preserves source ordering, exposes
-loaded-window counts, rejects mixed-shop input, strips payloads, retains conflicts
-and uncertain sends, and never executes work. Completed rows are omitted, not labelled
-as delivered. No runtime call sites exist yet. No migrations or provider calls.
+Implemented the pending-action projection and its authorized read boundary:
+
+- `src/lib/operations-queue.ts` remains pure and contains no auth/server imports.
+- migration `20261021120000_operations_queue_read.sql` adds a bounded, keyset-paged,
+  read-only RPC. It returns no payloads, destinations or proof claims. Owners see
+  candidate action rows; managers see only ordinary pending messages under
+  `approvals.messages` and uncertain/conflicting sends under `delivery.reconcile`.
+  Staff, revoked members, cross-shop owners, anonymous users and sessionless service
+  callers are denied on every read.
+- `src/lib/operations-queue-reader.ts` validates the complete RPC response and turns
+  refused, failed, thrown or inconsistent evidence reads into `unavailable`, never
+  an empty all-clear. `src/lib/data/operations-queue.ts` is the server-only owner
+  loader and derives the shop from the authenticated request.
+- No UI/runtime page calls the loader yet. This is not a universal queue or daily
+  brief, and it adds no task store, executor, source mutation or provider call.
 
 Next exact steps:
-1. Review projection semantics against Activity/inbox and the new delivery conflict
-   work. Do not import server-auth modules into a shared pure module.
-2. Add an owner-authorized server loader deriving shop context; fetch bounded action
-   rows and claim/conflict evidence scoped by shop, with pagination and failure states.
-   Establish manager grant filtering before exposing to managers; staff fail closed.
-3. Add integration tests for owner, manager without grant, revoked user, mixed tenant,
-   unreadable evidence and pagination. Use a disposable database only.
-4. Extend read model to intake workflows without duplicating the action for the same
+1. Review migration order and conflict semantics again after #113/#114 land; do not
+   copy or replace Claude's delivery-conflict RPCs. The queue already reads the shared
+   `pending_action_id` evidence shape.
+2. Give Cursor `OperationsQueuePage`, cursor semantics and the permission fixture
+   matrix. A manager-facing server loader must first derive a validated workspace
+   from `team_workspaces`; it must not accept a raw shop selector as authorization.
+3. Extend read model to intake workflows without duplicating the action for the same
    work; define grouping/provenance, then generate a deterministic brief from that model.
-5. Give Cursor the tested loader types and fixture matrix. Keep UI off until reviewed.
-6. Final combined CI, signed-in private acceptance, then explicit release decision.
+4. Add source links only after their target routes and permissions are specified.
+   Keep UI off until the loader contract and unavailable/empty fixtures are reviewed.
+5. Reconcile onto the final backend tree after #107–#115 decisions, then run final
+   combined CI, migration upgrade/freeze checks and signed-in private acceptance.
+6. Public promotion, write unfreeze, provider/cron activation and live Twilio remain
+   separate explicit decisions.
 
 ## Validation and recovery instructions
 
@@ -152,3 +166,18 @@ Eleven new evidence-boundary tests pass. Full lint, TypeScript and offline produ
 build pass. No database integration run for this pure, unused projection: no SQL,
 authorized loader or runtime call site changed. This is not the release gate for the
 pending telephony integration or a claim of hosted acceptance.
+
+### Validation checkpoint — authorized pending-action loader
+
+2026-10-21, isolated Node 22.22.0: 1,626 unit tests passed / 4 skipped (137
+files); lint, TypeScript and offline Next.js 16.2.6 production build passed. A
+from-migrations reset of the disposable `gradia-isolated-tests` database applied
+exactly 102 migrations through `20261021120000`. The new real-session integration
+suite passed 5/5 and covers owner isolation, a manager without grants, distinct
+approval/reconciliation grants, staff, revocation, cross-shop/anonymous/service-role
+denial, bounded keyset pages, malformed/unreadable evidence and conflict visibility.
+The full integration run reached 560 passed / 1 failed / 1 todo; the sole failure was
+the documented local gateway error while seeding a booking-concurrency fixture, and
+that entire unrelated file passed 13/13 immediately on one targeted rerun. An earlier
+Node 24 run similarly hit three BYO gateway errors and passed that file 8/8 on rerun.
+No shared database, provider, cron, deploy, write freeze or public traffic changed.
