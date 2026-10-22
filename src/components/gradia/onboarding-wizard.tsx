@@ -23,15 +23,16 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
 import { readBusinessKind } from "@/lib/onboarding"
+import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 import type { ShopRow } from "@/lib/types/database"
 
 type Step = 1 | 2 | 3
 
 const STEP_LABELS: Record<Step, string> = {
-  1: "Your business",
-  2: "Your number",
-  3: "Choose your help",
+  1: STRINGS.pages.onboarding.steps.business,
+  2: STRINGS.pages.onboarding.steps.number,
+  3: STRINGS.pages.onboarding.steps.help,
 }
 
 export function OnboardingWizard({
@@ -163,7 +164,7 @@ function StepIndicator({
     >
       <div className="flex items-center justify-between gap-3">
         <p className="label-eyebrow text-muted-foreground">
-          Step {current} of 3
+          {STRINGS.pages.onboarding.stepStatus(current)}
         </p>
         <p className="text-xs font-medium tracking-tight text-foreground">
           {STEP_LABELS[current]}
@@ -342,9 +343,11 @@ function ShopStep({
   return (
     <form className="grid gap-5" onSubmit={handleSubmit}>
       <div className="space-y-1">
-        <h2 className="font-display text-2xl tracking-tight text-foreground">Your business</h2>
+        <h2 className="font-display text-2xl tracking-tight text-foreground">
+          {STRINGS.pages.onboarding.steps.business}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Name, place, and what you do. You can edit this later in Settings.
+          {STRINGS.pages.onboarding.businessBlurb}
         </p>
       </div>
       <FormField
@@ -433,7 +436,7 @@ function ShopStep({
         {pending ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
         ) : null}
-        Save and continue
+        {STRINGS.pages.onboarding.saveAndContinue}
         <ArrowRight className="size-4" aria-hidden />
       </Button>
     </form>

@@ -22,6 +22,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { A2pState } from "@/app/actions/a2p"
 import { STRINGS } from "@/lib/strings"
+import { WELCOME_DASHBOARD_HREF } from "@/lib/welcome"
 import type { ShopRow } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
 import {
@@ -282,8 +283,8 @@ export function NumberStep({
 
   return (
     <StepShell
-      title="Your number"
-      blurb="This is the number customers call and text. Carriers must approve texting. Calls can work before that approval."
+      title={STRINGS.pages.onboarding.steps.number}
+      blurb={STRINGS.pages.onboarding.numberBlurb}
       footer={
         <>
           <Button type="button" variant="outline" className="min-h-11" onClick={onBack}>
@@ -292,11 +293,11 @@ export function NumberStep({
           <div className="flex flex-wrap items-center justify-end gap-2">
             {!hasNumber ? (
               <Button type="button" variant="outline" className="min-h-11" onClick={onSkip}>
-                Skip number for now
+                {STRINGS.pages.onboarding.skipNumber}
               </Button>
             ) : null}
             <Button type="button" className="min-h-11" onClick={onContinue} disabled={!hasNumber}>
-              Continue to help
+              {STRINGS.pages.onboarding.continueToHelp}
             </Button>
           </div>
         </>
@@ -369,13 +370,13 @@ export function ChooseHelpStep({
       toast.error(result.error)
       return
     }
-    router.push("/dashboard")
+    router.push(WELCOME_DASHBOARD_HREF)
   }
 
   return (
     <StepShell
-      title="Choose your help"
-      blurb="Pick what Gradia should handle first. You can change this later in Settings."
+      title={STRINGS.pages.onboarding.helpTitle}
+      blurb={STRINGS.pages.onboarding.helpBlurb}
       footer={
         <>
           <Button type="button" variant="outline" className="min-h-11" onClick={onBack}>
@@ -383,7 +384,7 @@ export function ChooseHelpStep({
           </Button>
           <Button type="button" onClick={finish} disabled={finishing} className="min-h-11 gap-2">
             {finishing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-            Finish setup
+            {STRINGS.pages.onboarding.finish}
           </Button>
         </>
       }
@@ -393,7 +394,7 @@ export function ChooseHelpStep({
         label="Message approval"
         status={messageApprovalCopy(readAutonomy(shop).default)}
       />
-      <p className="text-sm text-muted-foreground">Before Gradia can quote or book, add your services and working hours in Settings. Finishing setup does not activate a channel.</p>
+      <p className="text-sm text-muted-foreground">{STRINGS.pages.onboarding.quoteNote}</p>
       <div className="flex flex-wrap gap-3 text-sm">
         <Link className="inline-flex min-h-11 items-center underline" href="/settings#services">Set up services and hours</Link>
         <Link className="inline-flex min-h-11 items-center underline" href="/settings#email">Connect email</Link>
@@ -412,10 +413,10 @@ export function ChooseHelpStep({
       ) : (
         <div className="space-y-3 rounded-md border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center">
           <p className="font-display text-lg text-foreground">
-            Phone help is optional.
+            {STRINGS.pages.onboarding.phoneOptionalTitle}
           </p>
           <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-            Phone answering is an optional +$29/month add-on. Review the plan and setup before turning it on.
+            {STRINGS.pages.onboarding.phoneOptionalBody}
           </p>
           <Link href="/billing" className={cn(buttonVariants(), "mt-1 min-h-11")}>
             See phone help

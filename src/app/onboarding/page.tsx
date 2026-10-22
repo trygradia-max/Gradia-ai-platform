@@ -6,6 +6,7 @@ import { MeshBackground } from "@/components/gradia/mesh-background"
 import { OnboardingWizard } from "@/components/gradia/onboarding-wizard"
 import { integrationAvailability } from "@/lib/data/connections"
 import { deriveWizardStep } from "@/lib/onboarding"
+import { STRINGS } from "@/lib/strings"
 import { getOptionalShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { listVoiceOptions } from "@/lib/voice-provider"
@@ -78,21 +79,18 @@ export default async function OnboardingPage({
       <header className="relative max-w-xl space-y-2.5 text-center">
         <p className="label-eyebrow text-muted-foreground/70">
           {startFresh
-            ? "Add another business"
+            ? STRINGS.pages.onboarding.eyebrowFresh
             : isResuming
-              ? "Pick up where you left off"
-              : "Set up your business"}
+              ? STRINGS.pages.onboarding.eyebrowResume
+              : STRINGS.pages.onboarding.eyebrowStart}
         </p>
         <h1 className="font-display text-[clamp(1.875rem,5vw,2.75rem)] leading-[1.05] tracking-[-0.025em] text-foreground">
-          {startFresh ? (
-            <>Another business, same setup.</>
-          ) : (
-            <>Your business, your number, your help.</>
-          )}
+          {startFresh
+            ? STRINGS.pages.onboarding.headlineFresh
+            : STRINGS.pages.onboarding.headlineStart}
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Three steps. Your place is saved, so you can leave and come back.
-          Services and hours stay in Settings.
+          {STRINGS.pages.onboarding.body}
         </p>
       </header>
 
