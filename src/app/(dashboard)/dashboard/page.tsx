@@ -11,9 +11,11 @@ import { ApprovalsList } from "@/components/gradia/approvals-list"
 import { DashboardHero } from "@/components/gradia/dashboard-hero"
 import { KpiRow } from "@/components/gradia/kpi-row"
 import { SectionHeader } from "@/components/gradia/section-header"
+import { WelcomeTransition } from "@/components/gradia/welcome-transition"
 import { dashboardEyebrow } from "@/lib/eyebrow"
 import { requireShop } from "@/lib/shop"
 import { STRINGS } from "@/lib/strings"
+import { isWelcomeRequest } from "@/lib/welcome"
 
 /**
  * B-03 — Chief of Staff. REPLACES the old Home outright (U-01: 14 stacked
@@ -23,7 +25,12 @@ import { STRINGS } from "@/lib/strings"
  * standalone routes (nav cut is B-14) but their data now renders here too —
  * this IS the "what do I do now" answer (§4d U-03).
  */
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ welcome?: string }>
+}) {
+  const params = await searchParams
   const shop = await requireShop()
   const db = await createClient()
   const [channels, kpis, approvals, activity, intake] = await Promise.all([
@@ -41,6 +48,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-12 sm:space-y-16">
+      {isWelcomeRequest(params.welcome) ? (
+        <WelcomeTransition shopName={shop.name} />
+      ) : null}
       <DashboardHero
         shopName={shop.name}
         channels={channels}

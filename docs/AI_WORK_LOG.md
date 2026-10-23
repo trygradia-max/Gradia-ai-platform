@@ -2242,3 +2242,42 @@ reset applied 103 migrations; the expanded real-session suite passed 8/8. Node
 integration reached 562 passed / 1 gateway-seed failure / 1 todo; the complete
 unrelated callback file passed 16/16 on immediate rerun. No UI, source mutation,
 shared database, provider/cron activity, send, deploy, write unfreeze or promotion.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: in-progress]
+Onboarding copy and skippable welcome transition on
+`cursor/onboarding-welcome-copy-fdbe`. Help step asks “What would you like
+help with first?” Finish setup opens `/dashboard?welcome=1` with
+“Welcome to Gradia, [business name].” Continue is immediate — no timer,
+progress bar, or “everything is connected.” Particles respect reduced
+motion. Handoff recorded in `docs/handoffs/CURSOR_UI_COPY_AND_MOTION_2026-10-20.md`.
+Did not change dashboard review copy, inbox empty states, public pages,
+actions, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: platform] [STATUS: in-progress]
+Rebased #101 onto current main (`6d4c235` / #102) and kept both appended
+work logs. Retargeted the 2026-10-09 design-token lock so the wizard
+still says “Step N of 3” and phone help still names +$29/month, now
+through `STRINGS.pages.onboarding`. Added source locks for skip,
+Escape, reduced motion, mobile chrome, and onboarding error recovery —
+fixture checks, not signed-in browser acceptance. No disposable
+Supabase in this environment. No merge, deploy, permission change, or
+provider activation.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: platform] [STATUS: in-progress]
+Rebased #103, #104, #105 and #106 onto current main and kept both
+appended work logs. Local copy tests passed on each rebased branch.
+Signed-in onboarding/welcome browser acceptance is still blocked here:
+no Docker, no Supabase CLI, no `.env.local`, and no disposable
+`gradia-isolated-tests` stack. Skip, Escape, reduced motion, mobile
+chrome, and error recovery are locked as source/fixture checks on #101,
+not as Chrome sessions.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: marketing] [STATUS: blocked]
+Audited `trygradia-max/Gradia-Web-Cursor` `site-v2` against the October
+20 copy brief. Prepared `cursor/marketing-copy-audit-fdbe` locally
+(commit `581ce59`): drop $20 / founding / July launch, replace trial
+CTAs with Request pilot access, stop claiming live channels and
+payments. Push and PR were refused — `cursor[bot]` has no write access
+to that repo. Patch saved at
+`/opt/cursor/artifacts/marketing-copy-audit-fdbe.patch`. Did not merge,
+deploy, change backend permissions, or activate providers.
