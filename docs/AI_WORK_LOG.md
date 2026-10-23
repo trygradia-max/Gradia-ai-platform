@@ -2296,3 +2296,10 @@ says “Your customer conversations will appear here.” Later empty pages
 still say they have no visible conversations, and a failed load is still
 not treated as empty. Did not change onboarding, dashboard, public pages,
 actions, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Public-page copy on `cursor/public-pages-copy-fdbe`. Login and
+`/how-it-works` no longer say every channel is live, drop “agentic”
+and the $20 “no catch” line, and treat phone as optional. Payments and
+invoices are named as not this product. Did not change billing
+checkout, onboarding, or send behavior. No merge or deploy.
