@@ -150,7 +150,9 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("operations queue read authority", ()
   })
 
   it("keeps equal-time mixed sources stable across page boundaries", async () => {
-    const observedAt = "2026-10-23T12:00:00.000Z"
+    // Keep this pair ahead of rows staged by earlier tests. A fixed timestamp
+    // makes the assertion expire as soon as the suite runs after that date.
+    const observedAt = new Date(Date.now() + 60_000).toISOString()
     const action = await stagePending(db, shop.shopId, shop.ownerId, "send_email", { body: "same-time" })
     expect((await db.from("pending_actions").update({ created_at: observedAt }).eq("id", action)).error).toBeNull()
     const recorded = await recordLeadIntake(db, {
