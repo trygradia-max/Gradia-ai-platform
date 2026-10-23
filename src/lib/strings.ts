@@ -54,17 +54,23 @@ export const STRINGS = {
   /** Empty states teach, never blank (Language Pack §2). Distinguish
    *  first-use vs no-results vs all-done. */
   empty: {
+    conversationsFirstUseTitle: "Your customer conversations will appear here.",
     conversationsFirstUse:
-      "No calls yet. Forward your number and your receptionist starts answering.",
+      "Texts, emails, and calls from customers land here after they write in.",
+    conversationsPageEmpty: "No visible conversations on this page.",
+    conversationsChoose: "Choose a conversation",
+    conversationsChooseBody:
+      "The list stays on the left. Opening a thread does not send, mark it read, or grant consent.",
     conversationsNoResults: "Nothing matches those filters.",
     reviewQueueEmpty:
       "Nothing needs you right now. Gradia will flag anything it's unsure about.",
+    customersFirstUseTitle: "Your customers will appear here.",
     customersFirstUse:
-      "Customers appear here automatically after their first call or text.",
+      "People land here after a text, form, or call — or you can import them.",
     activityFirstUse:
-      "Everything your receptionist does shows up here — calls answered, texts staged, bookings proposed.",
+      "Calls, drafts, and bookings show up here as they happen.",
     approvalsEmpty:
-      "Nothing waiting on you. Anything your receptionist wants to send lands here first.",
+      "Nothing waiting on you. Drafts that need a yes land here first.",
   },
 
   /** Toasts: past-tense fact + undo where reversible. */
@@ -135,6 +141,14 @@ export const STRINGS = {
       kpiLeads: "Leads captured",
       kpiBooked: "Appointments booked",
       kpiNeedsReview: "Needs your review",
+      /** Real count. Approvals are drafted customer messages unless noted. */
+      repliesNeedReview: (count: number) =>
+        count === 1
+          ? "1 reply needs your review."
+          : `${count} replies need your review.`,
+      nothingNeedsReview: "Nothing needs your review.",
+      channelsConnected: (live: number, total: number) =>
+        `${live} of ${total} channels connected`,
       bookedEyebrow: "On the books",
       bookedTitle: "Today's appointments",
       bookedEmpty: "Nothing on the books today.",
@@ -152,7 +166,7 @@ export const STRINGS = {
     },
     approvals: {
       eyebrow: "Approvals",
-      titleAllClear: "All clear",
+      titleAllClear: "Nothing needs your review",
       titleWaiting: "Waiting on you",
       subtitleEmpty:
         "Nothing needs your eyes right now — anything that does lands here the moment it's staged.",
@@ -165,11 +179,44 @@ export const STRINGS = {
     },
     welcome: {
       title: "Welcome to Gradia",
-      body: "Your receptionist answers calls, texts, and emails — every inquiry becomes a drafted reply waiting in Approvals. Connect the channels below and it starts catching leads.",
+      named: (shopName: string) => `Welcome to Gradia, ${shopName}.`,
+      hint: "You can continue whenever you're ready.",
+      continue: "Continue",
+      body: "Your dashboard is ready. Channels still need their own setup, and nothing sends until you approve it.",
       setUpLater: "I'll set up later",
-      startConnecting: "Start connecting",
+      startConnecting: "Open Settings",
       progress: (live: number, total: number) =>
-        `${live} of ${total} live — this card gets out of your way once you're going.`,
+        `${live} of ${total} connected — setup is still yours to finish.`,
+    },
+    onboarding: {
+      eyebrowStart: "A short setup",
+      eyebrowResume: "Pick up where you left off",
+      eyebrowFresh: "Add another business",
+      headlineStart: "Your business, then what you'd like help with first.",
+      headlineFresh: "Another business, same setup.",
+      body: "Three short steps. You can leave and come back — your place is saved. Services and hours stay in Settings.",
+      stepStatus: (current: number) => `Step ${current} of 3`,
+      steps: {
+        business: "Your business",
+        number: "Your number",
+        help: "Your help",
+      },
+      helpTitle: "What would you like help with first?",
+      businessBlurb:
+        "Name, place, and what you do. You can change this later in Settings.",
+      saveAndContinue: "Save and continue",
+      numberBlurb:
+        "This is the number customers call and text. Carriers must approve texting. Calls can work before that approval.",
+      skipNumber: "Skip number for now",
+      continueToHelp: "Continue to help",
+      helpBlurb:
+        "Start with drafted replies, or add phone help later. Nothing sends until you approve it.",
+      finish: "Finish setup",
+      quoteNote:
+        "Before Gradia can quote or book, add your services and working hours in Settings. Finishing setup does not activate a channel.",
+      phoneOptionalTitle: "Phone help is optional.",
+      phoneOptionalBody:
+        "Phone answering is an optional +$29/month add-on. Review the plan and setup before turning it on.",
     },
     activity: {
       eyebrow: "Activity",

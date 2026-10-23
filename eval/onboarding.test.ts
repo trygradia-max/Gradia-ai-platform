@@ -9,7 +9,7 @@ import {
 } from "@/lib/onboarding"
 
 /**
- * Three-step wizard: Your business → Your number → Choose your help.
+ * Three-step wizard: Your business → Your number → What would you like help with first?
  * A saved onboarding_step wins over inferred completeness so a refresh
  * returns to the same place.
  */

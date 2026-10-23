@@ -31,8 +31,8 @@ export default function LoginPage() {
             <span className="italic">you are</span>.
           </h1>
           <p className="mx-auto max-w-md text-sm text-muted-foreground sm:text-base">
-            Voice, email, SMS, DMs, the front desk — caught, drafted, queued
-            for your yes.
+            Sign in to review drafts, customers, and the inbox. Channels are
+            set up after, and nothing sends until you approve it.
           </p>
         </div>
       </header>

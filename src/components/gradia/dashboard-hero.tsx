@@ -4,6 +4,7 @@ import Link from "next/link"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { StatusPill, type StatusPillTone } from "@/components/ui/status-pill"
 import type { ChannelSummary } from "@/lib/data/channels"
+import { STRINGS } from "@/lib/strings"
 
 function channelTone(status: ChannelSummary["status"]): StatusPillTone {
   if (status === "connected") return "good"
@@ -31,10 +32,7 @@ export function DashboardHero({
   rightSlot?: ReactNode
 }) {
   const live = channels.filter((channel) => channel.status === "connected").length
-  const allLive = live === channels.length && channels.length > 0
-  const channelLine = allLive
-    ? `All ${channels.length} channels connected`
-    : `${live} of ${channels.length} channels connected`
+  const channelLine = STRINGS.pages.home.channelsConnected(live, channels.length)
 
   return (
     <section className="space-y-5 rounded-md bg-card px-6 py-6 ring-1 ring-border sm:px-8 sm:py-7">

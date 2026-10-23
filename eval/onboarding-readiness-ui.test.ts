@@ -33,6 +33,7 @@ const baseShop: ReadinessShop = {
   twilio_phone_number: "+15555550100",
   gradia_number_e164: "+15555550100",
   a2p_status: "pending",
+  a2p_verified_at: null,
   byo_sms_verified: false,
   twilio_account_sid_enc: null,
   twilio_auth_token_enc: null,

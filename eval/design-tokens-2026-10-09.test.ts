@@ -26,8 +26,10 @@ describe("2026-10-09 token and first-slice locks", () => {
 
   it("Home does not claim agents are watching when channels are off", () => {
     const hero = read("src/components/gradia/dashboard-hero.tsx")
+    const copy = read("src/lib/strings.ts")
     expect(hero).not.toContain("agents watching")
-    expect(hero).toContain("channels connected")
+    expect(hero).not.toContain("All ${channels.length} channels connected")
+    expect(copy).toContain("channels connected")
     expect(hero).toContain("StatusPill")
   })
 
@@ -132,12 +134,14 @@ describe("2026-10-09 token and first-slice locks", () => {
     expect(login).toContain("signInWithOAuth")
     expect(loginPage).toContain("min-h-11")
     expect(wizard).toContain("FormField")
-    expect(wizard).toContain("Step {current} of 3")
+    expect(wizard).toContain("STRINGS.pages.onboarding.stepStatus(current)")
+    expect(read("src/lib/strings.ts")).toContain("Step ${current} of 3")
     expect(wizard).toContain("fieldErrors")
     expect(wizard).toContain("saveShop")
     expect(steps).toContain("min-h-11")
     expect(steps).toContain("completeOnboarding")
-    expect(steps).toContain("+$29/month")
+    expect(steps).toContain("STRINGS.pages.onboarding.phoneOptionalBody")
+    expect(read("src/lib/strings.ts")).toContain("+$29/month")
     expect(login).not.toContain("free trial")
     expect(wizard).not.toContain("free trial")
   })

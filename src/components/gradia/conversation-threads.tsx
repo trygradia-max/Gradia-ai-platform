@@ -32,7 +32,7 @@ export function ConversationThreads({
   if (threads.length === 0) {
     return (
       <EmptyState
-        title={STRINGS.chrome.noCallsYetTitle}
+        title={STRINGS.empty.conversationsFirstUseTitle}
         description={STRINGS.empty.conversationsFirstUse}
       />
     )

@@ -108,6 +108,11 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // P0-005A: tenant-blind by spec — its only query is the service-role
     // prune_provider_events RPC (time/status keyed, reads no request input).
     "src/app/api/cron/provider-events-prune/route.ts",
+    // Held A2P reconciler (off by default, not scheduled). Cross-shop by design
+    // like the crons: it lists due registrations, then every read and write is
+    // scoped to one shop_id, and each provider call uses that shop's own
+    // subaccount (syncA2pStatus).
+    "src/app/api/internal/a2p-reconcile/route.ts",
     "src/app/api/cron/reconcile/route.ts",
     "src/app/api/cron/recovery-retention/route.ts",
     "src/app/api/cron/reminders/route.ts",

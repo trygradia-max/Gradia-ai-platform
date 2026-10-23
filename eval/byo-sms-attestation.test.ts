@@ -108,7 +108,7 @@ describe("attestation invariants", () => {
   })
 
   it("a Gradia number is never opened by the attestation flag", () => {
-    const shop = { gradia_number_e164: "+15555550100", a2p_status: "pending" as const, byo_sms_verified: true }
+    const shop = { gradia_number_e164: "+15555550100", a2p_status: "pending" as const, a2p_verified_at: null, byo_sms_verified: true }
     expect(smsGateForShop(shop, "+15555550100").allowed).toBe(false)
     expect(smsGateForShop({ ...shop, a2p_status: "rejected" }, "+15555550100").allowed).toBe(false)
     expect(smsGateForShop({ ...shop, byo_sms_verified: false }, phone).allowed).toBe(false)

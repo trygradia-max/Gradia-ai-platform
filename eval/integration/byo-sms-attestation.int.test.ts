@@ -22,7 +22,7 @@ const attest = (client: SupabaseClient, phone = OWN_NUMBER, version: string = VE
 const revoke = (client: SupabaseClient) => client.rpc("revoke_byo_sms_registration", { p_shop: shop.shopId })
 const read = (client: SupabaseClient) => client.rpc("read_byo_sms_attestation", { p_shop: shop.shopId })
 const refusal = (r: { error: { code?: string; details?: string | null } | null }) => r.error ? byoSmsRefusal(r.error) : { ok: true }
-const shopRow = async () => (await db.from("shops").select("twilio_phone_number,gradia_number_e164,a2p_status,byo_sms_verified").eq("id", shop.shopId).single()).data!
+const shopRow = async () => (await db.from("shops").select("twilio_phone_number,gradia_number_e164,a2p_status,a2p_verified_at,byo_sms_verified").eq("id", shop.shopId).single()).data!
 const history = async () => (await db.from("byo_sms_attestations").select("*").eq("shop_id", shop.shopId).order("created_at")).data!
 const setShop = async (values: Record<string, unknown>) => expect((await db.from("shops").update(values).eq("id", shop.shopId)).error).toBeNull()
 /** The send-time gate, evaluated on the stored row exactly as the executor does. */
