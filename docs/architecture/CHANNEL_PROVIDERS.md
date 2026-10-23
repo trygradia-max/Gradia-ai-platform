@@ -111,6 +111,80 @@ registration. Twilio's `campaign_status` is mapped explicitly:
 - Checks still happen only on the status webhook or "Check status". No cron was
   added (R6); a suspension is noticed on the next check.
 
+**Approval evidence and the send gate** (October 20; migration
+`20261020100000_a2p_campaign_evidence.sql`; `src/lib/a2p-evidence.ts`)
+
+- Evidence is a successful provider read of the campaign that returned
+  VERIFIED. The database stamps it as `a2p_registrations.last_verified_at` and
+  `shops.a2p_verified_at`, in the same transaction as the statuses, and only for
+  the registration's claim holder.
+- `smsGateForShop` opens a Gradia number only when `a2p_status = 'approved'`
+  **and** `a2p_verified_at` is younger than the maximum age. The default is 72
+  hours, set by `A2P_EVIDENCE_MAX_AGE_HOURS` and capped at 7 days. A missing or
+  unreadable time is stale. The release lane should confirm the 72 hours.
+- Each check records `last_checked_at` (the provider answered) or
+  `last_check_failed_at` plus `last_check_failure_kind`: `provider_unreachable`
+  (timeout, network, 5xx, 429) or `provider_error` (any other refusal). A failed
+  check is never a carrier state and never renews evidence.
+- During an outage the status stays `approved` while the evidence ages. The gate
+  then closes with "Texting check overdue". Suspension still closes it
+  immediately and clears `a2p_verified_at`. A VERIFIED read reopens and renews.
+- A check that can't take the claim makes no read and renews nothing.
+- `stage_qualification_question` (SQL) still checks only `a2p_status =
+  'approved'`. Staging sends nothing; the executor's `smsGateForShop` enforces
+  freshness at send.
+- Owners can no longer set `a2p_status` (other than back to `unregistered`) or
+  `a2p_verified_at` (other than to NULL) through the shops row policy
+  (trigger `shops_a2p_guard`). Before this, an owner could approve their own
+  number.
+- **Existing data:** approved shops get NULL evidence, so their texts are held
+  until the first successful check. Count them first with
+  `scripts/preflight-a2p-evidence.sql`. A grace backfill is the release lane's
+  choice.
+- Readiness reports an approved shop with stale evidence as `in_progress`, with
+  reason `registration_check_overdue`.
+
+**Held status reconciler** (October 20; migration
+`20261020110000_a2p_status_reconciler.sql`; `src/lib/a2p-reconciler.ts`;
+route `GET /api/internal/a2p-reconcile`)
+
+- It refreshes registrations in `brand_pending`, `campaign_pending`, `approved`
+  or `suspended` without a click. It takes them oldest `next_check_at` first,
+  at most `A2P_RECONCILE_BATCH` per run (default 25, never more than 100).
+- **Held.** It's off unless `A2P_RECONCILER_ENABLED=true`, and off it reads
+  nothing. The route sits outside `/api/cron`: it isn't in `vercel.json` or the
+  cron registry, and nothing calls it. Auth is the cron bearer `CRON_SECRET`.
+- A run first takes each due row with a compare-and-swap on `next_check_at`
+  (held for 15 minutes), so two concurrent runs never check the same shop in
+  the same period. The check then takes the registration's claim (so a manual
+  check at the same moment can't double it), and uses only that shop's own
+  subaccount credentials.
+- **Schedule.** After a successful check: 1 hour for pending registrations, 6
+  hours for approved or suspended ones. After a failed check: 5 minutes,
+  doubling per consecutive failure, capped at 6 hours. Every interval and the
+  cap are at most a quarter of the evidence maximum age, so a reconciler
+  scheduled at least that often gets several tries to renew evidence before the
+  gate closes as "check overdue". UI polling is then not the only safety net.
+- A registration with nothing to read (no brand SID yet) is pushed back by the
+  settled interval, so it can't fill every batch.
+
+**Uncertain provider outcomes** (October 20 audit;
+`eval/integration/a2p-uncertain-outcomes.int.test.ts`)
+
+This is service-level idempotency: a database claim, plus a provider lookup
+before any create. It isn't a UI busy flag.
+
+| Case | Before | Now |
+| --- | --- | --- |
+| Lost brand create response | Retry registered a second, billed brand | The retry lists the subaccount's brands and adopts the one made from the same two bundles |
+| Lost messaging service create response | Retry created a second service; the first was orphaned | The retry lists the subaccount's services and adopts the one pointing at Gradia's inbound URL |
+| Lost campaign create response | (fixed in #97) | Adopted from the service's Usa2p list |
+| Provider call longer than the 15-minute lease | No timeout, so a second claimer could repeat the in-flight create. The stale holder's saves were already refused | Every call times out after 30 seconds (`A2P_PROVIDER_TIMEOUT_MS`), so the longest claim (about 15 calls) ends well inside the lease |
+| Partial TrustHub creation (R9): profile or trust product created, then an entity, evaluate or submit call fails | A retry builds a new bundle | **Unchanged.** The abandoned draft is unbilled clutter. Finishing it needs sub-step checkpoints inside `registerBusinessProfile`; that's a follow-up |
+
+Adoption only looks inside the shop's own subaccount, so it can't pick up
+another business's resource.
+
 **What a resubmission does**
 
 | Situation | Effect |

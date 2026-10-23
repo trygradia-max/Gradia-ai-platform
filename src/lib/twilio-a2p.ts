@@ -32,6 +32,15 @@ const A2P_TRUST_PRODUCT_POLICY_SID = "RNb0d4771c2c98518d916a3d4cd70a8f8b"
 const STARTER_PROFILE_POLICY_SID = "RN806dd6cd175f314e1f96a9727ee271f4"
 const SOLE_PROP_TRUST_POLICY_SID = "RN670d5d2e282a6130ae063b234b6019c8"
 
+/**
+ * Every Twilio call gives up after this long. It must stay far inside the
+ * registration claim's lease (15 minutes, telephony-provider.ts): the longest
+ * claim (submit: about 15 calls) then ends before the lease can lapse, so a
+ * second claimer can never overtake a live holder. A timed-out create may
+ * still have happened at Twilio; callers look it up before creating again.
+ */
+export const A2P_PROVIDER_TIMEOUT_MS = 30_000
+
 async function call(
   creds: TwilioCredentials,
   method: "GET" | "POST",
@@ -49,6 +58,7 @@ async function call(
       ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
     },
     body: form ? new URLSearchParams(form).toString() : undefined,
+    signal: AbortSignal.timeout(A2P_PROVIDER_TIMEOUT_MS),
   })
   const raw = await res.text()
   if (!res.ok) {
@@ -337,6 +347,26 @@ export async function createBrand(
   return { brandSid: requireSid(brand, "BrandRegistration") }
 }
 
+export type ExistingBrand = { brandSid: string; customerProfileSid: string | null; trustProductSid: string | null; status: string | null }
+
+/**
+ * The brands already registered in this (sub)account. Read before creating
+ * one, so a create whose response was lost is adopted instead of registered,
+ * and billed, again.
+ */
+export async function listBrandRegistrations(creds: TwilioCredentials): Promise<ExistingBrand[]> {
+  const page = await call(creds, "GET", `${MESSAGING_BASE}/a2p/BrandRegistrations?PageSize=50`)
+  const rows = Array.isArray(page.data) ? (page.data as Record<string, unknown>[]) : []
+  return rows
+    .filter((r) => typeof r.sid === "string")
+    .map((r) => ({
+      brandSid: r.sid as string,
+      customerProfileSid: typeof r.customer_profile_bundle_sid === "string" ? r.customer_profile_bundle_sid : null,
+      trustProductSid: typeof r.a2p_profile_bundle_sid === "string" ? r.a2p_profile_bundle_sid : null,
+      status: typeof r.status === "string" ? r.status : null,
+    }))
+}
+
 export type BrandStatus = {
   status: "APPROVED" | "FAILED" | "PENDING"
   failureReason: string | null
@@ -361,6 +391,20 @@ export async function getBrandStatus(
         ? brand.failure_reason
         : null,
   }
+}
+
+export type ExistingMessagingService = { messagingServiceSid: string; inboundRequestUrl: string | null }
+
+/** The messaging services in this (sub)account, read before creating one. */
+export async function listMessagingServices(creds: TwilioCredentials): Promise<ExistingMessagingService[]> {
+  const page = await call(creds, "GET", `${MESSAGING_BASE}/Services?PageSize=50`)
+  const rows = Array.isArray(page.services) ? (page.services as Record<string, unknown>[]) : []
+  return rows
+    .filter((r) => typeof r.sid === "string")
+    .map((r) => ({
+      messagingServiceSid: r.sid as string,
+      inboundRequestUrl: typeof r.inbound_request_url === "string" ? r.inbound_request_url : null,
+    }))
 }
 
 /** Messaging service with inbound routed to Gradia's existing SMS handler. */
