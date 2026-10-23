@@ -2036,3 +2036,43 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: codex] [DATE: 2026-10-21] [AREA: operations] [STATUS: foundation]
+Recorded the approved operations OS roadmap, lane ownership, release boundaries and
+exact continuation steps in docs/roadmap/AGENTIC_OS_EXECUTION_PLAN.md. Added a pure,
+unused pending-action queue projection: mixed-shop input fails closed; missing claim
+evidence and terminal delivery conflicts remain unresolved; counts describe only the
+loaded window; no payloads or execution paths. Not yet connected to an authorized
+loader or UI. No migration/provider/shared-state changes. Isolated Node 22: 1,622 unit
+passed, 4 skipped; full lint, types, offline build passed. Database integration is
+still required when the authorized loader is added, and for the separate release batch.
+
+[AI: codex] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Finished the authorized pending-action operations loader on
+`codex/operations-foundation` / draft PR #111. Migration `20261021120000` adds a
+bounded read RPC over existing pending actions, sending claims and conflict evidence;
+it returns no payloads or proof claims. Live membership is checked on every page.
+Owners receive their shop only; managers are filtered by the existing
+`approvals.messages` and `delivery.reconcile` grants; staff, revoked, foreign,
+anonymous and sessionless service callers fail closed. The server-only owner loader
+derives its shop from the authenticated request, and strict response validation makes
+failed or inconsistent evidence unavailable rather than empty. No page uses it yet.
+Disposable reset: 102 migrations through `20261021120000`; new integration 5/5.
+Node 22.22.0: 1,626 unit passed / 4 skipped, lint/types/offline build passed. Full
+integration reached 560 passed / 1 gateway-seed failure / 1 todo; the unrelated
+booking file passed 13/13 on immediate rerun. No shared migration, UI, executor,
+provider/cron activation, send, deploy, write unfreeze or public promotion.
+
+[AI: codex] [DATE: 2026-10-22] [AREA: platform] [STATUS: done]
+Extended draft PR #111's authorized operations read model across unresolved intake
+without adding a task store or executor. The mixed-source cursor is stable, completed
+sends cannot starve a page, linked workflow/action evidence groups as one work item,
+and source provenance points only to existing permission-checking routes. Added a
+server-observed deterministic brief contract with explicit unavailable and partial
+coverage states, plus a manager loader that validates the requested workspace against
+the signed-in `team_workspaces` result before the RPC rechecks live grants. Disposable
+reset applied 103 migrations; the expanded real-session suite passed 8/8. Node
+22.23.4: 1,630 unit passed / 4 skipped; lint, types and offline build passed. Full
+integration reached 562 passed / 1 gateway-seed failure / 1 todo; the complete
+unrelated callback file passed 16/16 on immediate rerun. No UI, source mutation,
+shared database, provider/cron activity, send, deploy, write unfreeze or promotion.
