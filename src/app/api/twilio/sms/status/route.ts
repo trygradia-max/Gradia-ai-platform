@@ -41,6 +41,14 @@
  * received_at}) and logged, so it can be reviewed against Twilio's message
  * log. See src/lib/twilio-delivery-status.ts and CHANNEL_PROVIDERS.md.
  *
+ * Callback before interaction (migration 20261021100000): when the
+ * verified shop has no outbound interaction with the SID yet, the status is
+ * stored as shop-scoped evidence via record_sms_status_evidence and applied
+ * by a trigger when the send path writes the interaction, under the same
+ * rules. If storing fails, 5xx so Twilio retries: an early terminal result
+ * is never acknowledged and dropped. Evidence never creates an interaction,
+ * binds a customer, resends or grants anything.
+ *
  * Returns 200 + empty TwiML on every accepted callback so Twilio stops
  * retrying — even when we can't find a matching interaction (the row
  * may not have been inserted yet, see comment inline).
@@ -66,6 +74,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const TWIML_HEADERS = { "Content-Type": "text/xml; charset=utf-8" }
+/** A Twilio SMS/MMS message SID; anything else is never stored as evidence. */
+const TWILIO_MESSAGE_SID = /^(SM|MM)[0-9a-fA-F]{32}$/
 
 /** The shop columns credential resolution needs — includes the
  *  subaccount + Gradia-number fields the pre-P0-008 select omitted. */
@@ -218,10 +228,41 @@ export async function POST(request: Request) {
       return new Response("Server error", { status: 500 })
     }
     if (!row) {
-      // Either the send-side insert hasn't landed yet, or this is for a
-      // message we didn't send / another tenant's message (signature-
-      // verified, shop-scoped lookup found nothing). Acknowledge with
-      // zero writes — never create state just to satisfy Twilio.
+      // No outbound interaction carries this SID in this shop yet: usually
+      // the callback beat the send path's insert. Keep the callback as
+      // evidence for this shop and SID (never an interaction, never a
+      // customer binding); the interactions trigger applies it when the
+      // send path writes the row (migration 20261021100000). Legacy URLs
+      // without ?shop= have no tenant to scope evidence to, and a SID that
+      // isn't Twilio-shaped can't be a real message: both are acknowledged
+      // with no write, as before.
+      if (!shopId || !TWILIO_MESSAGE_SID.test(messageSid)) {
+        return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
+      }
+      const { data: stored, error: evidenceErr } = await supabase.rpc(
+        "record_sms_status_evidence",
+        { p_shop: shopId, p_sid: messageSid, p_status: newStatus.toLowerCase(), p_error: errorCode }
+      )
+      if (evidenceErr) {
+        // The only copy of this result: 5xx so Twilio retries, never drop it.
+        console.error("[twilio status] evidence store failed:", {
+          shopId,
+          messageSid,
+          error: evidenceErr.message,
+        })
+        return new Response("Server error", { status: 500 })
+      }
+      if (stored === "interaction_exists") {
+        // Inserted meanwhile: go round and apply the status to it.
+        if (attempt === 2) return new Response("Server error", { status: 500 })
+        continue
+      }
+      console.info("[twilio status] callback kept until the interaction is saved:", {
+        shopId,
+        messageSid,
+        status: newStatus,
+        outcome: stored,
+      })
       return new Response(EMPTY_TWIML_RESPONSE, { headers: TWIML_HEADERS })
     }
 

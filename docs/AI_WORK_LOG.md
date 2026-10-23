@@ -2100,3 +2100,105 @@ isolated runner:
   each.
 
 No provider calls, purchases, sends, shared migrations, merge or activation.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: review]
+Diagnosed the "14 baseline" local integration failures, in the same six files
+every run (manager-notification 6, whisper-inbox 2, intake-identity 2,
+intake-vehicle 2, lead-qualification 1, customer-merge 1). They weren't defects.
+
+CI's `scripts/test-stack.mjs` applies five test-only SQL fixtures from
+`tests/sql/` after every reset: injected failures and a notification clock. The
+local `gradia-record-fresh` procedure (`supabase db reset` directly) never
+applied them. Missing helpers surfaced as `PGRST202`, for example
+`test_notification_clock`.
+
+Fix:
+
+- The fixture list is now shared (`scripts/test-fixtures.mjs`), so CI's script
+  and local resets can't drift. CI behavior is unchanged.
+- A new `scripts/record-fresh-reset.mjs` resets the unlinked record-fresh stack
+  and applies the fixtures.
+- `eval/test-fixtures.test.ts` fails if a `tests/sql` file is left off the list.
+
+Result: main `6d4c235` with fixtures, full integration `--fresh`: 53 of 53
+files, 556 passed, 1 todo, 0 failed. Unit: 1,612 passed, 4 skipped. Lint passed.
+Earlier entries citing "14 baseline failures" should be read as this missing
+setup. No migration, provider call or shared database change.
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+SMS status callbacks that arrive before the outbound interaction is saved, on
+`claude/sms-callback-evidence` from main `6d4c235`. Previously the callback
+was acknowledged and dropped, which was reproduced on main: 5 of 9 new tests
+fail there.
+
+- Migration `20261021100000` stores verified callbacks as shop-scoped
+  evidence keyed by MessageSid.
+- A trigger on `interactions` applies that evidence when any send path writes
+  the row, using #99's rules mirrored in SQL. Both sides take one advisory
+  lock.
+- The route returns 5xx when storing fails.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No provider
+calls, sends, shared DB, merge or deploy.
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Operator-visible terminal delivery conflicts on the existing delivery-review
+authority, on `claude/sms-delivery-conflict-review` from main `6d4c235`.
+
+- Migration `20261021110000` adds `list_delivery_conflicts`,
+  `read_delivery_conflict` and an append-only, audited
+  `record_delivery_conflict_resolution`. A conflicted message reads as
+  `conflicting`, never `delivered`.
+- The backend contract for Cursor is in
+  `docs/architecture/DELIVERY_CONFLICT_REVIEW.md`, with `smsDeliveryState()`
+  for other readers.
+- No UI files changed. The interaction timeline still needs to adopt the
+  helper.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No sends,
+shared DB, merge or deploy.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: review]
+PR3, delivery lifecycle acceptance:
+`eval/integration/delivery-lifecycle-acceptance.int.test.ts`. One business's
+message runs end to end on the real disposable database:
+
+1. intake;
+2. qualification;
+3. an owner-queued question with reply purpose;
+4. manager or owner approval, sending exactly once;
+5. a signed terminal callback arriving **before** the interaction is saved (kept
+   and applied, #113);
+6. a failed delivery, never resent;
+7. cross-business signer misuse refused;
+8. an uncertain send held across owner, manager and service retries, with no
+   replacement queued;
+9. contradictory delivered and undelivered results shown as `conflicting` on the
+   delivery-review surface and resolved by the manager, with the revoked member
+   refused (#114);
+10. a STOP through the signed inbound route holding a queued send with zero
+    transport.
+
+Real: interactions, the SMS gate, the status and inbound routes, consent
+keywords, approvals and delegated review. Faked: Twilio transport, the
+classifier and drafter, and embeddings. No poller, reconciler or provider is
+activated.
+
+One wrong expectation was fixed in the test, not the product: after an
+executed approval, a manager approval correctly returns `already_decided` and
+sends nothing.
+
+Cursor handoff: `docs/architecture/CURSOR_DELIVERY_STATUS_HANDOFF.md`. It
+covers the actual delivery, review, conflict and readiness states with their
+conditions, and flags `interaction-timeline.tsx` showing Delivered for a
+conflicted text.
+
+Depends on #112 (fixtures), #113 and #114.
+
+Results:
+
+- Lifecycle suite: 5 of 5, twice.
+- Full integration `--fresh` with fixtures: 56 of 56 files, 579 passed,
+  1 todo, 0 failed.
+- Unit: 1,619 passed, 4 skipped.
+- Lint, offline build, and types after the build passed.
+
+No migration of its own, provider call, shared database change or send.
