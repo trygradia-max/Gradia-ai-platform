@@ -2303,3 +2303,10 @@ Public-page copy on `cursor/public-pages-copy-fdbe`. Login and
 and the $20 “no catch” line, and treat phone as optional. Payments and
 invoices are named as not this product. Did not change billing
 checkout, onboarding, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Remaining signed-in empty copy on `cursor/app-empty-copy-fdbe`. Customers
+now say “Your customers will appear here.” Activity and Approvals empty
+states are the same voice, without claiming live channels. Did not change
+onboarding, dashboard counts, inbox, public pages, actions, or send
+behavior. No merge or deploy.
