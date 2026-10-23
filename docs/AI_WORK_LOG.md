@@ -2281,3 +2281,11 @@ payments. Push and PR were refused — `cursor[bot]` has no write access
 to that repo. Patch saved at
 `/opt/cursor/artifacts/marketing-copy-audit-fdbe.patch`. Did not merge,
 deploy, change backend permissions, or activate providers.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Dashboard review copy on `cursor/dashboard-review-copy-fdbe`. Home and
+Approvals now say “3 replies need your review.” with a real count, or
+“Nothing needs your review.” when the queue is empty. Channel line is
+always “N of M channels connected” — it no longer says all channels are
+live. Did not change onboarding, inbox, public pages, actions, or send
+behavior. No merge or deploy.

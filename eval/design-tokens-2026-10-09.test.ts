@@ -26,8 +26,10 @@ describe("2026-10-09 token and first-slice locks", () => {
 
   it("Home does not claim agents are watching when channels are off", () => {
     const hero = read("src/components/gradia/dashboard-hero.tsx")
+    const copy = read("src/lib/strings.ts")
     expect(hero).not.toContain("agents watching")
-    expect(hero).toContain("channels connected")
+    expect(hero).not.toContain("All ${channels.length} channels connected")
+    expect(copy).toContain("channels connected")
     expect(hero).toContain("StatusPill")
   })
 
