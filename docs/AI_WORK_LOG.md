@@ -2289,3 +2289,10 @@ Approvals now say “3 replies need your review.” with a real count, or
 always “N of M channels connected” — it no longer says all channels are
 live. Did not change onboarding, inbox, public pages, actions, or send
 behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Inbox empty copy on `cursor/inbox-empty-copy-fdbe`. A first-use inbox now
+says “Your customer conversations will appear here.” Later empty pages
+still say they have no visible conversations, and a failed load is still
+not treated as empty. Did not change onboarding, dashboard, public pages,
+actions, or send behavior. No merge or deploy.
