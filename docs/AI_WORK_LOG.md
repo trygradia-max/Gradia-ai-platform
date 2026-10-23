@@ -2321,11 +2321,12 @@ that isolated test change to #111 as `61034d2`. Node 22.23.4: 1,669 unit tests
 passed / 4 skipped; lint, types and the offline Next 16.2.6 webpack production
 build passed. The operations integration contract passed 8/8; affected Claude
 conflict suites passed independently (delivery review 9/9, booking conflict
-enforcement 6/6). The all-at-once disposable integration run is not a green
-release gate on this Mac: best clean run reached 617/624 plus one todo before
-the local PostgREST container temporarily lost its database connection and
-returned invalid upstream responses; reruns of affected files pass. Therefore
-the combined candidate remains local and unpushed. Localhost `127.0.0.1:3101`
-uses only the disposable `gradia-isolated-tests` stack and fictional seed data;
-provider credentials, external sends, cron activation, deployment, write
-unfreeze and public promotion remain off.
+enforcement 6/6). The all-at-once local run remained infrastructure-unstable:
+the best clean attempt reached 617/624 plus one todo before PostgREST temporarily
+lost its database connection; affected files passed on rerun. The branch was then
+pushed as draft PR #116 and both GitHub `checks` and the complete disposable
+`integration` workflow passed on the combined tree. This is a private integration
+candidate, not a release decision. Localhost `127.0.0.1:3101` uses only the
+disposable `gradia-isolated-tests` stack and fictional seed data; provider
+credentials, external sends, cron activation, deployment, write unfreeze and
+public promotion remain off.
