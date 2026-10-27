@@ -2330,3 +2330,13 @@ candidate, not a release decision. Localhost `127.0.0.1:3101` uses only the
 disposable `gradia-isolated-tests` stack and fictional seed data; provider
 credentials, external sends, cron activation, deployment, write unfreeze and
 public promotion remain off.
+
+[AI: codex] [DATE: 2026-10-06] [AREA: platform] [STATUS: done]
+Added the owner quick-reply Control Center check on `codex/human-sms-control-policy`.
+An activated policy can refuse `sms.reply` before Twilio; no active policy
+preserves the existing send. The owner does not get a second approval queue.
+Consent and proof still apply after an allow. Node 22 unit suite: 1,125 passed,
+four existing live skips. Touched-file lint passed. Voice, alerts, cron, granular
+purposes, delegated manager approval, and per-read audit remain unfinished.
+No migration, deployment, shared-database change, provider activation, or
+production change was included.

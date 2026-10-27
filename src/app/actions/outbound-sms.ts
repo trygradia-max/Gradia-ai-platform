@@ -1,5 +1,6 @@
 "use server"
 
+import { authorizeHumanSmsReply } from "@/lib/control-center/human-send"
 import { servicePayload, claimServiceExecution, completeServiceExecution } from "@/lib/service-purpose"
 import { evaluateSmsSendPolicy } from "@/lib/send-policy"
 import { revalidatePath } from "next/cache"
@@ -104,9 +105,9 @@ export type OperatorSendResult =
   | { ok: false; error: string }
 
 /**
- * Sends an SMS directly from a logged-in operator — no HITL gate since
- * the operator is the human. Records the message as an outbound
- * interaction so memory + the customer thread stay coherent.
+ * Sends an SMS directly from the logged-in owner. The owner is the human,
+ * so this does not queue a second approval. An activated Control Center
+ * policy can still refuse it. Consent, quiet hours and proof still apply.
  */
 export async function sendOperatorSms(
   input: z.infer<typeof operatorSendSchema>
@@ -119,7 +120,7 @@ export async function sendOperatorSms(
     }
   }
 
-  await requireUser()
+  const user = await requireUser()
   const shopCtx = await requireShop()
   const supabase = await createClient()
 
@@ -142,6 +143,14 @@ export async function sendOperatorSms(
   if (!smsGate.allowed) {
     return { ok: false, error: smsGate.reason }
   }
+
+  const authority = await authorizeHumanSmsReply(supabase, {
+    shopId: shop.id,
+    actorId: user.id,
+    toPhone: parsed.data.to_phone,
+    body: parsed.data.body,
+  })
+  if (!authority.allowed) return { ok: false, error: authority.reason }
 
   const context = await servicePayload(supabase,shop.id,{to_phone:parsed.data.to_phone,body:parsed.data.body,source:"verified_reply"})
   const policy = await evaluateSmsSendPolicy(supabase, shop, {

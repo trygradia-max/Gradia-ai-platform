@@ -724,3 +724,27 @@ Limits: managers still cannot edit a message. No reason text is captured with a
 rejection. The buttons were compiled, not exercised in an authenticated browser.
 Delegation still covers messages only. No merge, deployment, shared database or
 provider activity.
+
+## Human SMS reply authority — October 6
+
+The owner quick reply is the human-direct SMS path. `sendOperatorSms` still does
+not create a pending action. After the number and carrier gate, and before any
+customer lookup or Twilio call, it asks `authorizeHumanSmsReply`. No activated
+policy preserves today's send, including shops whose ids are not yet in the
+policy contract. An activated policy is the pure evaluator with source `human`,
+intent `execute`, and operation fixed as `sms.reply`. The request body cannot
+choose a purpose. Approval mode lets the owner send without a second queue.
+Off, Read, Suggest, a disabled workspace, and any SMS, role, risk, or exception
+ceiling of Off refuse the send. A workspace-wide Autonomous default does not
+grant the reply; that matches `evaluatePolicy`, which is stricter than the
+pending-action SQL adapter's downgrade to Approval. Consent, quiet hours, STOP,
+and service proof still run after an allow. Denial writes nothing and does not
+call Twilio.
+
+This is owner-only. A manager membership does not gain the reply. There is no
+`control_execution_decisions` row, because that table requires a pending action.
+Direct email has no operator-send function; staged email remains on the existing
+pending-action trigger. Voice, alerts, cron transport, granular purposes,
+delegated manager approval, and per-read audit remain unfinished. No migration,
+deployment, shared-database change, provider activation, or production change is
+included.
