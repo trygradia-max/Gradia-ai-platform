@@ -68,8 +68,8 @@ export function SmsQuickReply({
             Text <span className="italic">{target}</span>{" "}from here.
           </h3>
           <p className="text-sm text-muted-foreground">
-            Skip the HITL loop — this one goes out under your name the
-            moment you hit send.
+            Sends under your name. Control Center and consent can still
+            stop it.
           </p>
         </div>
       </header>
