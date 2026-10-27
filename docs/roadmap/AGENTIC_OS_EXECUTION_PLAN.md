@@ -17,6 +17,13 @@ work history. Claude can supply reasoning behind Gradia's interface; Gradia owns
 authorization, durable state, memory, auditing, billing and execution controls.
 Model text is never permission, proof of completion, or a tool credential.
 
+The 2026-10-26 company-AI reference video is translated into a Gradia-specific
+layering contract in `docs/architecture/AGENT_OS_LAYERING.md`. Its first pure
+definition compiler now locks Gradia identity, reviewed knowledge scopes, Control
+Center tool grants, budgets, scheduling, evaluation evidence and tenant-scoped
+trace/cache identity. This is a control-plane foundation, not a claim that the
+runtime, router, semantic cache or employee builder is complete.
+
 ## Current baseline and boundaries
 
 Starting main: 6d4c235 (integration #102). Shared database was last verified at 101
