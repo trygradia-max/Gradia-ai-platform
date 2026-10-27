@@ -1,5 +1,10 @@
 # Gradia operations OS — execution and continuation plan
 
+> The current cross-lane status, complete Agentic OS target, critical path and
+> founder pilot checklist now live in `AGENTIC_OS_MASTER_BUILD.md`. This older
+> continuation log remains detailed implementation evidence; when status differs,
+> the master build file is authoritative.
+
 Updated 2026-10-21. User approved this roadmap. It expands the future product scope;
 it does not declare these features shipped or change release permissions.
 
