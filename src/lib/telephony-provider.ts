@@ -17,9 +17,12 @@
  *   and the vendor ref, so margin and reconciliation are always computable.
  */
 
+import { randomUUID } from "node:crypto"
+
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { encryptSecret, tryDecryptSecret } from "@/lib/crypto"
+import { a2pEvidenceFresh } from "@/lib/a2p-evidence"
 import { sameBusinessDetails } from "@/lib/a2p-state"
 import { precheckCredits, recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -29,6 +32,7 @@ import {
   fetchSubaccount,
   listIncomingPhoneNumbers,
   listSubaccountsByFriendlyName,
+  setNumberSmsWebhook,
   defaultStatusCallbackUrl,
   provisionPhoneNumber,
   releasePhoneNumber,
@@ -43,7 +47,9 @@ import {
   createSoleProprietorBrand,
   getBrandStatus,
   getCampaignStatus,
+  listBrandRegistrations,
   listCampaigns,
+  listMessagingServices,
   registerA2pTrustProduct,
   registerBusinessProfile,
   registerSoleProprietorProfile,
@@ -222,14 +228,73 @@ export async function searchNumbers(input: {
 }
 
 /**
+ * How long a number-purchase claim holds. Longer than a server action can
+ * run, so a live purchase is never taken over; a crashed one blocks the
+ * business for at most this long.
+ */
+export const NUMBER_PURCHASE_CLAIM_TTL_MS = 120_000
+
+export type NumberPurchaseClaim =
+  | { ok: true; claim: string }
+  | { ok: false; error: string }
+
+/**
+ * Takes the business's single number-purchase claim (migration
+ * 20261020120000) before any provider call: a compare-and-swap that succeeds
+ * only when no live claim is held. Twilio bills a number's first month at
+ * purchase, so a racing second purchase must not even start.
+ */
+export async function claimNumberPurchase(
+  supabase: SupabaseClient,
+  shopId: string,
+  ttlMs: number = NUMBER_PURCHASE_CLAIM_TTL_MS
+): Promise<NumberPurchaseClaim> {
+  const claim = randomUUID()
+  const now = Date.now()
+  const stale = new Date(now - ttlMs).toISOString()
+  const { data, error } = await supabase
+    .from("shops")
+    .update({ number_purchase_claim: claim, number_purchase_claimed_at: new Date(now).toISOString() })
+    .eq("id", shopId)
+    .or(`number_purchase_claimed_at.is.null,number_purchase_claimed_at.lt."${stale}"`)
+    .select("id")
+  if (error) {
+    console.error("[telephony] number purchase claim failed:", { shopId, error: error.message })
+    return { ok: false, error: "Couldn't start the purchase. Try again; nothing was bought." }
+  }
+  if (!(data as { id: string }[] | null)?.length) {
+    return { ok: false, error: "A number purchase is already in progress for this business. Refresh in a minute." }
+  }
+  return { ok: true, claim }
+}
+
+/** Clears the claim if it is still ours (a stale takeover keeps the new one). */
+export async function releaseNumberPurchaseClaim(
+  supabase: SupabaseClient,
+  shopId: string,
+  claim: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("shops")
+    .update({ number_purchase_claim: null, number_purchase_claimed_at: null })
+    .eq("id", shopId)
+    .eq("number_purchase_claim", claim)
+  if (error) console.error("[telephony] couldn't clear number purchase claim (expires on its own):", { shopId, error: error.message })
+}
+
+/**
  * Buys a number for the shop, end to end: credit pre-check (fail closed,
  * BEFORE any vendor call) → ensure subaccount → adopt or provision under
  * the subaccount with webhooks pointed at Gradia → persist on the shop →
  * meter `number_monthly` at retail with the vendor ref.
  *
- * Single-flight (review finding R8):
+ * Single-flight (review finding R8, plus the number-lifecycle audit):
  *   - The stored number is re-read from the database, not the caller's
  *     snapshot. A shop that already has one gets it back; nothing is bought.
+ *   - Before any provider call it takes the business's purchase claim
+ *     (`claimNumberPurchase`), so a second purchase while one is in flight
+ *     buys nothing. A call that outlives the claim's TTL is still bounded
+ *     by the rules below: one number stored, metered once, duplicate released.
  *   - Before buying, the subaccount's numbers are listed. The subaccount
  *     belongs to this shop alone, so a number already on it is one this
  *     shop bought whose save failed or whose response was lost (or a
@@ -255,8 +320,10 @@ export async function purchaseNumber(input: {
   e164: string
   /** Public origin for webhook URLs (resolve from request/env at call site). */
   origin: string
+  /** Tests only: a shorter claim TTL. */
+  claimTtlMs?: number
 }): Promise<PurchaseResult> {
-  const { supabase, shop, e164, origin } = input
+  const { supabase, shop } = input
 
   if (shop.gradia_number_e164) {
     return { ok: false, error: "This shop already has a business number." }
@@ -277,6 +344,25 @@ export async function purchaseNumber(input: {
   const check = await precheckCredits(supabase, shop, priced.credits)
   if (!check.ok) return { ok: false, error: check.reason }
 
+  const claimed = await claimNumberPurchase(supabase, shop.id, input.claimTtlMs)
+  if (!claimed.ok) return { ok: false, error: claimed.error }
+  try {
+    // A purchase that finished while we waited for the claim stored a number.
+    const stored = await readStoredNumber(supabase, shop.id)
+    if (!stored.ok) return { ok: false, error: stored.error }
+    if (stored.e164) return owned(stored.e164)
+    return await purchaseUnderClaim(input, priced, owned)
+  } finally {
+    await releaseNumberPurchaseClaim(supabase, shop.id, claimed.claim)
+  }
+}
+
+async function purchaseUnderClaim(
+  input: { supabase: SupabaseClient; shop: ShopTelephonyFields; e164: string; origin: string },
+  priced: ReturnType<typeof priceUsage>,
+  owned: (number: string) => PurchaseResult
+): Promise<PurchaseResult> {
+  const { supabase, shop, e164, origin } = input
   let creds: SubaccountCreds
   try {
     creds = await ensureSubaccount(supabase, shop)
@@ -332,6 +418,18 @@ export async function purchaseNumber(input: {
         console.error("[telephony] purchase failed:", err)
         return { ok: false, error: message }
       }
+    }
+  }
+
+  if (adopted) {
+    // An adopted number's routing isn't known: point inbound back at Gradia
+    // before storing it. If that fails it stays on the subaccount, unmetered,
+    // and the retry adopts it again.
+    try {
+      await setNumberSmsWebhook({ sid: number.sid, smsUrl: `${origin}/api/twilio/sms`, creds })
+    } catch (err) {
+      console.error(`[telephony] couldn't re-point adopted number ${number.sid} for shop ${shop.id}:`, err)
+      return { ok: false, error: "Couldn't finish setting up the number. Try again; you won't be charged twice." }
     }
   }
 
@@ -470,6 +568,25 @@ type A2pFinish = {
   status?: A2pRegistrationRow["status"]
   shopStatus?: ShopRow["a2p_status"]
   patch?: Partial<Pick<A2pRegistrationRow, "failure_reason" | "failed_step" | "retryable" | "campaign_sid">>
+  /**
+   * The provider read this check made: "checked" (answered, not VERIFIED),
+   * "verified" (the campaign read VERIFIED; renews the send gate's evidence)
+   * or "failed" (no usable answer; renews nothing). Omitted: no read.
+   */
+  check?: "checked" | "verified" | "failed"
+  failureKind?: A2pCheckFailureKind
+}
+
+/**
+ * Why a status check got no usable answer. Never a carrier state: SUSPENDED
+ * and FAILED are statuses the provider reported, not failures to check.
+ */
+export type A2pCheckFailureKind = "provider_unreachable" | "provider_error"
+
+/** Timeouts, network errors, 5xx and 429 are "unreachable"; any other refusal is an "error". */
+export function a2pCheckFailureKind(err: unknown): A2pCheckFailureKind {
+  if (err instanceof TwilioError) return err.status >= 500 || err.status === 429 ? "provider_unreachable" : "provider_error"
+  return "provider_unreachable"
 }
 
 /**
@@ -483,12 +600,25 @@ async function finishA2p(supabase: SupabaseClient, shopId: string, token: string
     p_status: finish.status ?? null,
     p_shop_status: finish.shopStatus ?? null,
     p_patch: finish.patch ?? {},
+    p_check: finish.check ?? null,
+    p_failure_kind: finish.failureKind ?? null,
   })
   if (error) console.error("[telephony] a2p finish failed:", error)
   return !error && data === true
 }
 
 const CLEARED = { failure_reason: null, failed_step: null, retryable: null } as const
+
+/**
+ * A brand already registered in this shop's subaccount for exactly these two
+ * bundles: one whose create response was lost. Adopted instead of registering
+ * (and paying for) a second brand. Bundles are per submission, so a match is
+ * this submission's brand.
+ */
+async function existingBrand(creds: SubaccountCreds, customerProfileSid: string, trustProductSid: string): Promise<string | null> {
+  const brands = await listBrandRegistrations(creds)
+  return brands.find((b) => b.customerProfileSid === customerProfileSid && b.trustProductSid === trustProductSid)?.brandSid ?? null
+}
 
 /**
  * Submits (or resumes, or resubmits) carrier registration for the shop's
@@ -624,7 +754,8 @@ export async function startA2pRegistration(input: {
       }
       step = "brand"
       if (!brandSid) {
-        brandSid = (await createSoleProprietorBrand(creds, { customerProfileSid, trustProductSid })).brandSid
+        brandSid = (await existingBrand(creds, customerProfileSid, trustProductSid))
+          ?? (await createSoleProprietorBrand(creds, { customerProfileSid, trustProductSid })).brandSid
         await a2pUpdate(supabase, shop.id, token, step, { brand_sid: brandSid })
       }
     } else {
@@ -644,7 +775,8 @@ export async function startA2pRegistration(input: {
       }
       step = "brand"
       if (!brandSid) {
-        brandSid = (await createBrand(creds, { customerProfileSid, trustProductSid })).brandSid
+        brandSid = (await existingBrand(creds, customerProfileSid, trustProductSid))
+          ?? (await createBrand(creds, { customerProfileSid, trustProductSid })).brandSid
         await a2pUpdate(supabase, shop.id, token, step, { brand_sid: brandSid })
       }
     }
@@ -669,6 +801,22 @@ export type A2pSyncResult = {
 }
 
 /**
+ * The same, plus what THIS call recorded: "answered" (the provider answered),
+ * "failed" (it didn't answer usably) or null (no read was made or recorded,
+ * e.g. another check held the claim). For the reconciler's scheduling.
+ */
+export type A2pSyncOutcome = { result: A2pSyncResult; check: "answered" | "failed" | null }
+
+/** One status check; see syncA2pStatusDetailed below for what it does. */
+export async function syncA2pStatus(input: {
+  supabase: SupabaseClient
+  shop: ShopTelephonyFields
+  origin: string
+}): Promise<A2pSyncResult> {
+  return (await syncA2pStatusDetailed(input)).result
+}
+
+/**
  * Advances the registration pipeline one stage if Twilio has moved, and keeps
  * watching once approved:
  *   brand approved → messaging service (created once, inbound stays on
@@ -685,11 +833,22 @@ export type A2pSyncResult = {
  * one transaction (R7). A temporary failure is recorded and retried on the
  * next check; a stage is only reported as advanced once it is saved.
  */
-export async function syncA2pStatus(input: {
+export async function syncA2pStatusDetailed(input: {
   supabase: SupabaseClient
   shop: ShopTelephonyFields
   origin: string
-}): Promise<A2pSyncResult> {
+}): Promise<A2pSyncOutcome> {
+  const outcome = await syncOnce(input)
+  return { result: { status: outcome.status, failureReason: outcome.failureReason }, check: outcome.check ?? null }
+}
+
+type InternalSyncResult = A2pSyncResult & { check?: "answered" | "failed" }
+
+async function syncOnce(input: {
+  supabase: SupabaseClient
+  shop: ShopTelephonyFields
+  origin: string
+}): Promise<InternalSyncResult> {
   const { supabase, shop, origin } = input
 
   const read = async () => {
@@ -710,9 +869,15 @@ export async function syncA2pStatus(input: {
     return { status: stored.status, failureReason: stored.failure_reason }
   }
 
-  /** Writes the outcome and releases the claim; a lost claim reports what's stored. */
-  const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<A2pSyncResult> => {
-    if (await finishA2p(supabase, shop.id, token, f)) return result
+  /** Whether this check got an answer from the provider (recorded as last_checked_at). */
+  let answered = false
+  /** Writes the outcome and releases the claim; a lost claim reports what's stored and renews nothing. */
+  const finish = async (f: A2pFinish, result: A2pSyncResult): Promise<InternalSyncResult> => {
+    const written = { check: answered ? ("checked" as const) : undefined, ...f }
+    if (await finishA2p(supabase, shop.id, token, written)) {
+      const check = written.check === "failed" ? "failed" : written.check ? "answered" : undefined
+      return check ? { ...result, check } : result
+    }
     const now = await read()
     return { status: now?.status ?? reg.status, failureReason: now?.failure_reason ?? null }
   }
@@ -725,6 +890,7 @@ export async function syncA2pStatus(input: {
   try {
     if (reg.status === "brand_pending" && reg.brand_sid) {
       const brand = await getBrandStatus(creds, reg.brand_sid)
+      answered = true
       if (brand.status === "FAILED") {
         return await reject("brand",
           brand.failureReason ??
@@ -736,10 +902,12 @@ export async function syncA2pStatus(input: {
       step = "messaging_service"
       let messagingServiceSid = reg.messaging_service_sid
       if (!messagingServiceSid) {
-        messagingServiceSid = (await createMessagingService(creds, {
-          friendlyName: `${shop.name} — Gradia messaging`,
-          inboundSmsUrl: `${origin}/api/twilio/sms`,
-        })).messagingServiceSid
+        // Adopt a service this subaccount already has for Gradia's inbound
+        // handler (a create whose response was lost) before creating one.
+        const inboundSmsUrl = `${origin}/api/twilio/sms`
+        messagingServiceSid =
+          (await listMessagingServices(creds)).find((s) => s.inboundRequestUrl === inboundSmsUrl)?.messagingServiceSid
+          ?? (await createMessagingService(creds, { friendlyName: `${shop.name} — Gradia messaging`, inboundSmsUrl })).messagingServiceSid
         await a2pUpdate(supabase, shop.id, token, step, { messaging_service_sid: messagingServiceSid })
       }
 
@@ -773,6 +941,7 @@ export async function syncA2pStatus(input: {
 
     if (reg.status !== "brand_pending" && reg.messaging_service_sid && reg.campaign_sid) {
       const campaign = await getCampaignStatus(creds, reg.messaging_service_sid, reg.campaign_sid)
+      answered = true
       if (campaign.status === "FAILED") {
         return await reject("campaign",
           campaign.errors ??
@@ -808,22 +977,27 @@ export async function syncA2pStatus(input: {
         }
       }
       // Writing the gate on every verified check also repairs a shop status
-      // left behind by the old two-statement write.
+      // left behind by the old two-statement write, and renews the evidence.
       return await finish(
-        { status: "approved", shopStatus: "approved", patch: CLEARED },
+        { status: "approved", shopStatus: "approved", patch: CLEARED, check: "verified" },
         { status: "approved", failureReason: null }
       )
     }
     return await unchanged()
   } catch (err) {
     // Temporary: keep the current stage, record the step, retry on the next check.
+    // An approved registration stays 'approved'; its evidence isn't renewed, so
+    // the send gate closes as "check overdue" once it ages past the maximum.
     const failure = stepFailure(step, err)
     console.error(`[telephony] a2p sync failed at ${failure.step}:`, err)
     const reason = failure.retryable
       ? "A temporary problem stopped the next registration step. It will be retried on the next status check."
       : failure.message
     return await finish(
-      { patch: { failed_step: failure.step, retryable: failure.retryable, failure_reason: reason } },
+      {
+        patch: { failed_step: failure.step, retryable: failure.retryable, failure_reason: reason },
+        ...(answered ? {} : { check: "failed" as const, failureKind: a2pCheckFailureKind(err) }),
+      },
       { status: reg.status, failureReason: reason }
     )
   }
@@ -870,13 +1044,15 @@ export async function resendA2pVerificationText(input: {
 /**
  * Whether outbound SMS may leave from the shop's number. Enforced in code at
  * the send boundary — never by convention. A Gradia number needs A2P
- * approval. Any other number needs the owner's attestation, which only
- * `attest_byo_sms_registration` writes and a number change clears
- * (docs/architecture/BYO_SMS_ATTESTATION.md).
+ * approval backed by fresh evidence: a VERIFIED campaign read within the
+ * maximum age (src/lib/a2p-evidence.ts). Any other number needs the owner's
+ * attestation, which only `attest_byo_sms_registration` writes and a number
+ * change clears (docs/architecture/BYO_SMS_ATTESTATION.md).
  */
 export function smsGateForShop(
-  shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status" | "byo_sms_verified">,
-  fromNumber: string
+  shop: Pick<ShopRow, "gradia_number_e164" | "a2p_status" | "byo_sms_verified" | "a2p_verified_at">,
+  fromNumber: string,
+  now: Date = new Date()
 ): SmsGate {
   const isGradiaNumber =
     Boolean(shop.gradia_number_e164) && fromNumber === shop.gradia_number_e164
@@ -891,7 +1067,13 @@ export function smsGateForShop(
         "Confirm your own number is registered for A2P 10DLC in Settings → Business Number before texting through it.",
     }
   }
-  if (shop.a2p_status === "approved") return { allowed: true }
+  if (shop.a2p_status === "approved") {
+    if (a2pEvidenceFresh(shop.a2p_verified_at, now)) return { allowed: true }
+    return {
+      allowed: false,
+      reason: "Texting check overdue: Gradia hasn't confirmed this number's carrier approval recently, so texts are held until the next successful check.",
+    }
+  }
   return {
     allowed: false,
     reason:
@@ -899,6 +1081,6 @@ export function smsGateForShop(
         ? "Carrier registration was rejected — review your business details in Settings → Business Number."
         : shop.a2p_status === "suspended"
           ? "Carriers suspended texting on this number. Contact support before sending again."
-          : "Your number is still being verified by carriers (1–3 days). Texting unlocks when it's approved.",
+          : "Your number is still being verified by carriers. Texting unlocks when it's approved.",
   }
 }

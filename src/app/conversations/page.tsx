@@ -8,6 +8,7 @@ import {
   getLatestConversationWithMessages,
   getConversationByIdWithMessages,
 } from "@/lib/data/bi-conversations"
+import { STRINGS } from "@/lib/strings"
 import { loadInboxIndex } from "./load-inbox"
 
 export const dynamic = "force-dynamic"
@@ -27,6 +28,8 @@ export default async function ConversationsPage({
   const index = await loadInboxIndex(params.shop, params.page)
   if (!index.shop) return <WhisperWorkspaceUnavailable />
   const shop = index.shop
+  const emptyInbox =
+    index.data !== null && index.page <= 1 && index.data.items.length === 0
   const active = await getOptionalShop()
   const loaded =
     FEATURES.askGradiaPage && active?.id === shop.id
@@ -40,8 +43,16 @@ export default async function ConversationsPage({
         <div className="hidden flex-1 flex-col items-center justify-center px-6 py-16 text-center lg:flex">
           <EmptyState
             className="border-0 bg-transparent ring-0"
-            title="Choose a conversation"
-            description="The list stays on the left. Opening a thread does not send, mark it read, or grant consent."
+            title={
+              emptyInbox
+                ? STRINGS.empty.conversationsFirstUseTitle
+                : STRINGS.empty.conversationsChoose
+            }
+            description={
+              emptyInbox
+                ? STRINGS.empty.conversationsFirstUse
+                : STRINGS.empty.conversationsChooseBody
+            }
           />
         </div>
         {FEATURES.askGradiaPage && active?.id === shop.id ? (

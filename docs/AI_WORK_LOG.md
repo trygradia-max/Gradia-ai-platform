@@ -2036,3 +2036,297 @@ See docs/release/OCT20_TELEPHONY_INTEGRATION.md for Cursor acceptance evidence,
 remaining activation blockers and three-migration upgrade gate. No experimental
 employee work included. Final combined CI is required before merge/deployment;
 no provider activation, live calls or write unfreeze is authorized by this review.
+
+[AI: claude-code] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Number-lifecycle audit of uncertain provider outcomes on
+`claude/twilio-number-release`, on main after #102 (which merged #98). Ran 16 scenarios against the
+disposable database with a fake Twilio. On #98's head, 5 proved gaps:
+- a second purchase while the first was still provisioning bought a second,
+  billed number;
+- a stray duplicate stayed on the subaccount after a release;
+- the BYO provision path released the number after a failed save, which
+  strands it or destroys a save that committed;
+- BYO overwrote an already stored number.
+
+Fixed:
+- Migration `20261020120000` adds a per-business purchase claim (two
+  nullable columns; existing rows unchanged).
+- `purchaseNumber` and BYO provisioning take that claim before any provider
+  call.
+- Release frees every number on the business's subaccount.
+- BYO provisioning adopts a number already on the owner's account, writes
+  only if none is stored, and never releases after a failed save.
+
+Lost or refused releases, release then re-buy, a disconnect mid-send, and
+#95's explicit-null refusals with the pilot allowlist already held. They now
+have tests. No provider calls, sends, shared migrations, merge or deploy.
+
+[AI: claude-code] [DATE: 2026-10-20] [AREA: platform] [STATUS: review]
+A2P evidence freshness, held reconciler and uncertain-outcome audit. These are
+three stacked PRs on main `6d4c235`. Merge them in order: evidence, then
+reconciler, then outcomes. Backend only; no Cursor UI files were touched.
+
+- **Evidence** (`77f2eea`, migration `20261020100000`):
+  - The send gate opens a Gradia number only when it is `approved` AND a VERIFIED
+    campaign read is younger than `A2P_EVIDENCE_MAX_AGE_HOURS` (default 72,
+    ceiling 168; missing means stale). A failed check never renews it.
+  - Check outcomes are recorded apart from carrier states.
+  - A guard stops owners setting `a2p_status = 'approved'` or forging evidence.
+    The shops row policy allowed it before.
+  - No backfill: approved shops are held until their first successful check
+    (`scripts/preflight-a2p-evidence.sql`).
+- **Reconciler** (`a730cae`, migration `20261020110000`):
+  - `GET /api/internal/a2p-reconcile` is cron-secret guarded and off unless
+    `A2P_RECONCILER_ENABLED=true`. It isn't in `vercel.json`.
+  - It is bounded and takes each due row with a compare-and-swap, then the
+    registration's claim and that shop's own subaccount.
+  - Backoff runs from 5 minutes to a cap, and every interval is at most a
+    quarter of the evidence age.
+- **Outcomes** (`83a5ed8`):
+  - The probes (`dfd7228`) reproduced a second brand and a second messaging
+    service after a lost create response.
+  - Both are now adopted from the subaccount's own lists.
+  - Provider calls time out after 30 seconds, well inside the 15-minute lease.
+  - The R9 partial TrustHub bundle is still rebuilt on retry. It's unbilled;
+    that's a follow-up.
+
+Disposable `gradia-record-fresh` stack, reset from each branch. Node 22.23.2
+isolated runner:
+
+- A2P suites: 36/36 on evidence, 43/43 on reconciler, 48/48 on outcomes.
+- Full `integration --fresh` on outcomes: 563 passed, 14 failed. Main `6d4c235`:
+  542 passed, the same 14 failed. Those are 6 non-Twilio files.
+- Unit: 1,622, 1,627 and 1,630 passed. Lint, types and offline build passed on
+  each.
+
+No provider calls, purchases, sends, shared migrations, merge or activation.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: review]
+Diagnosed the "14 baseline" local integration failures, in the same six files
+every run (manager-notification 6, whisper-inbox 2, intake-identity 2,
+intake-vehicle 2, lead-qualification 1, customer-merge 1). They weren't defects.
+
+CI's `scripts/test-stack.mjs` applies five test-only SQL fixtures from
+`tests/sql/` after every reset: injected failures and a notification clock. The
+local `gradia-record-fresh` procedure (`supabase db reset` directly) never
+applied them. Missing helpers surfaced as `PGRST202`, for example
+`test_notification_clock`.
+
+Fix:
+
+- The fixture list is now shared (`scripts/test-fixtures.mjs`), so CI's script
+  and local resets can't drift. CI behavior is unchanged.
+- A new `scripts/record-fresh-reset.mjs` resets the unlinked record-fresh stack
+  and applies the fixtures.
+- `eval/test-fixtures.test.ts` fails if a `tests/sql` file is left off the list.
+
+Result: main `6d4c235` with fixtures, full integration `--fresh`: 53 of 53
+files, 556 passed, 1 todo, 0 failed. Unit: 1,612 passed, 4 skipped. Lint passed.
+Earlier entries citing "14 baseline failures" should be read as this missing
+setup. No migration, provider call or shared database change.
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+SMS status callbacks that arrive before the outbound interaction is saved, on
+`claude/sms-callback-evidence` from main `6d4c235`. Previously the callback
+was acknowledged and dropped, which was reproduced on main: 5 of 9 new tests
+fail there.
+
+- Migration `20261021100000` stores verified callbacks as shop-scoped
+  evidence keyed by MessageSid.
+- A trigger on `interactions` applies that evidence when any send path writes
+  the row, using #99's rules mirrored in SQL. Both sides take one advisory
+  lock.
+- The route returns 5xx when storing fails.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No provider
+calls, sends, shared DB, merge or deploy.
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Operator-visible terminal delivery conflicts on the existing delivery-review
+authority, on `claude/sms-delivery-conflict-review` from main `6d4c235`.
+
+- Migration `20261021110000` adds `list_delivery_conflicts`,
+  `read_delivery_conflict` and an append-only, audited
+  `record_delivery_conflict_resolution`. A conflicted message reads as
+  `conflicting`, never `delivered`.
+- The backend contract for Cursor is in
+  `docs/architecture/DELIVERY_CONFLICT_REVIEW.md`, with `smsDeliveryState()`
+  for other readers.
+- No UI files changed. The interaction timeline still needs to adopt the
+  helper.
+
+Full integration with the test fixtures: 565 passed, 0 failed. No sends,
+shared DB, merge or deploy.
+
+[AI: claude-code] [DATE: 2026-10-21] [AREA: platform] [STATUS: review]
+PR3, delivery lifecycle acceptance:
+`eval/integration/delivery-lifecycle-acceptance.int.test.ts`. One business's
+message runs end to end on the real disposable database:
+
+1. intake;
+2. qualification;
+3. an owner-queued question with reply purpose;
+4. manager or owner approval, sending exactly once;
+5. a signed terminal callback arriving **before** the interaction is saved (kept
+   and applied, #113);
+6. a failed delivery, never resent;
+7. cross-business signer misuse refused;
+8. an uncertain send held across owner, manager and service retries, with no
+   replacement queued;
+9. contradictory delivered and undelivered results shown as `conflicting` on the
+   delivery-review surface and resolved by the manager, with the revoked member
+   refused (#114);
+10. a STOP through the signed inbound route holding a queued send with zero
+    transport.
+
+Real: interactions, the SMS gate, the status and inbound routes, consent
+keywords, approvals and delegated review. Faked: Twilio transport, the
+classifier and drafter, and embeddings. No poller, reconciler or provider is
+activated.
+
+One wrong expectation was fixed in the test, not the product: after an
+executed approval, a manager approval correctly returns `already_decided` and
+sends nothing.
+
+Cursor handoff: `docs/architecture/CURSOR_DELIVERY_STATUS_HANDOFF.md`. It
+covers the actual delivery, review, conflict and readiness states with their
+conditions, and flags `interaction-timeline.tsx` showing Delivered for a
+conflicted text.
+
+Depends on #112 (fixtures), #113 and #114.
+
+Results:
+
+- Lifecycle suite: 5 of 5, twice.
+- Full integration `--fresh` with fixtures: 56 of 56 files, 579 passed,
+  1 todo, 0 failed.
+- Unit: 1,619 passed, 4 skipped.
+- Lint, offline build, and types after the build passed.
+
+No migration of its own, provider call, shared database change or send.
+
+[AI: codex] [DATE: 2026-10-21] [AREA: operations] [STATUS: foundation]
+Recorded the approved operations OS roadmap, lane ownership, release boundaries and
+exact continuation steps in docs/roadmap/AGENTIC_OS_EXECUTION_PLAN.md. Added a pure,
+unused pending-action queue projection: mixed-shop input fails closed; missing claim
+evidence and terminal delivery conflicts remain unresolved; counts describe only the
+loaded window; no payloads or execution paths. Not yet connected to an authorized
+loader or UI. No migration/provider/shared-state changes. Isolated Node 22: 1,622 unit
+passed, 4 skipped; full lint, types, offline build passed. Database integration is
+still required when the authorized loader is added, and for the separate release batch.
+
+[AI: codex] [DATE: 2026-10-21] [AREA: platform] [STATUS: done]
+Finished the authorized pending-action operations loader on
+`codex/operations-foundation` / draft PR #111. Migration `20261021120000` adds a
+bounded read RPC over existing pending actions, sending claims and conflict evidence;
+it returns no payloads or proof claims. Live membership is checked on every page.
+Owners receive their shop only; managers are filtered by the existing
+`approvals.messages` and `delivery.reconcile` grants; staff, revoked, foreign,
+anonymous and sessionless service callers fail closed. The server-only owner loader
+derives its shop from the authenticated request, and strict response validation makes
+failed or inconsistent evidence unavailable rather than empty. No page uses it yet.
+Disposable reset: 102 migrations through `20261021120000`; new integration 5/5.
+Node 22.22.0: 1,626 unit passed / 4 skipped, lint/types/offline build passed. Full
+integration reached 560 passed / 1 gateway-seed failure / 1 todo; the unrelated
+booking file passed 13/13 on immediate rerun. No shared migration, UI, executor,
+provider/cron activation, send, deploy, write unfreeze or public promotion.
+
+[AI: codex] [DATE: 2026-10-22] [AREA: platform] [STATUS: done]
+Extended draft PR #111's authorized operations read model across unresolved intake
+without adding a task store or executor. The mixed-source cursor is stable, completed
+sends cannot starve a page, linked workflow/action evidence groups as one work item,
+and source provenance points only to existing permission-checking routes. Added a
+server-observed deterministic brief contract with explicit unavailable and partial
+coverage states, plus a manager loader that validates the requested workspace against
+the signed-in `team_workspaces` result before the RPC rechecks live grants. Disposable
+reset applied 103 migrations; the expanded real-session suite passed 8/8. Node
+22.23.4: 1,630 unit passed / 4 skipped; lint, types and offline build passed. Full
+integration reached 562 passed / 1 gateway-seed failure / 1 todo; the complete
+unrelated callback file passed 16/16 on immediate rerun. No UI, source mutation,
+shared database, provider/cron activity, send, deploy, write unfreeze or promotion.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: in-progress]
+Onboarding copy and skippable welcome transition on
+`cursor/onboarding-welcome-copy-fdbe`. Help step asks “What would you like
+help with first?” Finish setup opens `/dashboard?welcome=1` with
+“Welcome to Gradia, [business name].” Continue is immediate — no timer,
+progress bar, or “everything is connected.” Particles respect reduced
+motion. Handoff recorded in `docs/handoffs/CURSOR_UI_COPY_AND_MOTION_2026-10-20.md`.
+Did not change dashboard review copy, inbox empty states, public pages,
+actions, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: platform] [STATUS: in-progress]
+Rebased #101 onto current main (`6d4c235` / #102) and kept both appended
+work logs. Retargeted the 2026-10-09 design-token lock so the wizard
+still says “Step N of 3” and phone help still names +$29/month, now
+through `STRINGS.pages.onboarding`. Added source locks for skip,
+Escape, reduced motion, mobile chrome, and onboarding error recovery —
+fixture checks, not signed-in browser acceptance. No disposable
+Supabase in this environment. No merge, deploy, permission change, or
+provider activation.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: platform] [STATUS: in-progress]
+Rebased #103, #104, #105 and #106 onto current main and kept both
+appended work logs. Local copy tests passed on each rebased branch.
+Signed-in onboarding/welcome browser acceptance is still blocked here:
+no Docker, no Supabase CLI, no `.env.local`, and no disposable
+`gradia-isolated-tests` stack. Skip, Escape, reduced motion, mobile
+chrome, and error recovery are locked as source/fixture checks on #101,
+not as Chrome sessions.
+
+[AI: cursor] [DATE: 2026-10-22] [AREA: marketing] [STATUS: blocked]
+Audited `trygradia-max/Gradia-Web-Cursor` `site-v2` against the October
+20 copy brief. Prepared `cursor/marketing-copy-audit-fdbe` locally
+(commit `581ce59`): drop $20 / founding / July launch, replace trial
+CTAs with Request pilot access, stop claiming live channels and
+payments. Push and PR were refused — `cursor[bot]` has no write access
+to that repo. Patch saved at
+`/opt/cursor/artifacts/marketing-copy-audit-fdbe.patch`. Did not merge,
+deploy, change backend permissions, or activate providers.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Dashboard review copy on `cursor/dashboard-review-copy-fdbe`. Home and
+Approvals now say “3 replies need your review.” with a real count, or
+“Nothing needs your review.” when the queue is empty. Channel line is
+always “N of M channels connected” — it no longer says all channels are
+live. Did not change onboarding, inbox, public pages, actions, or send
+behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Inbox empty copy on `cursor/inbox-empty-copy-fdbe`. A first-use inbox now
+says “Your customer conversations will appear here.” Later empty pages
+still say they have no visible conversations, and a failed load is still
+not treated as empty. Did not change onboarding, dashboard, public pages,
+actions, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Public-page copy on `cursor/public-pages-copy-fdbe`. Login and
+`/how-it-works` no longer say every channel is live, drop “agentic”
+and the $20 “no catch” line, and treat phone as optional. Payments and
+invoices are named as not this product. Did not change billing
+checkout, onboarding, or send behavior. No merge or deploy.
+
+[AI: cursor] [DATE: 2026-10-20] [AREA: platform] [STATUS: done]
+Remaining signed-in empty copy on `cursor/app-empty-copy-fdbe`. Customers
+now say “Your customers will appear here.” Activity and Approvals empty
+states are the same voice, without claiming live channels. Did not change
+onboarding, dashboard counts, inbox, public pages, actions, or send
+behavior. No merge or deploy.
+
+[AI: codex] [DATE: 2026-10-23] [AREA: platform] [STATUS: in-progress]
+Built the local-only `codex/oct23-local-candidate` from current main `6d4c235`,
+combining Claude's dependency tips #107, #110 and #115, Codex #111, and
+Cursor #101/#103/#104/#105/#106. The only merge conflicts were append-only
+work-log entries; both sides were preserved. Hardened the operations queue's
+equal-time pagination fixture against its fixed timestamp expiring and pushed
+that isolated test change to #111 as `61034d2`. Node 22.23.4: 1,669 unit tests
+passed / 4 skipped; lint, types and the offline Next 16.2.6 webpack production
+build passed. The operations integration contract passed 8/8; affected Claude
+conflict suites passed independently (delivery review 9/9, booking conflict
+enforcement 6/6). The all-at-once local run remained infrastructure-unstable:
+the best clean attempt reached 617/624 plus one todo before PostgREST temporarily
+lost its database connection; affected files passed on rerun. The branch was then
+pushed as draft PR #116 and both GitHub `checks` and the complete disposable
+`integration` workflow passed on the combined tree. This is a private integration
+candidate, not a release decision. Localhost `127.0.0.1:3101` uses only the
+disposable `gradia-isolated-tests` stack and fictional seed data; provider
+credentials, external sends, cron activation, deployment, write unfreeze and
+public promotion remain off.

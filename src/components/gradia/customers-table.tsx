@@ -106,7 +106,11 @@ export function CustomersTable({
 
       {customers.length === 0 ? (
         <EmptyState
-          title={initialQuery ? "Nobody by that name yet." : "Quiet so far."}
+          title={
+            initialQuery
+              ? "Nobody by that name yet."
+              : STRINGS.empty.customersFirstUseTitle
+          }
           description={
             initialQuery
               ? "Try a different name or number."

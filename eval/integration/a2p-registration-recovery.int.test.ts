@@ -48,6 +48,9 @@ vi.mock("@/lib/twilio-a2p", () => {
       }),
     listCampaigns: async (_c: unknown, mg: string) => (a2p.onService.get(mg) ?? []).map((c) => ({ ...c, status: a2p.campaign })),
     updateCampaign: step("update_campaign", () => ({})),
+    // No brand or messaging service exists before the one this flow creates.
+    listBrandRegistrations: async () => [],
+    listMessagingServices: async () => [],
     attachNumberToMessagingService: step("attach_number", () => ({})),
     getBrandStatus: async () => ({ status: a2p.brand, failureReason: null }),
     getCampaignStatus: async () => ({ status: a2p.campaign, errors: null }),

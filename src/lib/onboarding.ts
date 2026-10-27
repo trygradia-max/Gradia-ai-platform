@@ -1,6 +1,6 @@
 /**
  * First-run wizard — three steps, with an explicit saved place.
- * Your business → Your number → Choose your help.
+ * Your business → Your number → What would you like help with first?
  */
 
 import { describeA2pRegistration, type A2pNextAction, type A2pRegistrationState } from "@/lib/a2p-state"
