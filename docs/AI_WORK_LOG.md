@@ -18,6 +18,17 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: cursor] [DATE: 2026-10-29] [AREA: platform] [STATUS: done]
+Added a read-only Operations Brief to `/team` on `codex/operations-brief-ui`.
+The server-rendered component consumes the existing authorized `OperationsOverview`
+loader, preserves source links and observation time, and distinguishes unavailable,
+empty, partial, needs-review and outcome-unconfirmed states. It does not add retries,
+mutations, a new route, a second agent schema or any PR #85 code. Validation results
+on Node 24.15.0: focused UI/queue tests 23/23; full unit suite 1,710 passed with
+four existing skips; TypeScript, full lint and the Next 16.2.6 webpack
+production build passed. Signed-in browser acceptance was not run. No push, merge,
+deployment, shared database or provider activity occurred.
+
 [AI: cursor] [DATE: 2026-09-24] [AREA: docs] [STATUS: done]
 Reconciled MVP documentation onto `codex/mvp-documentation-reconciliation`
 and opened draft PR #49. Recorded the September 11 documents as authority,

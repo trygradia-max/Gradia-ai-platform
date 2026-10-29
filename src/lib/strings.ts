@@ -177,6 +177,51 @@ export const STRINGS = {
       /** PERF-001: the queue draws a page at a time; the count is exact. */
       showMore: (n: number) => `Show ${n} more`,
     },
+    operationsBrief: {
+      eyebrow: "Operations brief",
+      title: "Work that needs a decision",
+      subhead:
+        "A read-only view of permitted work. Open the source record to review it.",
+      observedLabel: "Observed",
+      observedUnknown: "time unavailable",
+      unavailableTitle: "Work status could not be verified.",
+      unavailableBody:
+        "Nothing is assumed clear. Refresh the page before acting on this view.",
+      emptyTitle: "No permitted work is waiting in this view.",
+      emptyBody:
+        "This view was checked successfully. New work will appear after its source record is ready for review.",
+      loadedWindowNote:
+        "Counts describe this loaded window, not all work for the business.",
+      needsReviewCount: "Needs review in this loaded window",
+      unconfirmedCount: "Outcome unconfirmed in this loaded window",
+      partialStatus: "Partial view",
+      partialBody: "More permitted work exists beyond this view.",
+      needsReviewSection: "Needs review",
+      unconfirmedSection: "Outcome unconfirmed",
+      itemEyebrow: "Source work",
+      needsReviewTitle: "A source record needs review",
+      unconfirmedTitle: "A source outcome needs evidence review",
+      needsReviewStatus: "Needs review",
+      unconfirmedStatus: "Outcome unconfirmed",
+      itemObserved: "Observed",
+      sources: {
+        intake: "Review intake evidence",
+        deliveryEvidence: "Open outcome evidence",
+        actions: {
+          update_customer: "Review customer update",
+          resolve_customer: "Review customer match",
+          record_interaction: "Review interaction",
+          create_lead: "Review lead",
+          add_note: "Review note",
+          book_appointment: "Review booking",
+          reschedule_appointment: "Review reschedule",
+          cancel_appointment: "Review cancellation",
+          send_sms: "Review text message",
+          send_email: "Review email",
+          create_quote: "Review quote",
+        },
+      },
+    },
     welcome: {
       title: "Welcome to Gradia",
       named: (shopName: string) => `Welcome to Gradia, ${shopName}.`,
