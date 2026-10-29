@@ -77,7 +77,7 @@ describe("2026-10-09 token and first-slice locks", () => {
     expect(feed).toContain('aria-pressed={filter === f}')
   })
 
-  it("Team and Settings keep presentation wrappers without new billing copy", () => {
+  it("Team and Settings keep presentation wrappers with truthful pilot billing copy", () => {
     const team = read("src/app/team/page.tsx")
     const panel = read("src/app/team/team-panel.tsx")
     const delivery = read("src/app/team/delivery-reviews/page.tsx")
@@ -94,8 +94,9 @@ describe("2026-10-09 token and first-slice locks", () => {
     expect(settings).not.toContain("text-muted-foreground/70")
     expect(control).toContain("SkipLink")
     expect(control).toContain("StatusPill")
-    expect(billing).toContain("From $20/month")
-    expect(billing).toContain("+$29")
+    expect(billing).toContain("Your pilot terms are set with your Gradia contact")
+    expect(billing).not.toContain("From $20/month")
+    expect(billing).not.toContain("+$29")
     expect(receptionist).toContain("SectionHeader")
   })
 

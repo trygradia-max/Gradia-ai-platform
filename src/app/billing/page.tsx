@@ -37,9 +37,9 @@ export default async function BillingPage() {
             {active ? "Your Gradia plan" : "Activate Gradia"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            From $20/month — chat agent, follow-ups, Whisper, Ask Gradia, and
-            approvals, with ~300 texts of credits included. Voice receptionist
-            + business number is +$29.
+            Your pilot terms are set with your Gradia contact. Usage remains
+            visible here, and no new charge is enabled until your plan, seats,
+            allowances, and overage policy are confirmed.
           </p>
         </CardHeader>
         <CardContent className="grid gap-5">
@@ -49,8 +49,8 @@ export default async function BillingPage() {
                 You&apos;re on{" "}
                 <span className="font-medium">
                   {usage.voiceAddon
-                    ? "Core + Voice — $49/mo"
-                    : "Gradia Core — $20/mo"}
+                    ? "Gradia pilot with voice"
+                    : "Gradia pilot"}
                 </span>
                 .
               </p>

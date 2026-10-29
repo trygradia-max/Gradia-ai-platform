@@ -1,10 +1,6 @@
-"use client"
+import { MessageSquareText, PhoneCall } from "lucide-react"
 
-import * as React from "react"
-import { Loader2, MessageSquareText, PhoneCall } from "lucide-react"
-import { toast } from "sonner"
-
-import { startPackCheckout, type UsageState } from "@/app/actions/billing"
+import type { UsageState } from "@/app/actions/billing"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -29,20 +25,6 @@ function Bar({ used, total, warn }: { used: number; total: number; warn: boolean
  * message credits. At 80% the pack offer appears with ROI framing.
  */
 export function UsageMeters({ usage }: { usage: UsageState }) {
-  const [buying, setBuying] = React.useState<null | "credit" | "minute">(null)
-
-  async function buyPack(pack: "credit" | "minute") {
-    if (buying) return
-    setBuying(pack)
-    const result = await startPackCheckout(pack)
-    setBuying(null)
-    if (!result.ok) {
-      toast.error(result.error)
-      return
-    }
-    window.location.href = result.url
-  }
-
   return (
     <div className="space-y-4">
       {/* Messages meter */}
@@ -75,14 +57,10 @@ export function UsageMeters({ usage }: { usage: UsageState }) {
               type="button"
               size="sm"
               variant="outline"
-              disabled={buying !== null}
-              onClick={() => buyPack("credit")}
+              disabled
               className="gap-1.5"
             >
-              {buying === "credit" ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden />
-              ) : null}
-              Add 950 credits — $10
+              Contact Gradia to add capacity
             </Button>
           </div>
         ) : null}
@@ -119,14 +97,10 @@ export function UsageMeters({ usage }: { usage: UsageState }) {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={buying !== null}
-                onClick={() => buyPack("minute")}
+                disabled
                 className="gap-1.5"
               >
-                {buying === "minute" ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                ) : null}
-                Add 40 minutes — $10
+                Contact Gradia to add minutes
               </Button>
             </div>
           ) : null}
