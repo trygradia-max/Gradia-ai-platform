@@ -10,90 +10,60 @@ import {
 import { humanUnits, PLAN } from "@/lib/pricing"
 import { requireShop, requireUser } from "@/lib/shop"
 import {
-  addVoiceAddonItem,
-  createPackCheckoutSession,
-  createSubscriptionCheckoutSession,
   removeVoiceAddonItem,
 } from "@/lib/stripe"
 import { createClient } from "@/lib/supabase/server"
 import { voiceBudgetState } from "@/lib/voice-provider"
 import type { ShopRow } from "@/lib/types/database"
 
-function appBaseUrl(): string {
-  const url = process.env.GRADIA_DASHBOARD_URL?.trim()
-  try {
-    return url ? new URL(url).origin : "http://localhost:3000"
-  } catch {
-    return "http://localhost:3000"
-  }
-}
-
 export type CheckoutResult =
   | { ok: true; url: string }
   | { ok: false; error: string }
 
-/** Starts Stripe Checkout for the plan (Core $20/mo, optionally with the
- *  Voice Receptionist add-on as a second item); client redirects. */
-export async function startSubscriptionCheckout(input?: {
+/**
+ * The retired two-SKU checkout is deliberately unavailable. The replacement
+ * must consume a founder-approved, validated commercial catalog; restoring a
+ * legacy Stripe price environment variable cannot silently re-enable it.
+ */
+export async function startSubscriptionCheckout(_input?: {
   includeVoiceAddon?: boolean
 }): Promise<CheckoutResult> {
-  const user = await requireUser()
-  const shop = await requireShop()
-  try {
-    const session = await createSubscriptionCheckoutSession({
-      shopId: shop.id,
-      customerEmail: user.email ?? null,
-      successUrl: `${appBaseUrl()}/dashboard?subscribed=1`,
-      cancelUrl: `${appBaseUrl()}/billing`,
-      includeVoiceAddon: input?.includeVoiceAddon ?? false,
-    })
-    if (!session.url) {
-      return { ok: false, error: "Stripe returned no checkout URL." }
-    }
-    return { ok: true, url: session.url }
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Couldn't start checkout.",
-    }
+  void _input
+  await requireUser()
+  await requireShop()
+  return {
+    ok: false,
+    error: "Pilot checkout is unavailable until your plan, seats, usage rates, and spending cap are confirmed.",
   }
 }
 
-/** One-time $10 top-up pack checkout (950 credits / 40 minutes). */
+/** Retired fixed-price packs stay unavailable with the legacy catalog. */
 export async function startPackCheckout(
-  pack: "credit" | "minute"
+  _pack: "credit" | "minute"
 ): Promise<CheckoutResult> {
-  const user = await requireUser()
-  const shop = await requireShop()
-  try {
-    const session = await createPackCheckoutSession({
-      shopId: shop.id,
-      pack,
-      customerEmail: user.email ?? null,
-      successUrl: `${appBaseUrl()}/billing?topup=1`,
-      cancelUrl: `${appBaseUrl()}/billing`,
-    })
-    if (!session.url) {
-      return { ok: false, error: "Stripe returned no checkout URL." }
-    }
-    return { ok: true, url: session.url }
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Couldn't start checkout.",
-    }
+  void _pack
+  await requireUser()
+  await requireShop()
+  return {
+    ok: false,
+    error: "Usage purchases are unavailable until the pilot usage policy and spending cap are confirmed.",
   }
 }
 
 export type ToggleVoiceAddonResult = { ok: true } | { ok: false; error: string }
 
-/** Adds/removes the +$29 Voice Receptionist item on the live subscription.
- *  The webhook flips shops.voice_addon when Stripe confirms. */
+/** Existing pilots may remove voice. New legacy add-on purchases are blocked. */
 export async function toggleVoiceAddon(
   on: boolean
 ): Promise<ToggleVoiceAddonResult> {
   await requireUser()
   const shopCtx = await requireShop()
+  if (on) {
+    return {
+      ok: false,
+      error: "Contact Gradia to add voice under your confirmed pilot terms.",
+    }
+  }
   const supabase = await createClient()
   const { data } = await supabase
     .from("shops")
@@ -106,8 +76,7 @@ export async function toggleVoiceAddon(
     return { ok: false, error: "Subscribe to Gradia first — then add the voice receptionist." }
   }
   try {
-    if (on) await addVoiceAddonItem(subId)
-    else await removeVoiceAddonItem(subId)
+    await removeVoiceAddonItem(subId)
     revalidatePath("/billing")
     return { ok: true }
   } catch (err) {
