@@ -147,7 +147,9 @@ export async function listActivityFeed(limit = 40): Promise<ActivityFeedItem[]> 
       .from("custom_agent_runs")
       .select("id, fired, reason, stats, created_at, agent:custom_agents(name)")
       .eq("shop_id", shop.id)
-      .eq("fired", true)
+      // A staged effect is not activity until the durable scheduled run has
+      // reached a confirmed terminal success. Legacy rows are backfilled.
+      .eq("state", "succeeded")
       .order("created_at", { ascending: false })
       .limit(20),
   ])

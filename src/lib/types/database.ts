@@ -904,6 +904,21 @@ export type CustomAgentRunRow = {
   reason: string | null
   stats: Record<string, number> | null
   pending_action_ids: string[]
+  /** Durable lifecycle exists first for scheduled runs. Historical, manual and
+   * event rows are terminal history and have no trigger key or worker lease. */
+  trigger_key: string | null
+  state: "running" | "succeeded" | "skipped" | "failed" | "unknown"
+  attempt: number
+  worker_id: string | null
+  lease_expires_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  definition_snapshot: AgentConfig | null
+  definition_hash: string | null
+  policy_revision: number | null
+  knowledge_revision: number | null
+  wait_reason: string | null
+  error_code: string | null
   created_at: string
 }
 
