@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
+  AlertTriangle,
   Bot,
   CheckCircle2,
   Clock,
@@ -338,12 +339,35 @@ function ConfigRow({
 }
 
 function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
+  const succeeded = run.state === "succeeded"
+  const running = run.state === "running"
+  const unknown = run.state === "unknown"
+  const summary = succeeded
+    ? (statsSummary(run.stats) ?? "Completed.")
+    : running
+      ? "Running — completion is not confirmed yet."
+      : unknown
+        ? (run.reason ?? "Outcome unknown — reconcile before retrying.")
+        : (run.reason ??
+          (run.state === "failed"
+            ? "Failed before completion."
+            : "Skipped — nothing matched."))
   return (
     <div className="rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
       <div className="flex items-start gap-2.5">
-        {run.fired ? (
+        {succeeded ? (
           <CheckCircle2
             className="mt-0.5 size-4 shrink-0 text-status-success-fg"
+            aria-hidden
+          />
+        ) : running ? (
+          <Loader2
+            className="mt-0.5 size-4 shrink-0 text-status-info-fg motion-safe:animate-spin"
+            aria-hidden
+          />
+        ) : unknown ? (
+          <AlertTriangle
+            className="mt-0.5 size-4 shrink-0 text-status-warning-fg"
             aria-hidden
           />
         ) : (
@@ -365,9 +389,7 @@ function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
             </p>
           </div>
           <p className="mt-0.5 text-sm text-foreground/90">
-            {run.fired
-              ? (statsSummary(run.stats) ?? "Fired.")
-              : (run.reason ?? "Skipped — nothing matched.")}
+            {summary}
           </p>
         </div>
       </div>

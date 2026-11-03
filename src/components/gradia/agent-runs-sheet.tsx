@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import {
   Activity,
+  AlertTriangle,
   ArrowUpRight,
   CheckCircle2,
   Clock,
@@ -57,6 +58,47 @@ function statsSummary(stats: Record<string, number> | null): string | null {
     parts.push(`${v} ${k.replace(/_/g, " ")}`)
   }
   return parts.length > 0 ? parts.join(" · ") : null
+}
+
+function runCopy(run: CustomAgentRunRow): {
+  label: string
+  tone: "good" | "warn" | "bad" | "accent" | "muted"
+  body: string
+} {
+  switch (run.state) {
+    case "running":
+      return {
+        label: "Running",
+        tone: "accent",
+        body: "Work is in progress; completion is not confirmed yet.",
+      }
+    case "unknown":
+      return {
+        label: "Needs review",
+        tone: "warn",
+        body:
+          run.reason ??
+          "The worker stopped before completion was confirmed. Reconcile before retrying.",
+      }
+    case "failed":
+      return {
+        label: "Failed",
+        tone: "bad",
+        body: run.reason ?? "The run failed before completion.",
+      }
+    case "succeeded":
+      return {
+        label: "Completed",
+        tone: "good",
+        body: statsSummary(run.stats) ?? "Completed.",
+      }
+    case "skipped":
+      return {
+        label: "Skipped",
+        tone: "muted",
+        body: run.reason ?? "Skipped — nothing matched.",
+      }
+  }
 }
 
 export function AgentRunsSheet({
@@ -130,16 +172,26 @@ export function AgentRunsSheet({
           ) : (
             <ul className="grid gap-2 px-1">
               {runs.map((run) => {
-                const summary = statsSummary(run.stats)
+                const presentation = runCopy(run)
                 return (
                   <li
                     key={run.id}
                     className="rounded-md border border-border/60 bg-muted/15 px-3 py-2.5"
                   >
                     <div className="flex items-start gap-2">
-                      {run.fired ? (
+                      {run.state === "succeeded" ? (
                         <CheckCircle2
                           className="mt-0.5 size-3.5 shrink-0 text-status-success-fg"
+                          aria-hidden
+                        />
+                      ) : run.state === "running" ? (
+                        <Loader2
+                          className="mt-0.5 size-3.5 shrink-0 text-status-info-fg motion-safe:animate-spin"
+                          aria-hidden
+                        />
+                      ) : run.state === "unknown" ? (
+                        <AlertTriangle
+                          className="mt-0.5 size-3.5 shrink-0 text-status-warning-fg"
                           aria-hidden
                         />
                       ) : (
@@ -150,23 +202,22 @@ export function AgentRunsSheet({
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <StatusPill tone="muted">
-                            {triggerLabel(run.trigger_source)}
-                          </StatusPill>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <StatusPill tone="muted">
+                              {triggerLabel(run.trigger_source)}
+                            </StatusPill>
+                            <StatusPill tone={presentation.tone}>
+                              {presentation.label}
+                            </StatusPill>
+                          </div>
                           <span className="flex items-center gap-1 tabular-nums">
                             <Clock className="size-3" aria-hidden />
                             {relative(run.created_at)}
                           </span>
                         </div>
-                        {run.fired ? (
-                          <p className="mt-1 text-sm">
-                            {summary ?? "Fired."}
-                          </p>
-                        ) : (
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {run.reason ?? "Skipped."}
-                          </p>
-                        )}
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {presentation.body}
+                        </p>
                         {run.pending_action_ids?.length ? (
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {run.pending_action_ids

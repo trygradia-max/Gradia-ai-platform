@@ -2351,3 +2351,15 @@ four existing live skips. Touched-file lint passed. Voice, alerts, cron, granula
 purposes, delegated manager approval, and per-read audit remain unfinished.
 No migration, deployment, shared-database change, provider activation, or
 production change was included.
+
+[AI: codex] [DATE: 2026-11-02] [AREA: platform] [STATUS: in-progress]
+Added the first durable scheduled-agent run lifecycle on
+`codex/agent-run-lifecycle`: an atomic schedule-window claim, immutable agent
+definition snapshot, worker lease, compare-and-swap completion, and a terminal
+`unknown` state that requires reconciliation instead of automatic retry. The
+run history UI now distinguishes running, completed, skipped, failed, and
+unknown outcomes. Focused unit tests, TypeScript, lint, and migration checks
+pass. The local disposable Auth service timed out while seeding the focused
+integration test, so database concurrency and RLS proof remain a required CI
+gate. No migration was applied outside the disposable local stack; no cron,
+provider, deployment, or production write was activated.

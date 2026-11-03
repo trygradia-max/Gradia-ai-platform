@@ -11,11 +11,20 @@
  * `send_email` pending_actions, never send directly.
  */
 
+import { randomUUID } from "node:crypto"
+
 import { servicePayload } from "@/lib/service-purpose"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
-import { recordAgentRun, type TriggerSource } from "@/lib/agent-runs"
+import { parseAgentConfig } from "@/lib/agent-config-schema"
+import {
+  claimScheduledAgentRun,
+  finishScheduledAgentRun,
+  markScheduledAgentRunUnknown,
+  recordAgentRun,
+  type TriggerSource,
+} from "@/lib/agent-runs"
 import { isAutonomyAllowed } from "@/lib/autonomy"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { recordActionDecision } from "@/lib/decision-log"
@@ -116,6 +125,25 @@ function shouldFireOnSchedule(
     }
   }
   return { fire: true }
+}
+
+/** Stable identity for one eligible UTC schedule window. The database unique
+ * index turns this into the cross-instance dedupe key. Only call this after
+ * shouldFireOnSchedule has accepted the window. */
+export function scheduledAgentTriggerKey(
+  schedule: NonNullable<AgentConfig["schedule"]>,
+  now: Date
+): string {
+  const iso = now.toISOString()
+  if (schedule.cadence === "hourly") {
+    return `hourly:${iso.slice(0, 13)}:00Z`
+  }
+  const date = iso.slice(0, 10)
+  const hour = schedule.hour_of_day ?? 14
+  if (schedule.cadence === "daily") {
+    return `daily:${date}:h${hour}`
+  }
+  return `weekly:${date}:d${schedule.day_of_week ?? 1}:h${hour}`
 }
 
 async function stampFired(
@@ -2010,9 +2038,12 @@ export async function runScheduledAgents(
   }
 
   for (const agent of agents) {
+    let claimContext:
+      | { runId: string; attempt: number; workerId: string }
+      | null = null
     try {
-      const handler = resolveScheduledHandler(agent)
-      if (!handler) {
+      const selectedHandler = resolveScheduledHandler(agent)
+      if (!selectedHandler) {
         const outcome: AgentRunOutcome = {
           agentId: agent.id,
           agentName: agent.name,
@@ -2048,7 +2079,89 @@ export async function runScheduledAgents(
         })
         continue
       }
-      const shop = await getShop(agent.shop_id)
+
+      const schedule = agent.config.schedule
+      if (!schedule) {
+        // shouldFireOnSchedule already rejects this; keep the explicit guard so
+        // a future decision change cannot create an unkeyed scheduled claim.
+        throw new Error("eligible scheduled agent has no schedule")
+      }
+      const workerId = randomUUID()
+      const claim = await claimScheduledAgentRun(supabase, {
+        agentId: agent.id,
+        triggerKey: scheduledAgentTriggerKey(schedule, now),
+        workerId,
+      })
+      if (claim.outcome !== "claimed") {
+        const reason =
+          claim.outcome === "active_duplicate"
+            ? "already running for this schedule window"
+            : claim.outcome === "unknown"
+              ? "previous attempt outcome unknown — reconciliation required"
+              : claim.outcome === "terminal_duplicate"
+                ? "schedule window already handled"
+                : "agent disabled before its schedule claim"
+        outcomes.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason,
+        })
+        continue
+      }
+      claimContext = {
+        runId: claim.runId,
+        attempt: claim.attempt,
+        workerId,
+      }
+      if (claim.shopId !== agent.shop_id) {
+        throw new Error("scheduled claim returned a different shop")
+      }
+
+      const parsedDefinition = parseAgentConfig(claim.definitionSnapshot)
+      if (!parsedDefinition.ok) {
+        throw new Error("claimed agent definition is invalid")
+      }
+      const claimedAgent: CustomAgentRow = {
+        ...agent,
+        config: parsedDefinition.config,
+      }
+      const handler = resolveScheduledHandler(claimedAgent)
+
+      const finish = async (
+        outcome: AgentRunOutcome,
+        state: "succeeded" | "skipped" | "failed",
+        errorCode?: string
+      ): Promise<boolean> => {
+        if (!claimContext) return false
+        return finishScheduledAgentRun(supabase, {
+          runId: claimContext.runId,
+          workerId: claimContext.workerId,
+          attempt: claimContext.attempt,
+          state,
+          fired: state === "succeeded",
+          reason: outcome.reason,
+          stats: outcome.stats,
+          pendingActionIds: outcome.pendingActionIds,
+          errorCode,
+        })
+      }
+
+      if (!handler) {
+        const outcome: AgentRunOutcome = {
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "claimed definition has no runnable recipe or free-form plan",
+        }
+        if (!(await finish(outcome, "skipped"))) {
+          await markScheduledAgentRunUnknown(supabase, claim.runId)
+        }
+        outcomes.push(outcome)
+        continue
+      }
+
+      const shop = await getShop(claim.shopId)
       if (!shop) {
         const outcome: AgentRunOutcome = {
           agentId: agent.id,
@@ -2056,13 +2169,10 @@ export async function runScheduledAgents(
           fired: false,
           reason: "shop missing",
         }
+        if (!(await finish(outcome, "skipped"))) {
+          await markScheduledAgentRunUnknown(supabase, claim.runId)
+        }
         outcomes.push(outcome)
-        await recordAgentRun(supabase, {
-          agentId: agent.id,
-          shopId: agent.shop_id,
-          triggerSource: "schedule",
-          outcome,
-        })
         continue
       }
       // Scheduled (background) firing requires a paid plan — Core and
@@ -2077,13 +2187,10 @@ export async function runScheduledAgents(
           fired: false,
           reason: "requires a paid plan",
         }
+        if (!(await finish(outcome, "skipped"))) {
+          await markScheduledAgentRunUnknown(supabase, claim.runId)
+        }
         outcomes.push(outcome)
-        await recordAgentRun(supabase, {
-          agentId: agent.id,
-          shopId: agent.shop_id,
-          triggerSource: "schedule",
-          outcome,
-        })
         continue
       }
       if (FEATURES.paywall && (await isOverCreditLimit(supabase, shop))) {
@@ -2093,13 +2200,10 @@ export async function runScheduledAgents(
           fired: false,
           reason: "credit limit reached",
         }
+        if (!(await finish(outcome, "skipped"))) {
+          await markScheduledAgentRunUnknown(supabase, claim.runId)
+        }
         outcomes.push(outcome)
-        await recordAgentRun(supabase, {
-          agentId: agent.id,
-          shopId: agent.shop_id,
-          triggerSource: "schedule",
-          outcome,
-        })
         continue
       }
       if (shop.simulation_mode) {
@@ -2109,48 +2213,82 @@ export async function runScheduledAgents(
           fired: false,
           reason: "shadow mode — nothing staged",
         }
+        if (!(await finish(outcome, "skipped"))) {
+          await markScheduledAgentRunUnknown(supabase, claim.runId)
+        }
         outcomes.push(outcome)
+        continue
+      }
+      const outcome = await maybeAutoExecute(
+        supabase,
+        shop,
+        claimedAgent,
+        await handler(supabase, shop, claimedAgent)
+      )
+      if (outcome.fired) {
+        await stampFired(supabase, claimedAgent.id, claimedAgent.shop_id)
+        await meterDrafts(
+          supabase,
+          claimedAgent.shop_id,
+          claimedAgent.id,
+          outcome
+        )
+      }
+      const state = outcome.fired ? "succeeded" : "skipped"
+      if (!(await finish(outcome, state))) {
+        await markScheduledAgentRunUnknown(supabase, claim.runId)
+        outcomes.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "run completion was not confirmed — reconciliation required",
+        })
+        continue
+      }
+      if (outcome.fired) fired += 1
+      outcomes.push(outcome)
+    } catch (err) {
+      console.error("[agent-runtime] agent crashed:", agent.id, err)
+      const message = (err instanceof Error ? err.message : String(err)).slice(
+        0,
+        1000
+      )
+      const outcome: AgentRunOutcome = {
+        agentId: agent.id,
+        agentName: agent.name,
+        fired: false,
+        reason: message,
+      }
+      outcomes.push(outcome)
+      if (claimContext) {
+        try {
+          const completed = await finishScheduledAgentRun(supabase, {
+            runId: claimContext.runId,
+            workerId: claimContext.workerId,
+            attempt: claimContext.attempt,
+            state: "failed",
+            fired: false,
+            reason: message,
+            errorCode: "runtime_error",
+          })
+          if (!completed) {
+            await markScheduledAgentRunUnknown(supabase, claimContext.runId)
+          }
+        } catch (finishError) {
+          console.error(
+            "[agent-runtime] failed to persist crashed run:",
+            agent.id,
+            finishError
+          )
+        }
+      } else {
         await recordAgentRun(supabase, {
           agentId: agent.id,
           shopId: agent.shop_id,
           triggerSource: "schedule",
           outcome,
         })
-        continue
       }
-      const outcome = await maybeAutoExecute(
-        supabase,
-        shop,
-        agent,
-        await handler(supabase, shop, agent)
-      )
-      if (outcome.fired) {
-        await stampFired(supabase, agent.id, agent.shop_id)
-        await meterDrafts(supabase, agent.shop_id, agent.id, outcome)
-        fired += 1
-      }
-      outcomes.push(outcome)
-      await recordAgentRun(supabase, {
-        agentId: agent.id,
-        shopId: agent.shop_id,
-        triggerSource: "schedule",
-        outcome,
-      })
-    } catch (err) {
-      console.error("[agent-runtime] agent crashed:", agent.id, err)
-      const outcome: AgentRunOutcome = {
-        agentId: agent.id,
-        agentName: agent.name,
-        fired: false,
-        reason: err instanceof Error ? err.message : String(err),
-      }
-      outcomes.push(outcome)
-      await recordAgentRun(supabase, {
-        agentId: agent.id,
-        shopId: agent.shop_id,
-        triggerSource: "schedule",
-        outcome,
-      })
     }
   }
 
