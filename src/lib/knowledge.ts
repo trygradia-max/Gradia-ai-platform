@@ -11,7 +11,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { embedText, embedTexts } from "@/lib/embeddings"
-import type { ShopKnowledgeMatch, ShopKnowledgeRow } from "@/lib/types/database"
+import type {
+  ReviewedAgentMemoryMatch,
+  ReviewedMemoryRevisionRow,
+  ShopKnowledgeMatch,
+  ShopKnowledgeRow,
+} from "@/lib/types/database"
 
 const MAX_CONTENT = 4_000
 const CHUNK_TARGET_CHARS = 900
@@ -106,8 +111,49 @@ export type AddKnowledgeInput = {
 }
 
 export type AddKnowledgeResult =
-  | { ok: true; id: string }
+  | { ok: true; id: string; revision: number; safetyStatus: string }
   | { ok: false; error: string }
+
+type CandidateRpcResult = {
+  source_id: string
+  revision: number
+  chunks: number
+  state: "candidate"
+  safety_status: "clean" | "flagged" | "blocked"
+  safety_flags: string[]
+}
+
+async function createCandidate(
+  supabase: SupabaseClient,
+  input: {
+    shopId: string
+    sourceName: string
+    rawContent: string
+    chunks: string[]
+    embeddings: (number[] | null)[]
+    sourceId?: string
+    expectedRevision?: number
+  }
+): Promise<CandidateRpcResult> {
+  const { data, error } = await supabase.rpc("create_reviewed_memory_candidate", {
+    p_shop: input.shopId,
+    p_source_name: input.sourceName,
+    p_content: input.rawContent,
+    p_chunks: input.chunks.map((content, index) => ({
+      content,
+      embedding: input.embeddings[index] ?? null,
+    })),
+    p_source: input.sourceId ?? null,
+    p_expected_revision: input.expectedRevision ?? null,
+    p_valid_from: null,
+    p_valid_until: null,
+    p_retention_until: null,
+  })
+  if (error || !data) {
+    throw new Error(error?.message ?? "Couldn't save memory candidate.")
+  }
+  return data as CandidateRpcResult
+}
 
 export async function addShopKnowledge(
   supabase: SupabaseClient,
@@ -132,20 +178,26 @@ export async function addShopKnowledge(
     console.warn("[knowledge] embedding failed, inserting without vector:", err)
   }
 
-  const { data, error } = await supabase
-    .from("shop_knowledge")
-    .insert({
-      shop_id: shopId,
-      source_name: sourceName,
-      content,
-      embedding,
+  try {
+    const candidate = await createCandidate(supabase, {
+      shopId,
+      sourceName,
+      rawContent: content,
+      chunks: [content],
+      embeddings: [embedding],
     })
-    .select("id")
-    .single()
-  if (error || !data) {
-    return { ok: false, error: error?.message ?? "Couldn't save entry." }
+    return {
+      ok: true,
+      id: candidate.source_id,
+      revision: candidate.revision,
+      safetyStatus: candidate.safety_status,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Couldn't save entry.",
+    }
   }
-  return { ok: true, id: (data as { id: string }).id }
 }
 
 export type AddBulkKnowledgeResult =
@@ -192,22 +244,25 @@ export async function addShopKnowledgeBulk(
     embeddings = chunks.map(() => null)
   }
 
-  const rows = chunks.map((content, i) => ({
-    shop_id: shopId,
-    source_name: sourceName,
-    content,
-    embedding: embeddings[i] ?? null,
-  }))
-
-  const { data, error } = await supabase
-    .from("shop_knowledge")
-    .insert(rows)
-    .select("id")
-  if (error) {
-    return { ok: false, error: error.message }
+  try {
+    const candidate = await createCandidate(supabase, {
+      shopId,
+      sourceName,
+      rawContent: raw,
+      chunks,
+      embeddings,
+    })
+    return {
+      ok: true,
+      inserted: candidate.chunks,
+      ids: [candidate.source_id],
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Couldn't save document.",
+    }
   }
-  const ids = ((data as { id: string }[] | null) ?? []).map((r) => r.id)
-  return { ok: true, inserted: ids.length, ids }
 }
 
 export async function listShopKnowledge(
@@ -215,8 +270,8 @@ export async function listShopKnowledge(
   shopId: string
 ): Promise<ShopKnowledgeRow[]> {
   const { data, error } = await supabase
-    .from("shop_knowledge")
-    .select("id, shop_id, source_name, content, created_at, updated_at")
+    .from("published_shop_knowledge")
+    .select("id, shop_id, source_name, content, source_id, revision, content_hash, published_at, created_at, updated_at")
     .eq("shop_id", shopId)
     .order("created_at", { ascending: false })
   if (error) {
@@ -226,18 +281,120 @@ export async function listShopKnowledge(
   return (data as ShopKnowledgeRow[] | null) ?? []
 }
 
-export async function deleteShopKnowledge(
+export async function listReviewedMemory(
+  supabase: SupabaseClient,
+  shopId: string
+): Promise<ReviewedMemoryRevisionRow[]> {
+  const [revisionResult, sourceResult, activeResult] = await Promise.all([
+    supabase
+      .from("reviewed_memory_revisions")
+      .select("shop_id, source_id, revision, state, raw_content, content_hash, safety_status, safety_flags, author_id, reviewed_by, reviewed_at, published_by, published_at, valid_from, valid_until, retention_until, supersedes_revision, created_at")
+      .eq("shop_id", shopId)
+      .neq("state", "deleted")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("reviewed_memory_sources")
+      .select("id, source_name")
+      .eq("shop_id", shopId),
+    supabase
+      .from("reviewed_memory_active")
+      .select("source_id, revision")
+      .eq("shop_id", shopId),
+  ])
+  if (revisionResult.error || sourceResult.error || activeResult.error) {
+    console.error(
+      "[knowledge] reviewed list failed:",
+      revisionResult.error ?? sourceResult.error ?? activeResult.error
+    )
+    return []
+  }
+  const names = new Map(
+    ((sourceResult.data as { id: string; source_name: string }[] | null) ?? [])
+      .map((source) => [source.id, source.source_name])
+  )
+  const active = new Map(
+    ((activeResult.data as { source_id: string; revision: number }[] | null) ?? [])
+      .map((row) => [row.source_id, row.revision])
+  )
+  return ((revisionResult.data as Omit<ReviewedMemoryRevisionRow, "source_name" | "active_revision">[] | null) ?? [])
+    .map((row) => ({
+      ...row,
+      source_name: names.get(row.source_id) ?? "Unknown source",
+      active_revision: active.get(row.source_id) ?? null,
+    }))
+}
+
+export type MemoryMutationResult =
+  | { ok: true; outcome: string; knowledgeRevision?: number }
+  | { ok: false; error: string }
+
+export async function reviewMemoryRevision(
   supabase: SupabaseClient,
   shopId: string,
-  id: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { error } = await supabase
-    .from("shop_knowledge")
-    .delete()
-    .eq("id", id)
-    .eq("shop_id", shopId)
+  sourceId: string,
+  revision: number
+): Promise<MemoryMutationResult> {
+  const { data, error } = await supabase.rpc("review_memory_revision", {
+    p_shop: shopId,
+    p_source: sourceId,
+    p_revision: revision,
+  })
   if (error) return { ok: false, error: error.message }
-  return { ok: true }
+  if (data !== true) return { ok: false, error: "This candidate changed or is blocked from review." }
+  return { ok: true, outcome: "reviewed" }
+}
+
+export async function publishMemoryRevision(
+  supabase: SupabaseClient,
+  shopId: string,
+  sourceId: string,
+  revision: number,
+  expectedActive: number | null
+): Promise<MemoryMutationResult> {
+  const { data, error } = await supabase.rpc("publish_memory_revision", {
+    p_shop: shopId,
+    p_source: sourceId,
+    p_revision: revision,
+    p_expected_active: expectedActive,
+  })
+  if (error) return { ok: false, error: error.message }
+  const result = data as { outcome?: string; knowledge_revision?: number } | null
+  if (result?.outcome !== "published") {
+    return {
+      ok: false,
+      error: result?.outcome === "conflicted"
+        ? "A published source with this name conflicts with the candidate. Resolve it before activation."
+        : "This revision is not ready to publish.",
+    }
+  }
+  return {
+    ok: true,
+    outcome: result.outcome,
+    knowledgeRevision: result.knowledge_revision,
+  }
+}
+
+export async function removeMemoryRevision(
+  supabase: SupabaseClient,
+  shopId: string,
+  sourceId: string,
+  revision: number,
+  expectedActive: number | null
+): Promise<MemoryMutationResult> {
+  const { data, error } = await supabase.rpc("remove_memory_revision", {
+    p_shop: shopId,
+    p_source: sourceId,
+    p_revision: revision,
+    p_expected_active: expectedActive,
+  })
+  if (error) return { ok: false, error: error.message }
+  const result = data as { outcome?: string; knowledge_revision?: number } | null
+  if (!result?.outcome) return { ok: false, error: "Memory removal was not confirmed." }
+  return {
+    ok: true,
+    outcome: result.outcome,
+    knowledgeRevision: result.knowledge_revision,
+  }
 }
 
 /**
@@ -273,6 +430,49 @@ export async function searchShopKnowledge(
     return []
   }
   return (data as ShopKnowledgeMatch[] | null) ?? []
+}
+
+export type ReviewedMemoryGrant = {
+  sourceId: string
+  revision: number
+}
+
+/**
+ * Agent retrieval is narrower than general published shop retrieval: every
+ * source and revision must be present in the employee's reviewed grant set and
+ * must still be the active publication. Revocation therefore fails closed.
+ */
+export async function searchReviewedAgentMemory(
+  supabase: SupabaseClient,
+  shopId: string,
+  grants: readonly ReviewedMemoryGrant[],
+  query: string,
+  opts: { limit?: number; minSimilarity?: number } = {}
+): Promise<ReviewedAgentMemoryMatch[]> {
+  const trimmed = query.trim()
+  if (!trimmed || grants.length === 0) return []
+  let queryEmbedding: number[]
+  try {
+    queryEmbedding = await embedText(trimmed)
+  } catch (error) {
+    console.warn("[knowledge] reviewed search embedding failed:", error)
+    return []
+  }
+  const { data, error } = await supabase.rpc("match_reviewed_agent_memory", {
+    p_shop_id: shopId,
+    p_grants: grants.map((grant) => ({
+      source_id: grant.sourceId,
+      revision: grant.revision,
+    })),
+    p_query_embedding: queryEmbedding,
+    p_match_count: opts.limit ?? 4,
+    p_min_similarity: opts.minSimilarity ?? 0.4,
+  })
+  if (error) {
+    console.warn("[knowledge] reviewed memory match failed:", error)
+    return []
+  }
+  return (data as ReviewedAgentMemoryMatch[] | null) ?? []
 }
 
 /**

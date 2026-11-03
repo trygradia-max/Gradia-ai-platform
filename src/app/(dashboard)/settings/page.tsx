@@ -46,7 +46,7 @@ import {
   integrationAvailability,
 } from "@/lib/data/connections"
 import { listServicesForCurrentShop } from "@/lib/data/services"
-import { listShopKnowledge } from "@/lib/knowledge"
+import { listReviewedMemory } from "@/lib/knowledge"
 import { listMcpTokensForCurrentShop } from "@/app/actions/mcp"
 import { getUsageState } from "@/app/actions/billing"
 import { readAutonomy } from "@/lib/autonomy"
@@ -127,7 +127,7 @@ export default async function SettingsPage({
 
   const shop = (data as ShopRow | null) ?? null
   const autonomyDefault = readAutonomy(shop).default
-  const knowledgeEntries = await listShopKnowledge(supabase, shopCtx.id)
+  const knowledgeEntries = await listReviewedMemory(supabase, shopCtx.id)
   const mcpTokens = await listMcpTokensForCurrentShop()
   const baseUrl = await resolveWebhookBaseUrl()
   const smsWebhookUrl = `${baseUrl}/api/twilio/sms`

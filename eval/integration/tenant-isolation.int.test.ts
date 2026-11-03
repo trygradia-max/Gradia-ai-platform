@@ -139,7 +139,7 @@ describe.skipIf(!INTEGRATION)("tenant isolation [integration]", () => {
     expect((await getPending(sb, id))?.status).toBe("pending")
   })
 
-  it("match_shop_knowledge returns nothing for a mismatched p_shop_id", async () => {
+  it("match_shop_knowledge ignores legacy unreviewed rows for every tenant", async () => {
     // Basis-vector embedding: identical query ⇒ cosine similarity 1.
     const embedding = Array.from({ length: 1536 }, (_, i) => (i === 0 ? 1 : 0))
     const { error: insertErr } = await sb.from("shop_knowledge").insert({
@@ -165,7 +165,7 @@ describe.skipIf(!INTEGRATION)("tenant isolation [integration]", () => {
       p_match_count: 4,
       p_min_similarity: 0.1,
     })
-    expect((own as unknown[]).length).toBe(1)
+    expect(own).toEqual([])
   })
 
   it("forShop: a cross-tenant scoped update matches zero rows (ADR-003 proof)", async () => {

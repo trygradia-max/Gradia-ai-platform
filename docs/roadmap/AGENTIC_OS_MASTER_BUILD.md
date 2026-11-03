@@ -170,14 +170,14 @@ duplicating an external action or declaring an unknown action complete.
 
 ### Gate 2 — reviewed memory
 
-- [ ] Define candidate, reviewed, published, conflicted, revoked and deleted states.
-- [ ] Store source, author/reviewer, tenant, revision, validity, retention and
+- [x] Define candidate, reviewed, published, conflicted, revoked and deleted states.
+- [x] Store source, author/reviewer, tenant, revision, validity, retention and
   supersession metadata for every fact.
-- [ ] Add an owner review queue and evidence preview before publication.
-- [ ] Prevent model/tool/web content from changing system instructions or publishing
+- [x] Add an owner review queue and evidence preview before publication.
+- [x] Prevent model/tool/web content from changing system instructions or publishing
   itself as memory.
-- [ ] Bind retrieval to explicit employee knowledge grants and exact revisions.
-- [ ] Propagate conflicts, revocation and deletion into retrieval and cache invalidation.
+- [x] Bind retrieval to explicit employee knowledge grants and exact revisions.
+- [x] Propagate conflicts, revocation and deletion into retrieval and cache invalidation.
 - [ ] Add prompt-injection classification and PII minimization/redaction at every
   provider boundary.
 - [ ] Test malicious documents, conflicting sources, stale facts, revoked access,
