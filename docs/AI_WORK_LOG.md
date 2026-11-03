@@ -2378,3 +2378,22 @@ passed. One unrelated legacy tenant-isolation rerun received a transient local
 PostgREST upstream response after seven assertions passed; required GitHub CI
 remains the merge gate. No production migration, provider, cron, Stripe catalog or
 deployment was activated.
+
+[AI: codex] [DATE: 2026-11-03] [AREA: commercial] [STATUS: done]
+Recorded founder approval of commercial catalog `2026-11-03.v1`: $199 Founder
+Pilot, three billable operator seats, two active agents, 100 standard outcomes,
+100 inbound voice minutes, $39 extra seats, explicit outcome/voice/SMS rates,
+$100 default/$500 maximum overage cap and activation-triggered 14-day build/test
+terms. Added a validated application catalog, provider/Stripe contribution-margin
+model and deterministic network-free Stripe provisioning manifest that remains
+explicitly disabled. Founder/Core estimates 84.4–86.8% planning and 71.9–74.2%
+stress contribution margin; Growth and Scale remain blocked from provisioning until
+pilot p95 outcome costs prove their roughly $0.23/$0.11 ceilings. Updated billing
+copy to show approved terms while checkout continues to fail closed pending usage
+settlement, cap enforcement, proration, Stripe reconciliation, tax/dunning decisions
+and release acceptance. Added the exact Claude deep-internals handoff and refreshed
+the Agentic OS merged-state map. Validation: 1,738 unit passed / 4 skipped; full
+lint and TypeScript passed; Next 16.2.6 webpack production build passed. Default
+Turbopack could not traverse the isolated worktree's external `node_modules` symlink;
+no source error was reported. No Stripe object, charge, provider, cron, deployment,
+shared database change, production write or public traffic was activated.

@@ -22,8 +22,8 @@ export type CheckoutResult =
 
 /**
  * The retired two-SKU checkout is deliberately unavailable. The replacement
- * must consume a founder-approved, validated commercial catalog; restoring a
- * legacy Stripe price environment variable cannot silently re-enable it.
+ * must consume the founder-approved catalog through the still-unbuilt settlement
+ * and reconciliation path; a legacy Stripe price variable cannot re-enable it.
  */
 export async function startSubscriptionCheckout(_input?: {
   includeVoiceAddon?: boolean
@@ -33,7 +33,7 @@ export async function startSubscriptionCheckout(_input?: {
   await requireShop()
   return {
     ok: false,
-    error: "Pilot checkout is unavailable until your plan, seats, usage rates, and spending cap are confirmed.",
+    error: "Founder Pilot terms are approved. Checkout remains unavailable until usage settlement, Stripe reconciliation, and release acceptance are complete.",
   }
 }
 
@@ -46,7 +46,7 @@ export async function startPackCheckout(
   await requireShop()
   return {
     ok: false,
-    error: "Usage purchases are unavailable until the pilot usage policy and spending cap are confirmed.",
+    error: "Usage purchases remain unavailable until metering, cap enforcement, and Stripe reconciliation pass release acceptance.",
   }
 }
 

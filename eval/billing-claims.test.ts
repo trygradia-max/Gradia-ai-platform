@@ -25,6 +25,7 @@ describe("customer-facing billing claims", () => {
     expect(source).not.toContain("createSubscriptionCheckoutSession")
     expect(source).not.toContain("createPackCheckoutSession")
     expect(source).not.toContain("addVoiceAddonItem")
-    expect(source).toContain("Pilot checkout is unavailable")
+    expect(source).toContain("Founder Pilot terms are approved")
+    expect(source).toContain("Checkout remains unavailable")
   })
 })
