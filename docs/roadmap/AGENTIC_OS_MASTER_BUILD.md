@@ -1,6 +1,6 @@
 # Gradia Agentic OS — master build and pilot plan
 
-_Authoritative execution map as of 2026-10-27. This is a build and release plan,
+_Authoritative execution map updated 2026-11-03. This is a build and release plan,
 not a claim that every layer is live. Update this file whenever a gate changes._
 
 ## The product we are building
@@ -33,6 +33,13 @@ with human review and truthful failure states.
   layering contract. Merged as `205a853`.
 - PR #117: active Control Center policy now gates owner SMS quick replies before
   Twilio. Merged as `e9b008d` after rebase and full GitHub CI.
+- PR #120: fail-closed hybrid commercial catalog/quotation foundation.
+- PR #121: the authorized operations queue and daily brief are wired into the
+  signed-in UI with unavailable/partial/empty distinctions.
+- PR #122: the first durable scheduled-run claim, lease, immutable definition
+  snapshot, compare-and-set completion and unknown/reconciliation state.
+- PR #123: reviewed and versioned memory candidate, review, publication, conflict,
+  revocation, revision-bound retrieval and owner review UI.
 - Control Center policy, approvals, consent/proof boundaries, tenant isolation,
   operations projection and several domain-specific workflows already exist.
 
@@ -49,12 +56,14 @@ with human review and truthful failure states.
 - The Agent OS definition compiler validates job, reviewed knowledge references,
   Control Center operation grants, schedule, limits, lifecycle, exact-revision
   evaluation evidence, and tenant/revision-scoped trace/cache identity.
-- The operations queue and daily brief have a tenant-authorized server read contract.
-  No production UI currently consumes the complete contract.
-- Existing workflows, pending actions, proofs and agent-run records provide useful
-  durable pieces, but there is not yet one restart-safe run/step/attempt lifecycle.
-- Retrieval and memory features exist, but reviewed publication, provenance,
-  conflict handling and revocation are not yet one enforced memory boundary.
+- The operations queue and daily brief now consume the tenant-authorized server
+  contract. Signed-in hosted acceptance is still required.
+- Scheduled custom agents now claim a durable run before recipe work, but there is
+  not yet one complete restart-safe run/step/command/attempt lifecycle for every
+  trigger and external effect.
+- Reviewed publication, provenance, conflict handling, revocation and revision-bound
+  retrieval are enforced for the new memory path. Provider-boundary classification,
+  PII minimization and the full malicious-input/deletion matrix remain.
 - Multiple model call sites exist, but there is no single normalized model adapter,
   router, semantic cache and provider-boundary classifier used by every employee.
 
@@ -64,8 +73,8 @@ with human review and truthful failure states.
   “super agent.”
 - Persisted immutable employee-definition revisions with one atomic active revision.
 - Restart-safe claims, cancellation and reconciliation for every external attempt.
-- Reviewed memory publication with source, author, revision, validity and deletion
-  propagation.
+- Prompt-injection classification and PII minimization at every provider boundary,
+  plus the complete reviewed-memory adversarial/deletion test matrix.
 - The complete Cursor builder and operations/exception-desk UI.
 - Signed-in hosted acceptance for the integrated private candidate.
 - Public launch, shared-database write unfreeze, live provider/cron activation or
@@ -153,10 +162,13 @@ Work in this order. Later stages cannot be used to hide a missing earlier bounda
 
 - [ ] Persist immutable employee-definition revisions and atomic active revision.
 - [ ] Compile a saved revision into the existing Control Center operation envelope.
-- [ ] Add/normalize durable run, step and attempt records around existing workflows,
+- [ ] Extend the merged scheduled-run lifecycle into durable step and attempt records
+  around existing workflows,
   pending actions, provider proofs and agent runs; do not create a second executor.
-- [ ] Implement restart-safe claims, leases, heartbeats and compare-and-set state
-  transitions with concurrent-worker tests.
+- [x] Implement the first scheduled-run claim, lease and compare-and-set terminal
+  transition with concurrent-worker tests.
+- [ ] Add heartbeats and extend restart-safe claims/transitions to every selected
+  pilot trigger, step and consequential external attempt.
 - [ ] Implement pause/cancel/kill semantics and distinguish requested cancellation
   from confirmed provider cancellation.
 - [ ] Persist wait reason, due time, owner, escalation and reconciliation links.
@@ -251,6 +263,8 @@ unrestricted production permission.
 Constraints: extend the existing executor and records; no shared-database changes,
 live providers, deploy, merge or activation without explicit authorization. Every
 handoff includes exact commits, migration versions, commands/results and limitations.
+The exact next assignment is in
+`docs/handoffs/CLAUDE_AGENT_OS_INTERNALS_2026-11-03.md`.
 
 ### Cursor — configuration and operations experience
 
@@ -281,7 +295,9 @@ These cannot be completed by code alone and should not be silently inferred:
 - [ ] Select exactly which first playbook each account receives.
 - [ ] Agree success measures: response time, reviewed/completed work, booking outcomes,
   unresolved events and weekly operator feedback—not invented “time saved.”
-- [ ] Decide pilot duration, price/free terms, included seats/usage and overage policy.
+- [x] Approve Founder Pilot duration, price, billable roles, included seats/usage,
+  rates, caps and activation terms (`2026-11-03.v1`).
+- [ ] Approve tax treatment and failed-payment/dunning behavior before collection.
 - [ ] Approve support/escalation hours and who handles a blocked or uncertain action.
 
 ### Legal, consent and trust

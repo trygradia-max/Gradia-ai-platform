@@ -8,8 +8,8 @@ import { toggleVoiceAddon } from "@/app/actions/billing"
 import { Button } from "@/components/ui/button"
 
 /**
- * Production checkout stays unavailable until the founder approves a complete
- * tier + seat + usage catalog and the matching Stripe prices are configured.
+ * The Founder Pilot terms are approved. Production checkout stays unavailable
+ * until settlement, Stripe provisioning and release acceptance are complete.
  */
 export function BillingSubscribe() {
   return (
@@ -20,8 +20,9 @@ export function BillingSubscribe() {
           Pilot activation
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Gradia will confirm your workspace tier, active-user terms, included
-          usage, and any pay-as-you-go cap before checkout is enabled.
+          Founder Pilot is $199/month with 3 operator seats, 2 active agents,
+          100 digital outcomes, 100 voice minutes and a $100 default overage cap.
+          Checkout opens after billing reconciliation passes release acceptance.
         </p>
       </div>
       <Button type="button" disabled>

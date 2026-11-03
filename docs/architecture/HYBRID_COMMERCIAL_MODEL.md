@@ -1,7 +1,7 @@
 # Hybrid commercial model
 
-_Contract foundation: 2026-10-29. No new price, seat, trial or overage value
-is activated by this document or its accompanying code._
+_Contract foundation: 2026-10-29. Founder-approved catalog added 2026-11-03.
+Product approval does not activate Stripe, checkout or production billing._
 
 ## Approved shape
 
@@ -48,20 +48,25 @@ time-based. Non-voice AI work should use customer-visible operations or another
 auditable unit rather than pretending wall-clock “agent minutes” match token,
 model and tool cost.
 
-## Founder decisions required before live billing
+## Founder decisions recorded 2026-11-03
 
-- Plan names and number of tiers.
-- Monthly base price per tier.
-- Which active roles count as paid users.
-- Included seats and extra-seat rate, including proration.
-- Included message/AI capacity and voice minutes.
-- Prepaid, postpaid or both for overage.
-- Retail unit rates or markup/margin floors per usage metric.
-- Voice rounding rule and provider-cost reconciliation.
-- Default and maximum monthly overage cap.
-- Trial start, duration, allowance and card policy.
-- Rollover, grandfathering, taxes, currency and failed-payment behavior.
+- Founder Pilot: $199/workspace/month; three operator seats; two active agents;
+  100 standard outcomes; 100 inbound voice minutes.
+- Active owner, manager and staff roles are billable operators; read-only, pending,
+  inactive and revoked memberships are excluded. Extra seats are $39/month with
+  daily proration.
+- Postpaid overage: standard outcome $1; qualified lead $5; confirmed appointment
+  $10; voice greater of $0.35/minute or cost / 0.40; SMS greater of $0.05/segment
+  or cost × 3. Only the highest-value digital outcome is charged per workflow.
+- Default cap $100/month, owner-adjustable to $500. No included-usage rollover.
+- Fourteen-day build/test period; billing and card requirement begin at first agent
+  activation. Qualifying pilot accounts retain the price for 12 months.
+- USD. Planned Core/Growth/Scale terms are recorded but blocked pending pilot cost
+  evidence and are not part of the activatable catalog.
 
-Until those values are recorded, Production Stripe price identifiers stay
-unset and checkout fails closed. Historical `$20 + $29` and `$99/$149/$249`
-models and PR #38 are implementation references, not commercial approval.
+Tax treatment and failed-payment/dunning behavior still require explicit founder
+approval. Ledger settlement, cap enforcement/warnings, proration, activation billing,
+Stripe provisioning/webhook reconciliation and production acceptance remain unbuilt.
+Production Stripe identifiers therefore stay unset and checkout continues to fail
+closed. Historical `$20 + $29` and `$99/$149/$249` models and PR #38 are not the
+approved catalog. See `docs/product/FOUNDER_APPROVED_COMMERCIAL_CATALOG.md`.

@@ -1,7 +1,8 @@
-# Gradia Agent Builder and pilot pricing recommendation
+# Gradia Agent Builder and founder-approved pilot pricing
 
-_Recommendation dated 2026-11-03. This document does not activate a Stripe
-catalog, checkout, providers, cron, or production billing._
+_Founder approved 2026-11-03. The matching application catalog is version
+`2026-11-03.v1`. Approval records the product and pricing decision; it does not
+activate Stripe, checkout, providers, cron, shared writes or production billing._
 
 ## Product decision
 
@@ -42,7 +43,7 @@ active pointer; it never mutates an old revision. The detail page distinguishes
 draft, active, paused and blocked definitions plus running, waiting, needs-review,
 unconfirmed, failed and completed work.
 
-## Recommended pilot offer
+## Approved pilot offer
 
 Do not launch three public tiers before pilot usage data exists. Sell one clear
 founder-led pilot for the first 10 accounts, then use its cohort data to publish
@@ -65,7 +66,7 @@ The pilot is deliberately high enough to prove budget and service value, but low
 enough for a local service business to try without an enterprise procurement
 cycle.
 
-## Recommended public tiers after pilot evidence
+## Approved planned public tiers after pilot evidence
 
 | Plan | Monthly | Included operator seats | Active agents | Standard digital outcomes | Voice minutes |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -122,8 +123,16 @@ Twilio voice and SMS add their own per-minute/per-segment costs. Gradia's $1
 standard outcome is therefore legible, while $5 qualified-lead and $10 confirmed-
 booking outcomes reflect materially higher business value.
 
-Before creating Stripe products, the founder must explicitly approve the plan
-names, prices, included units, outcome definitions, operator-seat definition,
-rounding, caps, trial activation point, grandfathering, tax/currency policy and
-failed-payment behavior. The existing commercial catalog continues to fail closed
-until that approval is recorded.
+The founder has approved the plan names, prices, included units, billable roles,
+outcome definitions, operator-seat definition, rates, rounding, caps, build/test
+period, activation point and 12-month pilot grandfathering recorded above. Core,
+Growth and Scale remain excluded from the activatable catalog until pilot cost
+evidence proves their included allowances clear the margin gate.
+
+Still required before live collection: a founder-approved tax treatment and
+failed-payment/dunning policy; implementation of ledger settlement, cap warnings,
+seat proration and activation-triggered billing; deterministic Stripe provisioning;
+webhook reconciliation; and a separate production activation decision. The
+approved catalog and inactive Stripe manifest live in
+`src/lib/approved-commercial-catalog.ts` and
+`src/lib/stripe-commercial-manifest.ts`.
