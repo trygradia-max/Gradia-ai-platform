@@ -2363,3 +2363,18 @@ pass. The local disposable Auth service timed out while seeding the focused
 integration test, so database concurrency and RLS proof remain a required CI
 gate. No migration was applied outside the disposable local stack; no cron,
 provider, deployment, or production write was activated.
+
+[AI: codex] [DATE: 2026-11-03] [AREA: platform] [STATUS: in-progress]
+Built the reviewed-memory control-plane slice on `codex/reviewed-agent-memory`.
+New knowledge enters as an inert candidate; owner review and exact-revision
+publication are separate actions. Published retrieval is revision-bound, same-name
+contradictions become conflicted, instruction-like content is blocked from review,
+revocation removes future retrieval, and a workspace memory revision invalidates
+future run/cache scope. The Settings UI shows content and safety flags before
+publication. The full migration chain applied on the disposable stack; reviewed
+memory and tenant-boundary integration tests passed. Node 24 unit suite: 1,731
+passed / 4 skipped; types, touched-file lint and the Next 16.2.6 webpack build
+passed. One unrelated legacy tenant-isolation rerun received a transient local
+PostgREST upstream response after seven assertions passed; required GitHub CI
+remains the merge gate. No production migration, provider, cron, Stripe catalog or
+deployment was activated.

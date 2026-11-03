@@ -383,7 +383,7 @@ export const STRINGS = {
       automations:
         "Follow-ups that run on a schedule. In approval mode each one stages a draft for you first.",
       knowledge:
-        "Facts your receptionist can use when answering: policies, FAQs, what makes the shop different.",
+        "Candidate facts stay inert until you review and publish an exact revision. Revoking a publication removes it from future Gradia retrieval.",
       reviews:
         "The link customers get when your receptionist asks for a review after a finished job.",
       queueForApproval:

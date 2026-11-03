@@ -697,8 +697,43 @@ export type ShopKnowledgeRow = {
   shop_id: string
   source_name: string
   content: string
+  source_id?: string
+  revision?: number
+  content_hash?: string
+  published_at?: string
   created_at: string
   updated_at: string
+}
+
+export type ReviewedMemoryState =
+  | "candidate"
+  | "reviewed"
+  | "published"
+  | "conflicted"
+  | "revoked"
+  | "deleted"
+
+export type ReviewedMemoryRevisionRow = {
+  shop_id: string
+  source_id: string
+  source_name: string
+  revision: number
+  state: ReviewedMemoryState
+  raw_content: string
+  content_hash: string
+  safety_status: "clean" | "flagged" | "blocked"
+  safety_flags: string[]
+  author_id: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+  published_by: string | null
+  published_at: string | null
+  valid_from: string | null
+  valid_until: string | null
+  retention_until: string | null
+  supersedes_revision: number | null
+  active_revision: number | null
+  created_at: string
 }
 
 export type ShopKnowledgeMatch = {
@@ -706,6 +741,11 @@ export type ShopKnowledgeMatch = {
   source_name: string
   content: string
   similarity: number
+}
+
+export type ReviewedAgentMemoryMatch = ShopKnowledgeMatch & {
+  source_id: string
+  source_revision: number
 }
 
 export type PaymentRow = {

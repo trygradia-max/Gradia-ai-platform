@@ -5,11 +5,13 @@ import * as React from "react"
 import { HelpTip } from "@/components/gradia/help-tip"
 import { STRINGS } from "@/lib/strings"
 import { useRouter } from "next/navigation"
-import { BookOpen, Loader2, Plus, Trash2 } from "lucide-react"
+import { BookOpen, Check, Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
-  deleteKnowledgeEntry,
+  publishKnowledgeEntry,
+  removeKnowledgeEntry,
+  reviewKnowledgeEntry,
   saveKnowledgeBulkEntry,
   saveKnowledgeEntry,
 } from "@/app/actions/knowledge"
@@ -23,7 +25,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import type { ShopKnowledgeRow } from "@/lib/types/database"
+import { StatusPill } from "@/components/ui/status-pill"
+import type { ReviewedMemoryRevisionRow } from "@/lib/types/database"
 
 const MAX_CONTENT = 80_000
 const SINGLE_ENTRY_CAP = 4_000
@@ -50,10 +53,10 @@ const EXAMPLES = [
 export function KnowledgeSettingsCard({
   initialEntries,
 }: {
-  initialEntries: ShopKnowledgeRow[]
+  initialEntries: ReviewedMemoryRevisionRow[]
 }) {
   const router = useRouter()
-  const [entries, setEntries] = React.useState(initialEntries)
+  const entries = initialEntries
   const [sourceName, setSourceName] = React.useState("")
   const [content, setContent] = React.useState("")
   const [pending, setPending] = React.useState<null | "save" | string>(null)
@@ -77,11 +80,8 @@ export function KnowledgeSettingsCard({
       setSourceName("")
       setContent("")
       toast.success(
-        `Saved ${result.inserted} chunk${result.inserted === 1 ? "" : "s"} — drafters can cite this now.`
+        `Saved ${result.inserted} chunk${result.inserted === 1 ? "" : "s"} for owner review. Nothing is live yet.`
       )
-      // The server `revalidatePath("/settings")` will repaint with the
-      // new rows on the next navigation; for the optimistic count we
-      // just bump the heading by refetching on revalidate.
       router.refresh()
       return
     }
@@ -95,32 +95,72 @@ export function KnowledgeSettingsCard({
       toast.error(result.error)
       return
     }
-    setEntries([
-      {
-        id: result.id,
-        shop_id: entries[0]?.shop_id ?? "",
-        source_name: sourceName.trim(),
-        content: content.trim(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      ...entries,
-    ])
     setSourceName("")
     setContent("")
-    toast.success("Saved — drafters can cite this now.")
+    toast.success(
+      result.safetyStatus === "blocked"
+        ? "Saved as a blocked candidate. Remove instruction-like content before review."
+        : "Saved for owner review. Nothing is live yet."
+    )
+    router.refresh()
   }
 
-  async function handleDelete(id: string) {
-    setPending(id)
-    const result = await deleteKnowledgeEntry(id)
+  function pendingKey(
+    action: "review" | "publish" | "remove",
+    entry: ReviewedMemoryRevisionRow
+  ) {
+    return `${action}:${entry.source_id}:${entry.revision}`
+  }
+
+  async function handleReview(entry: ReviewedMemoryRevisionRow) {
+    const key = pendingKey("review", entry)
+    setPending(key)
+    const result = await reviewKnowledgeEntry({
+      sourceId: entry.source_id,
+      revision: entry.revision,
+    })
     setPending(null)
     if (!result.ok) {
       toast.error(result.error)
       return
     }
-    setEntries(entries.filter((e) => e.id !== id))
-    toast.success("Removed.")
+    toast.success("Reviewed. Publish separately when you are ready to activate it.")
+    router.refresh()
+  }
+
+  async function handlePublish(entry: ReviewedMemoryRevisionRow) {
+    const key = pendingKey("publish", entry)
+    setPending(key)
+    const result = await publishKnowledgeEntry({
+      sourceId: entry.source_id,
+      revision: entry.revision,
+      expectedActive: entry.active_revision,
+    })
+    setPending(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      router.refresh()
+      return
+    }
+    toast.success("Published. Future Gradia work may retrieve this exact revision.")
+    router.refresh()
+  }
+
+  async function handleRemove(entry: ReviewedMemoryRevisionRow) {
+    const key = pendingKey("remove", entry)
+    setPending(key)
+    const result = await removeKnowledgeEntry({
+      sourceId: entry.source_id,
+      revision: entry.revision,
+      expectedActive: entry.active_revision,
+    })
+    setPending(null)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(result.outcome === "revoked" ? "Revoked from future retrieval." : "Candidate removed.")
+    router.refresh()
   }
 
   function loadExample(ex: (typeof EXAMPLES)[number]) {
@@ -136,13 +176,12 @@ export function KnowledgeSettingsCard({
         </div>
         <div className="flex-1">
           <CardTitle className="flex items-center gap-1.5 text-base font-medium">
-            Shop knowledge
-            <HelpTip label="Shop knowledge" text={STRINGS.help.settings.knowledge} />
+            Reviewed memory
+            <HelpTip label="Reviewed memory" text={STRINGS.help.settings.knowledge} />
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            FAQs, policies, brand voice — whatever we paste here gets
-            pulled into draft replies and the BI chat when it&apos;s
-            relevant.
+            Add a candidate, inspect it, then publish an exact revision.
+            Gradia retrieves published revisions only.
           </p>
         </div>
       </CardHeader>
@@ -207,11 +246,11 @@ export function KnowledgeSettingsCard({
               className="h-11 gap-2 sm:h-9"
             >
               {pending === "save" ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
+                <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
               ) : (
                 <Plus className="size-4" aria-hidden />
               )}
-              {willChunk ? `Add document (${chunkCount} chunks)` : "Add entry"}
+              {willChunk ? `Add candidate (${chunkCount} chunks)` : "Add candidate"}
             </Button>
           </div>
         </form>
@@ -219,33 +258,102 @@ export function KnowledgeSettingsCard({
         {entries.length > 0 ? (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              {entries.length} entr{entries.length === 1 ? "y" : "ies"} live
+              {entries.length} memory revision{entries.length === 1 ? "" : "s"}
             </p>
             <ul className="grid gap-2">
               {entries.map((entry) => (
                 <li
-                  key={entry.id}
+                  key={`${entry.source_id}:${entry.revision}`}
                   className="flex items-start gap-3 rounded-md border border-border/60 bg-muted/15 px-3 py-2.5"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">
-                      {entry.source_name}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">
+                        {entry.source_name} · revision {entry.revision}
+                      </p>
+                      <StatusPill
+                        tone={
+                          entry.state === "published"
+                            ? "good"
+                            : entry.state === "conflicted" ||
+                                entry.safety_status === "blocked"
+                              ? "bad"
+                              : entry.state === "reviewed"
+                                ? "accent"
+                                : entry.state === "revoked"
+                                  ? "warn"
+                                  : "muted"
+                        }
+                      >
+                        {entry.state}
+                      </StatusPill>
+                      {entry.safety_status !== "clean" ? (
+                        <StatusPill
+                          tone={entry.safety_status === "blocked" ? "bad" : "warn"}
+                        >
+                          {entry.safety_status === "blocked"
+                            ? "instruction risk"
+                            : "check personal data"}
+                        </StatusPill>
+                      ) : null}
+                    </div>
                     <p className="line-clamp-3 text-xs text-muted-foreground">
-                      {entry.content}
+                      {entry.raw_content}
                     </p>
+                    {entry.safety_flags.length > 0 ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Review flags: {entry.safety_flags.join(", ")}
+                      </p>
+                    ) : null}
                   </div>
+                  {entry.state === "candidate" && entry.safety_status !== "blocked" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleReview(entry)}
+                      disabled={pending !== null}
+                      className="min-h-11 gap-1.5 sm:min-h-9"
+                    >
+                      {pending === pendingKey("review", entry) ? (
+                        <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                      ) : (
+                        <Check className="size-3.5" aria-hidden />
+                      )}
+                      Review
+                    </Button>
+                  ) : null}
+                  {entry.state === "reviewed" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handlePublish(entry)}
+                      disabled={pending !== null}
+                      className="min-h-11 gap-1.5 sm:min-h-9"
+                    >
+                      {pending === pendingKey("publish", entry) ? (
+                        <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                      ) : (
+                        <ShieldCheck className="size-3.5" aria-hidden />
+                      )}
+                      Publish
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(entry.id)}
-                    disabled={pending === entry.id}
+                    onClick={() => handleRemove(entry)}
+                    disabled={pending !== null || entry.state === "revoked"}
                     className="text-muted-foreground hover:text-destructive"
-                    aria-label={`Delete ${entry.source_name}`}
+                    aria-label={
+                      entry.state === "published"
+                        ? `Revoke ${entry.source_name} revision ${entry.revision}`
+                        : `Remove ${entry.source_name} revision ${entry.revision}`
+                    }
                   >
-                    {pending === entry.id ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    {pending === pendingKey("remove", entry) ? (
+                      <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
                     ) : (
                       <Trash2 className="size-3.5" aria-hidden />
                     )}
