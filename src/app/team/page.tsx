@@ -1,6 +1,9 @@
 import Link from "next/link"
+import { OperationsOverviewBrief } from "@/components/gradia/operations-overview"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { TeamChrome } from "@/components/gradia/team-chrome"
+import { loadOperationsOverviewForWorkspace } from "@/lib/data/operations-queue"
+import type { OperationsOverview } from "@/lib/operations-queue-reader"
 import { requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import type { TeamWorkspace } from "@/lib/team-permissions"
@@ -21,47 +24,51 @@ export default async function TeamPage({
   // Caller-supplied IDs are selectors, never authorization.
   const workspace = shop ? workspaces.find((w) => w.id === shop) : workspaces[0]
   let team: TeamData | null = null
+  let operations: OperationsOverview | null = null
   if (workspace) {
-    const results = await Promise.all([
-      db
-        .from("shop_memberships")
-        .select("id,user_id,display_name,role,active,capabilities")
-        .eq("shop_id", workspace.id)
-        .order("created_at"),
-      db
-        .from("customers")
-        .select("id,name")
-        .eq("shop_id", workspace.id)
-        .order("created_at", { ascending: false })
-        .limit(50),
-      db
-        .from("appointments")
-        .select("id,customer_id,service_name,scheduled_at,status")
-        .eq("shop_id", workspace.id)
-        .order("scheduled_at", { ascending: false })
-        .limit(50),
-      db
-        .from("shop_assignments")
-        .select("id,member_id,customer_id,appointment_id")
-        .eq("shop_id", workspace.id),
-      workspace.role === "owner"
-        ? db.rpc("team_list_invites", { p_shop: workspace.id })
-        : Promise.resolve({ data: [], error: null }),
-      workspace.role === "owner"
-        ? db
-            .from("shop_team_audit")
-            .select("id,actor_id,event,created_at")
-            .eq("shop_id", workspace.id)
-            .order("created_at", { ascending: false })
-            .limit(50)
-        : Promise.resolve({ data: [], error: null }),
-      db
-        .from("interactions")
-        .select("id,customer_id,content,created_at")
-        .eq("shop_id", workspace.id)
-        .eq("channel", "note")
-        .order("created_at", { ascending: false })
-        .limit(100),
+    const [results, overview] = await Promise.all([
+      Promise.all([
+        db
+          .from("shop_memberships")
+          .select("id,user_id,display_name,role,active,capabilities")
+          .eq("shop_id", workspace.id)
+          .order("created_at"),
+        db
+          .from("customers")
+          .select("id,name")
+          .eq("shop_id", workspace.id)
+          .order("created_at", { ascending: false })
+          .limit(50),
+        db
+          .from("appointments")
+          .select("id,customer_id,service_name,scheduled_at,status")
+          .eq("shop_id", workspace.id)
+          .order("scheduled_at", { ascending: false })
+          .limit(50),
+        db
+          .from("shop_assignments")
+          .select("id,member_id,customer_id,appointment_id")
+          .eq("shop_id", workspace.id),
+        workspace.role === "owner"
+          ? db.rpc("team_list_invites", { p_shop: workspace.id })
+          : Promise.resolve({ data: [], error: null }),
+        workspace.role === "owner"
+          ? db
+              .from("shop_team_audit")
+              .select("id,actor_id,event,created_at")
+              .eq("shop_id", workspace.id)
+              .order("created_at", { ascending: false })
+              .limit(50)
+          : Promise.resolve({ data: [], error: null }),
+        db
+          .from("interactions")
+          .select("id,customer_id,content,created_at")
+          .eq("shop_id", workspace.id)
+          .eq("channel", "note")
+          .order("created_at", { ascending: false })
+          .limit(100),
+      ]),
+      loadOperationsOverviewForWorkspace(workspace.id, { limit: 8 }),
     ])
     if (results.some((r) => r.error))
       throw new Error("Team records could not be loaded.")
@@ -76,6 +83,7 @@ export default async function TeamPage({
         "notes",
       ].map((key, i) => [key, results[i].data ?? []])
     ) as TeamData
+    operations = overview
   }
   return (
     <TeamChrome>
@@ -91,6 +99,7 @@ export default async function TeamPage({
         ))}
       </nav>
       {workspace ? <Link className="inline-flex min-h-11 items-center text-sm text-accent-text underline-offset-4 hover:underline" href={`/conversations?shop=${workspace.id}`}>Open Whisper conversations</Link> : null}
+      {operations ? <OperationsOverviewBrief overview={operations} /> : null}
       {workspace && team ? (
         <TeamPanel key={workspace.id} workspace={workspace} data={team} />
       ) : (
