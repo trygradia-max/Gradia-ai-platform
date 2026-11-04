@@ -18,6 +18,27 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Added a sandbox-only Stripe browser handoff for Claude Code. It translates the
+founder's tiered, per-operator and pay-as-you-go references into the already-approved
+hybrid Gradia catalog, requires read-only inventory before mutation, permits only
+the manifest-defined sandbox workspace/seat prices and safe portal settings, and
+blocks live mode, secrets, duplicate lookup keys, invented meters, production
+webhooks and checkout activation. It records that the meter/settlement contract
+must be reviewed in code before usage objects are created. Work is on
+`codex/stripe-sandbox-browser-handoff`; no Stripe, deployment, provider, shared-data
+or production action occurred in this entry.
+
+[AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Recorded the founder direction to complete Gradia for a full production launch rather
+than stop at pilot acceptance. Added an evidence-backed launch-readiness contract
+covering the already-merged Cursor UI, remaining Agentic OS/product spine, disabled
+Gradia subscription checkout, Stripe settlement gaps, security/reliability gates,
+signed-in usability acceptance and controlled production activation. Updated the
+Agentic OS master plan title and directive without changing application behavior,
+prices, providers, shared data, deployment or production gates. Work is on
+`codex/production-launch-readiness`; no merge or deployment occurred in this entry.
+
 [AI: cursor] [DATE: 2026-10-29] [AREA: platform] [STATUS: done]
 Added a read-only Operations Brief to `/team` on `codex/operations-brief-ui`.
 The server-rendered component consumes the existing authorized `OperationsOverview`
