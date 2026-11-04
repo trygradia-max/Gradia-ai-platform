@@ -1,6 +1,6 @@
 # Gradia Agentic OS — master build and pilot plan
 
-_Authoritative execution map updated 2026-11-03. This is a build and release plan,
+_Authoritative execution map updated 2026-11-04. This is a build and release plan,
 not a claim that every layer is live. Update this file whenever a gate changes._
 
 ## The product we are building
@@ -18,6 +18,11 @@ approve a changed plan, supply credentials or prove that an external action fini
 The first pilot does **not** require arbitrary self-directed agents. It requires one
 coherent, inspectable Gradia employee that can reliably handle a narrow set of jobs
 with human review and truthful failure states.
+
+The founder-approved onboarding baseline records where the shop starts. Gradia
+Whisper Call Copilot lets a shop keep a human answering inbound calls while Gradia,
+after disclosed consent, prepares evidence-linked CRM work for review. These are
+parts of the same Agentic OS, not new model personalities or authority systems.
 
 ## Current truth
 
@@ -148,6 +153,9 @@ time stay visible. Uncertain sends do not receive an unsafe generic retry button
 
 Work in this order. Later stages cannot be used to hide a missing earlier boundary.
 
+The exact next PR order is maintained in `NEXT_BUILD_ORDER_2026-11-04.md`; it is
+the handoff sequence for Claude and Cursor.
+
 ### Gate 0 — integrated baseline
 
 - [x] Merge combined candidate #116.
@@ -179,6 +187,20 @@ Work in this order. Later stages cannot be used to hide a missing earlier bounda
 
 Acceptance: a worker can stop mid-run, restart, and continue or reconcile without
 duplicating an external action or declaring an unknown action complete.
+
+### Gate 1A — onboarding starting-point evidence
+
+- [ ] Persist immutable, tenant-bound assessment revisions and an atomic baseline
+  pointer without changing prior revisions.
+- [ ] Preserve owner estimate, connected, Gradia-observed, derived and unknown
+  evidence classes with units, periods and formula versions.
+- [ ] Produce factual starting-point and comparable day-30 DTOs; unavailable is not
+  zero and unlike windows are not comparable.
+- [ ] Prove owner/delegated-manager/staff boundaries, revocation, concurrency and
+  cross-shop denial in disposable integration.
+
+Acceptance: a pilot report can show where the shop started and what changed using
+like-for-like evidence, without an opaque efficiency score or invented ROI.
 
 ### Gate 2 — reviewed memory
 
@@ -228,6 +250,10 @@ identity, lifecycle, evidence or user-visible completion semantics.
 - [ ] Show needs-review, waiting, unconfirmed, blocked and completed work distinctly.
 - [ ] Preserve keyboard access, accessible names, reduced motion, mobile layout and
   200% zoom; record real signed-in browser evidence.
+- [ ] Add the resumable Starting point onboarding step and evidence-labeled baseline
+  report from the authorized server DTO.
+- [ ] Add Call Copilot capture state and post-call transcript/proposal review without
+  exposing provider credentials or client-selected consent authority.
 
 Acceptance: an owner can configure, test, activate, inspect, pause and stop a bounded
 employee without seeing model/provider internals or receiving invented outcomes.
@@ -237,10 +263,12 @@ employee without seeing model/provider internals or receiving invented outcomes.
 Ship a narrow template set, in order:
 
 1. Missed-lead follow-up with approval-first outreach.
-2. Appointment coordination with conflict and confirmation evidence.
-3. Google Business Profile review/draft assistance; publishing remains separately
+2. Human-first inbound Call Copilot with disclosed capture and approval-first CRM
+   proposals; no digital receptionist required.
+3. Appointment coordination with conflict and confirmation evidence.
+4. Google Business Profile review/draft assistance; publishing remains separately
    permissioned.
-4. Grant research with cited eligibility and deadlines; applications and spending
+5. Grant research with cited eligibility and deadlines; applications and spending
    remain human-controlled.
 
 Each playbook is versioned and has trigger, steps, waits, stop rules, budgets,
@@ -254,17 +282,18 @@ unrestricted production permission.
 
 ### Claude Code — deep runtime and memory internals
 
-1. Gate 1 persistence/lifecycle as small reviewable PRs.
-2. Gate 2 reviewed-memory schema, publication and provenance.
-3. Gate 3 normalized provider adapter, classifier, router/cache and durable traces.
-4. Disposable integration evidence for restart, concurrency, isolation, revocation,
+1. Gate 1A onboarding-baseline persistence as the next isolated PR.
+2. Gate 1 definition/lifecycle as small reviewable PRs.
+3. Call Copilot ingress/consent, then structured CRM proposals.
+4. Gate 2 provider-boundary classification and Gate 3 normalized adapter/traces.
+5. Disposable integration evidence for restart, concurrency, isolation, revocation,
    injection, deletion and unknown outcomes.
 
 Constraints: extend the existing executor and records; no shared-database changes,
 live providers, deploy, merge or activation without explicit authorization. Every
 handoff includes exact commits, migration versions, commands/results and limitations.
-The exact next assignment is in
-`docs/handoffs/CLAUDE_AGENT_OS_INTERNALS_2026-11-03.md`.
+The exact next assignment is in `docs/handoffs/CLAUDE_NEXT_BUILD_2026-11-04.md`;
+the prior deep-internals handoff remains its architecture dependency.
 
 ### Cursor — configuration and operations experience
 
@@ -295,6 +324,11 @@ These cannot be completed by code alone and should not be silently inferred:
 - [ ] Select exactly which first playbook each account receives.
 - [ ] Agree success measures: response time, reviewed/completed work, booking outcomes,
   unresolved events and weekly operator feedback—not invented “time saved.”
+- [x] Approve a versioned onboarding starting-point assessment and like-for-like
+  day-30 comparison without an opaque efficiency score (2026-11-04).
+- [x] Approve inbound human-first Whisper Call Copilot as an optional alternative to
+  the digital receptionist, with disclosed consent and approval-first CRM proposals
+  (2026-11-04).
 - [x] Approve Founder Pilot duration, price, billable roles, included seats/usage,
   rates, caps and activation terms (`2026-11-03.v1`).
 - [ ] Approve tax treatment and failed-payment/dunning behavior before collection.
@@ -306,6 +340,8 @@ These cannot be completed by code alone and should not be silently inferred:
   and AI/customer-data disclosures for pilots.
 - [ ] Confirm SMS/email consent language, STOP/help handling, quiet hours and outreach
   purposes with counsel for the target jurisdictions.
+- [ ] Approve Call Copilot recording/transcription disclosure, consent mechanism,
+  employee policy and jurisdiction handling with counsel before live capture.
 - [ ] Complete Twilio A2P registration and Meta/Google/provider app review where used.
 - [ ] Approve pilot-facing explanation of Gradia identity, human review and limitations.
 

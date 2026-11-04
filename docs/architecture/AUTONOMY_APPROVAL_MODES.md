@@ -19,6 +19,12 @@
 > not change `autonomy.ts`, `approvals.ts`, or provider execution. Legacy
 > `suggest` still stages approvals in the live executor; the new SUGGEST mode
 > exists in the draft contract only. September 11 matrix below is unchanged.
+>
+> **Founder addendum, 2026-11-04 (Pacific).** Submitting an onboarding baseline
+> records owner/authorized-manager business evidence and grants no Agent capability.
+> Call Copilot capture is Off until the applicable disclosure/consent gate passes.
+> Its initial extracted CRM changes, quotes, bookings, tasks and messages are
+> APPROVAL REQUIRED; transcript text cannot raise that authority.
 
 ## MVP NOW
 
@@ -106,6 +112,8 @@ Role revocation or a connector being switched Off while an action waits blocks i
 | Ambiguous identity and customer merge | APPROVAL REQUIRED | Merge requires owner authority |
 | SMS/email qualification, replies, nurturing | APPROVAL REQUIRED | Granular opt-ins later; destination/consent/proof checks |
 | Inbound voice | OFF until enabled and verified | Then bounded autonomous operation under shop policy |
+| Human-first Call Copilot capture | OFF until configured and disclosed consent is proven for the call | Declined, missing or uncertain consent means zero audio/model capture |
+| Call Copilot CRM proposals | APPROVAL REQUIRED | Exact call/transcript evidence; current membership, policy and CRM state rechecked |
 | Outbound calls | OFF | Initial MVP exclusion |
 | Quote sending and normal booking | APPROVAL REQUIRED | Separate bounded opt-ins for menu-priced quotes and compliant bookings |
 | Discounts | APPROVAL REQUIRED | Owner approval unless explicit manager limit; default limit zero |

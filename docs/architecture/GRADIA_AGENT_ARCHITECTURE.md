@@ -21,6 +21,11 @@
 > model in code; scoped manager execution is still missing. Ledgers:
 > `CONTROL_CENTER_IMPLEMENTATION.md` and `../MVP_TEAM_PERMISSIONS_VERIFICATION.md`.
 > September 11 architecture decisions below are unchanged.
+>
+> **Founder addendum, 2026-11-04 (Pacific).** The onboarding baseline is
+> versioned business-measurement evidence, not Agent permission or memory. Whisper
+> Call Copilot is a human-first inbound call adapter that extends existing call
+> records, interactions and guarded CRM proposals. It is not a second Agent runtime.
 
 ## MVP NOW
 
