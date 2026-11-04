@@ -9,6 +9,7 @@ export const TEAM_CAPABILITIES = [
   "delivery.reconcile",
   "approvals.messages",
   "leads.qualify",
+  "baseline.draft",
 ] as const
 export type TeamCapability = (typeof TEAM_CAPABILITIES)[number]
 export type TeamRole = "owner" | "manager" | "staff"
@@ -38,6 +39,8 @@ export const CAPABILITY_LABELS: Record<TeamCapability, string> = {
     "Approve or reject queued texts and emails (needs customer view; consent and delivery checks still apply)",
   "leads.qualify":
     "Record lead qualification details (needs customer view; never quotes, books or messages)",
+  "baseline.draft":
+    "Read and draft the onboarding starting point (the owner alone submits it; grants no tools or contact)",
 }
 const id = z.string().uuid()
 const grants = z.array(z.enum(TEAM_CAPABILITIES)).max(TEAM_CAPABILITIES.length)
