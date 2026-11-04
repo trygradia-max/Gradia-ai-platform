@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 
@@ -14,6 +16,10 @@ import {
   type CorrectionInput,
   type RecognitionInput,
 } from "@/lib/commercial-usage"
+import type {
+  MembershipEvidence,
+  MembershipEvidenceUnavailable,
+} from "@/lib/commercial-seat-proration"
 import {
   previewCommercialPeriod,
   type CommercialPeriodPreview,
@@ -133,14 +139,62 @@ export type CommercialPreviewRead =
   | { status: "unavailable"; reason: "invalid_window" | "read_failed" | "malformed_evidence" }
   | { status: "ready"; preview: CommercialPeriodPreview }
 
-/**
- * Reads the immutable evidence for one explicit half-open UTC window and builds
- * the deterministic preview. Any read failure is `unavailable` — never an empty
- * result that could be rendered as zero usage or a $0 invoice.
- */
-export async function readCommercialUsagePreview(
+const membershipEventRow = z.object({
+  id: z.string(),
+  shop_seq: z.number().int(),
+  user_id: z.string(),
+  kind: z.string(),
+  new_billable: z.boolean(),
+  effective_at: z.string(),
+  recorded_at: z.string(),
+})
+const membershipDto = z.object({
+  coverage: z
+    .object({ covered_from: z.string(), basis: z.string(), recorded_at: z.string() })
+    .nullable(),
+  events: z.array(membershipEventRow),
+})
+
+async function readMembershipEvidence(
   client: SupabaseClient,
-  args: { shopId: string; windowStart: string; windowEnd: string; asOf?: string }
+  args: { shopId: string; windowStart: string; windowEnd: string; asOf: string }
+): Promise<MembershipEvidence | MembershipEvidenceUnavailable | "forbidden"> {
+  const { data, error } = await client.rpc("commercial_membership_read", {
+    p_shop: args.shopId,
+    p_window_start: args.windowStart,
+    p_window_end: args.windowEnd,
+    p_as_of: args.asOf,
+  })
+  if (error) {
+    return error.code === "42501" ? "forbidden" : { status: "unavailable", code: "membership_read_failed" }
+  }
+  const dto = membershipDto.safeParse(data)
+  if (!dto.success) return { status: "unavailable", code: "malformed_membership_evidence" }
+  return {
+    status: "evidence",
+    coverage: dto.data.coverage
+      ? {
+          coveredFrom: dto.data.coverage.covered_from,
+          basis: dto.data.coverage.basis,
+          recordedAt: dto.data.coverage.recorded_at,
+        }
+      : null,
+    events: dto.data.events.map((event) => ({
+      id: event.id,
+      shopSeq: event.shop_seq,
+      userId: event.user_id,
+      kind: event.kind,
+      newBillable: event.new_billable,
+      effectiveAt: event.effective_at,
+      recordedAt: event.recorded_at,
+    })),
+  }
+}
+
+async function readPreview(
+  client: SupabaseClient,
+  args: { shopId: string; windowStart: string; windowEnd: string; asOf?: string },
+  withMembership: boolean
 ): Promise<CommercialPreviewRead> {
   // A window must be an explicit UTC instant pair; never rely on a server timezone.
   const utc = /^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]00:?00)$/
@@ -158,6 +212,14 @@ export async function readCommercialUsagePreview(
   }
   const dto = readDto.safeParse(data)
   if (!dto.success) return { status: "unavailable", reason: "malformed_evidence" }
+
+  // Membership evidence is read at the SAME as-of instant so both halves describe one moment.
+  let membership: MembershipEvidence | MembershipEvidenceUnavailable | undefined
+  if (withMembership) {
+    const evidence = await readMembershipEvidence(client, { ...args, asOf: dto.data.as_of })
+    if (evidence === "forbidden") return { status: "forbidden" }
+    membership = evidence
+  }
 
   return {
     status: "ready",
@@ -186,6 +248,82 @@ export async function readCommercialUsagePreview(
         recordedAt: correction.recorded_at,
       })),
       priorWorkflowMetrics: dto.data.prior_workflow_metrics,
+      ...(membership ? { membership } : {}),
     }),
   }
+}
+
+/**
+ * Usage-only preview (Commercial Billing PR A behavior, unchanged). Seat proration
+ * stays `seat_proration_unavailable` because no membership evidence is requested.
+ * Any read failure is `unavailable` — never an empty result that could be rendered
+ * as zero usage or a $0 invoice.
+ */
+export function readCommercialUsagePreview(
+  client: SupabaseClient,
+  args: { shopId: string; windowStart: string; windowEnd: string; asOf?: string }
+): Promise<CommercialPreviewRead> {
+  return readPreview(client, args, false)
+}
+
+/**
+ * Full period preview: usage plus deterministic daily extra-seat proration from
+ * immutable membership billing history. A membership read failure leaves seat
+ * proration unavailable (never zero) and does not affect usage.
+ */
+export function readCommercialPeriodPreview(
+  client: SupabaseClient,
+  args: { shopId: string; windowStart: string; windowEnd: string; asOf?: string }
+): Promise<CommercialPreviewRead> {
+  return readPreview(client, args, true)
+}
+
+type MembershipCorrectionResult = CommercialWriteResult
+
+/** Service-role only. Appends an explicit compensating billing fact; never edits history. */
+export async function correctMembershipBilling(
+  serviceClient: SupabaseClient,
+  input: {
+    shopId: string
+    userId: string
+    effectiveAt: string
+    billable: boolean
+    correctsEventId: string
+    reason: string
+    /** Caller-owned stable reference so a retry replays instead of duplicating. */
+    correctionRef: string
+  }
+): Promise<MembershipCorrectionResult> {
+  const uuid = z.string().uuid()
+  const parsed = z
+    .object({
+      shopId: uuid,
+      userId: uuid,
+      effectiveAt: z.string().refine((v) => /(?:Z|[+-]00:?00)$/.test(v) && !Number.isNaN(Date.parse(v))),
+      billable: z.boolean(),
+      correctsEventId: uuid,
+      reason: z.string().trim().min(1).max(500),
+      correctionRef: z.string().trim().min(1).max(120),
+    })
+    .strict()
+    .safeParse(input)
+  if (!parsed.success) return { ok: false, reason: "invalid", detail: parsed.error.issues[0]?.message }
+  const { data, error } = await serviceClient.rpc("commercial_membership_correct", {
+    p_shop: parsed.data.shopId,
+    p_user_id: parsed.data.userId,
+    // Passed through unchanged: a JS Date would truncate microseconds, and an event's recorded
+    // instant is microsecond-exact. The database parses and range-checks it.
+    p_effective_at: parsed.data.effectiveAt,
+    p_billable: parsed.data.billable,
+    p_corrects_event_id: parsed.data.correctsEventId,
+    p_reason: parsed.data.reason,
+    p_idempotency_key: `mcor.v1.${createHash("sha256")
+      .update([parsed.data.shopId, parsed.data.userId, parsed.data.correctionRef].join("\u241f"))
+      .digest("hex")}`,
+  })
+  if (error) return classify(error)
+  const result = rpcResult.safeParse(data)
+  return result.success
+    ? { ok: true, id: result.data.id, replayed: result.data.replayed }
+    : { ok: false, reason: "failed" }
 }

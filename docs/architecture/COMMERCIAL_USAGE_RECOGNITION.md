@@ -87,10 +87,11 @@ charge fields, so a failure cannot render as `$0`.
 
 ## Limitations (deliberate, fail closed)
 
-1. **Seat proration is unavailable.** The preview shows base and seat pricing and
-   returns `seat_proration_unavailable` / `invoiceTotal: unavailable`. No immutable
-   billable-membership interval evidence exists; the current member count is not
-   historical truth. → PR B.
+1. **Seat proration** was unavailable in PR A. PR B
+   (`docs/architecture/MEMBERSHIP_BILLING_HISTORY.md`) records immutable membership
+   history and computes it only from complete coverage; this usage-only read
+   (`readCommercialUsagePreview`) still returns `seat_proration_unavailable`
+   (`no_membership_evidence`). Use `readCommercialPeriodPreview` for both.
 2. **No producers are wired.** Nothing calls `recognizeCommercialUsage` yet. The
    historical `voice_minute` rows carry no call direction, and their
    `wholesale_cost` is a `pricing_config` rate-card estimate, not provider-reported

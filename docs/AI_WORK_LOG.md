@@ -18,6 +18,26 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-04] [AREA: platform] [STATUS: done]
+Commercial Billing PR B (`claude/billing-seat-proration`): replaced PR A's
+`seat_proration_unavailable` with immutable membership billing history and
+deterministic daily extra-seat proration. Migration
+`20261104140000_membership_billing_history.sql` adds append-only, tenant-bound
+`commercial_membership_events` and `commercial_membership_coverage`, a row trigger on
+`shop_memberships` that captures every billing-relevant change in the same transaction
+(RPC, invitation, bootstrap and direct trusted writes), an interval guard, a
+service-only idempotent correction RPC and an owner/service read RPC. Coverage starts at
+the migration instant with a snapshot of existing memberships; nothing earlier is
+claimed or backfilled. `src/lib/commercial-seat-proration.ts` computes UTC seat-days
+(distinct users, any-instant rule, included 3, rounded once half-up) and returns the exact
+gap when coverage is incomplete; the PR A preview now assembles `invoiceTotal` only when
+base, seats and usage are all available. The PR A usage calculation is unchanged. No
+Stripe, checkout, subscription, meter, webhook, tax, dunning, refund, UI, deploy or
+shared-data change. The literal `supabase db reset --version` upgrade path was blocked by
+the auto-mode classifier and is NOT used; `scripts/verify-membership-billing-migration.py`
+applies the migration's real SQL inside a rolled-back transaction and was run. Details:
+`docs/architecture/MEMBERSHIP_BILLING_HISTORY.md`.
+
 [AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
 Prepared Commercial Billing PR B on `claude/billing-seat-proration`: immutable,
 tenant-authorized membership billing history and deterministic daily additional-seat
