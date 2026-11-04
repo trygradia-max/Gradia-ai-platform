@@ -2449,3 +2449,27 @@ invoice repair-order product. Added a fresh-worktree, copy-paste Claude prompt f
 PR A only and queued quote integration as a later isolated assignment after durable
 definitions/lifecycle. Unit suite: 1,738 passed / 4 skipped; `git diff --check`
 passed. No application/schema/provider/shared-data/deployment change was made.
+
+[AI: claude-code] [DATE: 2026-11-04] [AREA: platform] [STATUS: in-review]
+PR A, onboarding baseline backend (branch `claude/onboarding-baseline-backend`, base
+`39d7e17`). Migration `20261104120000_onboarding_baseline.sql` adds a finite,
+immutable `baseline.v1` question catalog (bounded values, explicit units, distinct
+`unknown`), immutable tenant-bound assessment revisions, one forward-only baseline
+pointer plus append-only pointer events, an owner-editable draft with compare-and-set
+versions, and append-only measurements (connected_evidence / gradia_observed /
+derived / unknown, each with an exact window, source and formula version; written
+only by the service role). Authority is derived from live membership in the database:
+owner submits/supersedes; a manager with the new explicit `baseline.draft` grant
+reads and drafts; staff, revoked, anonymous and cross-shop callers are denied. Tables
+have no browser-role grants. Backend TypeScript: `src/lib/onboarding-baseline/*`
+(catalog, validator mirroring the database, deterministic starting-point and
+comparison DTOs, service) and `src/app/actions/onboarding-baseline.ts`. Failed reads
+return `unavailable`/`forbidden`, never zeros; an owner-estimate baseline is
+`reference_only` and unlike windows/definitions are `not_comparable`; no delta is a
+percentage, saving or ROI. No UI, model, vendor, provider, cron, Stripe, shared-data or
+deployment change. Validation: unit 1,752 passed / 4 skipped; types, lint and Next 16.2.6
+webpack build passed; migration applied from zero on the disposable
+`gradia-record-fresh` stack; focused integration 11/11. Full integration on that stack:
+14 failures in 6 untouched files (customer-merge, intake-identity, intake-vehicle,
+lead-qualification, manager-notification, whisper-inbox) that fail identically
+without this migration, i.e. they predate it.
