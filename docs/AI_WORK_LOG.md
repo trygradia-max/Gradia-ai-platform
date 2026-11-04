@@ -18,6 +18,16 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Prepared the isolated Commercial Billing PR A handoff on
+`claude/commercial-billing-ledger`. It limits Claude to an append-only,
+tenant-authorized commercial usage-recognition and deterministic period-preview
+foundation over the approved catalog, with exact replay/concurrency, outcome
+deduplication, markup evidence, cap and isolation requirements. Checkout, Stripe
+meters/webhooks, seat-proration invention, tax, dunning, live mode, deployment and
+shared-data changes remain explicitly outside PR A. No application, Stripe or
+production change occurred in this entry.
+
 [AI: claude-code] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
 Ran the Stripe sandbox browser handoff. In the empty Gradia sandbox (`acct_…4uAK`,
 verified by the "testing in a sandbox" banner) I created one product, "Gradia Founder
