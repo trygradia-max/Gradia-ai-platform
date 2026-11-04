@@ -2414,3 +2414,17 @@ exact next five backend assignments and handback requirements. Unit suite: 1,738
 passed / 4 skipped; `git diff --check` passed. Documentation does not create a
 migration, activate providers/recording/cron/Stripe, change shared data, deploy,
 lift production freezes or authorize public traffic.
+
+[AI: codex] [DATE: 2026-11-04] [AREA: platform] [STATUS: done]
+Audited quote/job capability boundaries for the Agent OS and added the exact Claude
+startup package. The real quote engine, owner Quote Builder, approval-only voice
+`create_quote` proposal, draft executor, public response/booking linkage and guarded
+send paths already exist. The remaining product seam is a distinct `quote.create`
+Control Center/definition tool shared by interactive Gradia, Call Copilot and
+configured employees; create, send, discount and booking remain separate authorities
+and current server pricing always wins. Recorded that the appointments-based job
+lifecycle is lightweight MVP support, not a full technician/labor/parts/inspection/
+invoice repair-order product. Added a fresh-worktree, copy-paste Claude prompt for
+PR A only and queued quote integration as a later isolated assignment after durable
+definitions/lifecycle. Unit suite: 1,738 passed / 4 skipped; `git diff --check`
+passed. No application/schema/provider/shared-data/deployment change was made.

@@ -67,6 +67,16 @@ vehicle, pending-action, approval, decision and reviewed-memory contracts. Initi
 CRM writes are approval-required. Add injection, PII/payment-data, partial transcript,
 ambiguity, stale evidence and cross-shop tests.
 
+## Sixth assignment: first-class quote creation
+
+After immutable definitions and the selected lifecycle are merged, implement
+`docs/architecture/AGENT_QUOTE_AND_JOB_CAPABILITIES.md` as a separate PR. Add the
+missing `quote.create` Control Center/Agent OS operation and route the interactive
+Gradia Agent, Call Copilot and configured employee through the existing
+`create_quote` pending action and `executeCreateQuote` executor. Do not create a new
+quote engine, accept model prices, combine create/send/discount/booking authority or
+build repair orders.
+
 ## Handback requirements
 
 Stop after each PR-sized slice for review. Report exact base/head, migration names,

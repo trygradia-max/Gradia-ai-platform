@@ -69,6 +69,8 @@ Depends on the lifecycle/unknown-outcome behavior required by this call path.
 - `/agents`: Job → Knowledge → Tools → Limits → Schedule → Test → Activate.
 - Attach the chosen pilot playbook and optional Call Copilot capability to an exact
   active definition revision.
+- Expose `quote.create` as a distinct approval-required tool using the existing
+  quote engine; keep create, send, discount and booking as separate grants.
 - End-to-end synthetic, mocked-provider and explicitly authorized test-account walk.
 - Final-tree migration, unit, integration, type, lint, build and hosted acceptance.
 
@@ -92,4 +94,8 @@ Gradia is agentic when it can observe an allowed trigger, resume durable work,
 retrieve only reviewed context, propose or execute only explicit tools, wait and
 escalate truthfully, preserve evidence, reconcile unknown outcomes and stop when
 authority is revoked. More feature names or model calls do not satisfy this bar.
+
+The current pilot does not require a full repair-order domain. Gradia may use the
+existing lightweight appointment/job lifecycle, but technician/labor/parts/inspection/
+invoice repair orders remain a separately approved future product.
 
