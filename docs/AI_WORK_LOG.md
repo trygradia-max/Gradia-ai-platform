@@ -18,6 +18,32 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-04] [AREA: platform] [STATUS: done]
+Commercial Billing PR A (`claude/commercial-billing-ledger`): added the tenant-safe,
+append-only commercial usage-recognition ledger and a deterministic period preview.
+Migration `20261104130000_commercial_usage_recognition.sql` adds an immutable catalog
+registry, immutable recognitions and compensating corrections (service-role RPC writes
+only, owner-only authority-checked read, no browser-role table access) and a plain
+unique index on `usage_events (shop_id, id)`; no `usage_events` row is modified or
+reclassified. `src/lib/commercial-usage*.ts` hold the contract, exact scaled-integer
+preview (allowances, highest-value-only outcomes, markup floors, one combined cap) and
+service wrappers. Seat proration returns `seat_proration_unavailable`; no producer is
+wired because old voice rows carry no call direction and rate-card wholesale. No
+checkout, Stripe call, meter, webhook, deploy or shared-data change. The
+upgrade/ACL/immutability probe `scripts/verify-commercial-usage-migration.py` was
+written but NOT executed (blocked by the auto-mode classifier); it must be run before
+merge. Details: `docs/architecture/COMMERCIAL_USAGE_RECOGNITION.md`.
+
+[AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Prepared the isolated Commercial Billing PR A handoff on
+`claude/commercial-billing-ledger`. It limits Claude to an append-only,
+tenant-authorized commercial usage-recognition and deterministic period-preview
+foundation over the approved catalog, with exact replay/concurrency, outcome
+deduplication, markup evidence, cap and isolation requirements. Checkout, Stripe
+meters/webhooks, seat-proration invention, tax, dunning, live mode, deployment and
+shared-data changes remain explicitly outside PR A. No application, Stripe or
+production change occurred in this entry.
+
 [AI: claude-code] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
 Ran the Stripe sandbox browser handoff. In the empty Gradia sandbox (`acct_…4uAK`,
 verified by the "testing in a sandbox" banner) I created one product, "Gradia Founder
