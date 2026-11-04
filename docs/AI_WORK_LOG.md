@@ -18,6 +18,14 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Prepared Commercial Billing PR B on `claude/billing-seat-proration`: immutable,
+tenant-authorized membership billing history and deterministic daily additional-seat
+proration, with explicit coverage gaps, atomic membership/event capture, replay,
+rounding and migration tests. Stripe checkout, subscriptions, meters, webhooks, tax,
+dunning, refunds, UI, deployment and production/shared-data changes remain outside
+this assignment. No application or external-system mutation occurred in this entry.
+
 [AI: claude-code] [DATE: 2026-11-04] [AREA: platform] [STATUS: done]
 Commercial Billing PR A (`claude/commercial-billing-ledger`): added the tenant-safe,
 append-only commercial usage-recognition ledger and a deterministic period preview.
