@@ -747,25 +747,35 @@ BEGIN
     END LOOP;
   END IF;
 
-  SELECT * INTO existing FROM public.baseline_measurements
-  WHERE shop_id = p_shop AND metric_key = p_metric_key AND definition_version = p_definition_version
-    AND window_start = p_window_start AND window_end = p_window_end
-    AND evidence_class = p_evidence_class
-    AND coalesce(source_system,'') = coalesce(p_source_system,'')
-    AND coalesce(source_ref,'') = coalesce(p_source_ref,'');
-  IF existing.id IS NOT NULL THEN
-    -- Idempotent replay of the same fact; a different value is a conflict, never an overwrite.
-    IF existing.value IS NOT DISTINCT FROM p_value THEN RETURN existing.id; END IF;
-    RAISE EXCEPTION 'A different measurement already exists for this window' USING ERRCODE='PT409';
-  END IF;
-
+  -- Atomic insert-or-observe on the identity index (the shop lock above also
+  -- serializes writers). A replay returns the original id only when the complete
+  -- immutable fact matches: value, formula version and ordered input lineage.
+  -- Identity already fixes shop, metric, definition, window, class and source.
   INSERT INTO public.baseline_measurements(
     shop_id, metric_key, definition_version, evidence_class, value, unit, window_start,
     window_end, source_system, source_ref, formula_version, inputs)
   VALUES (p_shop, p_metric_key, p_definition_version, p_evidence_class, p_value, p_unit,
     p_window_start, p_window_end, p_source_system, p_source_ref, p_formula_version,
     coalesce(p_inputs, '[]'::jsonb))
+  ON CONFLICT (shop_id, metric_key, definition_version, window_start, window_end,
+    evidence_class, coalesce(source_system, ''), coalesce(source_ref, '')) DO NOTHING
   RETURNING id INTO new_id;
+  IF new_id IS NOT NULL THEN RETURN new_id; END IF;
+
+  SELECT * INTO existing FROM public.baseline_measurements
+  WHERE shop_id = p_shop AND metric_key = p_metric_key AND definition_version = p_definition_version
+    AND window_start = p_window_start AND window_end = p_window_end
+    AND evidence_class = p_evidence_class
+    AND coalesce(source_system,'') = coalesce(p_source_system,'')
+    AND coalesce(source_ref,'') = coalesce(p_source_ref,'');
+  IF existing.id IS NOT NULL
+     AND existing.value IS NOT DISTINCT FROM p_value
+     AND existing.unit = p_unit
+     AND existing.formula_version IS NOT DISTINCT FROM p_formula_version
+     AND existing.inputs = coalesce(p_inputs, '[]'::jsonb) THEN
+    RETURN existing.id;
+  END IF;
+  RAISE EXCEPTION 'A different measurement already exists for this window' USING ERRCODE='PT409';
   RETURN new_id;
 END $$;
 

@@ -189,6 +189,26 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("onboarding baseline persistence", ()
     expect((await derived({ p_window_end: "2026-09-02T00:00:00Z", p_value: 32 })).error?.code).toBe("22023")
   })
 
+  it("is atomic and lineage-exact for measurement replays", async () => {
+    const w = { p_window_start: "2026-05-01T00:00:00Z", p_window_end: "2026-05-31T00:00:00Z" }
+    const base = measure({ ...w, p_source_ref: "replay-base" })
+    const baseId = (await base).data as string
+    const racing = await Promise.all(Array.from({ length: 8 }, () => measure({ ...w, p_source_ref: "race", p_value: 7 })))
+    expect(racing.map((r) => r.error)).toEqual(Array(8).fill(null))
+    const ids = new Set(racing.map((r) => r.data))
+    expect(ids.size).toBe(1)
+    const rows = await db.from("baseline_measurements").select("id").eq("shop_id", shop.shopId).eq("source_ref", "race")
+    expect(rows.data).toEqual([{ id: [...ids][0] }])
+    const derived = (patch: Record<string, unknown>) => measure({ ...w, p_metric_key: "booking_rate", p_unit: "percent", p_value: 30, p_evidence_class: "derived", p_source_ref: null, p_formula_version: "booking_rate.v1", p_inputs: [{ measurement_id: baseId }], ...patch })
+    const first = (await derived({})).data as string
+    expect((await derived({})).data).toBe(first) // exact replay returns the original id
+    expect((await derived({ p_formula_version: "booking_rate.v2" })).error?.code).toBe("PT409")
+    const second = (await measure({ ...w, p_source_ref: "replay-other" })).data as string
+    expect((await derived({ p_inputs: [{ measurement_id: second }] })).error?.code).toBe("PT409")
+    expect((await derived({ p_inputs: [{ measurement_id: baseId }, { measurement_id: second }] })).error?.code).toBe("PT409")
+    expect((await derived({})).data).toBe(first)
+  })
+
   it("freezes attached evidence into a revision and compares only like-for-like windows", async () => {
     const baselineId = (await measure()).data as string
     // A racing manager save may or may not have landed before revocation; submit against whatever exists.
