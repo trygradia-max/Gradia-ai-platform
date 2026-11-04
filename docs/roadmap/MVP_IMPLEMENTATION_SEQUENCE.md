@@ -25,6 +25,13 @@
 > documentation pass; the September 15 hold below stays the last documented gate.
 > The 15 September 11 decisions are not reopened. Prices, trial caps and seat
 > terms stay unresolved in [post-MVP ideas](POST_MVP_IDEAS.md).
+>
+> **Founder addendum, 2026-11-04 (Pacific).** Add the versioned onboarding
+> baseline before pilot measurement and the inbound human-first Whisper Call
+> Copilot within the voice/operations path. These additions preserve the sequence's
+> approval-first, consent, replay, tenant and production gates. See
+> `../product/ONBOARDING_BASELINE_ASSESSMENT.md`,
+> `../product/WHISPER_CALL_COPILOT.md` and `NEXT_BUILD_ORDER_2026-11-04.md`.
 
 ## MVP NOW
 
@@ -90,6 +97,14 @@ workflow acceptance remain implementation/pilot gates, not completed P0 claims.
 | 6 | Service/quote → availability → booking → pipeline | Existing menu/pricing, quotes, availability and serialized appointment RPC | Menu-grounded quote, duration and capacity; staff/location assignment; zero default manager discount limit, owner approval unless delegated, non-overridable hard conflicts; exactly one booking under concurrency; one linked pipeline update and governed confirmation |
 | 7 | Reviewed structured memory and follow-up | Trust resolution, knowledge, interactions, safe merge | Capture draft delta; separate candidate review/publication; next action uses approved rule; consent provenance and rollback tests extend to new references |
 | 8 | Connected operational acceptance | Applicable pilot gates, then all gates for full-channel MVP; channel readiness and model evaluations | 5–10 controlled pilot shops through verified SMS/website/Meta channels (email after inbound/reply acceptance); all five channels including inbound voice for completed MVP; solo/team walks, hold/recovery drills, traceable summaries and AI-Off CRM |
+
+The next bounded PR order is authoritative in
+`NEXT_BUILD_ORDER_2026-11-04.md`: onboarding-baseline persistence;
+immutable definitions; lifecycle completion; Call Copilot ingress/consent; call
+extraction/proposals; UI; builder/pilot integration; then commercial settlement.
+Baseline persistence may proceed before runtime work because it grants no tools or
+autonomy. Call Copilot provider work waits for the lifecycle and unknown-outcome
+semantics required by its selected call path.
 
 Implement the narrow model-provider seam while touching a worker in step 5: preserve
 its prompt and behavior, validate normalized output and provider metadata, then

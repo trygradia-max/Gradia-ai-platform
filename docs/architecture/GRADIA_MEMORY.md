@@ -20,6 +20,12 @@
 > remains sequence step 7. PR #48 does not add memory tables. September 11
 > retention defaults and publication authority below are unchanged. Privacy and
 > legal review is still required before production cleanup.
+>
+> **Founder addendum, 2026-11-04 (Pacific).** Onboarding baseline answers are
+> versioned business-measurement evidence, not reusable memory rules. Call Copilot
+> transcripts are conversation evidence only when disclosed consent permits capture.
+> Extracted preferences/rules remain inert candidates until the existing scoped
+> review/publication path accepts them.
 
 ## MVP NOW
 

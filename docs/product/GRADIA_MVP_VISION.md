@@ -21,6 +21,16 @@
 > authority remain incomplete. A merge is not channel activation and does not
 > remove the 35 production write guards. September 11 requirements below are
 > unchanged. “Chief of Operations” names this same Chief of Staff dashboard.
+>
+> **Founder addendum, 2026-11-04 (Pacific).** Onboarding now includes a
+> versioned operational starting-point assessment so pilot improvement is measured
+> against labeled evidence rather than invented ROI. Gradia Whisper also includes
+> a human-first inbound Call Copilot mode for shops that do not want a digital
+> receptionist: disclosed consent, human conversation, call evidence, then
+> approval-first CRM proposals. It is not a separate agent and does not enable
+> outbound AI calling, silent recording, automatic CRM mutation or provider
+> activation. Detailed contracts live in `ONBOARDING_BASELINE_ASSESSMENT.md` and
+> `WHISPER_CALL_COPILOT.md`.
 
 ## MVP NOW
 
@@ -52,6 +62,15 @@ agent, brain or voice-only feature. This does not mean all channels already work
 | Quotes and calendar | Approved menu pricing, vehicle-dependent duration, conflict/capacity checks, staff assignment and location context, explicit approval for exceptions |
 | Team controls | Owner controls members, integrations/connectors, billing, exports, merges, shop-wide rules and autonomy grants. Managers handle delegated approvals, customer-level memory, assignments and daily operations. Staff access assigned customers/jobs, add notes and update permitted progress; they cannot elevate policy, change connectors, bulk-export, merge or publish shop-wide rules. Every sensitive operation records its human or Gradia actor |
 | Control Center | Connector and action controls, effective-policy explanation, per-operation consent/permission gates and workspace kill switch |
+
+Onboarding captures the shop's starting response, booking, follow-up and operating
+load measures with period and source labels. `Unknown` is not zero. A later pilot
+comparison may claim improvement only for like-for-like evidence windows.
+
+For Call Copilot, the operator—not Gradia—answers and conducts the initial inbound
+call. Gradia captures only after the approved disclosure/consent path, then proposes
+source-cited CRM changes for review. Shops may use this without enabling the digital
+receptionist.
 
 Capture enough qualification to book responsibly: requested service, vehicle and
 size/condition, desired timing, location, constraints and unresolved questions.
