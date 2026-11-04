@@ -71,6 +71,9 @@ parts of the same Agentic OS, not new model personalities or authority systems.
   PII minimization and the full malicious-input/deletion matrix remain.
 - Multiple model call sites exist, but there is no single normalized model adapter,
   router, semantic cache and provider-boundary classifier used by every employee.
+- The shared quote engine, Quote Builder and approval-only voice quote proposal exist,
+  but `quote.create` is not yet a distinct general Agent OS tool. Full repair orders
+  remain outside the current MVP.
 
 ### Explicitly not complete
 
