@@ -18,6 +18,18 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Ran the Stripe sandbox browser handoff. In the empty Gradia sandbox (`acct_…4uAK`,
+verified by the "testing in a sandbox" banner) I created one product, "Gradia Founder
+Pilot" (`prod_VZJEf6qd7rbr8i`, metadata catalog_version/plan_key), with the manifest's
+$199/month price (`price_1UYAbmK7rmyH4uAK2g67Wr8K`, lookup key
+`gradia_founder_pilot_2026_11_monthly`) and $39/month seat price
+(`price_1UYAbmK7rmyH4uAKaQ5vYkbY`, lookup key `gradia_operator_seat_2026_11_monthly`),
+both licensed, no trial. Customer Portal (sandbox) already matched policy; I only
+enabled Tax ID editing and saved. Not done: meters, webhooks, customers, subscriptions,
+test clock, portal login link, any live-mode/production/code/activation change. Branch
+`claude/stripe-sandbox-setup`; nothing committed.
+
 [AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
 Added a sandbox-only Stripe browser handoff for Claude Code. It translates the
 founder's tiered, per-operator and pay-as-you-go references into the already-approved
