@@ -18,6 +18,16 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: codex] [DATE: 2026-11-04] [AREA: docs] [STATUS: done]
+Recorded the founder direction to complete Gradia for a full production launch rather
+than stop at pilot acceptance. Added an evidence-backed launch-readiness contract
+covering the already-merged Cursor UI, remaining Agentic OS/product spine, disabled
+Gradia subscription checkout, Stripe settlement gaps, security/reliability gates,
+signed-in usability acceptance and controlled production activation. Updated the
+Agentic OS master plan title and directive without changing application behavior,
+prices, providers, shared data, deployment or production gates. Work is on
+`codex/production-launch-readiness`; no merge or deployment occurred in this entry.
+
 [AI: cursor] [DATE: 2026-10-29] [AREA: platform] [STATUS: done]
 Added a read-only Operations Brief to `/team` on `codex/operations-brief-ui`.
 The server-rendered component consumes the existing authorized `OperationsOverview`

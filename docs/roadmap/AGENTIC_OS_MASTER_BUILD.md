@@ -1,7 +1,13 @@
-# Gradia Agentic OS — master build and pilot plan
+# Gradia Agentic OS — master build and production launch plan
 
 _Authoritative execution map updated 2026-11-04. This is a build and release plan,
 not a claim that every layer is live. Update this file whenever a gate changes._
+
+> **Founder launch directive, 2026-11-04:** Gradia is being completed as a fully
+> sellable production product rather than stopping at pilot acceptance. Controlled
+> cohorts remain a release mechanism, not the product scope. Security, billing,
+> provider and rollback gates are not waived. The cross-functional launch contract
+> is `docs/roadmap/PRODUCTION_LAUNCH_READINESS_2026-11-04.md`.
 
 ## The product we are building
 
@@ -15,9 +21,9 @@ reasoning infrastructure, not the product identity and never the authorization
 boundary. Model text can propose work; it cannot grant itself tools, publish memory,
 approve a changed plan, supply credentials or prove that an external action finished.
 
-The first pilot does **not** require arbitrary self-directed agents. It requires one
-coherent, inspectable Gradia employee that can reliably handle a narrow set of jobs
-with human review and truthful failure states.
+The first production release does **not** require arbitrary self-directed agents.
+It requires one coherent, inspectable Gradia employee that can reliably handle a
+narrow set of jobs with human review and truthful failure states.
 
 The founder-approved onboarding baseline records where the shop starts. Gradia
 Whisper Call Copilot lets a shop keep a human answering inbound calls while Gradia,
