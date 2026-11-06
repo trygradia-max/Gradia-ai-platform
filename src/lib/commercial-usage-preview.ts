@@ -1,6 +1,12 @@
 import { APPROVED_COMMERCIAL_CATALOG_VERSION } from "@/lib/approved-commercial-catalog"
 import type { CommercialCatalog, CommercialPlan } from "@/lib/commercial-pricing"
 import {
+  computeSeatProration,
+  type MembershipEvidence,
+  type MembershipEvidenceUnavailable,
+  type SeatProration,
+} from "@/lib/commercial-seat-proration"
+import {
   COMMERCIAL_METRICS,
   OUTCOME_RANK,
   isCommercialMetric,
@@ -57,6 +63,12 @@ export type PreviewInput = {
   corrections: readonly EvidenceCorrection[]
   /** workflow key -> highest surviving outcome metric recognized in an EARLIER window. */
   priorWorkflowMetrics: Readonly<Record<string, string>>
+  /**
+   * Immutable membership billing evidence for the same window (PR B). Absent or
+   * unavailable evidence leaves seat proration `seat_proration_unavailable`; it
+   * never changes the usage calculation.
+   */
+  membership?: MembershipEvidence | MembershipEvidenceUnavailable
 }
 
 export type UsageLine = {
@@ -92,10 +104,31 @@ export type SubscriptionView = {
   baseCents: number
   includedSeats: number
   extraSeatCents: number
-  /** Daily proration needs immutable membership intervals (PR B). Never guessed. */
-  seatProration: { state: "seat_proration_unavailable"; reason: string }
-  invoiceTotal: { state: "unavailable"; reason: "seat_proration_unavailable" }
+  /** Computed only from complete recorded membership coverage; otherwise unavailable with the gap. */
+  seatProration: SeatProration
+  /**
+   * Available only when EVERY component is: base, seat proration and usage. Any
+   * unavailable, conflicted or cap-refused component keeps the total unavailable.
+   */
+  invoiceTotal: InvoiceTotalView
 }
+
+export type InvoiceTotalView =
+  | {
+      state: "unavailable"
+      reason:
+        | "seat_proration_unavailable"
+        | "usage_unavailable"
+        | "usage_conflict"
+        | "usage_cap_exceeded"
+    }
+  | {
+      state: "available"
+      baseCents: number
+      seatCents: number
+      usageCents: number
+      totalCents: number
+    }
 
 type Header = {
   catalogVersion: string
@@ -170,17 +203,17 @@ function parseUtc(value: string): number | null {
   return Number.isNaN(ms) ? null : ms
 }
 
-const subscriptionView = (plan: CommercialPlan): SubscriptionView => ({
+const subscriptionView = (
+  plan: CommercialPlan,
+  seatProration: SeatProration,
+  invoiceTotal: InvoiceTotalView
+): SubscriptionView => ({
   planKey: plan.key,
   baseCents: plan.monthlyBaseCents,
   includedSeats: plan.includedSeats,
   extraSeatCents: plan.extraSeatCents,
-  seatProration: {
-    state: "seat_proration_unavailable",
-    reason:
-      "Daily seat proration needs immutable billable-membership interval evidence, which does not exist yet; the current member count is not historical truth.",
-  },
-  invoiceTotal: { state: "unavailable", reason: "seat_proration_unavailable" },
+  seatProration,
+  invoiceTotal,
 })
 
 type Counted = {
@@ -302,7 +335,20 @@ export function previewCommercialPeriod(input: PreviewInput): CommercialPeriodPr
     },
     asOf: new Date(asOfMs).toISOString(),
   }
-  const subscription = subscriptionView(plan)
+  // Seat proration is independent of usage: its failure never alters usage lines.
+  const seat = computeSeatProration({
+    includedSeats: plan.includedSeats,
+    extraSeatCents: plan.extraSeatCents,
+    periodStart: header.window.start,
+    periodEnd: header.window.end,
+    asOf: header.asOf,
+    evidence: input.membership,
+  })
+  const seatBlocked: InvoiceTotalView | null =
+    seat.state === "computed" ? null : { state: "unavailable", reason: "seat_proration_unavailable" }
+  const withInvoice = (blocked: InvoiceTotalView | null) =>
+    subscriptionView(plan, seat, blocked ?? seatBlocked ?? { state: "unavailable", reason: "usage_unavailable" })
+  const subscription = withInvoice({ state: "unavailable", reason: "usage_unavailable" })
 
   // --- net quantities after compensating corrections --------------------------
   const conflicts: PreviewConflict[] = []
@@ -363,7 +409,14 @@ export function previewCommercialPeriod(input: PreviewInput): CommercialPeriodPr
       excluded.push({ factId: fact.id, workflowKey, reason: "lower_value_same_workflow" })
     }
   }
-  if (conflicts.length > 0) return { ...header, state: "conflict", subscription, conflicts }
+  if (conflicts.length > 0) {
+    return {
+      ...header,
+      state: "conflict",
+      subscription: withInvoice({ state: "unavailable", reason: "usage_conflict" }),
+      conflicts,
+    }
+  }
 
   // --- allowances, fixed rates and dynamic markup floors -----------------------
   const unavailable: UnavailableReason[] = []
@@ -431,7 +484,9 @@ export function previewCommercialPeriod(input: PreviewInput): CommercialPeriodPr
       evidence,
     })
   }
-  if (unavailable.length > 0) return { ...header, state: "unavailable", subscription, reasons: unavailable }
+  if (unavailable.length > 0) {
+    return { ...header, state: "unavailable", subscription, reasons: unavailable }
+  }
 
   // One combined monthly cap across every metric; no partial hidden charging.
   const capCents = plan.payg.monthlyCapCents
@@ -447,14 +502,24 @@ export function previewCommercialPeriod(input: PreviewInput): CommercialPeriodPr
     return {
       ...header,
       state: "cap_exceeded",
-      subscription,
+      subscription: withInvoice({ state: "unavailable", reason: "usage_cap_exceeded" }),
       usage: { projectedCents: totalCents, capCents, lines },
     }
   }
+  const invoiceTotal: InvoiceTotalView =
+    seat.state === "computed"
+      ? {
+          state: "available",
+          baseCents: plan.monthlyBaseCents,
+          seatCents: seat.roundedCents,
+          usageCents: totalCents,
+          totalCents: plan.monthlyBaseCents + seat.roundedCents + totalCents,
+        }
+      : { state: "unavailable", reason: "seat_proration_unavailable" }
   return {
     ...header,
     state: "ok",
-    subscription,
+    subscription: subscriptionView(plan, seat, invoiceTotal),
     usage: { totalCents, capCents, lines, excluded },
   }
 }
