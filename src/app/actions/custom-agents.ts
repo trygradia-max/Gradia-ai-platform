@@ -13,9 +13,16 @@ import { listAgentRunsForShop } from "@/lib/agent-runs"
 import { recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { runCustomAgent, type AgentRunOutcome } from "@/lib/agent-runtime"
+import {
+  activationBlockedMessage,
+  authorizeAgentActivation,
+  type AgentActivationDecision,
+} from "@/lib/agent-os/activation"
+import { resolveBillingRuntime } from "@/lib/commercial-billing-service"
 import { FEATURES } from "@/lib/features"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import type {
   AgentConfig,
   CustomAgentRow,
@@ -238,19 +245,64 @@ export async function listAgentRuns(
 
 export type SetEnabledResult =
   | { ok: true }
-  | { ok: false; error: string }
+  | {
+      ok: false
+      error: string
+      /** Typed reason the activation was refused (billing, entitlement or gate). */
+      blocked?: Extract<AgentActivationDecision, { proceed: false }>
+    }
 
 /**
  * Enable/disable a custom agent. Enabled agents are picked up by the
  * scheduled-agents cron — both coded recipes and free-form plans.
+ *
+ * Turning an agent ON is the first-agent-activation boundary: it must pass
+ * `authorizeAgentActivation` (active-agent entitlement + reviewed Founder Pilot
+ * subscription evidence). Turning one OFF is never gated.
  */
 export async function setCustomAgentEnabled(input: {
   agent_id: string
   enabled: boolean
 }): Promise<SetEnabledResult> {
-  await requireUser()
+  const user = await requireUser()
   const shop = await requireShop()
   const supabase = await createClient()
+
+  if (input.enabled) {
+    const [{ data: target }, { count }] = await Promise.all([
+      supabase
+        .from("custom_agents")
+        .select("id, enabled")
+        .eq("id", input.agent_id)
+        .eq("shop_id", shop.id)
+        .maybeSingle(),
+      supabase
+        .from("custom_agents")
+        .select("id", { count: "exact", head: true })
+        .eq("shop_id", shop.id)
+        .eq("enabled", true),
+    ])
+    if (!target) return { ok: false, error: "Agent not found." }
+    const decision = await authorizeAgentActivation(
+      {
+        sessionClient: supabase,
+        serviceClient: createServiceClient,
+        runtime: resolveBillingRuntime(),
+      },
+      {
+        shopId: shop.id,
+        actorId: user.id,
+        alreadyActive: (target as { enabled: boolean }).enabled === true,
+        activeAgentCount: typeof count === "number" ? count : null,
+        // Custom agents carry no separate definition gate; the RLS-bound update
+        // below remains the existing command and still applies.
+        existing: { ready: true },
+      }
+    )
+    if (!decision.proceed) {
+      return { ok: false, error: activationBlockedMessage(decision.code), blocked: decision }
+    }
+  }
 
   const { error } = await supabase
     .from("custom_agents")

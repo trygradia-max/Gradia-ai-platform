@@ -68,18 +68,36 @@ type StripeFetchOptions = {
   body?: Record<string, string | number | boolean | undefined | null>
   /** When set, acts on the connected account (Stripe-Account header). */
   stripeAccount?: string | null
+  /**
+   * Opt-in, used only by the sandbox commercial-billing client. Absent for every
+   * legacy caller, whose behavior is unchanged (env key, env base, no timeout).
+   */
+  commercial?: {
+    secretKey: string
+    apiBase: string
+    /** Stripe replays the stored result for the same key within 24h. */
+    idempotencyKey?: string
+    timeoutMs: number
+  }
 }
 
 async function stripeFetch<T>(opts: StripeFetchOptions): Promise<T> {
+  if (opts.commercial && opts.stripeAccount) {
+    // Commercial billing is PLATFORM-only. A connected-account context is refused.
+    throw new StripeError(500, "Commercial billing never acts on a connected account", "connect_context_refused")
+  }
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${platformKey()}`,
+    Authorization: `Bearer ${opts.commercial?.secretKey ?? platformKey()}`,
     "Stripe-Version": STRIPE_API_VERSION,
   }
   if (opts.stripeAccount) {
     headers["Stripe-Account"] = opts.stripeAccount
   }
+  if (opts.commercial?.idempotencyKey) {
+    headers["Idempotency-Key"] = opts.commercial.idempotencyKey
+  }
 
-  let url = `${STRIPE_API_BASE}${opts.path}`
+  let url = `${opts.commercial?.apiBase ?? STRIPE_API_BASE}${opts.path}`
   let body: string | undefined
   if (opts.method === "GET" && opts.body) {
     const qs = encodeForm(opts.body)
@@ -89,12 +107,32 @@ async function stripeFetch<T>(opts: StripeFetchOptions): Promise<T> {
     headers["Content-Type"] = "application/x-www-form-urlencoded"
   }
 
-  const res = await fetch(url, { method: opts.method, headers, body })
-  const text = await res.text()
+  let res: Response
+  let text: string
+  if (opts.commercial) {
+    // Any transport failure or timeout is AMBIGUOUS: the provider may or may not
+    // have acted. It is surfaced as status 0 and never as a definitive rejection.
+    try {
+      res = await fetch(url, {
+        method: opts.method,
+        headers,
+        body,
+        signal: AbortSignal.timeout(opts.commercial.timeoutMs),
+      })
+      text = await res.text()
+    } catch (err) {
+      const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")
+      throw new StripeError(0, timedOut ? "Stripe request timed out" : "Stripe request failed", timedOut ? "timeout" : "network_error")
+    }
+  } else {
+    res = await fetch(url, { method: opts.method, headers, body })
+    text = await res.text()
+  }
 
   if (!res.ok) {
     let code: string | null = null
-    let message = text.slice(0, 300)
+    // The commercial path never echoes a raw response body (it could carry payment or URL data).
+    let message = opts.commercial ? "Stripe request rejected" : text.slice(0, 300)
     try {
       const parsed = JSON.parse(text) as {
         error?: { code?: string; message?: string }
@@ -107,6 +145,14 @@ async function stripeFetch<T>(opts: StripeFetchOptions): Promise<T> {
     throw new StripeError(res.status, message, code)
   }
 
+  if (opts.commercial) {
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      // A 2xx whose body cannot be read is an ambiguous outcome, not a failure.
+      throw new StripeError(0, "Stripe returned an unreadable response", "unreadable_response")
+    }
+  }
   return JSON.parse(text) as T
 }
 
@@ -423,6 +469,43 @@ export async function removeVoiceAddonItem(
     method: "DELETE",
     path: `/subscription_items/${encodeURIComponent(voiceItem.itemId)}`,
     body: { proration_behavior: "create_prorations" },
+  })
+}
+
+// ---------- Commercial platform billing transport (sandbox only) ----------
+
+/** Resolved, already-validated sandbox configuration. See stripe-commercial.ts. */
+export type CommercialStripeTransportConfig = {
+  secretKey: string
+  apiBase: string
+  timeoutMs: number
+}
+
+/**
+ * The ONE request path used by the commercial platform client. It reuses
+ * stripeFetch (same pinned API version, same error shape) and adds only an
+ * idempotency key and a hard timeout. It has no `stripeAccount` parameter:
+ * commercial billing is PLATFORM billing and never acts on a connected account.
+ */
+export async function stripeCommercialRequest<T>(
+  config: CommercialStripeTransportConfig,
+  input: {
+    method: "GET" | "POST"
+    path: string
+    body?: Record<string, string | number | boolean | undefined | null>
+    idempotencyKey?: string
+  }
+): Promise<T> {
+  return stripeFetch<T>({
+    method: input.method,
+    path: input.path,
+    body: input.body,
+    commercial: {
+      secretKey: config.secretKey,
+      apiBase: config.apiBase,
+      timeoutMs: config.timeoutMs,
+      idempotencyKey: input.idempotencyKey,
+    },
   })
 }
 

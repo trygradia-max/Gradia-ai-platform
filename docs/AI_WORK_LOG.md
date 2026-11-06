@@ -2566,3 +2566,30 @@ no blocking findings. Prepared the isolated PR C worktree and Claude handoff for
 sandbox-only Stripe platform customer/subscription state and a fail-closed Checkout
 handoff at first agent activation. No Stripe mutation, live-mode activation, shared
 database change, deployment or production billing action was performed.
+
+[AI: claude-code] [DATE: 2026-11-06] [AREA: commercial-billing] [STATUS: in-review]
+Commercial Billing PR C (branch `claude/stripe-subscription-checkout`, base `344d671`).
+Sandbox/test mode only. Migration `20261106120000_commercial_billing_state.sql` adds
+tenant-bound PLATFORM billing state separate from Connect: a mutable per-shop pointer
+(`commercial_billing_accounts`), checkout attempts with immutable identity, forward-only status
+and one in-flight attempt per shop, an append-only event trail that refuses URLs/keys, and
+append-only subscription evidence (reviewed sources only, livemode CHECKed false). Writers are
+service-role-only functions that re-verify a live owner of that shop in the database; browser roles
+have no table or writer access. Only `commercial_subscription_apply_evidence` can make an account
+active and nothing in application code calls it (signed webhook = PR E). Stripe adapter extended
+(opt-in idempotency key + timeout; legacy callers unchanged) with a typed client: price by lookup key
+`gradia_founder_pilot_2026_11_monthly` verified (usd, month, active, 19900, livemode false), one
+platform Customer per shop, a bound subscription Checkout Session (no trial, one line item), session
+replay by retrieval. Ambiguous outcomes -> reconciliation_required, never retried blindly. Activation
+seam `authorizeAgentActivation` (src/lib/agent-os/activation.ts) wired into `setCustomAgentEnabled`
+(the only persisted activation; drafts never request billing); it also now enforces the two-active-agent
+limit, which previously existed only as a constant. Effect: enabling an agent is refused until PR E
+supplies reviewed evidence (intended freeze). Not wired: `setVoiceLive`, future Agent OS definition
+activation (documented in docs/architecture/COMMERCIAL_CHECKOUT_ACTIVATION.md). Caught and fixed during
+testing: malformed `subscription_data` metadata keys, and a session-id pattern that admitted `cs_live_`.
+Validation: types, lint, unit 1,967 passed / 4 skipped, plain and webpack builds passed; commercial
+billing integration 61/61 with PR A + PR B integration 97/97 together; purpose-built upgrade verifier
+PASS. Full disposable integration: 745 tests; failures confined to files unrelated to this change
+(auth/PostgREST flakiness after a local Postgres crash that my probe caused and which self-recovered;
+conflict-enforcement fails identically on the baseline schema). No real Stripe call, live key, shared
+database, deployment or merge.
