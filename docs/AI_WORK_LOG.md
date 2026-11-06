@@ -2555,3 +2555,14 @@ builder gated off until immutable definitions and activation billing exist. No
 provider, cron, shared-data, deployment or production-gate change was made. Full
 unit validation passed (1,875 passed / 4 skipped), focused lint and TypeScript
 passed, and the Next 16.2.6 webpack production build passed.
+
+[AI: codex] [DATE: 2026-11-06] [AREA: commercial-billing] [STATUS: done]
+Independently reviewed and merged Commercial Billing PR B (#132) after both GitHub
+checks passed and the purpose-built membership-billing upgrade verifier passed on a
+disposable stack. Reviewed daily distinct-operator seat arithmetic, period-level
+half-up rounding, append-only corrections, atomic membership capture, tenant and
+role authority, same-as-of previews, cascade behavior and fail-closed invoice totals;
+no blocking findings. Prepared the isolated PR C worktree and Claude handoff for
+sandbox-only Stripe platform customer/subscription state and a fail-closed Checkout
+handoff at first agent activation. No Stripe mutation, live-mode activation, shared
+database change, deployment or production billing action was performed.
