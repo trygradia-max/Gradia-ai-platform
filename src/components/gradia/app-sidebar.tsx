@@ -7,7 +7,7 @@ import {
   Activity,
   Contact,
   CreditCard,
-  Headset,
+  Bot,
   Inbox,
   LayoutDashboard,
   MessagesSquare,
@@ -39,8 +39,8 @@ type NavItem = {
   icon: typeof LayoutDashboard
 }
 
-// The final IA (redesign spec §8-A4) — exactly these seven, in this order,
-// plus the two pinned at the bottom. Old routes (/agents, /agent, /chat,
+// The final IA — exactly these seven, in this order, plus the pinned controls.
+// Old routes (/agent, /chat,
 // /leads, /recovery, /schedule) live on as redirects, never as nav items.
 // The ⌘K / Whisper command bar stays the primary composer — a verb, not a
 // place.
@@ -51,7 +51,7 @@ const nav: NavItem[] = [
   { href: "/conversations", label: "Conversations", icon: MessagesSquare },
   { href: "/customers", label: "Customers", icon: Contact },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/receptionist", label: "Receptionist", icon: Headset },
+  { href: "/agents", label: "Gradia Agents", icon: Bot },
 ]
 
 const pinnedNav: NavItem[] = [

@@ -69,10 +69,10 @@ describe("env documentation (.env.example)", () => {
 })
 
 describe("revalidatePath targets (no redirect stubs)", () => {
-  // Legacy routes kept only as redirects (redesign spec §8-A4 / CRM C4b).
+  // Legacy routes kept only as redirects (CRM C4b). `/agents` is the
+  // canonical Agent OS home and intentionally is not in this set.
   // Revalidating them refreshes nothing the owner can see.
   const REDIRECT_STUBS = new Set([
-    "/agents",
     "/agent",
     "/leads",
     "/chat",
@@ -95,6 +95,23 @@ describe("revalidatePath targets (no redirect stubs)", () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe("Agent OS information architecture", () => {
+  it("uses /agents as the canonical home while the legacy workflow builder stays gated", () => {
+    const agents = readFileSync("src/app/(dashboard)/agents/page.tsx", "utf8")
+    const builder = readFileSync("src/app/(dashboard)/agents/build/page.tsx", "utf8")
+    const sharedHome = readFileSync("src/app/(dashboard)/receptionist/page.tsx", "utf8")
+    const sidebar = readFileSync("src/components/gradia/app-sidebar.tsx", "utf8")
+    const features = readFileSync("src/lib/features.ts", "utf8")
+
+    expect(agents).not.toContain('redirect("/receptionist")')
+    expect(agents).toContain('from "../receptionist/page"')
+    expect(builder).toContain('from "../../receptionist/build/page"')
+    expect(sharedHome).toContain('href="/agents/build"')
+    expect(sidebar).toContain('{ href: "/agents", label: "Gradia Agents"')
+    expect(features).toContain("workflowBuilder: false")
   })
 })
 

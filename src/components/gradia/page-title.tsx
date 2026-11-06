@@ -14,6 +14,8 @@ const TITLES: [prefix: string, title: string][] = [
   ["/customers", "Customers"],
   ["/receptionist/build", "Receptionist · Build"],
   ["/receptionist", "Receptionist"],
+  ["/agents/build", "Gradia Agents · Build"],
+  ["/agents", "Gradia Agents"],
   ["/calendar", "Calendar"],
   ["/settings", "Settings"],
 ]

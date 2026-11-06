@@ -1,7 +1,10 @@
-import { redirect } from "next/navigation"
+/**
+ * Canonical Agent OS home. The shared server-rendered implementation remains in
+ * the receptionist route during this small IA reconciliation so existing links
+ * keep working without duplicating data access or client state.
+ */
+import AgentHome from "../receptionist/page"
 
-/** Consolidated into Receptionist (redesign spec §8-A4). Kept as a
- *  redirect so old links/bookmarks never dead-end. */
-export default function LegacyAgentsPage() {
-  redirect("/receptionist")
-}
+export const dynamic = "force-dynamic"
+
+export default AgentHome

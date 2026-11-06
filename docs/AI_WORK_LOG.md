@@ -2539,3 +2539,19 @@ webpack build passed; migration applied from zero on the disposable
 14 failures in 6 untouched files (customer-merge, intake-identity, intake-vehicle,
 lead-qualification, manager-notification, whisper-inbox) that fail identically
 without this migration, i.e. they predate it.
+
+[AI: codex] [DATE: 2026-11-06] [AREA: agent-ui] [STATUS: done]
+Fast-forwarded the founder's primary platform checkout by 342 commits to current
+remote main while preserving untracked `GRADIA_START_HERE.md` and `continuity/`.
+Audited and closed superseded draft PRs #52, #53, #85, #86, #90, #91 and #92 with
+reconciliation notes; their branches/history remain recoverable. The Super Agent
+stack was not merged because it creates parallel employee, research, browser and
+memory stores that conflict with the governing one-Agent architecture, merged
+durable lifecycle and reviewed memory. Confirmed the marketing repository already
+ships the newer truthful pilot-recruitment redesign and contains none of the stale
+$20, Founding 100 or July-launch claims. Restored `/agents` as the canonical Agent
+OS home and navigation destination while leaving the legacy mutable workflow
+builder gated off until immutable definitions and activation billing exist. No
+provider, cron, shared-data, deployment or production-gate change was made. Full
+unit validation passed (1,875 passed / 4 skipped), focused lint and TypeScript
+passed, and the Next 16.2.6 webpack production build passed.

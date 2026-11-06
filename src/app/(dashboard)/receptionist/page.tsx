@@ -127,7 +127,7 @@ export default async function AgentsPage() {
         action={
           FEATURES.workflowBuilder ? (
             <Link
-              href="/receptionist/build"
+              href="/agents/build"
               className={cn(buttonVariants({ size: "lg" }), "h-11 shrink-0 gap-2")}
             >
               <Wand2 className="size-4" aria-hidden />

@@ -110,8 +110,6 @@ describe("UX-001 §3 — required states per real dashboard route", () => {
   it("the redirect stubs are exactly the documented consolidation set", () => {
     const expected = [
       "agent",
-      "agents",
-      "agents/build",
       "chat",
       "leads",
       "recovery",

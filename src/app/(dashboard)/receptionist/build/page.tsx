@@ -26,7 +26,7 @@ export default async function AgentBuildPage() {
           </p>
         </div>
         <Link
-          href="/receptionist"
+          href="/agents"
           className={buttonVariants({ variant: "ghost" })}
         >
           Back
