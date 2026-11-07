@@ -25,7 +25,7 @@ export const ACTIVATION_BLOCKERS = [
   // exact-revision binding
   "definition_hash_mismatch", "pointer_changed",
   // policy
-  "policy_unavailable", "policy_stale",
+  "policy_unavailable", "policy_stale", "connector_stale",
   // memory
   "knowledge_unavailable", "knowledge_stale", "knowledge_review_required",
   "memory_revoked", "memory_changed", "memory_stale", "memory_expired",
@@ -110,6 +110,8 @@ export type EligibilitySources = {
   memoryPins: { sourceId: string; memoryRevision: number; contentHash: string }[]
   evaluationId: string | null
   readyOperations: string[]
+  /** Server-generated sha256 of the exact connector evidence; echoed back at activation, rechecked by the database. */
+  connectorFingerprint: string | null
   activeAgentCount: number
   activeAgentLimit: number
   expectedPointer: number | null

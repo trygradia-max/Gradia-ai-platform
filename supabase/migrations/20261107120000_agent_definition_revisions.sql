@@ -460,6 +460,36 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
+-- Connector evidence fingerprint. A sha256 over the EXACT stored facts that decide
+-- channel/calendar readiness for a shop (presence of encrypted credentials, never their
+-- values; Meta page-binding count; number/A2P/voice/calendar state). The application reads
+-- it while it computes tool readiness and `agent_definition_activate` recomputes it under
+-- a row lock, so a connector that changed in between blocks activation as `connector_stale`.
+-- Environment configuration is process-wide, not per-shop, and is not part of it.
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION public.agent_definition_connector_fingerprint(p_shop uuid) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+  s record;
+  v_bindings integer;
+BEGIN
+  PERFORM public.agent_definition_require_service();
+  IF p_shop IS NULL THEN
+    RAISE EXCEPTION 'shop is required' USING ERRCODE='22023';
+  END IF;
+  SELECT twilio_phone_number, gradia_number_e164, a2p_status, a2p_verified_at, byo_sms_verified,
+         (twilio_account_sid_enc IS NOT NULL AND twilio_account_sid_enc <> '') AS has_sid,
+         (twilio_auth_token_enc IS NOT NULL AND twilio_auth_token_enc <> '') AS has_token,
+         vapi_assistant_id, vapi_phone_number_id, voice_test_called_at, voice_addon,
+         (aurinko_access_token_enc IS NOT NULL AND aurinko_access_token_enc <> '') AS has_aurinko_token,
+         aurinko_account_id, aurinko_subscription_id
+    INTO s FROM public.shops WHERE id = p_shop;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  SELECT count(*) INTO v_bindings FROM public.meta_lead_page_bindings WHERE shop_id = p_shop;
+  RETURN encode(sha256(convert_to(jsonb_build_object('shop', to_jsonb(s), 'meta_bindings', v_bindings)::text, 'UTF8')), 'hex');
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- Activate an exact revision.
 --
 -- Everything the browser could influence (revision, hash, expected pointer) is only an
@@ -481,7 +511,7 @@ END $$;
 CREATE FUNCTION public.agent_definition_activate(
   p_shop uuid, p_actor uuid, p_agent uuid, p_revision integer, p_expected_hash text,
   p_expected_pointer integer, p_policy_revision integer, p_knowledge_revision integer,
-  p_ready_operations text[]
+  p_ready_operations text[], p_connector_fingerprint text
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
@@ -500,10 +530,12 @@ DECLARE
   v_commercial jsonb;
   v_billing_evidence uuid;
   v_ready text[];
+  v_connectors text;
 BEGIN
   PERFORM public.agent_definition_require_service();
   IF p_shop IS NULL OR p_actor IS NULL OR p_agent IS NULL OR p_revision IS NULL OR p_expected_hash IS NULL
-     OR p_policy_revision IS NULL OR p_knowledge_revision IS NULL OR p_ready_operations IS NULL THEN
+     OR p_policy_revision IS NULL OR p_knowledge_revision IS NULL OR p_ready_operations IS NULL
+     OR p_connector_fingerprint IS NULL THEN
     RAISE EXCEPTION 'Complete activation input is required' USING ERRCODE='22023';
   END IF;
   IF public.agent_definition_actor_role(p_shop, p_actor) IS DISTINCT FROM 'owner' THEN
@@ -541,6 +573,15 @@ BEGIN
   SELECT revision INTO v_policy FROM public.control_policy_active WHERE shop_id = p_shop;
   IF v_policy IS NULL THEN v_reasons := array_append(v_reasons, 'policy_unavailable'::text);
   ELSIF v_policy <> p_policy_revision THEN v_reasons := array_append(v_reasons, 'policy_stale'::text);
+  END IF;
+
+  -- Connector evidence: lock the exact rows readiness was derived from, then recompute the
+  -- fingerprint. A change between the application read and this transaction is a stale block.
+  PERFORM 1 FROM public.shops WHERE id = p_shop FOR SHARE;
+  PERFORM 1 FROM public.meta_lead_page_bindings WHERE shop_id = p_shop FOR SHARE;
+  v_connectors := public.agent_definition_connector_fingerprint(p_shop);
+  IF v_connectors IS DISTINCT FROM p_connector_fingerprint THEN
+    v_reasons := array_append(v_reasons, 'connector_stale'::text);
   END IF;
 
   -- Tool readiness for every requested operation (post-MVP tools are never activatable).
@@ -632,6 +673,7 @@ BEGIN
       'knowledge_revision', coalesce(v_head, 1),
       'memory_pins', v_pins,
       'ready_operations', to_jsonb(p_ready_operations),
+      'connector_fingerprint', v_connectors,
       'evaluation_id', ev.id,
       'evaluation_suite_version', ev.suite_version,
       'evaluation_pass_rate', ev.pass_rate,
@@ -893,20 +935,22 @@ END $$;
 REVOKE ALL ON FUNCTION
   public.agent_definition_append_only(), public.agent_definition_state_guard(),
   public.agent_definition_require_service(), public.agent_definition_actor_role(uuid, uuid),
+  public.agent_definition_connector_fingerprint(uuid),
   public.agent_definition_open_write(), public.agent_definition_close_write(),
   public.agent_definition_emit(uuid, uuid, text, integer, integer, uuid, jsonb),
   public.agent_definition_create_revision(uuid, uuid, uuid, uuid, jsonb, integer),
   public.agent_definition_record_evaluation(uuid, uuid, integer, text, text, text, text, text, numeric, boolean, integer, jsonb, timestamptz, text),
-  public.agent_definition_activate(uuid, uuid, uuid, integer, text, integer, integer, integer, text[]),
+  public.agent_definition_activate(uuid, uuid, uuid, integer, text, integer, integer, integer, text[], text),
   public.agent_definition_set_lifecycle(uuid, uuid, uuid, text, text, integer),
   public.custom_agents_governed_disable()
   FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
   public.agent_definition_actor_role(uuid, uuid),
+  public.agent_definition_connector_fingerprint(uuid),
   public.agent_definition_create_revision(uuid, uuid, uuid, uuid, jsonb, integer),
   public.agent_definition_record_evaluation(uuid, uuid, integer, text, text, text, text, text, numeric, boolean, integer, jsonb, timestamptz, text),
-  public.agent_definition_activate(uuid, uuid, uuid, integer, text, integer, integer, integer, text[]),
+  public.agent_definition_activate(uuid, uuid, uuid, integer, text, integer, integer, integer, text[], text),
   public.agent_definition_set_lifecycle(uuid, uuid, uuid, text, text, integer)
   TO service_role;
 

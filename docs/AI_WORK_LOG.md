@@ -2654,3 +2654,15 @@ sign-in, statement timeouts, injected-failure helpers missing on the fresh stack
 the deterministic ones. Known limits: no trusted evaluator yet (fixtures only), Founder Pilot evidence still has no
 production producer (PR E), governed runs gate on lifecycle only (runtime still executes the legacy config recipe).
 No Stripe call, provider call, live send, cron, shared data, deployment or merge.
+
+## 2026-11-07 - [Claude Code] PR #135 review corrections (agent definition revisions)
+
+Addressed the three blocking Codex findings. (1) Agents home no longer aggregates over a fixed
+500-row window: last confirmed run is an exact per-agent query, needs-review pages through every
+approval-producing run, and any incomplete read is `unavailable`/`null`, never none/zero. (2)
+Activation is bound to a database-computed connector evidence fingerprint
+(`agent_definition_connector_fingerprint`) rechecked under row locks in `agent_definition_activate`
+(new `p_connector_fingerprint`, new `connector_stale` blocker; the unreleased migration was edited in
+place). (3) Removed the trailing blank line (`git diff --check` clean). Added >500-row unit
+regressions (`eval/agent-definition-home-aggregation.test.ts`), a stale/racing connector integration
+test, and verifier probes. No authority, table or billing changes beyond the one function signature.

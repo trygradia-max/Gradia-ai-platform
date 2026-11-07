@@ -221,3 +221,21 @@ row (`enabled=false`) before the first `saveAgentDefinitionRevision`, generate a
 save click (reuse it on retry), echo `definitionHash` and `sources.expectedPointer` back on activate,
 and render `eligibility.blockers` / `steps` / `tools[].reasons` from codes rather than raw text. The
 trusted evaluator (Test step) and PR E (billing evidence) remain upstream of a real activation.
+
+## Review corrections (Codex review of PR #135)
+
+- **Connector readiness is bound to exact evidence.** `agent_definition_connector_fingerprint(shop)`
+  is a service-only, database-computed sha256 over the stored facts readiness derives from
+  (number, A2P, BYO SMS, voice, calendar/email state, presence of encrypted credentials but
+  never their values, and the Meta page-binding count). The application reads it before and
+  after its readiness reads (a mismatch yields `connector_stale`, never a mixed snapshot),
+  exposes it as `sources.connectorFingerprint`, and passes it to `agent_definition_activate`
+  as `p_connector_fingerprint`. The activation transaction locks the shop row and Meta
+  binding rows (`FOR SHARE`), recomputes the fingerprint and blocks with `connector_stale`
+  on any difference. A NULL fingerprint is `22023`. The fingerprint is recorded in the
+  `activated` event. Environment configuration is process-wide, not per-shop, and is not part
+  of the fingerprint; time-based A2P freshness is evaluated at read time.
+- **Agents home is complete or unavailable.** `lastConfirmedRun` is one exact query per agent
+  (newest succeeded, fired run); a failed read makes the home `unavailable`. `needsReviewCount`
+  keyset-pages every run that produced approvals, then checks which are still pending; an
+  error or exceeding the page ceiling yields `null`, never `0`.

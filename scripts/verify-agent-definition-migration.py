@@ -114,11 +114,11 @@ ORIG_GUARD = function_block(migration_text(PREV_GUARD), 'CREATE FUNCTION public.
 OBJECT_FUNCS = [
     'agent_definition_create_revision(uuid,uuid,uuid,uuid,jsonb,integer)',
     'agent_definition_record_evaluation(uuid,uuid,integer,text,text,text,text,text,numeric,boolean,integer,jsonb,timestamptz,text)',
-    'agent_definition_activate(uuid,uuid,uuid,integer,text,integer,integer,integer,text[])',
+    'agent_definition_activate(uuid,uuid,uuid,integer,text,integer,integer,integer,text[],text)',
     'agent_definition_set_lifecycle(uuid,uuid,uuid,text,text,integer)',
     'agent_definition_emit(uuid,uuid,text,integer,integer,uuid,jsonb)',
     'agent_definition_open_write()', 'agent_definition_close_write()',
-    'agent_definition_actor_role(uuid,uuid)', 'agent_definition_require_service()',
+    'agent_definition_actor_role(uuid,uuid)', 'agent_definition_connector_fingerprint(uuid)', 'agent_definition_require_service()',
     'agent_definition_state_guard()', 'agent_definition_append_only()',
     'custom_agents_governed_disable()',
 ]
@@ -254,9 +254,10 @@ BEGIN
  FOREACH f IN ARRAY ARRAY[
    'public.agent_definition_create_revision(uuid,uuid,uuid,uuid,jsonb,integer)',
    'public.agent_definition_record_evaluation(uuid,uuid,integer,text,text,text,text,text,numeric,boolean,integer,jsonb,timestamptz,text)',
-   'public.agent_definition_activate(uuid,uuid,uuid,integer,text,integer,integer,integer,text[])',
+   'public.agent_definition_activate(uuid,uuid,uuid,integer,text,integer,integer,integer,text[],text)',
    'public.agent_definition_set_lifecycle(uuid,uuid,uuid,text,text,integer)',
    'public.agent_definition_actor_role(uuid,uuid)',
+   'public.agent_definition_connector_fingerprint(uuid)',
    'public.claim_scheduled_agent_run(uuid,text,uuid,integer)'] LOOP
   IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
    OR NOT has_function_privilege('service_role', f, 'EXECUTE') THEN
@@ -306,7 +307,7 @@ DO $$ BEGIN
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
  BEGIN
   PERFORM set_config('request.jwt.claims', '{{"role":"anon"}}', true);
-  PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, '{'a' * 64}', NULL, 1, 1, ARRAY['crm.read']);
+  PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, '{'a' * 64}', NULL, 1, 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
   RAISE EXCEPTION 'An anonymous caller executed a command';
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
@@ -326,7 +327,7 @@ BEGIN
    RAISE EXCEPTION 'Actor % was allowed to pause', who;
   EXCEPTION WHEN insufficient_privilege THEN refused := refused + 1; END;
   BEGIN
-   PERFORM public.agent_definition_activate('@S1@', who::uuid, '@A2@', 1, '{'a' * 64}', NULL, 1, 1, ARRAY['crm.read']);
+   PERFORM public.agent_definition_activate('@S1@', who::uuid, '@A2@', 1, '{'a' * 64}', NULL, 1, 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
    RAISE EXCEPTION 'Actor % was allowed to activate', who;
   EXCEPTION WHEN insufficient_privilege THEN refused := refused + 1; END;
  END LOOP;
@@ -464,7 +465,7 @@ BEGIN
  SELECT definition_hash INTO h1 FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 1;
  SELECT definition_hash INTO h2 FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 2;
  -- Without evidence the exact revision is refused, and nothing is written.
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'blocked' OR r->'reasons' <> '["evaluation_required"]'::jsonb THEN RAISE EXCEPTION 'Missing evaluation: %', r; END IF;
  -- A client "source" is refused even from the service role.
  BEGIN PERFORM public.agent_definition_record_evaluation('@S1@', '@A2@', 1, h1, 'k', 's', 'f', repeat('b', 64), 1, true, 1, '{{}}', now() - interval '1 second', 'client');
@@ -476,13 +477,13 @@ BEGIN
  IF public.agent_definition_record_evaluation('@S2@', '@A2@', 1, h1, 'k', 's', 'f', repeat('b', 64), 1, true, 1, '{{}}', now() - interval '1 second', 'trusted_evaluator')->>'code' <> 'agent_not_found' THEN RAISE EXCEPTION 'cross shop'; END IF;
  -- Weak then unsafe then strong (newest wins; failures remain in the record).
  PERFORM public.agent_definition_record_evaluation('@S1@', '@A2@', 1, h1, 'weak', 's', 'f', repeat('b', 64), 0.9, true, 1, '{{}}', now() - interval '4 seconds', 'trusted_evaluator');
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->'reasons' <> '["quality_evaluation_failed"]'::jsonb THEN RAISE EXCEPTION 'Weak: %', r; END IF;
  PERFORM public.agent_definition_record_evaluation('@S1@', '@A2@', 1, h1, 'unsafe', 's', 'f', repeat('b', 64), 1, false, 1, '{{}}', now() - interval '3 seconds', 'trusted_evaluator');
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->'reasons' <> '["safety_evaluation_failed"]'::jsonb THEN RAISE EXCEPTION 'Unsafe: %', r; END IF;
  -- Evidence recorded for revision 1 never satisfies revision 2.
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h2, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h2, NULL, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->'reasons' <> '["evaluation_required"]'::jsonb THEN RAISE EXCEPTION 'Other revision evidence: %', r; END IF;
  PERFORM public.agent_definition_record_evaluation('@S1@', '@A2@', 1, h1, 'good', 's', 'f', repeat('b', 64), 1, true, 12, '{{"basis":"synthetic"}}', now() - interval '2 seconds', 'trusted_evaluator');
  IF (SELECT count(*) FROM public.agent_definition_evaluations WHERE agent_id = '@A2@') <> 3 THEN RAISE EXCEPTION 'Failures must stay in the append-only record'; END IF;
@@ -500,13 +501,17 @@ DECLARE r jsonb; h1 text; pol int;
 BEGIN
  SELECT definition_hash INTO h1 FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 1;
  SELECT revision INTO pol FROM public.control_policy_active WHERE shop_id = '@S1@';
- IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, repeat('e', 64), NULL, pol, 1, ARRAY['crm.read'])->>'code' <> 'definition_hash_mismatch' THEN RAISE EXCEPTION 'hash'; END IF;
- IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 8, h1, NULL, pol, 1, ARRAY['crm.read'])->>'code' <> 'revision_not_found' THEN RAISE EXCEPTION 'revision'; END IF;
- IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, 4, pol, 1, ARRAY['crm.read'])->>'code' <> 'pointer_changed' THEN RAISE EXCEPTION 'pointer'; END IF;
- IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol + 7, 1, ARRAY['crm.read'])->'reasons' <> '["policy_stale"]'::jsonb THEN RAISE EXCEPTION 'policy'; END IF;
- IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 9, ARRAY['crm.read'])->'reasons' <> '["knowledge_stale"]'::jsonb THEN RAISE EXCEPTION 'knowledge'; END IF;
- IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 1, ARRAY[]::text[])->'reasons' <> '["tool_not_ready"]'::jsonb THEN RAISE EXCEPTION 'readiness'; END IF;
- BEGIN PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 1, NULL);
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, repeat('e', 64), NULL, pol, 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'))->>'code' <> 'definition_hash_mismatch' THEN RAISE EXCEPTION 'hash'; END IF;
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 8, h1, NULL, pol, 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'))->>'code' <> 'revision_not_found' THEN RAISE EXCEPTION 'revision'; END IF;
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, 4, pol, 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'))->>'code' <> 'pointer_changed' THEN RAISE EXCEPTION 'pointer'; END IF;
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol + 7, 1, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'))->'reasons' <> '["policy_stale"]'::jsonb THEN RAISE EXCEPTION 'policy'; END IF;
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 9, ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'))->'reasons' <> '["knowledge_stale"]'::jsonb THEN RAISE EXCEPTION 'knowledge'; END IF;
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 1, ARRAY[]::text[], public.agent_definition_connector_fingerprint('@S1@'))->'reasons' <> '["tool_not_ready"]'::jsonb THEN RAISE EXCEPTION 'readiness'; END IF;
+ IF public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 1, ARRAY['crm.read'], repeat('0', 64))->'reasons' <> '["connector_stale"]'::jsonb THEN RAISE EXCEPTION 'connector stale'; END IF;
+ BEGIN PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 1, ARRAY['crm.read'], NULL);
+  RAISE EXCEPTION 'Missing connector fingerprint was accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, 1, NULL, public.agent_definition_connector_fingerprint('@S1@'));
   RAISE EXCEPTION 'Missing readiness input was accepted';
  EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
  IF (SELECT enabled FROM public.custom_agents WHERE id = '@A2@') OR (SELECT lifecycle FROM public.agent_definition_state WHERE agent_id = '@A2@') <> 'draft' THEN
@@ -527,13 +532,13 @@ BEGIN
  PERFORM public.review_memory_revision('@S1@', m, (c->>'revision')::int);
  PERFORM public.publish_memory_revision('@S1@', m, (c->>'revision')::int, mr);
  PERFORM set_config('request.jwt.claims', '{{"role":"service_role"}}', true);
- r := public.agent_definition_activate('@S1@', '@U1@', '@A3@', 1, h, NULL, pol, (SELECT revision FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A3@', 1, h, NULL, pol, (SELECT revision FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->'reasons' <> '["memory_stale"]'::jsonb THEN RAISE EXCEPTION 'Stale memory: %', r; END IF;
  -- revoke the newer revision: the original pin is no longer the active one either
  PERFORM set_config('request.jwt.claims', '{{"role":"authenticated","sub":"@U1@"}}', true);
  PERFORM public.remove_memory_revision('@S1@', m, (c->>'revision')::int, (c->>'revision')::int);
  PERFORM set_config('request.jwt.claims', '{{"role":"service_role"}}', true);
- r := public.agent_definition_activate('@S1@', '@U1@', '@A3@', 1, h, NULL, pol, (SELECT revision FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A3@', 1, h, NULL, pol, (SELECT revision FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'blocked' OR NOT (r->'reasons' ? 'memory_stale' OR r->'reasons' ? 'memory_revoked') THEN RAISE EXCEPTION 'Revoked memory: %', r; END IF;
  IF (SELECT enabled FROM public.custom_agents WHERE id = '@A3@') THEN RAISE EXCEPTION 'Blocked activation enabled the agent'; END IF;
 END $$;
@@ -552,7 +557,7 @@ BEGIN
  SELECT definition_hash INTO h FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 1;
  SELECT revision INTO pol FROM public.control_policy_active WHERE shop_id = '@S1@';
  BEGIN
-  PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+  PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  EXCEPTION WHEN SQLSTATE 'P0001' THEN failed := true; END;
  IF NOT failed THEN RAISE EXCEPTION 'The injected pointer failure did not fire'; END IF;
  IF (SELECT enabled FROM public.custom_agents WHERE id = '@A2@') THEN RAISE EXCEPTION 'enabled survived a failed pointer write'; END IF;
@@ -573,7 +578,7 @@ BEGIN
  SELECT definition_hash INTO h FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 1;
  SELECT revision INTO pol FROM public.control_policy_active WHERE shop_id = '@S1@';
  BEGIN
-  PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+  PERFORM public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  EXCEPTION WHEN SQLSTATE 'P0001' THEN failed := true; END;
  IF NOT failed THEN RAISE EXCEPTION 'The injected enabling failure did not fire'; END IF;
  IF (SELECT enabled FROM public.custom_agents WHERE id = '@A2@') THEN RAISE EXCEPTION 'enabled changed'; END IF;
@@ -592,7 +597,7 @@ BEGIN
  SELECT definition_hash INTO h1 FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 1;
  SELECT revision INTO pol FROM public.control_policy_active WHERE shop_id = '@S1@';
  -- With both injected failures gone, the same revision activates: nothing was left half-written.
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'activated' THEN RAISE EXCEPTION 'Activation: %', r; END IF;
  IF NOT (SELECT enabled FROM public.custom_agents WHERE id = '@A2@')
   OR (SELECT lifecycle FROM public.agent_definition_state WHERE agent_id = '@A2@') <> 'active'
@@ -601,15 +606,15 @@ BEGIN
   OR (SELECT (evidence->>'policy_revision')::int FROM public.agent_definition_events WHERE agent_id = '@A2@' AND kind = 'activated') <> pol
   OR (SELECT evidence->>'billing_evidence_id' FROM public.agent_definition_events WHERE agent_id = '@A2@' AND kind = 'activated') IS NULL THEN
   RAISE EXCEPTION 'Activation evidence was not recorded'; END IF;
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, 1, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 1, h1, 1, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'already_active' THEN RAISE EXCEPTION 'Idempotent activation: %', r; END IF;
 
  -- Supersede: revision 2 replaces the pointer (single mutable row) and revision 1 is untouched.
  SELECT definition_hash INTO h2 FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 2;
  PERFORM public.agent_definition_record_evaluation('@S1@', '@A2@', 2, h2, 'r2', 's', 'f', repeat('b', 64), 1, true, 1, '{{}}', now() - interval '1 second', 'trusted_evaluator');
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h2, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h2, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'code' <> 'pointer_changed' THEN RAISE EXCEPTION 'A stale pointer view must be refused: %', r; END IF;
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h2, 1, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h2, 1, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'activated' THEN RAISE EXCEPTION 'Supersede: %', r; END IF;
  SELECT count(*) INTO n FROM public.agent_definition_state WHERE agent_id = '@A2@';
  IF n <> 1 OR (SELECT active_revision FROM public.agent_definition_state WHERE agent_id = '@A2@') <> 2 THEN RAISE EXCEPTION 'Exactly one pointer expected'; END IF;
@@ -621,9 +626,9 @@ BEGIN
  PERFORM public.agent_definition_record_evaluation('@S1@', '@A4@', 1, (SELECT definition_hash FROM public.agent_definition_revisions WHERE agent_id = '@A4@' AND revision = 1), 'a4', 's', 'f', repeat('b', 64), 1, true, 1, '{{}}', now() - interval '1 second', 'trusted_evaluator');
  PERFORM public.agent_definition_create_revision('@S1@', '@U1@', '@A3@', '@R7@', {DEF}, NULL);
  PERFORM public.agent_definition_record_evaluation('@S1@', '@A3@', 2, (SELECT definition_hash FROM public.agent_definition_revisions WHERE agent_id = '@A3@' AND revision = 2), 'a3', 's', 'f', repeat('b', 64), 1, true, 1, '{{}}', now() - interval '1 second', 'trusted_evaluator');
- r := public.agent_definition_activate('@S1@', '@U1@', '@A3@', 2, (SELECT definition_hash FROM public.agent_definition_revisions WHERE agent_id = '@A3@' AND revision = 2), NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A3@', 2, (SELECT definition_hash FROM public.agent_definition_revisions WHERE agent_id = '@A3@' AND revision = 2), NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'activated' THEN RAISE EXCEPTION 'Second agent should activate: %', r; END IF;
- r := public.agent_definition_activate('@S1@', '@U1@', '@A4@', 1, (SELECT definition_hash FROM public.agent_definition_revisions WHERE agent_id = '@A4@' AND revision = 1), NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A4@', 1, (SELECT definition_hash FROM public.agent_definition_revisions WHERE agent_id = '@A4@' AND revision = 1), NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'code' <> 'active_agent_limit_reached' THEN RAISE EXCEPTION 'Third agent must be refused: %', r; END IF;
  IF (SELECT lifecycle FROM public.agent_definition_state WHERE agent_id = '@A4@') <> 'draft' OR (SELECT enabled FROM public.custom_agents WHERE id = '@A4@') THEN
   RAISE EXCEPTION 'A cap refusal moved the pointer'; END IF;
@@ -638,7 +643,7 @@ BEGIN
  SELECT definition_hash INTO h FROM public.agent_definition_revisions WHERE agent_id = '@A6@' AND revision = 1;
  PERFORM public.agent_definition_record_evaluation('@S2@', '@A6@', 1, h, 'a6', 's', 'f', repeat('b', 64), 1, true, 1, '{{}}', now() - interval '1 second', 'trusted_evaluator');
  SELECT revision INTO pol FROM public.control_policy_active WHERE shop_id = '@S2@';
- r := public.agent_definition_activate('@S2@', '@U5@', '@A6@', 1, h, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S2@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S2@', '@U5@', '@A6@', 1, h, NULL, pol, (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S2@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S2@'));
  IF r->>'outcome' <> 'blocked' OR r->>'code' <> 'billing_not_active' THEN RAISE EXCEPTION 'Missing billing must block: %', r; END IF;
  IF (SELECT lifecycle FROM public.agent_definition_state WHERE agent_id = '@A6@') <> 'draft' OR (SELECT enabled FROM public.custom_agents WHERE id = '@A6@') THEN
   RAISE EXCEPTION 'A billing refusal moved the pointer'; END IF;
@@ -671,7 +676,7 @@ BEGIN
  IF (SELECT lifecycle FROM public.agent_definition_state WHERE agent_id = '@A2@') <> 'blocked' THEN RAISE EXCEPTION 'Blocked lifecycle not recorded'; END IF;
  -- Resume is an ordinary activation with fresh evidence.
  SELECT definition_hash INTO h1 FROM public.agent_definition_revisions WHERE agent_id = '@A2@' AND revision = 2;
- r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h1, 2, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read']);
+ r := public.agent_definition_activate('@S1@', '@U1@', '@A2@', 2, h1, 2, (SELECT revision FROM public.control_policy_active WHERE shop_id = '@S1@'), (SELECT coalesce(max(revision), 1) FROM public.reviewed_memory_heads WHERE shop_id = '@S1@'), ARRAY['crm.read'], public.agent_definition_connector_fingerprint('@S1@'));
  IF r->>'outcome' <> 'activated' THEN RAISE EXCEPTION 'Resume: %', r; END IF;
  IF public.claim_scheduled_agent_run('@A2@', 'verifier-window-4', gen_random_uuid(), 60)->>'outcome' <> 'claimed' THEN RAISE EXCEPTION 'Resumed definition must claim'; END IF;
 

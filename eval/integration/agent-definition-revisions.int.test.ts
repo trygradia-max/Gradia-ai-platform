@@ -199,6 +199,12 @@ async function evaluate(w: { shop: Seeded }, agentId: string, rev: { revision: n
   )
 }
 
+const fingerprintOf = async (shopId: string) => {
+  const r = await db.rpc("agent_definition_connector_fingerprint", { p_shop: shopId })
+  expect(r.error).toBeNull()
+  return r.data as string
+}
+
 const activate = (w: { shop: Seeded }, agentId: string, rev: { revision: number; definitionHash: string }, pointer: number | null = null, actorId?: string) =>
   activateAgentDefinition(
     { service: db },
@@ -383,12 +389,13 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent definition revisions [integrat
           p_fixture_set_id: "x", p_fixture_hash: "c".repeat(64), p_pass_rate: 1, p_safety_passed: true, p_estimated_credits: 0, p_cost_evidence: {},
           p_completed_at: new Date().toISOString(), p_source: "trusted_evaluator",
         },
-        agent_definition_activate: { p_shop: w.shop.shopId, p_actor: w.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: w.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"] },
+        agent_definition_activate: { p_shop: w.shop.shopId, p_actor: w.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: w.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"], p_connector_fingerprint: await fingerprintOf(w.shop.shopId) },
         agent_definition_set_lifecycle: { p_shop: w.shop.shopId, p_actor: w.shop.ownerId, p_agent: agent, p_lifecycle: "paused", p_reason: "x", p_expected_pointer: null },
       }
       for (const client of [w.owner, anon]) {
         for (const fn of WRITERS) expect((await client.rpc(fn, args[fn])).error, fn).not.toBeNull()
         expect((await client.rpc("agent_definition_actor_role", { p_shop: w.shop.shopId, p_actor: w.shop.ownerId })).error).not.toBeNull()
+        expect((await client.rpc("agent_definition_connector_fingerprint", { p_shop: w.shop.shopId })).error).not.toBeNull()
         for (const table of TABLES) expect((await client.from(table).select("*").limit(1)).error, table).not.toBeNull()
       }
       // A forged evaluation never exists: nothing was recorded by the denied attempts.
@@ -449,13 +456,53 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent definition revisions [integrat
       expect(await stateOf(agent)).toMatchObject({ lifecycle: "draft", active_revision: null })
       expect(await enabledOf(agent)).toBe(false)
       // The database refuses the same bindings on its own, independent of the application.
-      const raw = (over: Record<string, unknown>) => db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"], ...over })
+      const fp = await fingerprintOf(x.shop.shopId)
+      const raw = (over: Record<string, unknown>) => db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"], p_connector_fingerprint: fp, ...over })
       expect((await raw({ p_expected_hash: "e".repeat(64) })).data).toMatchObject({ outcome: "blocked", code: "definition_hash_mismatch" })
       expect((await raw({ p_policy_revision: x.policyRevision + 5 })).data).toMatchObject({ outcome: "blocked", reasons: ["policy_stale"] })
       expect((await raw({ p_knowledge_revision: 9 })).data).toMatchObject({ outcome: "blocked", reasons: ["knowledge_stale"] })
       expect((await raw({ p_ready_operations: [] })).data).toMatchObject({ outcome: "blocked", reasons: ["tool_not_ready"] })
       expect((await raw({ p_ready_operations: null })).error?.code).toBe("22023")
       expect(await enabledOf(agent)).toBe(false)
+    })
+
+    it("blocks activation when connector evidence changes after it was read (stale readiness)", async () => {
+      const x = await world()
+      const agent = await newAgent(x.shop)
+      const rev = await readyRevision(x, agent)
+      const before = await fingerprintOf(x.shop.shopId)
+      // The database itself refuses an arbitrary, missing or outdated fingerprint.
+      const raw = (fp: unknown) => db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"], p_connector_fingerprint: fp })
+      expect((await raw("0".repeat(64))).data).toMatchObject({ outcome: "blocked", reasons: ["connector_stale"] })
+      expect((await raw(null)).error?.code).toBe("22023")
+
+      // Race: the application reads readiness, THEN a connector changes, THEN the activation RPC runs.
+      const racing = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop !== "rpc") return Reflect.get(target, prop, receiver)
+          return async (fn: string, args: Record<string, unknown>) => {
+            if (fn === "agent_definition_activate") {
+              const mutate = await db.from("shops").update({ aurinko_account_id: Date.now() }).eq("id", x.shop.shopId)
+              expect(mutate.error).toBeNull()
+            }
+            return (db as unknown as { rpc: (f: string, a: Record<string, unknown>) => unknown }).rpc(fn, args)
+          }
+        },
+      }) as typeof db
+      const result = await activateAgentDefinition(
+        { service: racing },
+        { shopId: x.shop.shopId, actorId: x.shop.ownerId, agentId: agent, revision: 1, expectedHash: rev.definitionHash, expectedPointer: null }
+      )
+      expect(result).toMatchObject({ ok: false, reasons: ["connector_stale"] })
+      expect(await fingerprintOf(x.shop.shopId)).not.toBe(before)
+      expect(await enabledOf(agent)).toBe(false)
+      expect(await stateOf(agent)).toMatchObject({ lifecycle: "draft", active_revision: null })
+      expect((await events(agent)).map((e) => e.kind)).toEqual(["revision_created"])
+
+      // Reading again binds to the new evidence and activation succeeds; the evidence is recorded.
+      expect(await activate(x, agent, rev)).toEqual({ ok: true, outcome: "activated", revision: 1 })
+      const activated = (await events(agent)).find((e) => e.kind === "activated")
+      expect((activated?.evidence as { connector_fingerprint?: string } | undefined)?.connector_fingerprint).toBe(await fingerprintOf(x.shop.shopId))
     })
 
     it("fails closed without exact-revision evaluation evidence, and on a safety or quality failure", async () => {
@@ -529,7 +576,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent definition revisions [integrat
       expect(saveRes.error).toBeNull()
       const act = await x.owner.rpc("activate_control_policy", { p_shop: x.shop.shopId, p_revision: saveRes.data, p_expected_active: x.policyRevision })
       expect(act.error).toBeNull()
-      const raw = await db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"] })
+      const raw = await db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: ["crm.read"], p_connector_fingerprint: await fingerprintOf(x.shop.shopId) })
       expect(raw.data).toMatchObject({ outcome: "blocked", reasons: ["policy_stale"] })
       // The application path reloads the new revision and succeeds.
       expect(await activate(x, agent, rev)).toEqual({ ok: true, outcome: "activated", revision: 1 })
@@ -622,7 +669,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent definition revisions [integrat
       // The history row is the last write. An oversized evidence payload violates its CHECK
       // AFTER commercial_agent_activate has enabled the agent and the pointer row was updated.
       const flood = Array.from({ length: 2000 }, () => "crm.read")
-      const r = await db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: flood })
+      const r = await db.rpc("agent_definition_activate", { p_shop: x.shop.shopId, p_actor: x.shop.ownerId, p_agent: agent, p_revision: 1, p_expected_hash: rev.definitionHash, p_expected_pointer: null, p_policy_revision: x.policyRevision, p_knowledge_revision: 1, p_ready_operations: flood, p_connector_fingerprint: await fingerprintOf(x.shop.shopId) })
       expect(r.error).not.toBeNull()
       expect(await enabledOf(agent)).toBe(false)
       expect(await stateOf(agent)).toMatchObject({ lifecycle: "draft", active_revision: null, version: 2 })

@@ -137,6 +137,7 @@ function ctx(over: Partial<RevisionContext> = {}): RevisionContext {
     policy: { revision: 3, draft: initialPolicyDraft(), locationId },
     knowledgeHead: 2,
     tools: [{ operation: "crm.read", connector: "crm", requestedMaximumMode: "read", effectiveMode: "read", available: true, reasons: [] }],
+    connectorFingerprint: "f".repeat(64),
     activeAgentCount: 0,
     ...over,
   }
@@ -150,8 +151,15 @@ describe("computeEligibility", () => {
     expect(e.sources).toEqual({
       definitionHash: "a".repeat(64), schemaVersion: 1, policyRevision: 3, knowledgeRevision: 2,
       memoryPins: [{ sourceId, memoryRevision: 1, contentHash: "b".repeat(64) }],
-      evaluationId: "e1", readyOperations: ["crm.read"], activeAgentCount: 0, activeAgentLimit: 2, expectedPointer: null,
+      evaluationId: "e1", readyOperations: ["crm.read"], connectorFingerprint: "f".repeat(64), activeAgentCount: 0, activeAgentLimit: 2, expectedPointer: null,
     })
+  })
+
+  it("blocks as connector_stale when connector evidence moved while it was read", () => {
+    const e = computeEligibility(ctx({ connectorFingerprint: null }), activeBilling)
+    expect(e.eligible).toBe(false)
+    expect(e.blockers).toContain("connector_stale")
+    expect(e.sources?.connectorFingerprint).toBeNull()
   })
 
   it.each([

@@ -294,14 +294,33 @@ async function loadPolicy(deps: Db, shopId: string): Promise<PolicyContext | nul
 
 type ConnectorReady = (connector: string) => boolean
 
-async function loadConnectorReadiness(deps: Db, shopId: string, env: Record<string, string | undefined>): Promise<ConnectorReady> {
+/** Database-computed sha256 over the exact stored facts connector readiness derives from. */
+async function readConnectorFingerprint(deps: Db, shopId: string): Promise<string> {
+  const res = await deps.service.rpc("agent_definition_connector_fingerprint", { p_shop: shopId })
+  if (res.error || typeof res.data !== "string" || res.data.length === 0) throw new Unavailable("readiness")
+  return res.data
+}
+
+/**
+ * Readiness plus the fingerprint of the evidence it was computed from. The fingerprint is
+ * read before AND after the readiness reads; if the evidence moved in between, no
+ * fingerprint is returned (`null`) and activation reports `connector_stale` instead of
+ * binding to a mixed snapshot. The database rechecks the fingerprint at activation.
+ */
+async function loadConnectorReadiness(
+  deps: Db,
+  shopId: string,
+  env: Record<string, string | undefined>
+): Promise<{ ready: ConnectorReady; fingerprint: string | null }> {
+  const before = await readConnectorFingerprint(deps, shopId)
   const [channels, calendar] = await Promise.all([
     loadChannelReadiness(deps.service, shopId, env),
     deps.service.from("shops").select("aurinko_access_token_enc,aurinko_account_id").eq("id", shopId).maybeSingle(),
   ])
   if (!channels.ok || calendar.error || !calendar.data) throw new Unavailable("readiness")
+  const after = await readConnectorFingerprint(deps, shopId)
   const calendarReady = Boolean(calendar.data.aurinko_access_token_enc && calendar.data.aurinko_account_id)
-  return (connector) => {
+  const ready: ConnectorReady = (connector) => {
     switch (connector) {
       case "sms": return channels.channels.texting.state === "ready"
       case "email": return channels.channels.email.state === "ready"
@@ -313,6 +332,7 @@ async function loadConnectorReadiness(deps: Db, shopId: string, env: Record<stri
       default: return false
     }
   }
+  return { ready, fingerprint: before === after ? before : null }
 }
 
 function strictest(values: readonly (Mode | null | undefined)[]): Mode | null {
@@ -512,6 +532,8 @@ export type RevisionContext = {
   policy: PolicyContext | null
   knowledgeHead: number | null
   tools: ToolDecisionDto[]
+  /** null = connector evidence moved while it was being read (never bound to a mixed snapshot). */
+  connectorFingerprint: string | null
   activeAgentCount: number
 }
 
@@ -549,7 +571,7 @@ async function loadRevisionContext(
   const revision = await loadRevisionRow(deps, input.shopId, input.agentId, input.revision)
   if (!revision) return null
   const parsed = agentDefinitionDraftSchema.safeParse(revision.definition)
-  const [pins, evaluations, policy, head, activeAgentCount, ready] = await Promise.all([
+  const [pins, evaluations, policy, head, activeAgentCount, connectors] = await Promise.all([
     loadPins(deps, input.shopId, input.agentId, input.revision),
     loadEvaluations(deps, input.shopId, input.agentId, input.revision),
     loadPolicy(deps, input.shopId),
@@ -571,7 +593,8 @@ async function loadRevisionContext(
     evaluations,
     policy,
     knowledgeHead: (head.data?.revision as number | undefined) ?? null,
-    tools: definition ? decideToolGrants({ shopId: input.shopId, actorId: input.actorId, policy, grants: definition.tools, connectorReady: ready }) : [],
+    tools: definition ? decideToolGrants({ shopId: input.shopId, actorId: input.actorId, policy, grants: definition.tools, connectorReady: connectors.ready }) : [],
+    connectorFingerprint: connectors.fingerprint,
     activeAgentCount,
   }
 }
@@ -589,6 +612,7 @@ export function computeEligibility(ctx: RevisionContext, billing: CommercialBill
   if (ctx.role !== "owner") blockers.add("owner_activation_required")
   if (!ctx.state) blockers.add("definition_not_found")
   if (ctx.revision.schema_version !== 1) blockers.add("unsupported_schema")
+  if (ctx.connectorFingerprint === null) blockers.add("connector_stale")
   if (!ctx.definition) {
     blockers.add("invalid_definition")
     return { ...base, eligible: false, alreadyActive: false, blockers: [...blockers].sort(), sources: null }
@@ -657,6 +681,7 @@ export function computeEligibility(ctx: RevisionContext, billing: CommercialBill
       memoryPins: ctx.pins.map((p) => ({ sourceId: p.sourceId, memoryRevision: p.memoryRevision, contentHash: p.contentHash })),
       evaluationId: latestEvaluation?.id ?? null,
       readyOperations,
+      connectorFingerprint: ctx.connectorFingerprint,
       activeAgentCount: ctx.activeAgentCount,
       activeAgentLimit: ACTIVE_AGENT_LIMIT,
       expectedPointer: ctx.state?.active_revision ?? null,
@@ -741,6 +766,7 @@ export async function activateAgentDefinition(
       p_policy_revision: ctx.policy?.revision ?? 0,
       p_knowledge_revision: ctx.knowledgeHead ?? 1,
       p_ready_operations: eligibility.sources?.readyOperations ?? [],
+      p_connector_fingerprint: ctx.connectorFingerprint,
     })
     if (error) return error.code === "42501" ? { ok: false, code: "forbidden", reasons: ["owner_activation_required"], billing: null } : blocked(["evidence_unavailable"])
     const row = (data ?? {}) as { outcome?: unknown; code?: unknown; reasons?: unknown }
@@ -798,13 +824,27 @@ export async function readAgentsHomeDto(
       "revisions"
     ) as Pick<RevisionRow, "agent_id" | "revision" | "parent_revision" | "definition_hash" | "created_at">[]
 
-    const runs = await deps.service.from("custom_agent_runs").select("id,agent_id,finished_at").eq("shop_id", input.shopId).eq("state", "succeeded").eq("fired", true).order("finished_at", { ascending: false }).limit(500)
+    // Exact per-agent value from the database (newest confirmed run), never a recent-window guess.
+    // A failed read makes the whole home unavailable instead of reporting "no confirmed run".
     const lastRun = new Map<string, { runId: string; finishedAt: string }>()
-    if (!runs.error) {
-      for (const r of runs.data ?? []) {
-        if (r.finished_at && !lastRun.has(r.agent_id)) lastRun.set(r.agent_id, { runId: r.id, finishedAt: r.finished_at })
-      }
-    }
+    await Promise.all(
+      agents.map(async (agent) => {
+        const res = await deps.service
+          .from("custom_agent_runs")
+          .select("id,finished_at")
+          .eq("shop_id", input.shopId)
+          .eq("agent_id", agent.id)
+          .eq("state", "succeeded")
+          .eq("fired", true)
+          .not("finished_at", "is", null)
+          .order("finished_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1)
+        if (res.error) throw new Unavailable("runs")
+        const row = res.data?.[0]
+        if (row?.finished_at) lastRun.set(agent.id, { runId: row.id as string, finishedAt: row.finished_at as string })
+      })
+    )
     const review = await countNeedsReview(deps, input.shopId)
 
     const items: AgentSummaryDto[] = agents.map((agent) => {
@@ -821,7 +861,7 @@ export async function readAgentsHomeDto(
         activeRevision: active ? toRef(active) : null,
         latestRevision: latest ? toRef(latest) : null,
         hasUnactivatedDraft: Boolean(latest && (!active || latest.revision > active.revision)),
-        lastConfirmedRun: runs.error ? null : lastRun.get(agent.id) ?? null,
+        lastConfirmedRun: lastRun.get(agent.id) ?? null,
         needsReviewCount: review === null ? null : review.get(agent.id) ?? 0,
       }
     })
@@ -840,12 +880,35 @@ export async function readAgentsHomeDto(
   }
 }
 
-/** Pending approvals produced by each agent's recent runs; null when it cannot be determined. */
+const PAGE = 500
+/** Hard ceiling on pages; beyond it completeness cannot be proven, so the count is unavailable (null). */
+const MAX_PAGES = 200
+
+/**
+ * Pending approvals per agent, complete or null. Pages through EVERY run that produced
+ * approvals (stable keyset on id), then checks which of those approvals are still pending.
+ * Anything short of a full scan returns null, never a definitive zero.
+ */
 async function countNeedsReview(deps: Db, shopId: string): Promise<Map<string, number> | null> {
-  const runs = await deps.service.from("custom_agent_runs").select("agent_id,pending_action_ids").eq("shop_id", shopId).order("created_at", { ascending: false }).limit(500)
-  if (runs.error) return null
   const byAction = new Map<string, string>()
-  for (const r of runs.data ?? []) for (const id of (r.pending_action_ids as string[] | null) ?? []) byAction.set(id, r.agent_id)
+  let cursor: string | null = null
+  for (let page = 0; ; page++) {
+    if (page >= MAX_PAGES) return null
+    let query = deps.service
+      .from("custom_agent_runs")
+      .select("id,agent_id,pending_action_ids")
+      .eq("shop_id", shopId)
+      .not("pending_action_ids", "eq", "{}")
+      .order("id", { ascending: true })
+      .limit(PAGE)
+    if (cursor) query = query.gt("id", cursor)
+    const runs = await query
+    if (runs.error) return null
+    const rows = runs.data ?? []
+    for (const r of rows) for (const id of (r.pending_action_ids as string[] | null) ?? []) byAction.set(id, r.agent_id)
+    if (rows.length < PAGE) break
+    cursor = rows[rows.length - 1].id as string
+  }
   const counts = new Map<string, number>()
   const ids = [...byAction.keys()]
   for (let i = 0; i < ids.length; i += 200) {
