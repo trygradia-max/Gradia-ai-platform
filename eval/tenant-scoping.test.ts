@@ -75,6 +75,11 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // client is created lazily and only after the existing-gate and active-agent
     // checks pass, and it reaches nothing but the owner-verified Checkout writers.
     "src/app/actions/custom-agents.ts",
+    // Agent OS definition revisions (Build 1). The actor and shop come only from the
+    // session (requireUser/requireShop); the service client reaches nothing but the
+    // service-only agent_definition_* commands (each re-verifies a LIVE OWNER of that exact
+    // shop in the database) and tenant-filtered reads. It has no direct table write grant.
+    "src/app/actions/agent-definitions.ts",
     // Channel readiness. Read-only. The shop is resolved server-side by
     // requireShop (the signed-in owner's shop); the service client is used
     // only afterwards, because meta_lead_page_bindings is service-role only,

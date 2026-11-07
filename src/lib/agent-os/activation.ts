@@ -102,8 +102,26 @@ export async function authorizeAgentActivation(
   const result = parsed.data
 
   if (result.outcome === "activated" || result.outcome === "already_active") return { proceed: true }
+  return resolveBlockedActivation(
+    { ...deps, service },
+    { shopId: request.shopId, actorId: request.actorId },
+    result.code ?? null
+  )
+}
 
-  switch (result.code) {
+/**
+ * Maps a refused database activation to the typed decision, handing back the
+ * server-created Checkout when entitlement is the only missing piece. Shared by the
+ * legacy enable path and the Agent OS definition activation so both stay one
+ * billing boundary. `service` is the already-resolved service-role client.
+ */
+export async function resolveBlockedActivation(
+  deps: { sessionClient: SupabaseClient; service: SupabaseClient; runtime: BillingRuntime },
+  request: { shopId: string; actorId: string },
+  code: string | null
+): Promise<Extract<AgentActivationDecision, { proceed: false }>> {
+  const service = deps.service
+  switch (code) {
     case "agent_not_found":
       return { proceed: false, code: "agent_not_found", billing: null }
     case "active_agent_limit_reached":

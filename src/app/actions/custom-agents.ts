@@ -243,6 +243,29 @@ export async function listAgentRuns(
   }
 }
 
+/**
+ * An agent with a persisted definition identity can only be turned on by activating an
+ * exact immutable revision. The database guard enforces this too; this keeps the refusal
+ * typed instead of a raw permission error. Fails closed if the state cannot be read.
+ */
+async function legacyEnableGate(
+  agentId: string,
+  shopId: string
+): Promise<{ ready: true } | { ready: false; reasons: string[] }> {
+  try {
+    const { data, error } = await createServiceClient()
+      .from("agent_definition_state")
+      .select("agent_id")
+      .eq("shop_id", shopId)
+      .eq("agent_id", agentId)
+      .maybeSingle()
+    if (error) return { ready: false, reasons: ["definition_state_unavailable"] }
+    return data ? { ready: false, reasons: ["definition_activation_required"] } : { ready: true }
+  } catch {
+    return { ready: false, reasons: ["definition_state_unavailable"] }
+  }
+}
+
 export type SetEnabledResult =
   | { ok: true }
   | {
@@ -283,8 +306,9 @@ export async function setCustomAgentEnabled(input: {
         shopId: shop.id,
         actorId: user.id,
         agentId: input.agent_id,
-        // Custom agents carry no separate definition gate yet.
-        existing: { ready: true },
+        // Governed agents (persisted Agent OS definition) are turned on only through
+        // definition activation; legacy agents carry no separate definition gate.
+        existing: await legacyEnableGate(input.agent_id, shop.id),
       }
     )
     if (!decision.proceed) {
