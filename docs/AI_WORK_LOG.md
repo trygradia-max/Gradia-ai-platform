@@ -2610,3 +2610,12 @@ writer; disabling and drafts are unaffected. The existing-gate check still runs 
 activations => exactly one succeeds, two active), writer authority/tenant tests, a status regression test, and
 extended `scripts/verify-commercial-billing-migration.py` to apply both migrations and prove the activation
 writer. No real Stripe call, live key, shared data, deployment or merge.
+[AI: codex] [DATE: 2026-11-07] [AREA: agent-os] [STATUS: done]
+Prepared the isolated Claude Build 1 lane for immutable Gradia Agent definition
+revisions and one atomic active pointer on the existing `custom_agents` identity.
+The handoff requires exact server-loaded policy, reviewed-memory, connector,
+evaluation, budget and Founder Pilot subscription evidence; atomic composition with
+the merged commercial activation gate; tenant/role/concurrency/rollback proofs; and
+the minimal DTO for Cursor's seven-step builder. It forbids a second agent schema,
+runtime, memory store, policy engine, executor or billing gate. No application,
+schema, provider, Stripe, shared-data, deployment or production change was made.
