@@ -2610,4 +2610,3 @@ writer; disabling and drafts are unaffected. The existing-gate check still runs 
 activations => exactly one succeeds, two active), writer authority/tenant tests, a status regression test, and
 extended `scripts/verify-commercial-billing-migration.py` to apply both migrations and prove the activation
 writer. No real Stripe call, live key, shared data, deployment or merge.
-
