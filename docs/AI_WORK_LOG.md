@@ -2619,3 +2619,38 @@ the merged commercial activation gate; tenant/role/concurrency/rollback proofs; 
 the minimal DTO for Cursor's seven-step builder. It forbids a second agent schema,
 runtime, memory store, policy engine, executor or billing gate. No application,
 schema, provider, Stripe, shared-data, deployment or production change was made.
+
+[AI: claude-code] [DATE: 2026-11-07] [AREA: agent-os] [STATUS: in-review]
+Build 1: immutable Gradia Agent definition revisions + one atomic active pointer per existing `custom_agents`
+identity (branch `claude/agent-definition-revisions`, base `ca629da`). Migration
+`20261107120000_agent_definition_revisions.sql` adds `agent_definition_state` (the only mutable row: lifecycle
+draft/active/paused/blocked + pointer), immutable `agent_definition_revisions` (database-assigned gapless numbers,
+lineage, database-computed hash, always stored as `draft`), immutable `agent_definition_memory_pins` (exact reviewed
+memory revision per selected source), append-only `agent_definition_evaluations` (exact revision + hash, trusted
+source only) and append-only `agent_definition_events`. Commands are service-role-only SECURITY DEFINER and re-verify
+a live owner of the exact shop (manager/staff/revoked/cross-shop/unknown/browser refused; managers read-only because no
+`agent.configure` capability exists). `agent_definition_activate` rechecks hash/schema/pointer, the still-current active
+policy revision, every memory pin, readiness, limits and the newest exact-revision evaluation under the agent row lock,
+then calls the merged `commercial_agent_activate` in the SAME transaction (entitlement, two-agent cap, the only
+`enabled` write) and only then moves the pointer; commercial_agent_activate is unchanged. Re-declared (strengthened /
+one check added): `custom_agents_activation_guard` (governed agents can be enabled only inside definition activation,
+any role) and `claim_scheduled_agent_run` (governed agent not active -> `agent_unavailable`; legacy unchanged). A
+trigger pauses the pointer when a governed active agent is disabled by any path. Legacy agents are not backfilled
+(`legacy_unversioned`); an enabled legacy agent cannot be given a definition until turned off. Application:
+`src/lib/agent-os/definition-store.ts` (writers, server-side evidence loaders, eligibility, DTO readers),
+`definition-dto.ts` (finite `ACTIVATION_BLOCKERS`, DTO types), session-derived actions in
+`src/app/actions/agent-definitions.ts` (evaluation writer deliberately has no action), and the activation billing
+handoff extracted unchanged from `authorizeAgentActivation` into `resolveBlockedActivation`. Legacy
+`setCustomAgentEnabled(true)` now returns a typed refusal for governed agents. Doc:
+`docs/architecture/AGENT_DEFINITION_REVISIONS.md`. Validation: types, lint, unit 2,028 passed / 4 skipped (166 files),
+plain and webpack builds pass; `eval/integration/agent-definition-revisions.int.test.ts` 30/30 on the
+`gradia-isolated-tests` stack and on `gradia-record-fresh` (five post-baseline migrations applied in order; `supabase
+db reset` is blocked in this environment); touched-code integration suites pass (commercial-billing 70/70, agent-run-
+lifecycle, reviewed-memory, control-execution, control-policy-drafts, agent-capture, agent-records, commercial-usage,
+membership-billing, mcp-*); purpose-built `scripts/verify-agent-definition-migration.py` PASS (real-SQL upgrade from
+current main in a rolled-back transaction; no existing row rewritten; injected-failure rollback in both directions).
+Full 69-file integration run on a loaded host: 638 passed / 49 failed; failures are fixture/infra (GoTrue createUser/
+sign-in, statement timeouts, injected-failure helpers missing on the fresh stack) and a no-migration baseline reproduces
+the deterministic ones. Known limits: no trusted evaluator yet (fixtures only), Founder Pilot evidence still has no
+production producer (PR E), governed runs gate on lifecycle only (runtime still executes the legacy config recipe).
+No Stripe call, provider call, live send, cron, shared data, deployment or merge.

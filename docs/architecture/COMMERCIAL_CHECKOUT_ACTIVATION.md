@@ -24,6 +24,8 @@ shared-data change, and it does not lift the production activation freeze._
 
 ## Audit: the first-agent-activation command
 
+_Update 2026-11-07: Build 1 added the persisted definition store; see the table row below and `AGENT_DEFINITION_REVISIONS.md`. The audit below is the state when this PR was written._
+
 There is **no persisted Agent OS definition store yet**: `compileAgentDefinition`
 (`src/lib/agent-os/definition.ts`) is a pure compiler of `AgentActivationEvidence`, and
 `/agents` has no activation write. The only persisted per-agent activation today is
@@ -40,7 +42,7 @@ and no parallel activation system was added.
 | --- | --- |
 | `setCustomAgentEnabled(true)` | **Wired.** Gated by `authorizeAgentActivation`. Turning an agent **off** is never gated. Re-enabling an already-enabled agent is a no-op and is not re-gated. |
 | `saveCustomAgent` (draft, always `enabled:false`) | Not gated — **draft creation never requests billing** (tested). |
-| Future Agent OS definition → `active` | **Not wired (no persisted write exists).** The seam takes `existing: { ready } \| { ready:false, reasons }`, so the future activation command passes its `compileAgentDefinition` result and the seam stays the single billing/entitlement gate. |
+| Agent OS definition → `active` | **Wired (Build 1, 2026-11-07).** `agent_definition_activate` calls `commercial_agent_activate` in the same transaction (see `AGENT_DEFINITION_REVISIONS.md`); `commercial_agent_activate` is unchanged. A governed agent can no longer be enabled through the legacy `setCustomAgentEnabled` path. |
 | `setVoiceLive(true)` (voice receptionist go-live) | **Not wired.** It has its own launch gate and becomes an Agent OS playbook later. Documented rather than half-wired. |
 | `activatePolicyDraft`, `setAgentMode` | Policy / autonomy-mode changes, not agent activation. Unchanged. |
 | Scheduled-agent runtime (cron) | Unchanged. Already-enabled agents keep running; subscription lapse handling is PR E. |
