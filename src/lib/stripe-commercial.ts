@@ -160,7 +160,8 @@ const checkoutSessionSchema = z.object({
   object: z.literal("checkout.session"),
   livemode: z.boolean(),
   mode: z.string(),
-  status: z.enum(["open", "complete", "expired"]).nullable(),
+  // Missing, null or unknown status is unreadable: it must never be assumed "open".
+  status: z.enum(["open", "complete", "expired"]),
   url: z.string().nullable(),
   customer: z.string().nullable(),
   client_reference_id: z.string().nullable(),
@@ -281,8 +282,8 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
       }
       return {
         id: parsed.data.id,
-        status: parsed.data.status ?? "open",
-        url: safeCheckoutUrl(parsed.data.url, parsed.data.status ?? "open"),
+        status: parsed.data.status,
+        url: safeCheckoutUrl(parsed.data.url, parsed.data.status),
       }
     },
 
@@ -305,7 +306,7 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
         m.catalog_version === COMMERCIAL_CATALOG_VERSION &&
         m.plan_key === COMMERCIAL_PLAN_KEY &&
         s.customer === binding.customerId
-      if (!bound || !s.status) return { ok: false, code: "session_binding_mismatch" }
+      if (!bound) return { ok: false, code: "session_binding_mismatch" }
       return { ok: true, session: { id: s.id, status: s.status, url: safeCheckoutUrl(s.url, s.status) } }
     },
   }

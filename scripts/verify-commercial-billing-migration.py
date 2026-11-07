@@ -35,11 +35,17 @@ config = root / 'tests/supabase/config.toml'
 assert f'project_id = "{project}"' in config.read_text() and 'env(' not in config.read_text()
 assert not (root / '.local-tools/supabase-test/supabase/.temp/project-ref').exists(), 'remote links forbidden'
 
-NEW = '20261106120000'
-migration = next((root / 'supabase/migrations').glob(f'{NEW}_*.sql'))
-text = migration.read_text().strip()
-assert text.startswith('BEGIN;') and text.endswith('COMMIT;'), 'migration must be one BEGIN..COMMIT block'
-body = text[len('BEGIN;'):-len('COMMIT;')]
+NEW = '20261106120000'    # billing state
+NEW2 = '20261106130000'   # atomic agent activation (review fix)
+
+def migration_body(version):
+    migration = next((root / 'supabase/migrations').glob(f'{version}_*.sql'))
+    text = migration.read_text().strip()
+    assert text.startswith('BEGIN;') and text.endswith('COMMIT;'), 'migration must be one BEGIN..COMMIT block'
+    return text[len('BEGIN;'):-len('COMMIT;')]
+
+body = migration_body(NEW)
+body2 = migration_body(NEW2)
 def top_level(sql):
     """SQL with dollar-quoted bodies removed: PL/pgSQL BEGIN/END blocks are not transaction control."""
     assert re.search(r'\$[A-Za-z_]\w*\$', sql) is None, 'named dollar quotes are not handled'
@@ -49,6 +55,7 @@ def top_level(sql):
 # Transaction control means a statement STARTING with these words; "ON COMMIT DROP" is ordinary DDL.
 TXN_CONTROL = re.compile(r'(?im)^\s*(commit|rollback|begin|start\s+transaction|savepoint|release|abort|end)\b')
 assert not TXN_CONTROL.search(top_level(body)), 'unexpected transaction control inside the migration'
+assert not TXN_CONTROL.search(top_level(body2)), 'unexpected transaction control inside the activation migration'
 versions = sorted(p.name.split('_')[0] for p in (root / 'supabase/migrations').glob('*.sql'))
 
 
@@ -74,10 +81,13 @@ def S(n):  # shops
     return f'00000000-0000-4000-8000-0000000b{n:04d}'
 
 
-assert run("SELECT max(version) FROM supabase_migrations.schema_migrations") == versions[-1] == NEW, 'stack must be at the latest migration'
+assert run("SELECT max(version) FROM supabase_migrations.schema_migrations") == versions[-1] == NEW2, 'stack must be at the latest migration'
 ledger_before = run("SELECT count(*) || ':' || max(version) FROM supabase_migrations.schema_migrations")
 
 DROP_PR_C = """
+DROP TRIGGER custom_agents_activation_guard ON public.custom_agents;
+DROP FUNCTION public.commercial_agent_activate(uuid, uuid, uuid);
+DROP FUNCTION public.custom_agents_activation_guard();
 DROP FUNCTION public.commercial_billing_read(uuid);
 DROP FUNCTION public.commercial_subscription_apply_evidence(uuid, text, text, text, text, text, text, text, text, timestamptz, boolean, uuid);
 DROP FUNCTION public.commercial_checkout_observe(uuid, uuid, uuid, text);
@@ -103,7 +113,7 @@ DO $$ BEGIN
   OR to_regclass('public.commercial_billing_events') IS NOT NULL
   OR to_regclass('public.commercial_subscription_evidence') IS NOT NULL
   OR EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-             WHERE n.nspname = 'public' AND (p.proname LIKE 'commercial\\_checkout\\_%' OR p.proname LIKE 'commercial\\_billing\\_%'
+             WHERE n.nspname = 'public' AND (p.proname LIKE 'commercial\\_checkout\\_%' OR p.proname LIKE 'commercial\\_billing\\_%' OR p.proname LIKE 'commercial\\_agent\\_%' OR p.proname = 'custom_agents_activation_guard'
                                               OR p.proname = 'commercial_subscription_apply_evidence'))
  THEN RAISE EXCEPTION 'Pre-PR-C schema was not restored'; END IF;
 END $$;
@@ -172,7 +182,8 @@ BEGIN
    'public.commercial_checkout_reject(uuid,uuid,uuid,text)',
    'public.commercial_checkout_mark_unknown(uuid,uuid,uuid,text)',
    'public.commercial_checkout_observe(uuid,uuid,uuid,text)',
-   'public.commercial_subscription_apply_evidence(uuid,text,text,text,text,text,text,text,text,timestamptz,boolean,uuid)'] LOOP
+   'public.commercial_subscription_apply_evidence(uuid,text,text,text,text,text,text,text,text,timestamptz,boolean,uuid)',
+   'public.commercial_agent_activate(uuid,uuid,uuid)'] LOOP
   IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
    OR NOT has_function_privilege('service_role', f, 'EXECUTE') THEN
    RAISE EXCEPTION 'Writer % must be executable by the service role only', f; END IF;
@@ -185,7 +196,7 @@ BEGIN
    'public.commercial_billing_actor_is_owner(uuid,uuid)', 'public.commercial_billing_require_service()',
    'public.commercial_billing_emit(uuid,text,uuid,uuid,text,jsonb)', 'public.commercial_billing_advance(uuid,text,text,uuid)',
    'public.commercial_billing_lock(uuid,uuid,text,text)', 'public.commercial_checkout_attempts_guard()',
-   'public.commercial_billing_accounts_guard()'] LOOP
+   'public.commercial_billing_accounts_guard()', 'public.custom_agents_activation_guard()'] LOOP
   FOREACH r IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
    IF has_function_privilege(r, f, 'EXECUTE') THEN RAISE EXCEPTION 'Internal helper % must not be executable by %', f, r; END IF;
   END LOOP;
@@ -478,7 +489,7 @@ END $$;
 """
 
 TENANT_DELETE = f"""
-DELETE FROM public.shops WHERE id IN ('{S(1)}','{S(2)}','{S(3)}');
+DELETE FROM public.shops WHERE id IN ('{S(1)}','{S(2)}','{S(3)}','{S(4)}');
 DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM public.commercial_billing_accounts WHERE shop_id IN ('{S(1)}','{S(2)}','{S(3)}'))
   OR EXISTS (SELECT 1 FROM public.commercial_checkout_attempts WHERE shop_id IN ('{S(1)}','{S(2)}','{S(3)}'))
@@ -494,10 +505,66 @@ INSERT INTO auth.users(id,email,email_confirmed_at) VALUES ('{U(6)}','owner3@exa
 INSERT INTO public.shops(id,owner_id,name) VALUES ('{S(3)}','{U(6)}','Fictional legacy shop three');
 """
 
+ACTIVATION = f"""
+-- Atomic activation writer: service role + live owner only; tenant-bound; evidence-gated;
+-- count enforced inside the transaction; disabling and already-active are never gated.
+DO $$
+DECLARE r jsonb; a1 uuid; a2 uuid; a3 uuid; foreign_agent uuid; who text; refused integer := 0; n integer;
+BEGIN
+ INSERT INTO auth.users(id,email,email_confirmed_at) VALUES ('{U(7)}','owner4@example.test',now());
+ INSERT INTO public.shops(id,owner_id,name) VALUES ('{S(4)}','{U(7)}','Fictional active shop four');
+ PERFORM set_config('request.jwt.claims', '{{"role":"service_role"}}', true);
+ -- reviewed active Founder Pilot evidence for this workspace, through the real writers
+ r := public.commercial_checkout_begin({BEGIN_ARGS(U(7), shop=S(4))});
+ PERFORM public.commercial_checkout_bind_customer('{S(4)}', '{U(7)}', (r->>'attempt_id')::uuid, 'cus_FakeCustomer04');
+ r := public.commercial_subscription_apply_evidence('{S(4)}','sub_FakeSub0004','cus_FakeCustomer04','active','2026-11-03.v1','founder-pilot','gradia_founder_pilot_2026_11_monthly','signed_webhook','evt_fake_active_004', now() - interval '1 minute', false, NULL);
+ IF r->>'state' <> 'active' THEN RAISE EXCEPTION 'Fixture shop should be active: %', r; END IF;
+ INSERT INTO public.custom_agents(shop_id, owner_id, name, problem_text, config) VALUES ('{S(4)}', '{U(7)}', 'probe 1', 'p', '{{}}') RETURNING id INTO a1;
+ INSERT INTO public.custom_agents(shop_id, owner_id, name, problem_text, config) VALUES ('{S(4)}', '{U(7)}', 'probe 2', 'p', '{{}}') RETURNING id INTO a2;
+ INSERT INTO public.custom_agents(shop_id, owner_id, name, problem_text, config) VALUES ('{S(4)}', '{U(7)}', 'probe 3', 'p', '{{}}') RETURNING id INTO a3;
+ INSERT INTO public.custom_agents(shop_id, owner_id, name, problem_text, config) VALUES ('{S(2)}', '{U(5)}', 'probe foreign', 'p', '{{}}') RETURNING id INTO foreign_agent;
+
+ FOREACH who IN ARRAY ARRAY['{U(2)}', '{U(3)}', '{U(4)}', '{U(5)}', '00000000-0000-4000-8000-00000000dead'] LOOP
+  BEGIN
+   PERFORM public.commercial_agent_activate('{S(4)}', who::uuid, a1);
+   RAISE EXCEPTION 'Actor % was allowed to activate', who;
+  EXCEPTION WHEN insufficient_privilege THEN refused := refused + 1; END;
+ END LOOP;
+ IF refused <> 5 THEN RAISE EXCEPTION 'Expected every non-owner refused, got %', refused; END IF;
+
+ r := public.commercial_agent_activate('{S(4)}', '{U(7)}', foreign_agent);
+ IF r->>'code' <> 'agent_not_found' THEN RAISE EXCEPTION 'Cross-shop agent must be not found: %', r; END IF;
+
+ r := public.commercial_agent_activate('{S(4)}', '{U(7)}', a1);
+ IF r->>'outcome' <> 'activated' THEN RAISE EXCEPTION 'Reviewed active evidence should allow activation: %', r; END IF;
+ r := public.commercial_agent_activate('{S(4)}', '{U(7)}', a1);
+ IF r->>'outcome' <> 'already_active' THEN RAISE EXCEPTION 'Already active must be a no-op: %', r; END IF;
+ r := public.commercial_agent_activate('{S(4)}', '{U(7)}', a2);
+ IF r->>'outcome' <> 'activated' THEN RAISE EXCEPTION 'Second agent should activate: %', r; END IF;
+ r := public.commercial_agent_activate('{S(4)}', '{U(7)}', a3);
+ IF r->>'code' <> 'active_agent_limit_reached' THEN RAISE EXCEPTION 'Third agent must be refused: %', r; END IF;
+ SELECT count(*) INTO n FROM public.custom_agents WHERE shop_id = '{S(4)}' AND enabled;
+ IF n <> 2 THEN RAISE EXCEPTION 'Exactly two agents should be active, got %', n; END IF;
+
+ -- A workspace without reviewed active evidence never activates (S(2) is quarantined/mismatched above).
+ INSERT INTO public.custom_agents(shop_id, owner_id, name, problem_text, config) VALUES ('{S(2)}', '{U(5)}', 'probe 4', 'p', '{{}}') RETURNING id INTO a1;
+ r := public.commercial_agent_activate('{S(2)}', '{U(5)}', a1);
+ IF r->>'outcome' <> 'blocked' THEN RAISE EXCEPTION 'No reviewed evidence must not activate: %', r; END IF;
+
+ -- Guard: a browser role cannot enable an agent around the writer, but can disable.
+ PERFORM set_config('request.jwt.claims', '{{"role":"authenticated","sub":"{U(1)}"}}', true);
+ BEGIN
+  UPDATE public.custom_agents SET enabled = true WHERE id = a3;
+  RAISE EXCEPTION 'A browser role enabled an agent directly';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ UPDATE public.custom_agents SET enabled = false WHERE shop_id = '{S(4)}' AND enabled;
+END $$;
+"""
+
 stages = [
-    ("drop", DROP_PR_C), ("seed", SEED), ("migration", body), ("unchanged", UNCHANGED), ("acls", ACLS), ("seed3", SEED3),
+    ("drop", DROP_PR_C), ("seed", SEED), ("migration", body), ("migration2", body2), ("unchanged", UNCHANGED), ("acls", ACLS), ("seed3", SEED3),
     ("authority", AUTHORITY), ("lifecycle", LIFECYCLE), ("stale", STALE_AND_UNKNOWN), ("evidence", EVIDENCE),
-    ("immutability", IMMUTABILITY), ("tenant_delete", TENANT_DELETE),
+    ("activation", ACTIVATION), ("immutability", IMMUTABILITY), ("tenant_delete", TENANT_DELETE),
 ]
 upto = os.environ.get('VERIFY_UPTO')  # debugging aid: stop (and roll back) after a named stage
 if upto:
@@ -511,11 +578,11 @@ run(script)
 # Nothing was changed: the migration is still applied exactly as before, with all its objects.
 assert run("SELECT count(*) || ':' || max(version) FROM supabase_migrations.schema_migrations") == ledger_before
 assert run("SELECT bool_and(to_regclass('public.' || t) IS NOT NULL) FROM unnest(ARRAY['commercial_billing_accounts','commercial_checkout_attempts','commercial_billing_events','commercial_subscription_evidence']) t") == 't'
-assert run("SELECT count(*) FROM pg_trigger WHERE tgname IN ('commercial_checkout_attempts_guard','commercial_billing_accounts_guard') AND NOT tgisinternal") == '2'
+assert run("SELECT count(*) FROM pg_trigger WHERE tgname IN ('commercial_checkout_attempts_guard','commercial_billing_accounts_guard','custom_agents_activation_guard') AND NOT tgisinternal") == '3'
 assert run("SELECT count(*) FROM public.shops WHERE id IN ('%s','%s','%s')" % (S(1), S(2), S(3))) == '0'
 
 print(
-    f'PASS: upgrade {versions[-2]} -> {NEW} applied from its real SQL inside a rolled-back transaction; legacy '
+    f'PASS: upgrade {versions[-3]} -> {NEW} -> {NEW2} applied from their real SQL inside a rolled-back transaction; legacy '
     'shops, memberships, usage_events, PR A commercial usage and PR B membership evidence unchanged (content, xmin, ctid) '
     'and no billing state invented for existing shops; writers service-only, browser roles have no table or writer access; '
     'only a live owner can begin Checkout (manager, staff, revoked, cross-shop, unknown refused) and invalid catalog/plan/'
@@ -523,5 +590,7 @@ print(
     'unknown/reconciliation_required and never retried; a completed session is never active; the platform customer binds once '
     'and never to a connected account or two workspaces; live mode, unreviewed sources and non-active statuses are '
     'unrepresentable as active evidence; out-of-order, duplicate-subscription, catalog and customer mismatches fail closed; '
-    'history is append-only and attempt identity immutable; tenant deletion holds; database left exactly as it was'
+    'history is append-only and attempt identity immutable; agent activation is one owner-verified transaction (service '
+    'role + live owner, tenant-bound, evidence-gated, database-counted limit of two, already-active a no-op) and browser roles '
+    'cannot enable an agent around it; tenant deletion holds; database left exactly as it was'
 )

@@ -48,15 +48,40 @@ and no parallel activation system was added.
 ### Gate order (every gate is an AND, none substitutes for another)
 
 1. **Existing gates** (definition, policy, review, connector, memory, approval). If not ready:
-   refused with `existing_gate_blocked` + the exact reasons; **no billing is read and no
-   Checkout is created**.
-2. **Two-active-agent entitlement** (`FOUNDER_PILOT_POLICY.includedActiveAgents = 2`). This limit
-   existed only as a constant and in UI copy; it is now enforced at the seam (count of enabled
-   `custom_agents`). An unreadable count fails closed.
-3. **Reviewed, persisted Founder Pilot subscription evidence.**
+   refused with `existing_gate_blocked` + the exact reasons; **no billing is read, no writer is
+   called and no Checkout is created**.
+2. **Final entitlement + write: one database transaction** — `commercial_agent_activate`
+   (migration `20261106130000_commercial_agent_activation.sql`). In that single owner-verified
+   transaction it: requires the service role *and* a live active owner of the exact shop (`42501`
+   otherwise); locks the tenant-bound target agent row (a foreign or unknown id is `agent_not_found`);
+   returns `already_active` as an idempotent no-op; locks the shop's billing account row (agent row
+   first, account row second, always, so activations serialize per shop without deadlock); **counts
+   active agents itself** and refuses at `FOUNDER_PILOT_POLICY.includedActiveAgents = 2`
+   (`active_agent_limit_reached`); rechecks the exact reviewed active subscription evidence and catalog
+   (state `active`, test mode, evidence `active`, `livemode=false`, catalog `2026-11-03.v1`, plan
+   `founder-pilot`, price lookup key, reviewed source); and only then enables **that one agent**.
+   An application-supplied count is never an input. The 2-agent limit is checked before the evidence,
+   matching the earlier order.
+3. **Checkout handoff.** If the database answers `billing_not_active`, the seam reads the display
+   state; for `checkout_required`/`checkout_pending` it returns the server-created Checkout
+   (repeat requests reuse the same open session). A display read that looks eligible cannot override
+   a database refusal: it fails closed as `reconciliation_required`.
 
-A billing "yes" only lets the existing command proceed. It grants no tool, mode, connector or
-approval authority, and the RLS-bound update in `setCustomAgentEnabled` still runs after it.
+`setCustomAgentEnabled(true)` no longer reads a count or writes `enabled`; the database writer is
+the only enabling write. Its `blocked.code` additionally includes `agent_not_found`.
+
+**No bypass.** A guard trigger on `custom_agents` (`custom_agents_activation_guard`) refuses any
+INSERT/UPDATE that turns `enabled` on unless the caller is the service role or is inside
+`commercial_agent_activate` (a transaction-local setting). The owner's RLS-bound direct UPDATE can
+therefore no longer enable an agent around the gate; **disabling and draft inserts are untouched and
+never require billing**. Service-role fixtures and operators keep their existing authority.
+
+Side effect: a refused activation that reaches the billing lock (limit, no evidence) opens the
+shop's `checkout_required` account row (the same row Checkout would open). Refusals for an unknown
+agent, a non-owner, or an unready existing gate do not.
+
+A billing "yes" only lets the activation proceed. It grants no tool, mode, connector or approval
+authority.
 
 ## Data model (migration `20261106120000_commercial_billing_state.sql`)
 
@@ -87,7 +112,8 @@ test-mode account (`evaluateBillingSnapshot`). Anything else is `reconciliation_
 ### Authority
 
 - Server-derived: `requireUser` + `requireShop` supply the actor and shop. The only client input is
-  an allowlisted return-target **key** (`agents` | `billing`).
+  an allowlisted return-target **key** (`agents` → `/agents`, the canonical Agent OS home since
+  PR #133, | `billing` → `/billing`).
 - Writers are **service-role only** and name the actor; the database re-verifies the actor is a
   **live, active owner of that exact shop** on every call (`42501` otherwise). Managers, staff,
   revoked operators, cross-shop owners, unknown actors and anonymous callers are refused.
@@ -163,7 +189,9 @@ Present but wrong, live-shaped, or pointing at another host → `billing_misconf
 refused even if the mode flag says `test`. Every provider object must report `livemode=false`. Return
 URLs need `GRADIA_DASHBOARD_URL` (https, or loopback http); success/cancel URLs are built on the server
 from that origin and an allowlisted path, and carry **no session id or trusted flag**. The Checkout URL
-is returned only for an `open` session on `https://checkout.stripe.com`, is **never stored** (the
+is returned only for a session whose status is exactly `open` on `https://checkout.stripe.com`; a
+missing, `null` or unknown status is an unreadable provider response (ambiguous →
+`reconciliation_required`), never "open". The URL is **never stored** (the
 database refuses it) and is never logged.
 
 ## DTO for Cursor
@@ -186,6 +214,7 @@ type CommercialBillingDto = {
 
 `setCustomAgentEnabled` now returns, on refusal, `{ ok:false, error, blocked: { proceed:false,
 code, billing, reasons? } }` where `code` is `existing_gate_blocked`, `active_agent_limit_reached`,
+`agent_not_found`,
 or the exact `blockingReason` (`checkout_required` carries `billing.checkoutUrl`). `error` is a plain
 fallback sentence; the owner UI owns final copy and should key off `code`. No full billing or
 agent-builder UI is part of this PR.
@@ -196,8 +225,11 @@ agent-builder UI is part of this PR.
   `eval/custom-agent-activation-billing.test.ts` (fetch is stubbed; the harness blocks the network).
 - Integration (disposable stack, real Postgres, fake Stripe client with Stripe-like idempotency):
   `eval/integration/commercial-billing.int.test.ts`.
-- Non-destructive upgrade verifier: `scripts/verify-commercial-billing-migration.py` — runs the real
-  migration SQL inside one rolled-back transaction after seeding legacy shops, memberships, PR A usage
+- Concurrency: from one active agent, two simultaneous activations of two inactive agents (5 rounds,
+  and once through the application seam) leave exactly two active with exactly one success; the same
+  agent requested twice activates once.
+- Non-destructive upgrade verifier: `scripts/verify-commercial-billing-migration.py` — runs both
+  migrations' real SQL inside one rolled-back transaction after seeding legacy shops, memberships, PR A usage
   and PR B membership evidence, and proves nothing was rewritten.
 
 ## Limitations (deliberate, fail closed)

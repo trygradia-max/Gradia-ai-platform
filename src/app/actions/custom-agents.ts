@@ -269,20 +269,10 @@ export async function setCustomAgentEnabled(input: {
   const supabase = await createClient()
 
   if (input.enabled) {
-    const [{ data: target }, { count }] = await Promise.all([
-      supabase
-        .from("custom_agents")
-        .select("id, enabled")
-        .eq("id", input.agent_id)
-        .eq("shop_id", shop.id)
-        .maybeSingle(),
-      supabase
-        .from("custom_agents")
-        .select("id", { count: "exact", head: true })
-        .eq("shop_id", shop.id)
-        .eq("enabled", true),
-    ])
-    if (!target) return { ok: false, error: "Agent not found." }
+    // Enabling is decided AND written by one owner-verified database transaction
+    // (`commercial_agent_activate`): it serializes per shop, counts active agents
+    // itself, rechecks the reviewed subscription evidence and catalog, and enables
+    // only this tenant-bound agent. Nothing here supplies a count or writes `enabled`.
     const decision = await authorizeAgentActivation(
       {
         sessionClient: supabase,
@@ -292,16 +282,17 @@ export async function setCustomAgentEnabled(input: {
       {
         shopId: shop.id,
         actorId: user.id,
-        alreadyActive: (target as { enabled: boolean }).enabled === true,
-        activeAgentCount: typeof count === "number" ? count : null,
-        // Custom agents carry no separate definition gate; the RLS-bound update
-        // below remains the existing command and still applies.
+        agentId: input.agent_id,
+        // Custom agents carry no separate definition gate yet.
         existing: { ready: true },
       }
     )
     if (!decision.proceed) {
       return { ok: false, error: activationBlockedMessage(decision.code), blocked: decision }
     }
+    revalidatePath("/agents")
+    revalidatePath("/receptionist")
+    return { ok: true }
   }
 
   const { error } = await supabase

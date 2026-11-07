@@ -39,8 +39,25 @@ let owner: SupabaseClient, otherOwner: SupabaseClient, mgr: SupabaseClient, stf:
 let seq = 0
 const uniq = () => `${Date.now().toString(36)}${(++seq).toString(36)}`
 
+// The local gateway occasionally reuses a keep-alive connection PostgREST has just
+// closed ("Connection reset by peer" -> 502). That is harness transport noise, not
+// product behaviour, so fixture creation (only) retries it.
+async function transient<T>(fn: () => Promise<T>): Promise<T> {
+  let last: unknown
+  for (let i = 0; i < 4; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      last = e
+      if (!/invalid response was received from the upstream server/i.test(String((e as Error)?.message))) throw e
+      await new Promise((r) => setTimeout(r, 250 * (i + 1)))
+    }
+  }
+  throw last
+}
+
 async function newShop(): Promise<Seeded> {
-  const s = await seedShop(db, { password: PW })
+  const s = await transient(() => seedShop(db, { password: PW }))
   seeded.push(s)
   return s
 }
@@ -153,10 +170,43 @@ async function applyEvidence(s: Seeded, patch: Partial<{
   })
 }
 
-const activation = (fake: ReturnType<typeof fakeStripe>, s: Seeded, sessionClient: SupabaseClient, patch: Partial<Parameters<typeof authorizeAgentActivation>[1]> = {}) =>
+let agentSeq = 0
+async function newAgent(shopId: string, ownerId: string, enabled = false): Promise<string> {
+  // The service role (fixtures/operators) may seed an enabled row directly; the
+  // browser/owner session may not (see the activation guard tests).
+  const name = `Synthetic agent ${++agentSeq}`
+  for (let i = 0; i < 4; i++) {
+    const { data, error } = await db
+      .from("custom_agents")
+      .insert({ shop_id: shopId, owner_id: ownerId, name, problem_text: "Synthetic", config: {}, enabled })
+      .select("id")
+      .single()
+    if (!error) return data!.id as string
+    if (!/invalid response was received from the upstream server/i.test(error.message) || i === 3) expect(error).toBeNull()
+    await new Promise((r) => setTimeout(r, 250 * (i + 1)))
+  }
+  throw new Error("unreachable")
+}
+const agentEnabled = async (id: string) =>
+  (await db.from("custom_agents").select("enabled").eq("id", id).single()).data?.enabled as boolean
+const activeCount = async (shopId: string) =>
+  (await db.from("custom_agents").select("id", { count: "exact", head: true }).eq("shop_id", shopId).eq("enabled", true)).count ?? 0
+
+const activation = async (
+  fake: ReturnType<typeof fakeStripe>,
+  s: Seeded,
+  sessionClient: SupabaseClient,
+  patch: Partial<Parameters<typeof authorizeAgentActivation>[1]> = {}
+) =>
   authorizeAgentActivation(
     { sessionClient, serviceClient: () => db, runtime: fake.runtime },
-    { shopId: s.shopId, actorId: s.ownerId, alreadyActive: false, activeAgentCount: 0, existing: { ready: true }, ...patch }
+    {
+      shopId: s.shopId,
+      actorId: s.ownerId,
+      agentId: patch.agentId ?? (await newAgent(s.shopId, s.ownerId)),
+      existing: { ready: true },
+      ...patch,
+    }
   )
 
 const maybe = INTEGRATION_WITH_SESSION ? describe : describe.skip
@@ -303,8 +353,8 @@ maybe("commercial billing state and Checkout handoff (PR C)", () => {
       expect(fake.received.customerKeys).toEqual([`gradia-cb-customer-${s.shopId}`])
       expect(fake.received.lastSession).toMatchObject({ shopId: s.shopId, attemptId: attempt.id })
       // Return URLs are server-owned.
-      expect(fake.received.lastSession!.successUrl).toBe(`${ORIGIN}/receptionist?billing_return=success`)
-      expect(fake.received.lastSession!.cancelUrl).toBe(`${ORIGIN}/receptionist?billing_return=canceled`)
+      expect(fake.received.lastSession!.successUrl).toBe(`${ORIGIN}/agents?billing_return=success`)
+      expect(fake.received.lastSession!.cancelUrl).toBe(`${ORIGIN}/agents?billing_return=canceled`)
 
       expect((await events(s.shopId)).map((e) => e.kind)).toEqual(["account_opened", "checkout_attempt_started", "customer_bound", "session_created"])
     })
@@ -723,13 +773,17 @@ maybe("commercial billing state and Checkout handoff (PR C)", () => {
       const gate = await activation(fake, s, session, { existing: { ready: false, reasons: ["knowledge_review_required", "tool_not_ready"] } })
       expect(gate).toEqual({ proceed: false, code: "existing_gate_blocked", billing: null, reasons: ["knowledge_review_required", "tool_not_ready"] })
 
-      // two agents already active -> a third is refused even with an active subscription
-      expect(await activation(fake, s, session, { activeAgentCount: 2 })).toMatchObject({ proceed: false, code: "active_agent_limit_reached" })
-      expect(await activation(fake, s, session, { activeAgentCount: 9 })).toMatchObject({ proceed: false, code: "active_agent_limit_reached" })
-      // an unreadable count fails closed
-      expect(await activation(fake, s, session, { activeAgentCount: null })).toMatchObject({ proceed: false, code: "active_agent_limit_reached" })
-      // one active agent -> the second is allowed
-      expect(await activation(fake, s, session, { activeAgentCount: 1 })).toEqual({ proceed: true })
+      // one active agent -> the second is allowed, and the database enabled it
+      await newAgent(s.shopId, s.ownerId, true)
+      const second = await newAgent(s.shopId, s.ownerId)
+      expect(await activation(fake, s, session, { agentId: second })).toEqual({ proceed: true })
+      expect(await agentEnabled(second)).toBe(true)
+      expect(await activeCount(s.shopId)).toBe(2)
+      // two agents active -> a third is refused by the database count even with an active subscription
+      const third = await newAgent(s.shopId, s.ownerId)
+      expect(await activation(fake, s, session, { agentId: third })).toMatchObject({ proceed: false, code: "active_agent_limit_reached" })
+      expect(await agentEnabled(third)).toBe(false)
+      expect(await activeCount(s.shopId)).toBe(2)
       expect(fake.calls).toEqual(base)
     })
 
@@ -738,16 +792,158 @@ maybe("commercial billing state and Checkout handoff (PR C)", () => {
       const fake = fakeStripe()
       const session = await ownerSessionClient(s.email, PW)
       await activation(fake, s, session, { existing: { ready: false, reasons: ["evaluation_required"] } })
-      await activation(fake, s, session, { activeAgentCount: 2 })
+      expect(await account(s.shopId)).toBeNull() // gate refusal never reached billing at all
+      await newAgent(s.shopId, s.ownerId, true)
+      await newAgent(s.shopId, s.ownerId, true)
+      expect(await activation(fake, s, session)).toMatchObject({ proceed: false, code: "active_agent_limit_reached" })
       expect(fake.calls).toEqual({ price: 0, customer: 0, sessionCreate: 0, retrieve: 0 })
-      expect(await account(s.shopId)).toBeNull()
     })
 
-    it("an agent that is already active is a no-op and is not re-gated", async () => {
+    it("an agent that is already active is an idempotent no-op and is not re-gated", async () => {
       const s = await newShop()
       const fake = fakeStripe()
-      expect(await activation(fake, s, await ownerSessionClient(s.email, PW), { alreadyActive: true })).toEqual({ proceed: true })
+      const id = await newAgent(s.shopId, s.ownerId, true)
+      expect(await activation(fake, s, await ownerSessionClient(s.email, PW), { agentId: id })).toEqual({ proceed: true })
       expect(fake.calls.price).toBe(0)
+      expect(await account(s.shopId)).toBeNull()
+      expect(await activeCount(s.shopId)).toBe(1)
+    })
+  })
+
+  describe("atomic activation writer (commercial_agent_activate)", () => {
+    const activate = (client: SupabaseClient, shopId: string, actor: string, agent: string) =>
+      client.rpc("commercial_agent_activate", { p_shop: shopId, p_actor: actor, p_agent: agent })
+
+    async function activeShop() {
+      const s = await newShop()
+      await request(fakeStripe(), s)
+      expect((await applyEvidence(s, { status: "active" })).error).toBeNull()
+      return s
+    }
+
+    it("browser and anonymous roles cannot call the writer", async () => {
+      const s = await activeShop()
+      const id = await newAgent(s.shopId, s.ownerId)
+      const own = await ownerSessionClient(s.email, PW)
+      for (const client of [own, anon]) {
+        const r = await activate(client, s.shopId, s.ownerId, id)
+        expect(r.error).not.toBeNull()
+        expect(r.data).toBeNull()
+      }
+      expect(await agentEnabled(id)).toBe(false)
+    })
+
+    it("the service role must name a live owner of the exact shop", async () => {
+      const s = await activeShop()
+      const id = await newAgent(s.shopId, s.ownerId)
+      await addMember(s.shopId, manager, "manager")
+      await addMember(s.shopId, staff, "staff")
+      await addMember(s.shopId, revoked, "manager", false)
+      for (const actor of [manager, staff, revoked, stranger, other]) {
+        const r = await activate(db, s.shopId, actor.ownerId, id)
+        expect(r.error?.code, actor.ownerId).toBe("42501")
+      }
+      expect((await activate(db, s.shopId, "00000000-0000-4000-8000-00000000dead", id)).error?.code).toBe("42501")
+      expect(await agentEnabled(id)).toBe(false)
+    })
+
+    it("only activates an agent that belongs to the named shop", async () => {
+      const s = await activeShop()
+      const foreign = await newAgent(other.shopId, other.ownerId)
+      const r = await activate(db, s.shopId, s.ownerId, foreign)
+      expect(r.error).toBeNull()
+      expect(r.data).toMatchObject({ outcome: "blocked", code: "agent_not_found" })
+      expect(await agentEnabled(foreign)).toBe(false)
+      const missing = await activate(db, s.shopId, s.ownerId, "00000000-0000-4000-8000-00000000beef")
+      expect(missing.data).toMatchObject({ outcome: "blocked", code: "agent_not_found" })
+    })
+
+    it("rechecks the exact reviewed evidence: no account, no evidence, or wrong evidence never activates", async () => {
+      const bare = await newShop()
+      const a1 = await newAgent(bare.shopId, bare.ownerId)
+      expect((await activate(db, bare.shopId, bare.ownerId, a1)).data).toMatchObject({ outcome: "blocked", code: "billing_not_active" })
+      const pending = await newShop()
+      await request(fakeStripe(), pending)
+      const a2 = await newAgent(pending.shopId, pending.ownerId)
+      expect((await activate(db, pending.shopId, pending.ownerId, a2)).data).toMatchObject({ outcome: "blocked", code: "billing_not_active" })
+      for (const status of ["past_due", "canceled", "incomplete", "trialing"]) {
+        const s = await newShop()
+        await request(fakeStripe(), s)
+        await applyEvidence(s, { status })
+        const id = await newAgent(s.shopId, s.ownerId)
+        expect((await activate(db, s.shopId, s.ownerId, id)).data, status).toMatchObject({ outcome: "blocked", code: "billing_not_active" })
+        expect(await agentEnabled(id)).toBe(false)
+      }
+      expect(await agentEnabled(a1)).toBe(false)
+      expect(await agentEnabled(a2)).toBe(false)
+    })
+
+    it("activates one agent, is idempotent for it, and never lets a third in", async () => {
+      const s = await activeShop()
+      const [x, y, z] = [await newAgent(s.shopId, s.ownerId), await newAgent(s.shopId, s.ownerId), await newAgent(s.shopId, s.ownerId)]
+      expect((await activate(db, s.shopId, s.ownerId, x)).data).toMatchObject({ outcome: "activated", active_count: 1 })
+      expect((await activate(db, s.shopId, s.ownerId, x)).data).toMatchObject({ outcome: "already_active" })
+      expect((await activate(db, s.shopId, s.ownerId, y)).data).toMatchObject({ outcome: "activated", active_count: 2 })
+      expect((await activate(db, s.shopId, s.ownerId, z)).data).toMatchObject({ outcome: "blocked", code: "active_agent_limit_reached" })
+      // already-active stays a no-op even at the limit
+      expect((await activate(db, s.shopId, s.ownerId, y)).data).toMatchObject({ outcome: "already_active" })
+      expect(await activeCount(s.shopId)).toBe(2)
+    })
+
+    it("CONCURRENCY: from one active agent, two simultaneous activations leave at most two active and exactly one succeeds", async () => {
+      for (let round = 0; round < 5; round++) {
+        const s = await activeShop()
+        await newAgent(s.shopId, s.ownerId, true)
+        const [x, y] = [await newAgent(s.shopId, s.ownerId), await newAgent(s.shopId, s.ownerId)]
+        const results = await Promise.all([activate(db, s.shopId, s.ownerId, x), activate(db, s.shopId, s.ownerId, y)])
+        for (const r of results) expect(r.error).toBeNull()
+        const outcomes = results.map((r) => (r.data as { outcome: string }).outcome).sort()
+        expect(outcomes, `round ${round}`).toEqual(["activated", "blocked"])
+        expect(results.map((r) => (r.data as { code: string | null }).code).filter(Boolean)).toEqual(["active_agent_limit_reached"])
+        expect(await activeCount(s.shopId)).toBe(2)
+        expect((await agentEnabled(x)) !== (await agentEnabled(y))).toBe(true)
+      }
+    })
+
+    it("CONCURRENCY through the application seam enforces the same limit", async () => {
+      const s = await activeShop()
+      await newAgent(s.shopId, s.ownerId, true)
+      const [x, y] = [await newAgent(s.shopId, s.ownerId), await newAgent(s.shopId, s.ownerId)]
+      const fake = fakeStripe()
+      const session = await ownerSessionClient(s.email, PW)
+      const decisions = await Promise.all([
+        activation(fake, s, session, { agentId: x }),
+        activation(fake, s, session, { agentId: y }),
+      ])
+      expect(decisions.filter((d) => d.proceed)).toHaveLength(1)
+      expect(decisions.filter((d) => !d.proceed)).toMatchObject([{ code: "active_agent_limit_reached" }])
+      expect(await activeCount(s.shopId)).toBe(2)
+    })
+
+    it("the same agent requested twice at once is activated once and the replay is a no-op", async () => {
+      const s = await activeShop()
+      const id = await newAgent(s.shopId, s.ownerId)
+      const results = await Promise.all([activate(db, s.shopId, s.ownerId, id), activate(db, s.shopId, s.ownerId, id)])
+      expect(results.map((r) => (r.data as { outcome: string }).outcome).sort()).toEqual(["activated", "already_active"])
+      expect(await activeCount(s.shopId)).toBe(1)
+    })
+
+    it("the owner's direct RLS update cannot turn an agent on around the writer, but can turn it off", async () => {
+      const s = await newShop() // no subscription at all
+      const id = await newAgent(s.shopId, s.ownerId)
+      const own = await ownerSessionClient(s.email, PW)
+      const on = await own.from("custom_agents").update({ enabled: true }).eq("id", id)
+      expect(on.error).not.toBeNull()
+      expect(await agentEnabled(id)).toBe(false)
+      const ins = await own.from("custom_agents").insert({ shop_id: s.shopId, owner_id: s.ownerId, name: "x", problem_text: "x", config: {}, enabled: true })
+      expect(ins.error).not.toBeNull()
+      // a draft insert and disabling remain available, with no billing involved
+      const draft = await own.from("custom_agents").insert({ shop_id: s.shopId, owner_id: s.ownerId, name: "d", problem_text: "d", config: {} }).select("id").single()
+      expect(draft.error).toBeNull()
+      const live = await newAgent(s.shopId, s.ownerId, true)
+      const off = await own.from("custom_agents").update({ enabled: false }).eq("id", live)
+      expect(off.error).toBeNull()
+      expect(await agentEnabled(live)).toBe(false)
     })
   })
 

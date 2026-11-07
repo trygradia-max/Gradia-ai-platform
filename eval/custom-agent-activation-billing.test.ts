@@ -15,6 +15,10 @@ const state = {
   snapshot: null as unknown,
   runtime: { ok: false, reason: "billing_unconfigured" } as unknown,
   runtimeCalls: 0,
+  writerArgs: [] as Record<string, unknown>[],
+  writer: (() => ({ data: { outcome: "blocked", code: "billing_not_active" }, error: null })) as (
+    a: Record<string, unknown>
+  ) => { data: unknown; error: unknown },
 }
 
 function builder(table: string) {
@@ -47,9 +51,13 @@ function builder(table: string) {
 
 const supabase = {
   from: (table: string) => builder(table),
-  rpc: async (name: string) => {
+  rpc: async (name: string, args?: Record<string, unknown>) => {
     state.rpcCalls.push(name)
     if (name === "commercial_billing_read") return { data: state.snapshot, error: null }
+    if (name === "commercial_agent_activate") {
+      state.writerArgs.push(args ?? {})
+      return state.writer(args ?? {})
+    }
     return { data: null, error: { code: "XX000", message: "unexpected rpc in unit test" } }
   },
 }
@@ -95,6 +103,8 @@ beforeEach(() => {
   state.inserts = []
   state.rpcCalls = []
   state.runtimeCalls = 0
+  state.writerArgs = []
+  state.writer = () => ({ data: { outcome: "blocked", code: "billing_not_active" }, error: null })
   state.snapshot = { shop_id: SHOP, account: null }
   state.runtime = { ok: false, reason: "billing_unconfigured" }
 })
@@ -128,60 +138,86 @@ describe("agent activation boundary (billing)", () => {
     expect(result).toMatchObject({ ok: false, blocked: { proceed: false, code: "billing_unconfigured" } })
     expect(state.updates).toEqual([])
     expect(state.runtimeCalls).toBe(1)
+    expect(state.writerArgs).toEqual([{ p_shop: SHOP, p_actor: USER, p_agent: "a1" }])
   })
 
-  it("activates only when reviewed active evidence exists, then runs the existing update", async () => {
+  it("never writes `enabled` itself and never sends an application-supplied count", async () => {
     state.rows = [{ id: "a1", enabled: false }]
     state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
-    state.snapshot = activeSnapshot()
+    state.writer = () => ({ data: { outcome: "activated", code: null, active_count: 1 }, error: null })
     expect(await setCustomAgentEnabled({ agent_id: "a1", enabled: true })).toEqual({ ok: true })
-    expect(state.updates).toEqual([{ enabled: true, id: "a1" }])
+    expect(state.updates).toEqual([]) // the database writer is the only enabling write
+    expect(Object.keys(state.writerArgs[0]).sort()).toEqual(["p_actor", "p_agent", "p_shop"])
+    expect(state.rows.length).toBe(1)
   })
 
-  it("a pending, past-due or mismatched subscription never reaches the update", async () => {
-    state.rows = [{ id: "a1", enabled: false }]
+  it("the database writer's refusals never become activation", async () => {
     state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
-    for (const mutate of [
-      (s: ReturnType<typeof activeSnapshot>) => { s.account.state = "past_due" },
-      (s: ReturnType<typeof activeSnapshot>) => { s.account.state = "canceled" },
-      (s: ReturnType<typeof activeSnapshot>) => { s.account.state = "unknown" },
-      (s: ReturnType<typeof activeSnapshot>) => { s.account.catalog_version = "2025-01-01.v1" },
-      (s: ReturnType<typeof activeSnapshot>) => { s.evidence.evidence_source = "browser_redirect" },
-    ]) {
-      const snap = activeSnapshot()
-      mutate(snap)
-      state.snapshot = snap
+    const cases: [unknown, unknown, string][] = [
+      [{ outcome: "blocked", code: "active_agent_limit_reached" }, null, "active_agent_limit_reached"],
+      [{ outcome: "blocked", code: "agent_not_found" }, null, "agent_not_found"],
+      [{ outcome: "blocked", code: "catalog_mismatch" }, null, "catalog_mismatch"],
+      [{ outcome: "blocked", code: "something_new" }, null, "billing_state_unavailable"],
+      [{ outcome: "activated-ish" }, null, "billing_state_unavailable"],
+      [null, null, "billing_state_unavailable"],
+      [null, { code: "42501", message: "Live owner of this workspace required" }, "owner_required"],
+      [null, { code: "XX000", message: "boom" }, "billing_state_unavailable"],
+    ]
+    for (const [data, error, code] of cases) {
+      state.writer = () => ({ data, error })
       const result = await setCustomAgentEnabled({ agent_id: "a1", enabled: true })
-      expect(result.ok).toBe(false)
+      expect(result, code).toMatchObject({ ok: false, blocked: { code } })
     }
     expect(state.updates).toEqual([])
   })
 
-  it("a read failure fails closed", async () => {
-    state.rows = [{ id: "a1", enabled: false }]
+  it("billing_not_active hands back the server-created Checkout path, not an activation", async () => {
     state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
-    state.snapshot = { not: "a snapshot" }
+    state.snapshot = { shop_id: SHOP, account: null }
+    state.writer = () => ({ data: { outcome: "blocked", code: "billing_not_active" }, error: null })
     const result = await setCustomAgentEnabled({ agent_id: "a1", enabled: true })
-    expect(result).toMatchObject({ ok: false, blocked: { code: "billing_state_unavailable" } })
+    expect(result.ok).toBe(false)
     expect(state.updates).toEqual([])
   })
 
-  it("the active-agent entitlement still holds with an active subscription", async () => {
+  it("a display read that looks eligible cannot override a database refusal", async () => {
+    state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
+    state.snapshot = activeSnapshot()
+    state.writer = () => ({ data: { outcome: "blocked", code: "billing_not_active" }, error: null })
+    const result = await setCustomAgentEnabled({ agent_id: "a1", enabled: true })
+    expect(result).toMatchObject({ ok: false, blocked: { code: "reconciliation_required", billing: { eligibleToActivate: false } } })
+  })
+
+  it("a service client that cannot be built fails closed", async () => {
+    // billing_state_unavailable without any writer call
+    const mod = await import("@/lib/agent-os/activation")
+    const decision = await mod.authorizeAgentActivation(
+      {
+        sessionClient: supabase as never,
+        serviceClient: () => {
+          throw new Error("no service key")
+        },
+        runtime: { ok: false, reason: "billing_unconfigured" } as never,
+      },
+      { shopId: SHOP, actorId: USER, agentId: "a1", existing: { ready: true } }
+    )
+    expect(decision).toMatchObject({ proceed: false, code: "billing_state_unavailable" })
+    expect(state.writerArgs).toEqual([])
+  })
+
+  it("existing readiness gates run before billing or the writer", async () => {
+    const mod = await import("@/lib/agent-os/activation")
+    const decision = await mod.authorizeAgentActivation(
+      { sessionClient: supabase as never, serviceClient: () => supabase as never, runtime: { ok: false, reason: "billing_unconfigured" } as never },
+      { shopId: SHOP, actorId: USER, agentId: "a1", existing: { ready: false, reasons: ["policy_not_reviewed"] } }
+    )
+    expect(decision).toMatchObject({ proceed: false, code: "existing_gate_blocked", billing: null, reasons: ["policy_not_reviewed"] })
+    expect(state.writerArgs).toEqual([])
+    expect(state.rpcCalls).toEqual([])
+  })
+
+  it("the entitlement is the database's number: Founder Pilot maximum is two", () => {
     expect(FOUNDER_PILOT_POLICY.includedActiveAgents).toBe(2)
-    state.rows = [{ id: "a1", enabled: true }, { id: "a2", enabled: true }, { id: "a3", enabled: false }]
-    state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
-    state.snapshot = activeSnapshot()
-    const result = await setCustomAgentEnabled({ agent_id: "a3", enabled: true })
-    expect(result).toMatchObject({ ok: false, blocked: { code: "active_agent_limit_reached" } })
-    expect(state.updates).toEqual([])
-    expect(state.rpcCalls).toEqual([]) // refused before billing was even read
-  })
-
-  it("the second agent is allowed under the limit", async () => {
-    state.rows = [{ id: "a1", enabled: true }, { id: "a2", enabled: false }]
-    state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
-    state.snapshot = activeSnapshot()
-    expect(await setCustomAgentEnabled({ agent_id: "a2", enabled: true })).toEqual({ ok: true })
   })
 
   it("turning an agent off is never gated by billing", async () => {
@@ -192,16 +228,9 @@ describe("agent activation boundary (billing)", () => {
     expect(state.rpcCalls).toEqual([])
   })
 
-  it("re-enabling an already-enabled agent is a no-op that is not re-gated", async () => {
-    state.rows = [{ id: "a1", enabled: true }]
+  it("an already-active agent is an idempotent no-op decided by the database", async () => {
+    state.writer = () => ({ data: { outcome: "already_active", code: null }, error: null })
     expect(await setCustomAgentEnabled({ agent_id: "a1", enabled: true })).toEqual({ ok: true })
-    expect(state.rpcCalls).toEqual([])
-  })
-
-  it("an agent that is not in this workspace is not found and not gated", async () => {
-    state.rows = []
-    const result = await setCustomAgentEnabled({ agent_id: "someone-elses", enabled: true })
-    expect(result).toEqual({ ok: false, error: "Agent not found." })
     expect(state.updates).toEqual([])
   })
 })

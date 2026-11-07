@@ -155,9 +155,14 @@ describe("server-owned return URLs", () => {
   it("accepts only allowlisted target keys", () => {
     expect(isReturnTarget("agents")).toBe(true)
     expect(isReturnTarget("billing")).toBe(true)
-    for (const bad of ["https://evil.example/", "//evil.example", "/receptionist", "__proto__", "constructor", "", null, undefined, 3, {}]) {
+    for (const bad of ["https://evil.example/", "//evil.example", "/receptionist", "/agents/../x", "__proto__", "constructor", "", null, undefined, 3, {}]) {
       expect(isReturnTarget(bad)).toBe(false)
     }
+  })
+
+  it("the agents return target is the canonical /agents home (not /receptionist)", () => {
+    expect(CHECKOUT_RETURN_TARGETS.agents).toBe("/agents")
+    expect(CHECKOUT_RETURN_TARGETS.billing).toBe("/billing")
   })
 
   it("builds same-origin URLs from configuration and a path the server owns", () => {
@@ -177,7 +182,7 @@ describe("server-owned return URLs", () => {
 
   it("drops any path or query in the configured origin", () => {
     const urls = buildCheckoutReturnUrls("https://app.gradia.example/evil?x=1#y", "agents")
-    expect(urls).toMatchObject({ ok: true, successUrl: "https://app.gradia.example/receptionist?billing_return=success" })
+    expect(urls).toMatchObject({ ok: true, successUrl: "https://app.gradia.example/agents?billing_return=success" })
   })
 
   it.each([undefined, null, "", "not a url", "ftp://app.gradia.example", "http://app.gradia.example", "https://user:pw@app.gradia.example"])(

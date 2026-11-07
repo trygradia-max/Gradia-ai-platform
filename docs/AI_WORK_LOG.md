@@ -2593,3 +2593,21 @@ PASS. Full disposable integration: 745 tests; failures confined to files unrelat
 (auth/PostgREST flakiness after a local Postgres crash that my probe caused and which self-recovered;
 conflict-enforcement fails identically on the baseline schema). No real Stripe call, live key, shared
 database, deployment or merge.
+
+[AI: claude-code] [DATE: 2026-11-06] [AREA: commercial-billing] [STATUS: in-review]
+Commercial Billing PR C review fixes (PR #134). (1) The approved `agents` Checkout return target now
+resolves to the canonical `/agents` (PR #133), with a locking test; docs updated. (2) Atomic
+two-active-agent entitlement: new migration `20261106130000_commercial_agent_activation.sql` adds
+`commercial_agent_activate(shop, actor, agent)`, a service-role-only SECURITY DEFINER function that in one
+transaction verifies a live owner of that exact shop, locks the tenant-bound agent then the shop's billing
+account row, treats an already-active agent as a no-op, counts active agents itself (max 2), rechecks the
+exact reviewed active evidence/catalog and enables only that agent. `authorizeAgentActivation` no longer takes
+a count and `setCustomAgentEnabled` no longer reads a count or writes `enabled`. A guard trigger
+(`custom_agents_activation_guard`) stops the owner's direct RLS update from enabling an agent around the
+writer; disabling and drafts are unaffected. The existing-gate check still runs before billing/Checkout.
+(3) A null/missing/unknown Stripe Checkout Session status is now an unreadable (ambiguous) response, never
+"open", so no URL is returned. Added a real concurrency integration test (one active agent + two simultaneous
+activations => exactly one succeeds, two active), writer authority/tenant tests, a status regression test, and
+extended `scripts/verify-commercial-billing-migration.py` to apply both migrations and prove the activation
+writer. No real Stripe call, live key, shared data, deployment or merge.
+

@@ -182,8 +182,8 @@ describe("platform Stripe client", () => {
       customerId: "cus_FakeCustomer1",
       shopId: SHOP,
       attemptId: ATTEMPT,
-      successUrl: "https://app.gradia.example/receptionist?billing_return=success",
-      cancelUrl: "https://app.gradia.example/receptionist?billing_return=canceled",
+      successUrl: "https://app.gradia.example/agents?billing_return=success",
+      cancelUrl: "https://app.gradia.example/agents?billing_return=canceled",
       idempotencyKey: `gradia-cb-session-${ATTEMPT}`,
     })
     expect(session).toEqual({ id: "cs_test_FakeSession1", status: "open", url: "https://checkout.stripe.com/c/pay/cs_test_FakeSession1" })
@@ -231,6 +231,37 @@ describe("platform Stripe client", () => {
     })
     expect(session.url).toBeNull()
   })
+
+  it.each([null, undefined, "", "unknown", "paid", "OPEN", 1])(
+    "fails closed on a null or unknown session status (%s): never returns a Checkout URL",
+    async (status) => {
+      const body = {
+        id: "cs_test_FakeSession1", object: "checkout.session", livemode: false, mode: "subscription",
+        url: "https://checkout.stripe.com/c/pay/cs_test_FakeSession1", customer: "cus_FakeCustomer1", client_reference_id: ATTEMPT,
+        metadata: { shop_id: SHOP, checkout_attempt_id: ATTEMPT, catalog_version: COMMERCIAL_CATALOG_VERSION, plan_key: "founder-pilot" },
+        ...(status === undefined ? {} : { status }),
+      }
+      const client = createPlatformStripeClient(config)
+      fixtureFetch(() => ({ body }))
+      const created = await client
+        .createCheckoutSession({
+          priceId: "price_fake_founder_pilot", customerId: "cus_FakeCustomer1", shopId: SHOP, attemptId: ATTEMPT,
+          successUrl: "https://app.gradia.example/agents?billing_return=success",
+          cancelUrl: "https://app.gradia.example/agents?billing_return=canceled",
+          idempotencyKey: `gradia-cb-session-${ATTEMPT}`,
+        })
+        .then(() => null, (e: unknown) => e)
+      // Ambiguous (the provider may have created it): reconciliation, never "open".
+      expect(created).toMatchObject({ status: 0, code: "unreadable_response" })
+      fixtureFetch(() => ({ body }))
+      const binding = { shopId: SHOP, attemptId: ATTEMPT, customerId: "cus_FakeCustomer1" }
+      const retrieved = await client
+        .retrieveCheckoutSession({ sessionId: "cs_test_FakeSession1", binding })
+        .then((r) => r, (e: unknown) => e)
+      expect(retrieved).not.toMatchObject({ ok: true })
+      expect(JSON.stringify(retrieved)).not.toContain("checkout.stripe.com")
+    }
+  )
 
   it("verifies a retrieved session is bound to this shop, catalog, attempt and customer", async () => {
     const session = (patch: Record<string, unknown> = {}, metaPatch: Record<string, string> = {}) => ({

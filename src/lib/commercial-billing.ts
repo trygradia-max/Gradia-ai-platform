@@ -90,7 +90,7 @@ export const REVIEWED_EVIDENCE_SOURCES = ["signed_webhook", "reviewed_reconcilia
  * from a client.
  */
 export const CHECKOUT_RETURN_TARGETS = {
-  agents: "/receptionist",
+  agents: "/agents",
   billing: "/billing",
 } as const
 export type CheckoutReturnTarget = keyof typeof CHECKOUT_RETURN_TARGETS
