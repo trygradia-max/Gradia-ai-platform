@@ -2555,3 +2555,58 @@ builder gated off until immutable definitions and activation billing exist. No
 provider, cron, shared-data, deployment or production-gate change was made. Full
 unit validation passed (1,875 passed / 4 skipped), focused lint and TypeScript
 passed, and the Next 16.2.6 webpack production build passed.
+
+[AI: codex] [DATE: 2026-11-06] [AREA: commercial-billing] [STATUS: done]
+Independently reviewed and merged Commercial Billing PR B (#132) after both GitHub
+checks passed and the purpose-built membership-billing upgrade verifier passed on a
+disposable stack. Reviewed daily distinct-operator seat arithmetic, period-level
+half-up rounding, append-only corrections, atomic membership capture, tenant and
+role authority, same-as-of previews, cascade behavior and fail-closed invoice totals;
+no blocking findings. Prepared the isolated PR C worktree and Claude handoff for
+sandbox-only Stripe platform customer/subscription state and a fail-closed Checkout
+handoff at first agent activation. No Stripe mutation, live-mode activation, shared
+database change, deployment or production billing action was performed.
+
+[AI: claude-code] [DATE: 2026-11-06] [AREA: commercial-billing] [STATUS: in-review]
+Commercial Billing PR C (branch `claude/stripe-subscription-checkout`, base `344d671`).
+Sandbox/test mode only. Migration `20261106120000_commercial_billing_state.sql` adds
+tenant-bound PLATFORM billing state separate from Connect: a mutable per-shop pointer
+(`commercial_billing_accounts`), checkout attempts with immutable identity, forward-only status
+and one in-flight attempt per shop, an append-only event trail that refuses URLs/keys, and
+append-only subscription evidence (reviewed sources only, livemode CHECKed false). Writers are
+service-role-only functions that re-verify a live owner of that shop in the database; browser roles
+have no table or writer access. Only `commercial_subscription_apply_evidence` can make an account
+active and nothing in application code calls it (signed webhook = PR E). Stripe adapter extended
+(opt-in idempotency key + timeout; legacy callers unchanged) with a typed client: price by lookup key
+`gradia_founder_pilot_2026_11_monthly` verified (usd, month, active, 19900, livemode false), one
+platform Customer per shop, a bound subscription Checkout Session (no trial, one line item), session
+replay by retrieval. Ambiguous outcomes -> reconciliation_required, never retried blindly. Activation
+seam `authorizeAgentActivation` (src/lib/agent-os/activation.ts) wired into `setCustomAgentEnabled`
+(the only persisted activation; drafts never request billing); it also now enforces the two-active-agent
+limit, which previously existed only as a constant. Effect: enabling an agent is refused until PR E
+supplies reviewed evidence (intended freeze). Not wired: `setVoiceLive`, future Agent OS definition
+activation (documented in docs/architecture/COMMERCIAL_CHECKOUT_ACTIVATION.md). Caught and fixed during
+testing: malformed `subscription_data` metadata keys, and a session-id pattern that admitted `cs_live_`.
+Validation: types, lint, unit 1,967 passed / 4 skipped, plain and webpack builds passed; commercial
+billing integration 61/61 with PR A + PR B integration 97/97 together; purpose-built upgrade verifier
+PASS. Full disposable integration: 745 tests; failures confined to files unrelated to this change
+(auth/PostgREST flakiness after a local Postgres crash that my probe caused and which self-recovered;
+conflict-enforcement fails identically on the baseline schema). No real Stripe call, live key, shared
+database, deployment or merge.
+
+[AI: claude-code] [DATE: 2026-11-06] [AREA: commercial-billing] [STATUS: in-review]
+Commercial Billing PR C review fixes (PR #134). (1) The approved `agents` Checkout return target now
+resolves to the canonical `/agents` (PR #133), with a locking test; docs updated. (2) Atomic
+two-active-agent entitlement: new migration `20261106130000_commercial_agent_activation.sql` adds
+`commercial_agent_activate(shop, actor, agent)`, a service-role-only SECURITY DEFINER function that in one
+transaction verifies a live owner of that exact shop, locks the tenant-bound agent then the shop's billing
+account row, treats an already-active agent as a no-op, counts active agents itself (max 2), rechecks the
+exact reviewed active evidence/catalog and enables only that agent. `authorizeAgentActivation` no longer takes
+a count and `setCustomAgentEnabled` no longer reads a count or writes `enabled`. A guard trigger
+(`custom_agents_activation_guard`) stops the owner's direct RLS update from enabling an agent around the
+writer; disabling and drafts are unaffected. The existing-gate check still runs before billing/Checkout.
+(3) A null/missing/unknown Stripe Checkout Session status is now an unreadable (ambiguous) response, never
+"open", so no URL is returned. Added a real concurrency integration test (one active agent + two simultaneous
+activations => exactly one succeeds, two active), writer authority/tenant tests, a status regression test, and
+extended `scripts/verify-commercial-billing-migration.py` to apply both migrations and prove the activation
+writer. No real Stripe call, live key, shared data, deployment or merge.

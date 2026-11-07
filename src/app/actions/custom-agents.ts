@@ -13,9 +13,16 @@ import { listAgentRunsForShop } from "@/lib/agent-runs"
 import { recordUsage } from "@/lib/credits"
 import { getPricing, priceUsage } from "@/lib/pricing"
 import { runCustomAgent, type AgentRunOutcome } from "@/lib/agent-runtime"
+import {
+  activationBlockedMessage,
+  authorizeAgentActivation,
+  type AgentActivationDecision,
+} from "@/lib/agent-os/activation"
+import { resolveBillingRuntime } from "@/lib/commercial-billing-service"
 import { FEATURES } from "@/lib/features"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import type {
   AgentConfig,
   CustomAgentRow,
@@ -238,19 +245,55 @@ export async function listAgentRuns(
 
 export type SetEnabledResult =
   | { ok: true }
-  | { ok: false; error: string }
+  | {
+      ok: false
+      error: string
+      /** Typed reason the activation was refused (billing, entitlement or gate). */
+      blocked?: Extract<AgentActivationDecision, { proceed: false }>
+    }
 
 /**
  * Enable/disable a custom agent. Enabled agents are picked up by the
  * scheduled-agents cron — both coded recipes and free-form plans.
+ *
+ * Turning an agent ON is the first-agent-activation boundary: it must pass
+ * `authorizeAgentActivation` (active-agent entitlement + reviewed Founder Pilot
+ * subscription evidence). Turning one OFF is never gated.
  */
 export async function setCustomAgentEnabled(input: {
   agent_id: string
   enabled: boolean
 }): Promise<SetEnabledResult> {
-  await requireUser()
+  const user = await requireUser()
   const shop = await requireShop()
   const supabase = await createClient()
+
+  if (input.enabled) {
+    // Enabling is decided AND written by one owner-verified database transaction
+    // (`commercial_agent_activate`): it serializes per shop, counts active agents
+    // itself, rechecks the reviewed subscription evidence and catalog, and enables
+    // only this tenant-bound agent. Nothing here supplies a count or writes `enabled`.
+    const decision = await authorizeAgentActivation(
+      {
+        sessionClient: supabase,
+        serviceClient: createServiceClient,
+        runtime: resolveBillingRuntime(),
+      },
+      {
+        shopId: shop.id,
+        actorId: user.id,
+        agentId: input.agent_id,
+        // Custom agents carry no separate definition gate yet.
+        existing: { ready: true },
+      }
+    )
+    if (!decision.proceed) {
+      return { ok: false, error: activationBlockedMessage(decision.code), blocked: decision }
+    }
+    revalidatePath("/agents")
+    revalidatePath("/receptionist")
+    return { ok: true }
+  }
 
   const { error } = await supabase
     .from("custom_agents")

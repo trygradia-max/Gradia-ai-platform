@@ -65,6 +65,16 @@ describe("service-role importer inventory (sweep visibility)", () => {
   // where it fits) and add the file here in the same PR.
   const REVIEWED_IMPORTERS = new Set([
     "src/app/actions/a2p.ts",
+    // Commercial billing (PR C, sandbox only). The shop and actor are resolved
+    // server-side from the signed-in session (requireShop/requireUser), never from
+    // input. The service client is used ONLY to call the commercial_checkout_*
+    // writer functions, which re-verify in the database that the named actor is a
+    // live, active owner of that exact shop; it has no direct table write grant.
+    "src/app/actions/commercial-billing.ts",
+    // First-agent-activation seam wiring. Same authority model as above: the service
+    // client is created lazily and only after the existing-gate and active-agent
+    // checks pass, and it reaches nothing but the owner-verified Checkout writers.
+    "src/app/actions/custom-agents.ts",
     // Channel readiness. Read-only. The shop is resolved server-side by
     // requireShop (the signed-in owner's shop); the service client is used
     // only afterwards, because meta_lead_page_bindings is service-role only,
