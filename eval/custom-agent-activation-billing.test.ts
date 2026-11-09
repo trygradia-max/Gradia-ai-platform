@@ -13,6 +13,8 @@ const state = {
   inserts: [] as Record<string, unknown>[],
   rpcCalls: [] as string[],
   snapshot: null as unknown,
+  /** agent_definition_state lookup: null = legacy agent, a row = governed, 'error' = unreadable. */
+  definitionState: null as null | { agent_id: string } | "error",
   runtime: { ok: false, reason: "billing_unconfigured" } as unknown,
   runtimeCalls: 0,
   writerArgs: [] as Record<string, unknown>[],
@@ -26,6 +28,11 @@ function builder(table: string) {
   let mode: "select" | "count" | "update" | "insert" = "select"
   let patch: { enabled: boolean } | null = null
   const run = () => {
+    if (table === "agent_definition_state") {
+      return state.definitionState === "error"
+        ? { data: null, error: { message: "boom" } }
+        : { data: state.definitionState, error: null }
+    }
     if (table !== "custom_agents") throw new Error(`unexpected table ${table}`)
     if (mode === "update") {
       state.updates.push({ enabled: patch!.enabled, id: filters.id as string })
@@ -106,6 +113,7 @@ beforeEach(() => {
   state.writerArgs = []
   state.writer = () => ({ data: { outcome: "blocked", code: "billing_not_active" }, error: null })
   state.snapshot = { shop_id: SHOP, account: null }
+  state.definitionState = null
   state.runtime = { ok: false, reason: "billing_unconfigured" }
 })
 
@@ -139,6 +147,25 @@ describe("agent activation boundary (billing)", () => {
     expect(state.updates).toEqual([])
     expect(state.runtimeCalls).toBe(1)
     expect(state.writerArgs).toEqual([{ p_shop: SHOP, p_actor: USER, p_agent: "a1" }])
+  })
+
+  it("a governed agent (persisted definition) is only turned on by definition activation, never this legacy path", async () => {
+    state.rows = [{ id: "a1", enabled: false }]
+    state.definitionState = { agent_id: "a1" }
+    state.runtime = { ok: true, stripe: {}, returnOrigin: "https://app.gradia.example" }
+    state.writer = () => ({ data: { outcome: "activated", code: null, active_count: 1 }, error: null })
+    const result = await setCustomAgentEnabled({ agent_id: "a1", enabled: true })
+    expect(result).toMatchObject({ ok: false, blocked: { proceed: false, code: "existing_gate_blocked", reasons: ["definition_activation_required"] } })
+    expect(state.rpcCalls).not.toContain("commercial_agent_activate")
+  })
+
+  it("fails closed when the definition state cannot be read", async () => {
+    state.rows = [{ id: "a1", enabled: false }]
+    state.definitionState = "error"
+    state.writer = () => ({ data: { outcome: "activated", code: null, active_count: 1 }, error: null })
+    const result = await setCustomAgentEnabled({ agent_id: "a1", enabled: true })
+    expect(result).toMatchObject({ ok: false, blocked: { code: "existing_gate_blocked", reasons: ["definition_state_unavailable"] } })
+    expect(state.rpcCalls).not.toContain("commercial_agent_activate")
   })
 
   it("never writes `enabled` itself and never sends an application-supplied count", async () => {

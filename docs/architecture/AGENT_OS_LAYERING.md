@@ -56,7 +56,10 @@ approval checks at execution time.
 
 ## Required next slices
 
-1. Persist immutable definition revisions and one atomic active revision per shop.
+1. ~~Persist immutable definition revisions and one atomic active revision per shop.~~ **Done (Build 1,
+   2026-11-07):** immutable revisions and one atomic pointer per `custom_agents` identity, composed with the
+   merged commercial activation. See `AGENT_DEFINITION_REVISIONS.md`. The Cursor builder DTO in item 8 is
+   implemented there; the UI and the trusted evaluator are not.
 2. Add the normalized model adapter with structured proposals, cost/latency accounting,
    cancellation and no automatic cross-provider fallback.
 3. Add durable run/step/attempt/trace records and restart-safe claims by extending
