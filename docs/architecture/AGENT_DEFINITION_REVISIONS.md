@@ -196,13 +196,14 @@ pauseOrBlockAgentDefinition({ agentId, lifecycle: 'paused'|'blocked', reason, ex
 
 ## Limitations (deliberate, fail closed)
 
-1. No trusted evaluator exists, so nothing real can pass the evaluation gate yet; fixtures only.
+1. ~~No trusted evaluator exists~~ — superseded by Build 3 (below): a deterministic governance-contract
+   evaluator now exists. It is **not** a model-quality evaluation (see Build 3 limitations).
 2. Founder Pilot evidence still cannot be produced in production before PR E (signed webhook), so
    real activation remains frozen exactly as documented in `COMMERCIAL_CHECKOUT_ACTIVATION.md`.
 3. Managers/staff are read-only (no delegated `agent.configure` capability exists).
-4. Governed claims are gated on lifecycle only. The runtime still executes the legacy
-   `custom_agents.config` recipe shape; running the compiled definition is a later slice, and the
-   run does not yet record the definition revision it ran under.
+4. ~~Governed claims are gated on lifecycle only~~ — superseded by Build 3 (below): governed runs are
+   bound to the exact revision, hash, policy revision, memory pins and evaluation. The governed
+   *executor* is still off.
 5. Legacy agents are not auto-converted, and an *enabled* legacy agent cannot be given a definition
    until it is turned off.
 6. A governed agent with history cannot be deleted (pause or block it).
@@ -276,3 +277,113 @@ activation echoes only the revision, its hash and the pointer the owner saw, and
 confirmation dialog; every `ACTIVATION_BLOCKERS` code has reviewed copy (source-locked) and an unknown code
 renders as "could not be confirmed". Agent runs still execute the legacy `config` and do not record the active
 definition revision; the UI says so where it matters.
+
+## Trusted evaluation and durable runtime binding (Build 3)
+
+_2026-11-11. One migration (`20261111120000_agent_definition_runtime_binding.sql`), a deterministic
+evaluator, and the governed claim path. No deployment, provider, model call, live send, cron
+change or production-gate change. The governed **executor stays off**._
+
+### Trusted evaluator (`src/lib/agent-os/evaluator/`)
+
+- `suite.ts` is **pure**: no database, network, clock, randomness or model. Same definition + same
+  pins + same suite version gives the same result. It runs the exact stored definition through the
+  real `decideToolGrants` → `evaluatePolicy` under a fixed matrix of synthetic policies and connector
+  states, plus structural rules the definition itself can break (post-MVP tools absent, customer
+  messaging names an opt-out stop condition, pins equal the selected sources, limits bounded, no
+  secret/provider/prompt-shaped key, loosest-legal-policy never exceeds the requested mode,
+  money/calendar never autonomous, unready/no/disabled policy denies). Each rule has a negative control
+  in `eval/agent-evaluator-suite.test.ts`.
+- `run.ts` takes **ids only**. It re-verifies a live owner, loads the immutable revision, hash and
+  pins itself, computes the verdict, and writes **only** through `recordTrustedAgentEvaluation`
+  (`agent_definition_record_evaluation`, service role, `source = 'trusted_evaluator'`). There is no
+  argument through which a result, pass rate, safety flag or fixture could be supplied.
+- One evaluation per (revision, suite version, fixture set): the evidence key is derived. A repeat
+  returns the recorded result; two concurrent requests record exactly one row (the loser re-reads the
+  winner). A failing definition is recorded as failing and cannot be activated; the fix is a new revision.
+- `runAgentRevisionEvaluation({ agentId, revision })` is the only server action. It only **requests**
+  the evaluator. The Test step calls it; the browser never authors evidence.
+- `passRate` is the fraction of governance-contract fixtures that held. `estimatedCredits` is the
+  definition's own `maximumCreditsPerRun` (`basis: definition_limit`, `modelCalls: 0`).
+
+### Runtime binding (database)
+
+`claim_scheduled_agent_run` is re-declared. **Legacy agents (no state row) are unchanged.** For a
+governed agent the claim runs under the agent row lock (then the state row, the one lock order) and
+refuses with `{outcome:'refused', reasons:[…]}` — **no run row is written**, so a window refused today
+can be claimed after the cause is fixed — unless every question in `agent_definition_binding_reasons`
+is clean:
+
+| Reason | Meaning |
+| --- | --- |
+| `paused`, `blocked`, `not_active`, `definition_not_found` | lifecycle / pointer (paused and blocked also return `agent_unavailable` earlier because pausing disables the agent) |
+| `pointer_changed` | the pointer or the exact activation the run rests on moved |
+| `revision_not_found`, `unsupported_schema`, `definition_tampered` | the stored document no longer hashes to its stored hash |
+| `activation_evidence_missing` | no `activated` event for the pointer |
+| `policy_unavailable`, `policy_changed` | no active policy, or not the revision the activation was evaluated under |
+| `knowledge_changed` | the reviewed-knowledge head moved since activation |
+| `memory_revoked`, `memory_changed`, `memory_stale`, `memory_expired` | a pinned memory revision is no longer the active, published, current one |
+| `evaluation_required`, `safety_evaluation_failed`, `quality_evaluation_failed` | the **newest** exact-revision evaluation is missing or fails (a later failing result wins) |
+| `schedule_not_interval` | only `interval` definitions are started by the scheduler |
+| `concurrent_run_active`, `daily_limit_reached` | the definition's own `maximumConcurrentRuns` / `maximumRunsPerDay` |
+
+A refusal for stale policy is deliberately strict: the owner pauses and re-activates (fresh evidence);
+the agent never silently runs under a policy it was not evaluated against.
+
+A successful claim writes the run with write-once columns: `definition_revision`, `definition_hash`
+(the revision's hash; the snapshot is the immutable stored revision, **not** `custom_agents.config`),
+`policy_revision`, `knowledge_revision`, `memory_pins`, `evaluation_id`, `state_version`,
+`activation_event_seq`. Composite foreign keys make a run unable to reference another shop's, agent's,
+revision's, hash's or evaluation's evidence; a CHECK rejects half a binding; a trigger rejects any change
+to a bound run and any retro-fit onto a legacy run; the browser owner's insert policy cannot create one.
+
+- `assert_governed_run_current(run, worker, attempt)` lets the executor re-verify before each effect
+  (`{current, governed, reasons}`). It takes the agent row `FOR SHARE` (waits for an in-flight pause /
+  block / activation to commit, never blocks other checks) and no run lock. Legacy runs answer
+  `{current:true, governed:false}`.
+- `finish_scheduled_agent_run` is re-declared with one addition: for a governed run the result is
+  recorded **exactly as reported** and `binding_at_finish` records `current` or the comma-joined
+  reasons, so a definition that moved mid-run is visible and is never silently "succeeded under the old pointer".
+- Idempotency and unknown outcomes are the existing contract, unchanged: one run per `(agent, window)`,
+  duplicates never execute, an expired lease becomes `unknown` and is never retried. A governed claim
+  also turns an expired in-flight predecessor into `unknown` instead of letting it hold the agent forever.
+
+### Runtime (`src/lib/agent-runtime.ts`)
+
+- The cron tick reads which agents are governed (`loadGovernedAgentStates`) **before** any handler and
+  fails closed if it cannot tell. Governed agents take `runGovernedScheduledAgent`; legacy agents take the
+  exact previous path.
+- Manual "Run now" and event dispatch refuse a governed agent (it runs only through a bound claim) and
+  fail closed if governance cannot be determined.
+- `GOVERNED_EXECUTOR_ENABLED = false`: a governed window is claimed, bound, re-verified, and finished as
+  `skipped` with `error_code = governed_executor_disabled`. Nothing is staged, sent, metered or called.
+  Enabling execution is a separate change that must bring its own proof.
+
+### Verification
+
+- Unit: `eval/agent-evaluator-suite.test.ts` (15), `eval/agent-runtime-binding.test.ts` (19).
+- Integration (real Postgres): `eval/integration/agent-runtime-binding.int.test.ts` (29) — real evaluator
+  evidence and replay; concurrent evaluations; binding columns equal the revision, hash, policy revision,
+  pins, evaluation and activation; window replay and 8-way concurrent claims; refusal for stale policy,
+  stale/revoked memory, a newer failing evaluation, manual schedule, concurrency and daily limits;
+  pointer change, pause and re-activation seen by `assert`; write-once and tenant-isolation constraints;
+  legacy unchanged; unknown outcomes; **claim vs pause, claim vs superseding activation, assert vs pause
+  and many-window races**; runtime and manual-run behavior.
+
+### Limitations (deliberate, fail closed)
+
+1. The evaluator checks **governance and rules**, not output quality. No model is called. A model-quality
+   suite is a separate, later suite under its own `suite_version`.
+2. The governed executor is off. Governed runs are bound and recorded as skipped. Running the compiled
+   definition (tools, retrieval, drafting) is the next slice.
+3. Binding is verified at claim, at `assert`, and recorded at finish. Between an `assert` and the
+   effect that follows it a pause can still commit; effects remain approval-first and the policy engine
+   is evaluated per command, so a late pause cannot turn a staged action into a send.
+4. Stale policy requires pause + re-activation (no in-place refresh), by design.
+5. Claim refusals are returned to the caller and logged; they are not persisted as rows (a refused window
+   must stay claimable). A durable refusal log would be a later addition.
+6. Only `interval` definitions are scheduled. Event-triggered governed runs have no bound path yet and
+   are refused by the legacy event dispatcher.
+7. `scripts/verify-agent-definition-migration.py` (Build 1's one-transaction upgrade probe) assumes a
+   database at the `20261107120000` state and cannot be run after later migrations add objects that depend on
+   them; its coverage now lives in the integration suites.

@@ -206,14 +206,15 @@ describe("/agents/build", () => {
     expect(actions.createGradiaAgentIdentity).not.toHaveBeenCalled()
   })
 
-  it("the Test step says the runner is unavailable and names the blocker", async () => {
+  it("the Test step offers the trusted checks, says what they are not, and shows no invented result", async () => {
     actions.getBuilderResume.mockResolvedValue(ok(resume()))
     actions.getAgentRevision.mockResolvedValue(ok(revisionDto()))
     const html = await render(page({ agent: agentId, step: "test" }))
-    expect(html).toContain("Test runner not available yet")
+    expect(html).toContain("Run checks on revision 2")
+    expect(html).toContain("not an answer-quality score")
     expect(html).toContain("evaluation_required")
     expect(html).toContain("No test evidence")
-    expect(html).not.toMatch(/Safety passed|Pass rate/)
+    expect(html).not.toMatch(/Safety passed|Pass rate|Test runner not available/)
   })
 
   it("renders existing exact-revision evaluations without inventing any", async () => {
@@ -372,7 +373,7 @@ describe("/agents/[agentId]/revisions/[revision]", () => {
     expect(html).toContain("Revision 1")
     expect(html).toContain("Read-only")
     expect(html).toContain("Quote follow-up")
-    expect(html).toContain("Testing is not available yet")
+    expect(html).toContain("This revision has not been tested")
     expect(html).toContain("Revision 2 is the latest")
     expect(html).toContain(`href="/agents/build?agent=${agentId}"`)
     expect(html).toContain("Definition hash 1111")

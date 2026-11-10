@@ -2808,3 +2808,17 @@ findings; no phone-verification flow; no Vapi/Twilio/Supabase-production contact
 change. Residual, out of scope: `vapi_assistant_id`, `vapi_phone_number_id`, `voice_live` and `voice_test_called_at` are
 still owner-writable `shops` columns (not in the protected-columns guard), so the launch gate and the stored provider ids
 remain owner-forgeable; the guard cannot prove the stored Vapi number id belongs to the shop.
+
+## 2026-11-11 - [Claude Code] Trusted revision evaluation and durable runtime binding (Build 3)
+New branch `claude/agent-runtime-binding` from main `2cb6b20`. Adds a deterministic governance-contract
+evaluator (pure suite + id-only orchestrator that writes only through the existing service-role evaluation
+seam; one server action that only requests it; the Test step now runs it), and binds every governed
+scheduled run, in the database and inside the claim transaction, to the exact active definition revision,
+hash, policy revision, memory pins, newest passing evaluation and activation. Refusals (paused, blocked,
+pointer-changed, stale policy/knowledge/memory, unevaluated or newest-failing evaluation, tampered
+definition, wrong schedule, concurrency and daily limits) write no row. `assert_governed_run_current` and a
+`binding_at_finish` record make a definition that moved mid-run visible. Legacy agents keep their exact
+claim/finish behavior; manual and event runs refuse governed agents; the governed executor is OFF, so
+governed windows are bound and finished as skipped. One migration; no deployment, provider, model call,
+live send, cron or production-gate change. Details and limitations:
+`docs/architecture/AGENT_DEFINITION_REVISIONS.md` (Build 3).

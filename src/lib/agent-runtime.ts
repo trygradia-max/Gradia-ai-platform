@@ -19,8 +19,10 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { parseAgentConfig } from "@/lib/agent-config-schema"
 import {
+  assertGovernedRunCurrent,
   claimScheduledAgentRun,
   finishScheduledAgentRun,
+  loadGovernedAgentStates,
   markScheduledAgentRunUnknown,
   recordAgentRun,
   type TriggerSource,
@@ -1761,6 +1763,20 @@ export async function runEventRecipe(
   event: AgentEvent
 ): Promise<AgentRunOutcome> {
   const triggerSource: TriggerSource = `event:${event.kind}`
+  try {
+    if (await isGovernedAgent(supabase, agent.id)) {
+      const outcome: AgentRunOutcome = { agentId: agent.id, agentName: agent.name, fired: false, reason: GOVERNED_ONLY_REASON }
+      await recordAgentRun(supabase, { agentId: agent.id, shopId: shop.id, triggerSource, outcome })
+      return outcome
+    }
+  } catch {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "could not verify this agent's governance state — nothing was run",
+    }
+  }
   const recipeId = agent.config.recipe?.id
   if (!recipeId) {
     const outcome: AgentRunOutcome = {
@@ -1906,6 +1922,104 @@ async function loadShop(
   return (data as ShopRow | null) ?? null
 }
 
+// ---------- governed (versioned definition) runs ----------
+
+/**
+ * The governed executor (running a compiled definition) is NOT proven yet. A governed agent's
+ * scheduled window is therefore claimed and BOUND (exact revision, hash, policy revision, memory
+ * pins, evaluation) and then finished as skipped with a stated reason; nothing is staged, sent or
+ * metered. Flipping this is a separate, reviewed change that must come with its own proof.
+ */
+export const GOVERNED_EXECUTOR_ENABLED = false as const
+
+/** Stable identity of one interval window for a governed definition. The database unique index turns
+ * it into the cross-instance dedupe key. */
+export function governedWindowKey(everyMinutes: number, now: Date): string {
+  return `interval:${everyMinutes}m:${Math.floor(now.getTime() / (everyMinutes * 60_000))}`
+}
+
+const GOVERNED_ONLY_REASON =
+  "this agent has a governed definition; it runs only through a bound scheduled claim"
+
+/** True when the agent is governed. Throws only if it cannot tell, so callers fail closed. */
+async function isGovernedAgent(supabase: SupabaseClient, agentId: string): Promise<boolean> {
+  return (await loadGovernedAgentStates(supabase, [agentId])).has(agentId)
+}
+
+export async function runGovernedScheduledAgent(
+  supabase: SupabaseClient,
+  agent: CustomAgentRow,
+  state: { lifecycle: string; activeRevision: number | null },
+  now: Date,
+  onClaim: (ctx: { runId: string; attempt: number; workerId: string }) => void
+): Promise<AgentRunOutcome | null> {
+  if (state.lifecycle !== "active" || state.activeRevision === null) return null
+  const { data, error } = await supabase
+    .from("agent_definition_revisions")
+    .select("definition")
+    .eq("shop_id", agent.shop_id)
+    .eq("agent_id", agent.id)
+    .eq("revision", state.activeRevision)
+    .maybeSingle()
+  if (error) throw new Error(`governed definition lookup failed: ${error.message}`)
+  const schedule = (data?.definition as { schedule?: { kind?: string; everyMinutes?: number } } | undefined)?.schedule
+  // Manual and event definitions are never started by the cron tick.
+  if (!schedule || schedule.kind !== "interval" || !Number.isInteger(schedule.everyMinutes)) return null
+
+  const workerId = randomUUID()
+  const claim = await claimScheduledAgentRun(supabase, {
+    agentId: agent.id,
+    triggerKey: governedWindowKey(schedule.everyMinutes as number, now),
+    workerId,
+  })
+  const base = { agentId: agent.id, agentName: agent.name, fired: false }
+  if (claim.outcome === "refused") {
+    console.warn("[agent-runtime] governed definition refused:", agent.id, claim.reasons.join(","))
+    return { ...base, reason: `governed definition not runnable: ${claim.reasons.join(", ")}` }
+  }
+  if (claim.outcome !== "claimed") {
+    return {
+      ...base,
+      reason:
+        claim.outcome === "active_duplicate"
+          ? "already running for this schedule window"
+          : claim.outcome === "unknown"
+            ? "previous attempt outcome unknown — reconciliation required"
+            : claim.outcome === "terminal_duplicate"
+              ? "schedule window already handled"
+              : "agent disabled before its schedule claim",
+    }
+  }
+  const ctx = { runId: claim.runId, attempt: claim.attempt, workerId }
+  onClaim(ctx)
+  if (claim.shopId !== agent.shop_id || !claim.governed) {
+    throw new Error("governed claim returned a different shop or no binding")
+  }
+
+  const finish = async (reason: string, errorCode: string): Promise<AgentRunOutcome> => {
+    const outcome: AgentRunOutcome = { ...base, reason }
+    const done = await finishScheduledAgentRun(supabase, {
+      runId: ctx.runId, workerId, attempt: ctx.attempt, state: "skipped", fired: false, reason, errorCode,
+    })
+    if (!done) {
+      await markScheduledAgentRunUnknown(supabase, ctx.runId)
+      return { ...base, reason: "run completion was not confirmed — reconciliation required" }
+    }
+    return outcome
+  }
+
+  // Re-verify immediately before any effect would happen.
+  const check = await assertGovernedRunCurrent(supabase, ctx)
+  if (!check.current) return finish(`governed binding no longer current: ${check.reasons.join(", ")}`, "binding_not_current")
+  if (!GOVERNED_EXECUTOR_ENABLED) {
+    return finish(
+      `bound to revision ${claim.governed.definitionRevision}; governed execution is not enabled yet, nothing was run`,
+      "governed_executor_disabled"
+    )
+  }
+  return finish("governed execution is not implemented", "governed_executor_disabled")
+}
+
 /**
  * One-shot fire of a single agent. Used by the "Run now" button.
  * Bypasses the cadence check — the operator explicitly asked.
@@ -1928,6 +2042,18 @@ export async function runCustomAgent(
     return outcome
   }
 
+  try {
+    if (await isGovernedAgent(supabase, agent.id)) {
+      return recordAndReturn({ agentId: agent.id, agentName: agent.name, fired: false, reason: GOVERNED_ONLY_REASON })
+    }
+  } catch {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      fired: false,
+      reason: "could not verify this agent's governance state — nothing was run",
+    }
+  }
   const handler = resolveScheduledHandler(agent)
   if (!handler) {
     return recordAndReturn({
@@ -2028,6 +2154,13 @@ export async function runScheduledAgents(
   const outcomes: AgentRunOutcome[] = []
   let fired = 0
 
+  // Governed agents (a definition state row exists) run only through bound claims. If this cannot
+  // be read, nothing runs: a governed agent must never be executed as a legacy one by mistake.
+  const governedStates = await loadGovernedAgentStates(
+    supabase,
+    agents.map((a) => a.id)
+  )
+
   // Cache shop loads — many shops may have multiple agents.
   const shopCache = new Map<string, ShopRow | null>()
   async function getShop(shopId: string): Promise<ShopRow | null> {
@@ -2042,6 +2175,20 @@ export async function runScheduledAgents(
       | { runId: string; attempt: number; workerId: string }
       | null = null
     try {
+      const governedState = governedStates.get(agent.id)
+      if (governedState) {
+        const governedOutcome = await runGovernedScheduledAgent(
+          supabase,
+          agent,
+          governedState,
+          now,
+          (ctx) => {
+            claimContext = ctx
+          }
+        )
+        if (governedOutcome) outcomes.push(governedOutcome)
+        continue
+      }
       const selectedHandler = resolveScheduledHandler(agent)
       if (!selectedHandler) {
         const outcome: AgentRunOutcome = {

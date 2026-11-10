@@ -245,8 +245,10 @@ describe("session-derived actions", () => {
     for (const [, name, params] of signatures) {
       expect(params, name).not.toMatch(/shopId|shop_id|actorId|actor_id|policy|connector|billing|evaluation/i)
     }
-    // Evaluation evidence has no action at all.
-    expect(source).not.toMatch(/export async function \w*[Ee]valuation/)
+    // The ONE evaluation action only REQUESTS the trusted evaluator: ids in, nothing evidence-shaped.
+    const evaluationActions = [...source.matchAll(/export async function (\w*[Ee]valuation\w*)\(([^)]*)\)/g)]
+    expect(evaluationActions.map((m) => m[1])).toEqual(["runAgentRevisionEvaluation"])
+    expect(evaluationActions[0][2].replace(/\s+/g, " ")).toBe("input: { agentId: string; revision: number }")
     expect(source).not.toMatch(/recordTrustedAgentEvaluation\(|import[^;]*recordTrustedAgentEvaluation/)
   })
 })
