@@ -211,7 +211,7 @@ export function EvaluationList({ evaluations }: { evaluations: EvaluationDto[] }
   if (evaluations.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No test evidence for this revision. The Gradia test runner is not available yet, so no revision can pass a test today.
+        No test evidence for this revision yet. Run the checks from the Test step; a revision can only be activated with a passing result.
       </p>
     )
   }

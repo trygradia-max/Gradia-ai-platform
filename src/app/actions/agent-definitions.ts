@@ -30,6 +30,7 @@ import {
   type CreateIdentityResult,
   type MemoryCatalogDto,
 } from "@/lib/agent-os/identity-store"
+import { runTrustedEvaluation, type RunEvaluationResult } from "@/lib/agent-os/evaluator/run"
 import { readCommercialBillingDto, resolveBillingRuntime } from "@/lib/commercial-billing-service"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -41,8 +42,10 @@ import { createServiceClient } from "@/lib/supabase/service"
  * Server Functions are reachable by direct POST, so every export derives the actor and
  * shop from the session and the database re-verifies live authority. The shop, actor,
  * policy / knowledge revision, connector, evaluation and billing evidence are NEVER read
- * from arguments. Evaluation evidence has no action here: it is written only by the
- * trusted evaluator seam (`recordTrustedAgentEvaluation`).
+ * from arguments. Evaluation evidence is never an argument and is never accepted from the
+ * browser: `runAgentRevisionEvaluation` only REQUESTS the trusted evaluator for a saved
+ * revision (ids only); the evaluator loads the immutable revision itself and writes through
+ * `recordTrustedAgentEvaluation`.
  */
 
 const id = z.string().uuid()
@@ -194,4 +197,21 @@ export async function createGradiaAgentIdentity(input: { name: string }): Promis
 export async function getSelectableMemory(): Promise<DtoResult<MemoryCatalogDto>> {
   const { actorId, shopId } = await session()
   return readMemoryCatalog({ service: createServiceClient() }, { shopId, actorId })
+}
+
+/**
+ * Asks the trusted evaluator to evaluate one saved revision. Takes ids only: there is no field
+ * through which a result, pass rate, safety flag or fixture could be supplied. The shop and actor
+ * come from the session, the database re-verifies a live owner, and repeating the request
+ * returns the recorded evaluation instead of creating another.
+ */
+export async function runAgentRevisionEvaluation(input: { agentId: string; revision: number }): Promise<RunEvaluationResult> {
+  const parsed = z.object({ agentId: id, revision: revisionNumber }).strict().safeParse({ agentId: input?.agentId, revision: input?.revision })
+  if (!parsed.success) return { ok: false, code: "revision_not_found" }
+  const { actorId, shopId } = await session()
+  const result = await runTrustedEvaluation({ service: createServiceClient() }, { shopId, actorId, ...parsed.data })
+  if (result.ok) {
+    revalidatePath("/agents")
+  }
+  return result
 }

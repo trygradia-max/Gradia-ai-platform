@@ -3,6 +3,7 @@
 import { Plus, X } from "lucide-react"
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react"
 
+import { runAgentRevisionEvaluation } from "@/app/actions/agent-definitions"
 import { GuardedLink } from "@/components/agents/nav-guard"
 import { BlockerList, EvaluationList, RuntimeLimitationNote, ToolDecisionList } from "@/components/agents/agent-parts"
 import { FormField } from "@/components/gradia/form-field"
@@ -592,37 +593,93 @@ function describeScheduleFromForm(form: FormState): string {
 // Test
 // ---------------------------------------------------------------------------
 
-const TEST_SLOTS = [
-  "Inputs used, with their sources",
-  "Actions the agent would propose",
-  "Outcomes that could not be confirmed",
-  "Estimated cost of a run",
-] as const
 
-export function TestStep({ evaluations, eligibility, savedRevision }: { evaluations: EvaluationDto[]; eligibility: ActivationEligibilityDto | null; savedRevision: number | null }) {
+
+const EVAL_ERROR_COPY: Record<string, string> = {
+  forbidden: "Only the workspace owner can run a test.",
+  unavailable: "Gradia couldn't run the test right now. Nothing was recorded. Try again in a moment.",
+  agent_not_found: "This agent could not be found.",
+  revision_not_found: "This revision could not be found. Save it first.",
+  invalid_definition: "This revision's saved definition could not be read, so it was not tested.",
+}
+
+export function TestStep({
+  evaluations,
+  eligibility,
+  savedRevision,
+  agentId,
+  canRun,
+  hasUnsavedChanges,
+  onTested,
+}: {
+  evaluations: EvaluationDto[]
+  eligibility: ActivationEligibilityDto | null
+  savedRevision: number | null
+  agentId: string
+  canRun: boolean
+  hasUnsavedChanges: boolean
+  /** Called after Gradia recorded (or re-read) a result, so the page can reload the saved evidence. */
+  onTested: () => void
+}) {
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState<{ tone: "good" | "bad"; text: string; failed?: string[] } | null>(null)
+  const disabled = !canRun || pending || savedRevision === null || hasUnsavedChanges
+
+  const run = async () => {
+    if (disabled || savedRevision === null) return
+    setPending(true)
+    setMessage(null)
+    try {
+      const result = await runAgentRevisionEvaluation({ agentId, revision: savedRevision })
+      if (!result.ok) {
+        setMessage({ tone: "bad", text: EVAL_ERROR_COPY[result.code] ?? EVAL_ERROR_COPY.unavailable })
+        return
+      }
+      const e = result.evaluation
+      setMessage({
+        tone: e.safetyPassed && e.passRate >= 0.95 ? "good" : "bad",
+        text: `${result.outcome === "replayed" ? "Already tested" : "Tested"}: ${Math.round(e.passRate * 100)}% of checks held. Safety ${e.safetyPassed ? "passed" : "failed"}.`,
+        failed: e.failedFixtures?.map((f) => `${f.id}: ${f.detail}`),
+      })
+      onTested()
+    } catch {
+      setMessage({ tone: "bad", text: EVAL_ERROR_COPY.unavailable })
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
-      <StepIntro title="Test">Before an agent goes live, Gradia checks this exact revision against test cases. A test never sends, books or changes a record.</StepIntro>
-      <div className="space-y-2 rounded-md bg-muted px-4 py-3 text-sm" role="status">
-        <p className="font-medium text-foreground">Test runner not available yet</p>
+      <StepIntro title="Test">Before an agent goes live, Gradia checks this exact saved revision. A test never sends, books or changes a record, and never calls a model.</StepIntro>
+      <div className="space-y-2 rounded-md bg-muted px-4 py-3 text-sm">
+        <p className="font-medium text-foreground">Governance checks, not an answer-quality score</p>
         <p className="text-muted-foreground">
-          Gradia can&apos;t test this agent today, so no revision can pass a test and activation stays blocked (<span className="font-data">evaluation_required</span>). Nothing here calls a model or records a result.
+          Gradia runs fixed safety and rule checks against this revision&apos;s tools, limits and stop conditions using Gradia&apos;s own policy engine. The result is saved as evidence for this revision only. It says nothing about how well the agent writes.
         </p>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <Button type="button" className="min-h-11 sm:min-h-8" disabled={disabled} onClick={run}>
+            {pending ? "Running checks…" : savedRevision ? `Run checks on revision ${savedRevision}` : "Save a revision first"}
+          </Button>
+          {hasUnsavedChanges ? <span className="text-xs text-muted-foreground">You have unsaved edits. Save them as a revision before testing.</span> : null}
+          {!canRun && savedRevision !== null ? <span className="text-xs text-muted-foreground">Only the workspace owner can run a test.</span> : null}
+        </div>
+        {message ? (
+          <div role="status" aria-live="polite" className={message.tone === "good" ? "text-status-success-fg" : "text-status-danger-fg"}>
+            <p>{message.text}</p>
+            {message.failed && message.failed.length > 0 ? (
+              <ul className="mt-1 list-disc pl-5 text-xs">
+                {message.failed.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <section aria-label="Test results for the latest saved revision" className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">{savedRevision ? `Results for revision ${savedRevision}` : "Results"}</h3>
         <EvaluationList evaluations={evaluations} />
-      </section>
-      <section aria-label="What a test will show" className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">What a test will show here</h3>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {TEST_SLOTS.map((slot) => (
-            <li key={slot} className="rounded-md px-3 py-2 text-sm text-muted-foreground ring-1 ring-border">
-              {slot}
-              <span className="block text-xs">Appears when the test runner is available.</span>
-            </li>
-          ))}
-        </ul>
       </section>
       {eligibility ? (
         <section aria-label="Current blockers" className="space-y-2">

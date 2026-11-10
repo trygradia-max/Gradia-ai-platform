@@ -293,7 +293,7 @@ export function DefinitionBuilder({ resume, initialStep, catalog, confirmedTools
               {step === "limits" ? <LimitsStep form={form} setForm={setForm} errors={errors} disabled={readOnly} /> : null}
               {step === "schedule" ? <ScheduleStep form={form} setForm={setForm} errors={errors} disabled={readOnly} /> : null}
             </fieldset>
-            {step === "test" ? <TestStep evaluations={evaluations} eligibility={resume.eligibility} savedRevision={latest?.revision ?? null} /> : null}
+            {step === "test" ? <TestStep evaluations={evaluations} eligibility={resume.eligibility} savedRevision={latest?.revision ?? null} agentId={resume.agentId} canRun={resume.role === "owner"} hasUnsavedChanges={dirty} onTested={() => router.refresh()} /> : null}
             {step === "activate" ? <ActivateStep resume={resume} dirty={dirty} onStep={goToStep} /> : null}
           </div>
 
