@@ -24,6 +24,12 @@ import type {
   DtoResult,
   RevisionDto,
 } from "@/lib/agent-os/definition-dto"
+import {
+  createAgentIdentity,
+  readMemoryCatalog,
+  type CreateIdentityResult,
+  type MemoryCatalogDto,
+} from "@/lib/agent-os/identity-store"
 import { readCommercialBillingDto, resolveBillingRuntime } from "@/lib/commercial-billing-service"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -99,15 +105,26 @@ export async function saveAgentDefinitionRevision(input: {
   requestId: string
   definition: unknown
   parentRevision?: number | null
+  /** The latest revision the editor was looking at (null = none yet). A stale view is a conflict, not an overwrite. */
+  expectedLatestRevision?: number | null
 }): Promise<CreateRevisionResult> {
   const parsed = z
-    .object({ agentId: id, requestId: id, parentRevision: revisionNumber.nullish() })
-    .safeParse({ agentId: input?.agentId, requestId: input?.requestId, parentRevision: input?.parentRevision })
+    .object({ agentId: id, requestId: id, parentRevision: revisionNumber.nullish(), expectedLatestRevision: revisionNumber.nullish() })
+    .safeParse({ agentId: input?.agentId, requestId: input?.requestId, parentRevision: input?.parentRevision, expectedLatestRevision: input?.expectedLatestRevision })
   if (!parsed.success) return { ok: false, code: "invalid_definition" }
   const { actorId, shopId } = await session()
   const result = await createAgentDefinitionRevision(
     { service: createServiceClient() },
-    { shopId, actorId, agentId: parsed.data.agentId, requestId: parsed.data.requestId, definition: input.definition, parentRevision: parsed.data.parentRevision ?? null }
+    {
+      shopId,
+      actorId,
+      agentId: parsed.data.agentId,
+      requestId: parsed.data.requestId,
+      definition: input.definition,
+      parentRevision: parsed.data.parentRevision ?? null,
+      // Preserve Build 1 behavior for callers that do not state their view.
+      ...(input.expectedLatestRevision === undefined ? {} : { expectedLatest: parsed.data.expectedLatestRevision ?? null }),
+    }
   )
   if (result.ok) revalidatePath("/agents")
   return result
@@ -157,4 +174,24 @@ export async function pauseOrBlockAgentDefinition(input: {
     revalidatePath("/receptionist")
   }
   return result
+}
+
+/**
+ * Creates ONLY a disabled `custom_agents` identity (no definition, no memory, no tool, no
+ * policy). The shop and actor come from the session; the database-backed role check requires
+ * a live owner. Revalidates nothing sensitive: the builder then loads the agent by id.
+ */
+export async function createGradiaAgentIdentity(input: { name: string }): Promise<CreateIdentityResult> {
+  const parsed = z.object({ name: z.string().max(400) }).safeParse({ name: input?.name })
+  if (!parsed.success) return { ok: false, code: "invalid_name" }
+  const { actorId, shopId } = await session()
+  const result = await createAgentIdentity({ service: createServiceClient() }, { shopId, actorId, name: parsed.data.name })
+  if (result.ok) revalidatePath("/agents")
+  return result
+}
+
+/** Read-only catalog of the shop's reviewed memory sources: ids, names, revision and status only. */
+export async function getSelectableMemory(): Promise<DtoResult<MemoryCatalogDto>> {
+  const { actorId, shopId } = await session()
+  return readMemoryCatalog({ service: createServiceClient() }, { shopId, actorId })
 }

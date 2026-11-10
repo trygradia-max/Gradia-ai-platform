@@ -2675,3 +2675,18 @@ useful Cursor polish without importing its experimental schema. It explicitly
 forbids a second runtime/policy/memory/billing system, fake test evidence, provider
 calls, migrations, shared data, deployment or production changes. No application
 or external-system mutation occurred.
+
+## 2026-11-09 - [Claude Code] Agent builder and configuration UI (Build 2)
+
+Implemented the Agent OS home, the resumable seven-step definition builder, the agent detail page and the
+immutable revision page, wired only to the merged Build 1 actions/DTOs. Replaced the two `/agents` aliases of the
+legacy receptionist pages (the legacy `/receptionist` routes and the gated workflow builder are untouched).
+Application seam additions only: `createGradiaAgentIdentity` (disabled identity, owner-only, session-derived),
+`getSelectableMemory` (read-only reviewed-memory catalog; no bodies), and `expectedLatestRevision` on
+`saveAgentDefinitionRevision` so a stale tab conflicts instead of silently becoming the latest. Extracted the pure
+definition schema to `definition-schema.ts` for client validation. No migration, evaluator, executor, provider
+call, cron, shared-data write or production-gate change. The Test step states the runner is unavailable; no
+evaluation evidence is created. Runs still execute legacy `config` (documented in the UI and
+`docs/architecture/AGENT_DEFINITION_REVISIONS.md`). Tests: 3 new unit files + a concurrency file (113 + 7 tests),
+a real-database integration file, and the updated production-surfaces lock. Signed-in browser checks ran against
+the disposable local stack only. Next dependency: the trusted evaluator and lifecycle/runtime revision binding.

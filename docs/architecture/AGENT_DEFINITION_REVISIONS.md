@@ -239,3 +239,38 @@ trusted evaluator (Test step) and PR E (billing evidence) remain upstream of a r
   (newest succeeded, fired run); a failed read makes the home `unavailable`. `needsReviewCount`
   keyset-pages every run that produced approvals, then checks which are still pending; an
   error or exceeding the page ceiling yields `null`, never `0`.
+
+## Builder UI (Build 2)
+
+`/agents`, `/agents/build`, `/agents/[agentId]` and `/agents/[agentId]/revisions/[revision]`
+are server-loaded through the Build 1 actions only. Additions to the application seam (no
+migration, no evaluator, no executor, no provider call):
+
+- **`createGradiaAgentIdentity({ name })`**: session-derived shop and actor, live-owner check in the
+  database, bounded display name (3–80, no control characters or angle brackets, whitespace collapsed),
+  at most 50 identities per workspace. It creates only a `custom_agents` row with `enabled = false`.
+  `custom_agents.config` is NOT NULL and the legacy cards read it, so the row carries an inert but
+  schema-valid config with no recipe, no freeform plan and no schedule: the legacy runtime has nothing to
+  execute, and a governed agent can only be enabled inside definition activation. No prompt, provider,
+  credential or tool authority is stored. The builder then loads the exact agent by id.
+- **`getSelectableMemory()`**: a read-only catalog of reviewed memory sources (id, name, revision,
+  status). Only a current, published, unexpired, unrevoked source is `selectable`; candidates, revoked and
+  expired sources are listed with their status but cannot be newly selected. Bodies, content hashes,
+  safety fields and embeddings are never selected. Owner, manager and staff may read; other callers get
+  `forbidden`; any read error is `unavailable`, never an empty catalog.
+- **Stale-view saves are conflicts.** `saveAgentDefinitionRevision` accepts `expectedLatestRevision`
+  (the latest revision the editor was looking at; `null` = none yet). A save from a stale view returns
+  `conflict` and writes nothing, so a second tab cannot silently become the new latest. An already recorded
+  request id is left to the database (replay or changed-replay conflict). Callers that omit the field keep
+  Build 1 behavior. The check is an application read immediately before the atomic write; the database still
+  records exact lineage, so a save that lands in that narrow window is visible as a revision whose parent is
+  not its predecessor, never as an overwrite. A database-enforced expected-latest is a possible later hardening.
+- **`definition-schema.ts`** holds the strict definition vocabulary with no server-only imports so the
+  builder validates against the same schema the server enforces. `definition.ts` re-exports it unchanged.
+
+Honesty rules the UI enforces: forbidden and unavailable reads render their own states and are never an empty
+list or an eligible result; the Test step states the runner is unavailable and never writes evidence;
+activation echoes only the revision, its hash and the pointer the owner saw, and runs only from the
+confirmation dialog; every `ACTIVATION_BLOCKERS` code has reviewed copy (source-locked) and an unknown code
+renders as "could not be confirmed". Agent runs still execute the legacy `config` and do not record the active
+definition revision; the UI says so where it matters.

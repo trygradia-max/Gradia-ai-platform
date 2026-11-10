@@ -97,13 +97,48 @@ export type CreateRevisionResult =
       sourceIds?: string[]
     }
 
+/**
+ * Optimistic-concurrency guard for the builder. When the caller states the latest revision it
+ * was looking at, a save from a stale view is a `conflict` instead of silently becoming the new
+ * latest. An already-recorded request id is never judged here (the database decides replay vs
+ * changed replay). The database still records exact lineage; a concurrent save that lands
+ * between this read and the atomic write is visible as a revision whose parent is not its
+ * predecessor, never as an overwrite.
+ */
+async function staleView(
+  deps: Db,
+  input: { shopId: string; actorId: string; agentId: string; requestId: string; expectedLatest: number | null }
+): Promise<"stale" | "fresh" | "forbidden" | "unavailable"> {
+  try {
+    if ((await actorRole(deps, input.shopId, input.actorId)) !== "owner") return "forbidden"
+    const existing = await deps.service.from("agent_definition_revisions").select("revision")
+      .eq("shop_id", input.shopId).eq("agent_id", input.agentId).eq("request_id", input.requestId).maybeSingle()
+    if (existing.error) return "unavailable"
+    if (existing.data) return "fresh"
+    const state = await loadState(deps, input.shopId, input.agentId)
+    return (state?.latest_revision ?? 0) === (input.expectedLatest ?? 0) ? "fresh" : "stale"
+  } catch {
+    return "unavailable"
+  }
+}
+
 /** Saves one immutable revision. Exact replay (same request id + content) returns the same revision. */
 export async function createAgentDefinitionRevision(
   deps: Db,
-  input: { shopId: string; actorId: string; agentId: string; requestId: string; definition: unknown; parentRevision?: number | null }
+  input: {
+    shopId: string; actorId: string; agentId: string; requestId: string; definition: unknown; parentRevision?: number | null
+    /** The latest revision the caller saw (null = none). Omitted = not enforced. */
+    expectedLatest?: number | null
+  }
 ): Promise<CreateRevisionResult> {
   const parsed = parseDefinitionInput(input.definition)
   if (!parsed.ok) return { ok: false, code: "invalid_definition" }
+  if (input.expectedLatest !== undefined) {
+    const view = await staleView(deps, { ...input, expectedLatest: input.expectedLatest })
+    if (view === "stale") return { ok: false, code: "conflict" }
+    if (view === "forbidden") return { ok: false, code: "forbidden" }
+    if (view === "unavailable") return { ok: false, code: "unavailable" }
+  }
   const { data, error } = await deps.service.rpc("agent_definition_create_revision", {
     p_shop: input.shopId,
     p_actor: input.actorId,
