@@ -2619,7 +2619,6 @@ the merged commercial activation gate; tenant/role/concurrency/rollback proofs; 
 the minimal DTO for Cursor's seven-step builder. It forbids a second agent schema,
 runtime, memory store, policy engine, executor or billing gate. No application,
 schema, provider, Stripe, shared-data, deployment or production change was made.
-
 [AI: claude-code] [DATE: 2026-11-07] [AREA: agent-os] [STATUS: in-review]
 Build 1: immutable Gradia Agent definition revisions + one atomic active pointer per existing `custom_agents`
 identity (branch `claude/agent-definition-revisions`, base `ca629da`). Migration
@@ -2666,3 +2665,40 @@ Activation is bound to a database-computed connector evidence fingerprint
 place). (3) Removed the trailing blank line (`git diff --check` clean). Added >500-row unit
 regressions (`eval/agent-definition-home-aggregation.test.ts`), a stale/racing connector integration
 test, and verifier probes. No authority, table or billing changes beyond the one function signature.
+[AI: codex] [DATE: 2026-11-09] [AREA: docs] [STATUS: done]
+Prepared the isolated Claude Build 2 lane for the canonical `/agents` home,
+resumable seven-step immutable-definition builder, agent detail and revision pages.
+The handoff binds UI behavior to merged PR #135 DTOs/actions, requires honest
+forbidden/unavailable/evaluation/billing states, exact save replay, owner-only
+identity and lifecycle controls, responsive accessibility and reconciliation of
+useful Cursor polish without importing its experimental schema. It explicitly
+forbids a second runtime/policy/memory/billing system, fake test evidence, provider
+calls, migrations, shared data, deployment or production changes. No application
+or external-system mutation occurred.
+
+## 2026-11-09 - [Claude Code] Agent builder and configuration UI (Build 2)
+
+Implemented the Agent OS home, the resumable seven-step definition builder, the agent detail page and the
+immutable revision page, wired only to the merged Build 1 actions/DTOs. Replaced the two `/agents` aliases of the
+legacy receptionist pages (the legacy `/receptionist` routes and the gated workflow builder are untouched).
+Application seam additions only: `createGradiaAgentIdentity` (disabled identity, owner-only, session-derived),
+`getSelectableMemory` (read-only reviewed-memory catalog; no bodies), and `expectedLatestRevision` on
+`saveAgentDefinitionRevision` so a stale tab conflicts instead of silently becoming the latest. Extracted the pure
+definition schema to `definition-schema.ts` for client validation. No migration, evaluator, executor, provider
+call, cron, shared-data write or production-gate change. The Test step states the runner is unavailable; no
+evaluation evidence is created. Runs still execute legacy `config` (documented in the UI and
+`docs/architecture/AGENT_DEFINITION_REVISIONS.md`). Tests: 3 new unit files + a concurrency file (113 + 7 tests),
+a real-database integration file, and the updated production-surfaces lock. Signed-in browser checks ran against
+the disposable local stack only. Next dependency: the trusted evaluator and lifecycle/runtime revision binding.
+
+## 2026-11-10 - [Claude Code] PR #136 review corrections (atomic expected-latest, guarded builder links)
+Codex blocking review. (1) Expected-latest moved into the RPC: migration `20261110120000_agent_definition_atomic_expected_latest.sql`
+replaces `agent_definition_create_revision` with a 7-argument version that compares `p_expected_latest` after the
+exact-request replay check and under the agent/state locks; the store no longer pre-reads. A real concurrent
+integration test (4 racers, 6 rounds, plus a first-save race) proves exactly one revision per round and an unbroken
+lineage; replay with a stale view still replays and a changed replay still conflicts. (2) Every link that can leave
+the builder (header, Settings, Control Center, Check connections, blocker action links, View agent) is a
+`GuardedLink` that opens the unsaved-change dialog when dirty (new-tab clicks are left alone); blocker "Go to
+<step>" actions move between steps in place and keep edits. Added jsdom + Testing Library as devDependencies and a
+DOM interaction test (8 cases; 6 fail with the guard disabled). No evaluator, executor, provider call, cron or
+production-gate change; migration applied only to the disposable local stack.

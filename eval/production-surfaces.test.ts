@@ -99,17 +99,21 @@ describe("revalidatePath targets (no redirect stubs)", () => {
 })
 
 describe("Agent OS information architecture", () => {
-  it("uses /agents as the canonical home while the legacy workflow builder stays gated", () => {
+  it("uses /agents as the canonical Agent OS home and /agents/build as the definition builder; the legacy workflow builder stays gated", () => {
     const agents = readFileSync("src/app/(dashboard)/agents/page.tsx", "utf8")
     const builder = readFileSync("src/app/(dashboard)/agents/build/page.tsx", "utf8")
     const sharedHome = readFileSync("src/app/(dashboard)/receptionist/page.tsx", "utf8")
+    const legacyBuilder = readFileSync("src/app/(dashboard)/receptionist/build/page.tsx", "utf8")
     const sidebar = readFileSync("src/components/gradia/app-sidebar.tsx", "utf8")
     const features = readFileSync("src/lib/features.ts", "utf8")
 
     expect(agents).not.toContain('redirect("/receptionist")')
-    expect(agents).toContain('from "../receptionist/page"')
-    expect(builder).toContain('from "../../receptionist/build/page"')
+    expect(agents).not.toContain("receptionist/page")
+    expect(agents).toContain("getAgentsHome")
+    expect(builder).not.toContain("receptionist/build/page")
+    expect(builder).toContain("getBuilderResume")
     expect(sharedHome).toContain('href="/agents/build"')
+    expect(legacyBuilder).toContain("FEATURES.workflowBuilder")
     expect(sidebar).toContain('{ href: "/agents", label: "Gradia Agents"')
     expect(features).toContain("workflowBuilder: false")
   })

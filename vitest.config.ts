@@ -13,7 +13,7 @@ export default defineConfig({
   test: {
     environment: "node",
     setupFiles: ["./eval/_setup.ts"],
-    include: ["eval/**/*.test.ts"],
+    include: ["eval/**/*.test.{ts,tsx}"],
     testTimeout: 60_000,
     hookTimeout: 60_000,
   },

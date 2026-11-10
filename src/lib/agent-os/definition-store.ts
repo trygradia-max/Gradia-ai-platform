@@ -100,7 +100,11 @@ export type CreateRevisionResult =
 /** Saves one immutable revision. Exact replay (same request id + content) returns the same revision. */
 export async function createAgentDefinitionRevision(
   deps: Db,
-  input: { shopId: string; actorId: string; agentId: string; requestId: string; definition: unknown; parentRevision?: number | null }
+  input: {
+    shopId: string; actorId: string; agentId: string; requestId: string; definition: unknown; parentRevision?: number | null
+    /** The latest revision the caller saw (null = none). Omitted = not enforced. */
+    expectedLatest?: number | null
+  }
 ): Promise<CreateRevisionResult> {
   const parsed = parseDefinitionInput(input.definition)
   if (!parsed.ok) return { ok: false, code: "invalid_definition" }
@@ -111,6 +115,8 @@ export async function createAgentDefinitionRevision(
     p_request_id: input.requestId,
     p_definition: parsed.definition,
     p_parent: input.parentRevision ?? null,
+    // Decided inside the RPC under the agent/state locks (NULL = not enforced, 0 = nothing saved yet).
+    p_expected_latest: input.expectedLatest === undefined ? null : (input.expectedLatest ?? 0),
   })
   if (error) {
     const kind = rpcFailure(error)
@@ -128,6 +134,7 @@ export async function createAgentDefinitionRevision(
   }
   if (row.outcome === "blocked") {
     const code = row.code
+    if (code === "stale_latest") return { ok: false, code: "conflict" }
     if (code === "agent_not_found" || code === "legacy_agent_enabled" || code === "parent_not_found" || code === "memory_not_selectable") {
       return {
         ok: false,
