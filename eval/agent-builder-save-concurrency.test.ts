@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 import { createAgentDefinitionRevision } from "@/lib/agent-os/definition-store"
@@ -18,71 +19,78 @@ const definition = {
   routing: { strategy: "cost_aware", semanticCache: false },
 }
 
-function fake(opts: { role?: string | null; latest?: number | null; existingRequest?: boolean; stateError?: boolean }) {
-  const rpcs: string[] = []
+type RpcArgs = Record<string, unknown>
+/** The database decides expected-latest atomically; the store only passes it through and maps the answer. */
+function fake(respond: (args: RpcArgs) => { data?: unknown; error?: { code: string } }) {
+  const calls: { fn: string; args: RpcArgs }[] = []
   const service = {
-    rpc: async (fn: string) => {
-      rpcs.push(fn)
-      if (fn === "agent_definition_actor_role") return { data: opts.role ?? "owner", error: null }
-      return { data: { outcome: "created", revision: (opts.latest ?? 0) + 1, definition_hash: "a".repeat(64), parent_revision: opts.latest ?? null }, error: null }
+    rpc: async (fn: string, args: RpcArgs) => {
+      calls.push({ fn, args })
+      const r = respond(args)
+      return { data: r.data ?? null, error: r.error ?? null }
     },
-    from: (table: string) => ({
-      select: () => ({
-        eq: function () { return this },
-        maybeSingle: async () => {
-          if (table === "agent_definition_revisions") return { data: opts.existingRequest ? { revision: 2 } : null, error: null }
-          if (opts.stateError) return { data: null, error: { code: "x" } }
-          return { data: opts.latest === null || opts.latest === undefined ? null : { agent_id: agentId, latest_revision: opts.latest, lifecycle: "draft", active_revision: null, lifecycle_reason: null, version: 1 }, error: null }
-        },
-      }),
-    }),
+    from: () => {
+      throw new Error("the store must not read agent state before the atomic RPC")
+    },
   }
-  return { service: service as never, rpcs }
+  return { service: service as never, calls }
 }
+const created = (revision: number) => ({ data: { outcome: "created", revision, definition_hash: "a".repeat(64), parent_revision: revision > 1 ? revision - 1 : null } })
 
 const save = (deps: ReturnType<typeof fake>, over: Record<string, unknown> = {}) =>
   createAgentDefinitionRevision({ service: deps.service }, { shopId, actorId, agentId, requestId, definition, ...over })
 
-describe("stale-view detection on save", () => {
-  it("saves when the editor's latest matches the server's latest", async () => {
-    const deps = fake({ latest: 2 })
-    expect(await save(deps, { parentRevision: 2, expectedLatest: 2 })).toMatchObject({ ok: true, outcome: "created" })
-    expect(deps.rpcs).toContain("agent_definition_create_revision")
+describe("expected-latest is decided inside the database, not by a pre-read", () => {
+  it("passes the editor's latest revision to the RPC and makes exactly one call", async () => {
+    const deps = fake(() => created(3))
+    expect(await save(deps, { parentRevision: 2, expectedLatest: 2 })).toMatchObject({ ok: true, outcome: "created", revision: 3 })
+    expect(deps.calls).toHaveLength(1)
+    expect(deps.calls[0]).toMatchObject({ fn: "agent_definition_create_revision", args: { p_parent: 2, p_expected_latest: 2 } })
   })
 
-  it("the first save (nothing yet) succeeds only if nothing exists", async () => {
-    expect(await save(fake({ latest: null }), { expectedLatest: null })).toMatchObject({ ok: true })
-    const raced = fake({ latest: 1 })
-    expect(await save(raced, { expectedLatest: null })).toEqual({ ok: false, code: "conflict" })
-    expect(raced.rpcs).not.toContain("agent_definition_create_revision")
+  it("'nothing saved yet' is sent as 0, and 'not stated' as null (Build 1 behavior)", async () => {
+    const first = fake(() => created(1))
+    await save(first, { expectedLatest: null })
+    expect(first.calls[0].args.p_expected_latest).toBe(0)
+    const unstated = fake(() => created(6))
+    await save(unstated, { parentRevision: 1 })
+    expect(unstated.calls[0].args.p_expected_latest).toBeNull()
   })
 
-  it("a stale tab conflicts and writes nothing, instead of silently becoming the new latest", async () => {
-    const deps = fake({ latest: 3 })
+  it("a stale_latest answer is a conflict and carries no revision", async () => {
+    const deps = fake(() => ({ data: { outcome: "blocked", code: "stale_latest", latest_revision: 3 } }))
     expect(await save(deps, { parentRevision: 1, expectedLatest: 1 })).toEqual({ ok: false, code: "conflict" })
-    expect(deps.rpcs).not.toContain("agent_definition_create_revision")
   })
 
-  it("a retry of a request that already exists is left to the database (replay), even though latest moved", async () => {
-    const deps = fake({ latest: 2, existingRequest: true })
-    expect(await save(deps, { parentRevision: 1, expectedLatest: 1 })).toMatchObject({ ok: true })
-    expect(deps.rpcs).toContain("agent_definition_create_revision")
+  it("a replay of an already-recorded request still succeeds (the database replays before it compares)", async () => {
+    const deps = fake(() => ({ data: { outcome: "replayed", revision: 2, definition_hash: "a".repeat(64), parent_revision: 1 } }))
+    expect(await save(deps, { parentRevision: 1, expectedLatest: 1 })).toMatchObject({ ok: true, outcome: "replayed", revision: 2 })
   })
 
-  it("is not enforced when the caller does not state its view (Build 1 behavior unchanged)", async () => {
-    const deps = fake({ latest: 5 })
-    expect(await save(deps, { parentRevision: 1 })).toMatchObject({ ok: true })
+  it("a changed replay (AD409) is a conflict", async () => {
+    expect(await save(fake(() => ({ error: { code: "AD409" } })), { expectedLatest: 1 })).toEqual({ ok: false, code: "conflict" })
   })
 
-  it("non-owners are refused before anything is read about the agent", async () => {
-    const deps = fake({ role: "manager", latest: 2 })
-    expect(await save(deps, { expectedLatest: 2 })).toEqual({ ok: false, code: "forbidden" })
-    expect(deps.rpcs).toEqual(["agent_definition_actor_role"])
+  it("non-owners are refused by the database authority check", async () => {
+    expect(await save(fake(() => ({ error: { code: "42501" } })), { expectedLatest: 2 })).toEqual({ ok: false, code: "forbidden" })
   })
 
-  it("fails closed when the latest revision cannot be read", async () => {
-    const deps = fake({ latest: 2, stateError: true })
-    expect(await save(deps, { expectedLatest: 2 })).toEqual({ ok: false, code: "unavailable" })
-    expect(deps.rpcs).not.toContain("agent_definition_create_revision")
+  it("fails closed when the RPC is unavailable", async () => {
+    expect(await save(fake(() => ({ error: { code: "XX000" } })), { expectedLatest: 2 })).toEqual({ ok: false, code: "unavailable" })
+  })
+
+  it("the migration compares under the agent and state locks, after replay, and locks the privileges down", () => {
+    const sql = readFileSync("supabase/migrations/20261110120000_agent_definition_atomic_expected_latest.sql", "utf8")
+    const lockState = sql.indexOf("FROM public.agent_definition_state WHERE agent_id = p_agent FOR UPDATE")
+    const replay = sql.indexOf("'replayed'")
+    const compare = sql.indexOf("p_expected_latest <> st.latest_revision")
+    const allocate = sql.indexOf("v_next := st.latest_revision + 1")
+    expect(lockState).toBeGreaterThan(0)
+    expect(lockState).toBeLessThan(replay)
+    expect(replay).toBeLessThan(compare)
+    expect(compare).toBeLessThan(allocate)
+    expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.agent_definition_create_revision\(uuid, uuid, uuid, uuid, jsonb, integer, integer\)\s+FROM PUBLIC, anon, authenticated, service_role/)
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.agent_definition_create_revision\(uuid, uuid, uuid, uuid, jsonb, integer, integer\)\s+TO service_role/)
+    expect(sql).toContain("DROP FUNCTION public.agent_definition_create_revision(uuid, uuid, uuid, uuid, jsonb, integer);")
   })
 })

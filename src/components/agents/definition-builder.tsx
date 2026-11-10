@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { GuardedLink, NavGuardProvider } from "@/components/agents/nav-guard"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Circle, CircleAlert, ExternalLink, Lock } from "lucide-react"
@@ -116,10 +116,6 @@ export function DefinitionBuilder({ resume, initialStep, catalog, confirmedTools
     []
   )
 
-  const guardedNavigate = (href: string) => {
-    if (dirty) setLeaveTo(href)
-    else router.push(href)
-  }
 
   const saveRevision = (advanceTo?: BuilderStepKey) => {
     if (readOnly || pending) return
@@ -181,21 +177,16 @@ export function DefinitionBuilder({ resume, initialStep, catalog, confirmedTools
   const needsSave = step !== "test" && step !== "activate"
 
   return (
+    <NavGuardProvider value={{ dirty, requestLeave: setLeaveTo }}>
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Link
+          <GuardedLink
             href={`/agents/${resume.agentId}`}
-            onClick={(e) => {
-              if (dirty) {
-                e.preventDefault()
-                guardedNavigate(`/agents/${resume.agentId}`)
-              }
-            }}
             className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline sm:min-h-8"
           >
             <ArrowLeft className="size-4" aria-hidden /> {resume.name}
-          </Link>
+          </GuardedLink>
           {latest || resume.governance === "governed" ? <LifecyclePill lifecycle={resume.lifecycle} /> : <StatusPill tone="muted">No revision saved yet</StatusPill>}
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">Build {resume.name}</h1>
@@ -303,7 +294,7 @@ export function DefinitionBuilder({ resume, initialStep, catalog, confirmedTools
               {step === "schedule" ? <ScheduleStep form={form} setForm={setForm} errors={errors} disabled={readOnly} /> : null}
             </fieldset>
             {step === "test" ? <TestStep evaluations={evaluations} eligibility={resume.eligibility} savedRevision={latest?.revision ?? null} /> : null}
-            {step === "activate" ? <ActivateStep resume={resume} dirty={dirty} /> : null}
+            {step === "activate" ? <ActivateStep resume={resume} dirty={dirty} onStep={goToStep} /> : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
@@ -345,6 +336,7 @@ export function DefinitionBuilder({ resume, initialStep, catalog, confirmedTools
         }}
       />
     </div>
+    </NavGuardProvider>
   )
 }
 
@@ -352,7 +344,7 @@ export function DefinitionBuilder({ resume, initialStep, catalog, confirmedTools
 // Activate
 // ---------------------------------------------------------------------------
 
-function ActivateStep({ resume, dirty }: { resume: BuilderResumeDto; dirty: boolean }) {
+function ActivateStep({ resume, dirty, onStep }: { resume: BuilderResumeDto; dirty: boolean; onStep: (step: BuilderStepKey) => void }) {
   const router = useRouter()
   const latest = resume.latestRevision
   const [eligibility, setEligibility] = useState<DtoResult<ActivationEligibilityDto> | { status: "idle" }>(
@@ -446,7 +438,7 @@ function ActivateStep({ resume, dirty }: { resume: BuilderResumeDto; dirty: bool
               {data.sources ? `${data.sources.activeAgentCount} of ${data.sources.activeAgentLimit} agent slots in use` : null}
             </span>
           </div>
-          <BlockerList eligibility={data} builderHref={`/agents/build?agent=${resume.agentId}`} />
+          <BlockerList eligibility={data} builderHref={`/agents/build?agent=${resume.agentId}`} onStep={onStep} />
         </div>
       ) : null}
 
@@ -491,9 +483,9 @@ function ActivationResult({ outcome, agentId }: { outcome: ActivateOutcome | { k
     return (
       <div role="status" className="space-y-2 rounded-md bg-status-success-bg px-4 py-3 text-sm text-status-success-fg">
         <p className="font-medium">{outcome.alreadyActive ? "This revision was already active." : `Revision ${outcome.revision} is active.`}</p>
-        <Link href={`/agents/${agentId}`} className={cn(buttonVariants({ variant: "outline" }), "min-h-11")}>
+        <GuardedLink href={`/agents/${agentId}`} className={cn(buttonVariants({ variant: "outline" }), "min-h-11")}>
           View agent
-        </Link>
+        </GuardedLink>
       </div>
     )
   }

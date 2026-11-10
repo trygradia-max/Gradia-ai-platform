@@ -1,4 +1,6 @@
 import Link from "next/link"
+import type { BuilderStepKey } from "@/lib/agent-os/definition-dto"
+import { GuardedLink } from "@/components/agents/nav-guard"
 import { AlertTriangle, CheckCircle2, CircleSlash, Info, ShieldAlert } from "lucide-react"
 import type { ReactNode } from "react"
 
@@ -115,7 +117,7 @@ export function HashValue({ hash }: { hash: string }) {
   )
 }
 
-export function BlockerList({ eligibility, builderHref }: { eligibility: ActivationEligibilityDto; builderHref?: string }) {
+export function BlockerList({ eligibility, builderHref, onStep }: { eligibility: ActivationEligibilityDto; builderHref?: string; onStep?: (step: BuilderStepKey) => void }) {
   if (eligibility.alreadyActive) {
     return <p className="text-sm text-foreground">This exact revision is already the active definition.</p>
   }
@@ -137,14 +139,18 @@ export function BlockerList({ eligibility, builderHref }: { eligibility: Activat
               {copy.title} <span className="sr-only">({code})</span>
             </p>
             <p>{copy.detail}</p>
-            {copy.action?.step && builderHref ? (
-              <Link href={`${builderHref}&step=${copy.action.step}`} className="inline-block py-2 underline underline-offset-2">
+            {copy.action?.step && onStep ? (
+              <button type="button" onClick={() => onStep(copy.action!.step as BuilderStepKey)} className="inline-block py-2 text-left underline underline-offset-2">
                 {copy.action.label}
-              </Link>
+              </button>
+            ) : copy.action?.step && builderHref ? (
+              <GuardedLink href={`${builderHref}&step=${copy.action.step}`} className="inline-block py-2 underline underline-offset-2">
+                {copy.action.label}
+              </GuardedLink>
             ) : copy.action?.href ? (
-              <Link href={copy.action.href} className="inline-block py-2 underline underline-offset-2">
+              <GuardedLink href={copy.action.href} className="inline-block py-2 underline underline-offset-2">
                 {copy.action.label}
-              </Link>
+              </GuardedLink>
             ) : null}
           </div>
         </li>

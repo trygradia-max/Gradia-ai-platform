@@ -261,10 +261,12 @@ migration, no evaluator, no executor, no provider call):
 - **Stale-view saves are conflicts.** `saveAgentDefinitionRevision` accepts `expectedLatestRevision`
   (the latest revision the editor was looking at; `null` = none yet). A save from a stale view returns
   `conflict` and writes nothing, so a second tab cannot silently become the new latest. An already recorded
-  request id is left to the database (replay or changed-replay conflict). Callers that omit the field keep
-  Build 1 behavior. The check is an application read immediately before the atomic write; the database still
-  records exact lineage, so a save that lands in that narrow window is visible as a revision whose parent is
-  not its predecessor, never as an overwrite. A database-enforced expected-latest is a possible later hardening.
+  request id replays (or conflicts when changed) first. Callers that omit the field keep Build 1 behavior.
+  The comparison is atomic: migration `20261110120000_agent_definition_atomic_expected_latest.sql` adds
+  `p_expected_latest` to `agent_definition_create_revision` and compares it under the same agent + state
+  row locks that allocate the revision number (`stale_latest` blocked result, mapped to `conflict`). Two
+  simultaneous saves from the same view therefore produce exactly one revision. The earlier application-side
+  pre-read was removed.
 - **`definition-schema.ts`** holds the strict definition vocabulary with no server-only imports so the
   builder validates against the same schema the server enforces. `definition.ts` re-exports it unchanged.
 

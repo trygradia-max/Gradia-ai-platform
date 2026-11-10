@@ -176,6 +176,60 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent builder identity, flow and mem
     expect(revision1.status === "ok" ? revision1.data.definitionHash : null).toBe(first.definitionHash)
   })
 
+  it("simultaneous saves from the same expected latest: exactly one creates, every other conflicts, nothing extra is written", async () => {
+    const created = await createAgentIdentity({ service: db }, { shopId: shop.shopId, actorId: shop.ownerId, name: "Race agent" })
+    if (!created.ok) throw new Error("identity failed")
+    const base = { shopId: shop.shopId, actorId: shop.ownerId, agentId: created.agentId }
+    const key = body().key
+    const racers = 4
+    const rounds = 5
+
+    // First-save race: nothing exists yet, every racer says expectedLatest null.
+    let outcomes = await Promise.all(Array.from({ length: racers }, (_, i) =>
+      createAgentDefinitionRevision({ service: db }, { ...base, requestId: randomUUID(), definition: body({ key, job: { roleLabel: "Quote follow-up", goal: `First racer number ${i} goal text.`, expectedOutcomes: ["Quote answered"], stopConditions: ["Customer says stop"] } }), parentRevision: null, expectedLatest: null })))
+    expect(outcomes.filter((o) => o.ok)).toHaveLength(1)
+    expect(outcomes.filter((o) => !o.ok)).toEqual(Array.from({ length: racers - 1 }, () => ({ ok: false, code: "conflict" })))
+    expect((await db.from("agent_definition_revisions").select("revision").eq("agent_id", created.agentId)).data).toHaveLength(1)
+
+    // Then repeated rounds, each from the latest the editors last saw.
+    for (let round = 1; round <= rounds; round++) {
+      outcomes = await Promise.all(Array.from({ length: racers }, (_, i) =>
+        createAgentDefinitionRevision({ service: db }, { ...base, requestId: randomUUID(), definition: body({ key, job: { roleLabel: "Quote follow-up", goal: `Round ${round} racer ${i} goal text.`, expectedOutcomes: ["Quote answered"], stopConditions: ["Customer says stop"] } }), parentRevision: round, expectedLatest: round })))
+      const winners = outcomes.filter((o) => o.ok)
+      expect(winners).toHaveLength(1)
+      expect(winners[0]).toMatchObject({ ok: true, outcome: "created", revision: round + 1, parentRevision: round })
+      expect(outcomes.filter((o) => !o.ok)).toEqual(Array.from({ length: racers - 1 }, () => ({ ok: false, code: "conflict" })))
+    }
+
+    // Exactly 1 + rounds revisions, with an unbroken lineage: every revision's parent is its predecessor.
+    const rows = (await db.from("agent_definition_revisions").select("revision,parent_revision").eq("agent_id", created.agentId).order("revision")).data!
+    expect(rows.map((r) => r.revision)).toEqual(Array.from({ length: rounds + 1 }, (_, i) => i + 1))
+    expect(rows.map((r) => r.parent_revision)).toEqual([null, ...Array.from({ length: rounds }, (_, i) => i + 1)])
+    const state = (await db.from("agent_definition_state").select("latest_revision").eq("agent_id", created.agentId).single()).data!
+    expect(state.latest_revision).toBe(rounds + 1)
+  })
+
+  it("replay is exact even after latest moved and the editor view is stale; a changed replay still conflicts", async () => {
+    const created = await createAgentIdentity({ service: db }, { shopId: shop.shopId, actorId: shop.ownerId, name: "Replay agent" })
+    if (!created.ok) throw new Error("identity failed")
+    const base = { shopId: shop.shopId, actorId: shop.ownerId, agentId: created.agentId }
+    const key = body().key
+    const req = randomUUID()
+    const def = body({ key })
+    const first = await createAgentDefinitionRevision({ service: db }, { ...base, requestId: req, definition: def, parentRevision: null, expectedLatest: null })
+    expect(first).toMatchObject({ ok: true, outcome: "created", revision: 1 })
+    // Someone else moves latest to 2.
+    expect(await createAgentDefinitionRevision({ service: db }, { ...base, requestId: randomUUID(), definition: body({ key }), parentRevision: 1, expectedLatest: 1 })).toMatchObject({ ok: true, revision: 2 })
+    // The lost-response retry carries the same stale expectation and must replay revision 1, not conflict.
+    expect(await createAgentDefinitionRevision({ service: db }, { ...base, requestId: req, definition: def, parentRevision: null, expectedLatest: null })).toMatchObject({ ok: true, outcome: "replayed", revision: 1 })
+    // The same request id with different content conflicts even though it also carries a stale view.
+    expect(await createAgentDefinitionRevision({ service: db }, { ...base, requestId: req, definition: body({ key, job: { roleLabel: "Quote follow-up", goal: "Different goal for the same request.", expectedOutcomes: ["Quote answered"], stopConditions: ["Customer says stop"] } }), parentRevision: null, expectedLatest: null })).toEqual({ ok: false, code: "conflict" })
+    expect((await db.from("agent_definition_revisions").select("revision").eq("agent_id", created.agentId)).data).toHaveLength(2)
+    // A stale view with a NEW request id conflicts and writes nothing.
+    expect(await createAgentDefinitionRevision({ service: db }, { ...base, requestId: randomUUID(), definition: body({ key }), parentRevision: 1, expectedLatest: 1 })).toEqual({ ok: false, code: "conflict" })
+    expect((await db.from("agent_definition_revisions").select("revision").eq("agent_id", created.agentId)).data).toHaveLength(2)
+  })
+
   it("a non-owner cannot save, even when naming the right agent", async () => {
     const created = await createAgentIdentity({ service: db }, { shopId: shop.shopId, actorId: shop.ownerId, name: "Owner only agent" })
     if (!created.ok) throw new Error("identity failed")

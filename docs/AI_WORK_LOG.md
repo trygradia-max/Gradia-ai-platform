@@ -2690,3 +2690,15 @@ evaluation evidence is created. Runs still execute legacy `config` (documented i
 `docs/architecture/AGENT_DEFINITION_REVISIONS.md`). Tests: 3 new unit files + a concurrency file (113 + 7 tests),
 a real-database integration file, and the updated production-surfaces lock. Signed-in browser checks ran against
 the disposable local stack only. Next dependency: the trusted evaluator and lifecycle/runtime revision binding.
+
+## 2026-11-10 - [Claude Code] PR #136 review corrections (atomic expected-latest, guarded builder links)
+Codex blocking review. (1) Expected-latest moved into the RPC: migration `20261110120000_agent_definition_atomic_expected_latest.sql`
+replaces `agent_definition_create_revision` with a 7-argument version that compares `p_expected_latest` after the
+exact-request replay check and under the agent/state locks; the store no longer pre-reads. A real concurrent
+integration test (4 racers, 6 rounds, plus a first-save race) proves exactly one revision per round and an unbroken
+lineage; replay with a stale view still replays and a changed replay still conflicts. (2) Every link that can leave
+the builder (header, Settings, Control Center, Check connections, blocker action links, View agent) is a
+`GuardedLink` that opens the unsaved-change dialog when dirty (new-tab clicks are left alone); blocker "Go to
+<step>" actions move between steps in place and keep edits. Added jsdom + Testing Library as devDependencies and a
+DOM interaction test (8 cases; 6 fail with the guard disabled). No evaluator, executor, provider call, cron or
+production-gate change; migration applied only to the disposable local stack.

@@ -1,9 +1,9 @@
 "use client"
 
-import Link from "next/link"
 import { Plus, X } from "lucide-react"
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react"
 
+import { GuardedLink } from "@/components/agents/nav-guard"
 import { BlockerList, EvaluationList, RuntimeLimitationNote, ToolDecisionList } from "@/components/agents/agent-parts"
 import { FormField } from "@/components/gradia/form-field"
 import { Button } from "@/components/ui/button"
@@ -232,9 +232,9 @@ export function KnowledgeStep({
       ) : catalog.sources.length === 0 ? (
         <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
           You have no reviewed knowledge yet. You can continue without any. Add and review knowledge in{" "}
-          <Link href="/settings" className="underline underline-offset-2">
+          <GuardedLink href="/settings" className="underline underline-offset-2">
             Settings
-          </Link>
+          </GuardedLink>
           .
         </p>
       ) : (
@@ -347,13 +347,13 @@ export function ToolsStep({
       <StepIntro title="Tools">Choose what this agent may do and the highest level you will allow. Control Center decides what is actually permitted, and it can only lower these choices.</StepIntro>
       <p className="text-xs text-muted-foreground">
         Your choice is a <strong>requested maximum</strong>. What Gradia confirms is shown separately once you save.{" "}
-        <Link href="/control-center" className="underline underline-offset-2">
+        <GuardedLink href="/control-center" className="underline underline-offset-2">
           Open Control Center
-        </Link>{" "}
+        </GuardedLink>{" "}
         ·{" "}
-        <Link href="/settings" className="underline underline-offset-2">
+        <GuardedLink href="/settings" className="underline underline-offset-2">
           Check connections
-        </Link>
+        </GuardedLink>
       </p>
       {confirmedUnavailable ? (
         <div role="alert" className="rounded-md bg-status-warning-bg px-3 py-2 text-sm text-status-warning-fg">
