@@ -763,7 +763,8 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent definition revisions [integrat
     it("paused and blocked definitions cannot create new run claims; resume needs fresh activation", async () => {
       const x = await world()
       const agent = await newAgent(x.shop)
-      const rev = await readyRevision(x, agent)
+      // A governed run needs an interval schedule (Build 3 binds the exact revision at claim).
+      const rev = await readyRevision(x, agent, { schedule: { kind: "interval", everyMinutes: 60 } })
       expect((await activate(x, agent, rev)).ok).toBe(true)
       expect((await claim(agent)).data).toMatchObject({ outcome: "claimed" })
 
@@ -784,8 +785,12 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("agent definition revisions [integrat
       expect((await claim(agent)).data).toEqual({ outcome: "agent_unavailable" })
       expect(await setAgentDefinitionLifecycle({ service: db }, { shopId: x.shop.shopId, actorId: x.shop.ownerId, agentId: agent, lifecycle: "paused", reason: "x", expectedPointer: 1 })).toMatchObject({ ok: false, code: "invalid_transition" })
 
-      // Resuming is an ordinary activation with fresh evidence.
+      // Resuming is an ordinary activation with fresh evidence. The first run is still in flight
+      // (one concurrent run per definition), so the next window is refused until it finishes.
       expect(await activate(x, agent, rev, 1)).toEqual({ ok: true, outcome: "activated", revision: 1 })
+      expect((await claim(agent)).data).toMatchObject({ outcome: "refused", reasons: ["concurrent_run_active"] })
+      const first = (await db.from("custom_agent_runs").select("id,worker_id,attempt").eq("agent_id", agent).eq("state", "running").single()).data!
+      expect((await db.rpc("finish_scheduled_agent_run", { p_run: first.id, p_worker: first.worker_id, p_attempt: first.attempt, p_state: "skipped", p_fired: false })).data).toBe(true)
       expect((await claim(agent)).data).toMatchObject({ outcome: "claimed" })
       expect((await events(agent)).map((e) => e.kind)).toEqual(["revision_created", "activated", "paused", "blocked", "activated"])
     })
