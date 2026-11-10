@@ -2619,7 +2619,6 @@ the merged commercial activation gate; tenant/role/concurrency/rollback proofs; 
 the minimal DTO for Cursor's seven-step builder. It forbids a second agent schema,
 runtime, memory store, policy engine, executor or billing gate. No application,
 schema, provider, Stripe, shared-data, deployment or production change was made.
-
 [AI: claude-code] [DATE: 2026-11-07] [AREA: agent-os] [STATUS: in-review]
 Build 1: immutable Gradia Agent definition revisions + one atomic active pointer per existing `custom_agents`
 identity (branch `claude/agent-definition-revisions`, base `ca629da`). Migration
@@ -2666,3 +2665,13 @@ Activation is bound to a database-computed connector evidence fingerprint
 place). (3) Removed the trailing blank line (`git diff --check` clean). Added >500-row unit
 regressions (`eval/agent-definition-home-aggregation.test.ts`), a stale/racing connector integration
 test, and verifier probes. No authority, table or billing changes beyond the one function signature.
+[AI: codex] [DATE: 2026-11-09] [AREA: docs] [STATUS: done]
+Prepared the isolated Claude Build 2 lane for the canonical `/agents` home,
+resumable seven-step immutable-definition builder, agent detail and revision pages.
+The handoff binds UI behavior to merged PR #135 DTOs/actions, requires honest
+forbidden/unavailable/evaluation/billing states, exact save replay, owner-only
+identity and lifecycle controls, responsive accessibility and reconciliation of
+useful Cursor polish without importing its experimental schema. It explicitly
+forbids a second runtime/policy/memory/billing system, fake test evidence, provider
+calls, migrations, shared data, deployment or production changes. No application
+or external-system mutation occurred.
