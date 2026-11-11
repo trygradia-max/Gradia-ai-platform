@@ -2702,3 +2702,17 @@ the builder (header, Settings, Control Center, Check connections, blocker action
 <step>" actions move between steps in place and keep edits. Added jsdom + Testing Library as devDependencies and a
 DOM interaction test (8 cases; 6 fail with the guard disabled). No evaluator, executor, provider call, cron or
 production-gate change; migration applied only to the disposable local stack.
+
+## 2026-11-10 - [Claude Code] Security fix: Aurinko OAuth `next` cookie injection and open redirect (audit finding #1)
+Fixed only confirmed finding #1 of the run-1 security audit. `?next` on `/api/aurinko/auth/start` was accepted with
+`startsWith("/") && !startsWith("//")` (so `/\evil.example` and `/</script>...` passed), stored in a cookie, and the
+callback interpolated it into the inline script of `finishOauth` with plain `JSON.stringify`. Defence in depth: new
+`src/lib/safe-internal-path.ts` (strict allowlist, decoded-form checks up to three passes, dot segments, length cap)
+is applied at start, again after reading the cookie in the callback, and again inside `finishOauth`; `finishOauth` now
+escapes `<`, `>`, `&`, U+2028/U+2029 for script embedding and sends a nonce-only script CSP, `nosniff` and `no-store`;
+start clears a stale next cookie when the value is missing or rejected, and the callback consumes both one-shot
+cookies before any early return so every exit path clears them. The shared `finishOauth` hardening also covers the
+Jobber callback, whose destinations are static `/settings?...` strings (no behavior change). Tests:
+`eval/aurinko-oauth-next.test.ts` (246 cases; runs the emitted script in a stub browser for popup and full-page flows).
+Non-goals: findings #2-#10, `src/app/auth/callback/route.ts` (own validator, untouched), no migration, provider call,
+Supabase/Vercel change, secret rotation, deployment or merge.

@@ -14,6 +14,7 @@ import { cookies } from "next/headers"
 
 import { buildAuthorizeUrl } from "@/lib/aurinko"
 import { resolveInteractiveOrigin } from "@/lib/request-origin"
+import { safeInternalPath } from "@/lib/safe-internal-path"
 import { requireShop } from "@/lib/shop"
 
 export const runtime = "nodejs"
@@ -22,12 +23,6 @@ export const dynamic = "force-dynamic"
 const STATE_COOKIE = "aurinko_oauth_state"
 const NEXT_COOKIE = "aurinko_oauth_next"
 const STATE_COOKIE_MAX_AGE_SECONDS = 60 * 10 // 10 minutes
-
-/** Only same-app paths — never an absolute URL (open-redirect guard). */
-function safeNextPath(raw: string | null): string | null {
-  if (!raw) return null
-  return raw.startsWith("/") && !raw.startsWith("//") ? raw : null
-}
 
 export async function GET(request: Request) {
   await requireShop()
@@ -52,10 +47,14 @@ export async function GET(request: Request) {
   })
 
   // Where to land after the callback (the onboarding wizard passes
-  // ?next=/onboarding?step=5 so the owner returns mid-flow). Same-app
-  // paths only; the callback consumes + clears the cookie.
-  const next = safeNextPath(new URL(request.url).searchParams.get("next"))
-  if (next) {
+  // ?next=/onboarding?step=5 so the owner returns mid-flow). Strict
+  // same-origin paths only (see safeInternalPath); the callback revalidates,
+  // consumes and clears the cookie. A missing or rejected value clears any
+  // stale cookie from an earlier attempt so it cannot leak into this flow.
+  const next = safeInternalPath(new URL(request.url).searchParams.get("next"))
+  if (!next) {
+    cookieStore.delete(NEXT_COOKIE)
+  } else {
     cookieStore.set({
       name: NEXT_COOKIE,
       value: next,
