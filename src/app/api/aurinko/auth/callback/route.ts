@@ -16,6 +16,7 @@ import {
 } from "@/lib/aurinko"
 import { encryptSecret } from "@/lib/crypto"
 import { finishOauth } from "@/lib/oauth-popup"
+import { safeInternalPath } from "@/lib/safe-internal-path"
 import { requireShop } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 
@@ -50,15 +51,23 @@ const NEXT_COOKIE = "aurinko_oauth_next"
 
 /** Lands on the wizard step (when the flow started there) or /settings. */
 function settingsRedirect(status: "ok" | string, next?: string | null): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) {
-    return next
-  }
+  const safeNext = safeInternalPath(next)
+  if (safeNext) return safeNext
   const params = new URLSearchParams({ email: status })
   return `/settings?${params.toString()}`
 }
 
 export async function GET(request: Request) {
   const shop = await requireShop()
+
+  // Consume both one-shot cookies up front so every exit path (provider
+  // error, missing params, state mismatch, failures, success) clears them.
+  // The next value is untrusted input: revalidate it after reading it back.
+  const cookieStore = await cookies()
+  const cookieNonce = cookieStore.get(STATE_COOKIE)?.value
+  const nextPath = safeInternalPath(cookieStore.get(NEXT_COOKIE)?.value)
+  cookieStore.delete(STATE_COOKIE)
+  cookieStore.delete(NEXT_COOKIE)
 
   const url = new URL(request.url)
   const code = url.searchParams.get("code")
@@ -73,12 +82,6 @@ export async function GET(request: Request) {
   if (!code || !state) {
     return finishOauth(settingsRedirect("missing_params"))
   }
-
-  const cookieStore = await cookies()
-  const cookieNonce = cookieStore.get(STATE_COOKIE)?.value
-  cookieStore.delete(STATE_COOKIE)
-  const nextPath = cookieStore.get(NEXT_COOKIE)?.value ?? null
-  cookieStore.delete(NEXT_COOKIE)
 
   if (!cookieNonce || cookieNonce !== state) {
     console.warn("[aurinko callback] state nonce mismatch")
