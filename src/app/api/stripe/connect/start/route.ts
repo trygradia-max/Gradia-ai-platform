@@ -18,6 +18,7 @@ import {
   getConnectedAccount,
 } from "@/lib/stripe"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
 export const runtime = "nodejs"
@@ -69,7 +70,7 @@ export async function GET() {
     try {
       const account = await createConnectedAccount({})
       accountId = account.id
-      await supabase
+      await createServiceClient()
         .from("shops")
         .update({
           stripe_account_id: account.id,
@@ -84,7 +85,7 @@ export async function GET() {
     // Refresh stored charges_enabled flag in case the shop re-onboards.
     try {
       const account = await getConnectedAccount(accountId)
-      await supabase
+      await createServiceClient()
         .from("shops")
         .update({ stripe_charges_enabled: account.charges_enabled })
         .eq("id", shop.id)

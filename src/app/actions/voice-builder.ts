@@ -250,8 +250,9 @@ export async function saveVoiceMinutesBudget(
   if (!parsed.success) {
     return { ok: false, error: "Enter a whole number of minutes (or clear for no cap)." }
   }
-  const supabase = await createClient()
-  const { error } = await supabase
+  // voice_minutes_budget is server-written (shops_protected_columns_guard); the shop id
+  // comes from requireShop() (owner session) and the value is validated above.
+  const { error } = await createServiceClient()
     .from("shops")
     .update({ voice_minutes_budget: parsed.data.minutes })
     .eq("id", shop.id)

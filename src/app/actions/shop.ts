@@ -442,8 +442,9 @@ export async function disconnectStripe(): Promise<DisconnectStripeResult> {
     return { ok: false, error: "Finish onboarding first." }
   }
 
-  const supabase = await createClient()
-  const { data, error } = await supabase
+  // Server-written columns (shops_protected_columns_guard): the shop id comes from the
+  // owner session via getOptionalShop(); the write uses the service client.
+  const { data, error } = await createServiceClient()
     .from("shops")
     .update({
       stripe_account_id: null,

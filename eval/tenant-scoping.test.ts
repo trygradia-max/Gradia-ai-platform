@@ -100,6 +100,14 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // getOptionalShop returned (a shop this user owns); the number itself is
     // checked against the shop's own account first (shop-texting-number.ts).
     "src/app/actions/shop.ts",
+    // Security audit #2/#5/#8 (shops_protected_columns_guard): billing, voice-enforcement
+    // and Gradia/Twilio identity columns on shops are server-written. These owner
+    // actions and routes authorize with requireShop()/getOptionalShop() (a shop this
+    // user owns), then write ONLY those columns with the service role, scoped by that
+    // shop id: stripe-connect.ts and the two Connect routes (stripe_account_id,
+    // stripe_charges_enabled), shop.ts disconnectStripe, voice-builder.ts
+    // saveVoiceMinutesBudget (voice_minutes_budget, value validated first).
+    "src/app/actions/stripe-connect.ts",
     "src/app/actions/twilio-provision.ts",
     "src/app/actions/voice-builder.ts",
     "src/app/api/admin/margin-report/route.ts",
@@ -136,6 +144,9 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/app/api/mcp/route.ts",
     "src/app/api/recovery/import/[jobId]/extract/route.ts",
     "src/app/api/recovery/import/route.ts",
+    // Same audit #2 rule as stripe-connect.ts above: shop id from requireShop().
+    "src/app/api/stripe/connect/return/route.ts",
+    "src/app/api/stripe/connect/start/route.ts",
     "src/app/api/stripe/webhook/route.ts",
     "src/app/api/twilio/a2p/status/route.ts",
     "src/app/api/twilio/sms/route.ts",
