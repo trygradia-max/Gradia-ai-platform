@@ -115,6 +115,17 @@ export const STRINGS = {
       "Held back — that slot is already taken. The card is waiting in Approvals.",
   },
 
+  /** Who a voice proposal is about — read from the staged caller-identity
+   *  evidence, never inferred. Icon + text; honest about legacy cards. */
+  callerIdentity: {
+    verified: (phone: string) =>
+      `Caller ID verified: ${phone}. Staged for the number that called, not a number the caller read out.`,
+    edited: (callerId: string, current: string) =>
+      `Phone edited since the call: the card now says ${current}, but the call came from ${callerId}. Check who this is before approving.`,
+    unrecorded:
+      "This call's caller ID wasn't recorded with the proposal. Confirm who this is before approving.",
+  },
+
   /** Shared chrome labels (narrator voice — replaces we/us chrome). */
   chrome: {
     waitingOnReceptionist: "Waiting on your receptionist",

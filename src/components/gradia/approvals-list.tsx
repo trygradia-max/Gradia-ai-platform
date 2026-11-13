@@ -27,6 +27,7 @@ import {
   undoRejectFromDashboard,
 } from "@/app/actions/approvals"
 import type { AvailabilitySummary } from "@/lib/availability"
+import { CallerIdentityNote } from "@/components/gradia/caller-identity-note"
 import { HelpTip } from "@/components/gradia/help-tip"
 import { STRINGS } from "@/lib/strings"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -456,6 +457,7 @@ const ApprovalCard = React.memo(function ApprovalCard({
 
       <div className="space-y-3 pl-[52px] sm:pl-[52px]">
         <ActionBody item={item} />
+        <CallerIdentityNote payload={item.payload as Record<string, unknown>} />
         {availability ? <ConflictWarning availability={availability} /> : null}
         <p className="text-xs text-muted-foreground">
           Caught {formatRelative(item.created_at)}

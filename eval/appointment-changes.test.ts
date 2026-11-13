@@ -46,7 +46,7 @@ describe("handlers stage approvals — never execute", () => {
         return null
       }
       const chain: Record<string, unknown> = {}
-      for (const m of ["select", "eq", "gte", "order", "limit"]) {
+      for (const m of ["select", "eq", "or", "gte", "order", "limit"]) {
         chain[m] = () => chain
       }
       chain.maybeSingle = () =>
@@ -163,7 +163,12 @@ describe("handlers stage approvals — never execute", () => {
   it("missing required info asks instead of staging garbage", async () => {
     const inserts: Insert[] = []
     const supabase = mockSupabase({ appointment: null, inserts })
-    const spoken = await rescheduleAppointment(supabase, "shop-1", {}, { id: "call-2" })
+    const spoken = await rescheduleAppointment(
+      supabase,
+      "shop-1",
+      {},
+      { id: "call-2", callerPhone: "+16175550142" }
+    )
     expect(inserts).toHaveLength(0)
     expect(spoken).toContain("need")
   })

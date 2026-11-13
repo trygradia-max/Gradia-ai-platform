@@ -11,6 +11,12 @@
  *   - lookup_customer_history — recall recent touchpoints across channels
  *   - lookup_shop_policy    — RAG over the shop knowledge base (FAQs,
  *                              deposits, weather, hours)
+ *
+ * Caller identity: every customer-bound tool (lead, booking, quote, history,
+ * cancel, reschedule) is bound to the authenticated telephony caller ID from
+ * the webhook context via bindCaller(). A model-supplied `phone` can only
+ * agree with it; missing/blocked caller ID or a mismatch returns the one
+ * uniform CALLER_IDENTITY_REFUSAL and stages/reads nothing.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -23,6 +29,14 @@ import {
   type AvailabilitySummary,
 } from "@/lib/availability"
 import { findCustomerByChannel } from "@/lib/customers"
+import {
+  bindCaller,
+  CALLER_IDENTITY_REFUSAL,
+  logCallerRefusal,
+  type CallerBinding,
+  type CallerIdentityEvidence,
+  type VapiCallContext,
+} from "@/lib/voice-caller-identity"
 import { recordActionDecision } from "@/lib/decision-log"
 import { searchShopKnowledge } from "@/lib/knowledge"
 import { recentChannelActivity, recentInteractions } from "@/lib/memory"
@@ -38,11 +52,7 @@ import type {
   VehicleSizeClass,
 } from "@/lib/types/database"
 
-export type VapiCallContext = {
-  id?: string
-  callerPhone?: string
-  callerName?: string
-}
+export type { VapiCallContext }
 
 // ---------- formatters tuned for TTS ----------
 // Prices come from lib/service-pricing (describePrice) — the shared
@@ -115,6 +125,25 @@ function readParam(
   return ""
 }
 
+/**
+ * Bind this tool call to the authenticated caller, or return the uniform
+ * refusal. The model's `phone` argument is read ONLY to be compared — it is
+ * never used as a lookup key or a staged target.
+ */
+function bindOrRefuse(
+  tool: string,
+  shopId: string,
+  params: Record<string, unknown>,
+  ctx: VapiCallContext
+): { ok: true; binding: Extract<CallerBinding, { ok: true }> } | { ok: false; reply: string } {
+  const binding = bindCaller(ctx, readParam(params, "phone", "caller_phone", "callerPhone", "to_phone"))
+  if (!binding.ok) {
+    logCallerRefusal(tool, shopId, ctx, binding.reason)
+    return { ok: false, reply: CALLER_IDENTITY_REFUSAL }
+  }
+  return { ok: true, binding }
+}
+
 // ---------- shared lead-proposal flow (used by capture_lead + propose_booking) ----------
 
 async function submitLeadProposal(
@@ -127,6 +156,7 @@ async function submitLeadProposal(
     pinNotes: string | null
     status: LeadStatus
     extras: Record<string, unknown>
+    identity: CallerIdentityEvidence
   },
   ctx: VapiCallContext
 ): Promise<{ ok: true; pendingId: string } | { ok: false; reason: string }> {
@@ -149,6 +179,7 @@ async function submitLeadProposal(
     status: proposal.status,
     source: "voice",
     vapi_call_id: ctx.id ?? null,
+    caller_identity: proposal.identity,
     ...proposal.extras,
   }
 
@@ -177,6 +208,7 @@ async function submitLeadProposal(
     inputs: {
       rule: "voice_capture_lead",
       vapi_call_id: ctx.id ?? null,
+      caller_id_verified: true,
       lead_status: proposal.status,
     },
   })
@@ -195,16 +227,17 @@ export async function captureLead(
   params: Record<string, unknown>,
   ctx: VapiCallContext
 ): Promise<string> {
+  const bound = bindOrRefuse("capture_lead", shopId, params, ctx)
+  if (!bound.ok) return bound.reply
+  const phone = bound.binding.phone
   const customerName = readParam(params, "customer_name", "customerName")
-  const phone =
-    readParam(params, "phone") || asString(ctx.callerPhone).trim()
   const vehicle =
     readParam(params, "vehicle", "car_info", "carInfo") || null
   const service = readParam(params, "service") || null
   const notes = readParam(params, "notes", "note") || null
 
-  if (!customerName || !phone) {
-    return "I couldn't catch the name and phone — could we try those one more time?"
+  if (!customerName) {
+    return "I couldn't catch the name — could we try that one more time?"
   }
 
   const pinNotes =
@@ -222,6 +255,7 @@ export async function captureLead(
       pinNotes,
       status: "new",
       extras: {},
+      identity: bound.binding.evidence,
     },
     ctx
   )
@@ -274,6 +308,7 @@ async function submitBookingProposal(
     pinNotes: string | null
     /** P0-004 staging-time availability snapshot for the approval card. */
     availability?: AvailabilitySummary | null
+    identity: CallerIdentityEvidence
   },
   ctx: VapiCallContext
 ): Promise<{ ok: true; pendingId: string } | { ok: false; reason: string }> {
@@ -300,6 +335,7 @@ async function submitBookingProposal(
     pin_notes: proposal.pinNotes,
     source: "voice",
     vapi_call_id: ctx.id ?? null,
+    caller_identity: proposal.identity,
     ...(proposal.availability ? { availability: proposal.availability } : {}),
   }
 
@@ -331,6 +367,7 @@ async function submitBookingProposal(
     inputs: {
       rule: "voice_propose_booking",
       vapi_call_id: ctx.id ?? null,
+      caller_id_verified: true,
       iso_start_time: proposal.isoStartTime,
     },
   })
@@ -346,9 +383,10 @@ export async function proposeBooking(
   params: Record<string, unknown>,
   ctx: VapiCallContext
 ): Promise<string> {
+  const bound = bindOrRefuse("propose_booking", shopId, params, ctx)
+  if (!bound.ok) return bound.reply
+  const phone = bound.binding.phone
   const customerName = readParam(params, "customer_name", "customerName")
-  const phone =
-    readParam(params, "phone") || asString(ctx.callerPhone).trim()
   const service = readParam(params, "service")
   const when =
     readParam(params, "when", "requested_when", "requestedWhen", "time")
@@ -367,10 +405,9 @@ export async function proposeBooking(
     readParam(params, "vehicle", "car_info", "carInfo") || null
   const notes = readParam(params, "notes", "note") || null
 
-  if (!customerName || !phone || !service || !when) {
+  if (!customerName || !service || !when) {
     const missing = [
       !customerName && "name",
-      !phone && "phone",
       !service && "what they want done",
       !when && "when they want it",
     ]
@@ -429,6 +466,7 @@ export async function proposeBooking(
         timezone,
         pinNotes,
         availability: availability.summary,
+        identity: bound.binding.evidence,
       },
       ctx
     )
@@ -461,6 +499,7 @@ export async function proposeBooking(
         requested_service: service,
         requested_when: when,
       },
+      identity: bound.binding.evidence,
     },
     ctx
   )
@@ -553,14 +592,12 @@ export async function lookupCustomerHistory(
   params: Record<string, unknown>,
   ctx: VapiCallContext
 ): Promise<string> {
-  const phone =
-    readParam(params, "phone") || asString(ctx.callerPhone).trim()
+  const bound = bindOrRefuse("lookup_customer_history", shopId, params, ctx)
+  if (!bound.ok) return bound.reply
 
-  if (!phone) {
-    return "I don't have a phone on file yet — could I get yours so we can pull our history?"
-  }
-
-  const customer = await findCustomerByChannel(supabase, shopId, { phone })
+  const customer = await findCustomerByChannel(supabase, shopId, {
+    phone: bound.binding.phone,
+  })
   if (!customer) {
     return "Looks like this is our first time talking — happy to get you set up."
   }
@@ -661,8 +698,10 @@ export async function proposeQuote(
   params: Record<string, unknown>,
   ctx: VapiCallContext
 ): Promise<string> {
+  const bound = bindOrRefuse("propose_quote", shopId, params, ctx)
+  if (!bound.ok) return bound.reply
+  const phone = bound.binding.phone
   const customerName = readParam(params, "customer_name", "customerName")
-  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
   const vehicle = readParam(params, "vehicle", "car_info", "carInfo") || null
   const notes = readParam(params, "notes", "note") || null
   const rawServices = params.services ?? params.service
@@ -673,10 +712,9 @@ export async function proposeQuote(
         .map((s) => s.trim())
         .filter(Boolean)
 
-  if (!customerName || !phone || services.length === 0) {
+  if (!customerName || services.length === 0) {
     const missing = [
       !customerName && "the name",
-      !phone && "a phone number",
       services.length === 0 && "which services to quote",
     ]
       .filter(Boolean)
@@ -707,6 +745,7 @@ export async function proposeQuote(
         notes,
         source: "voice",
         vapi_call_id: ctx.id ?? null,
+        caller_identity: bound.binding.evidence,
       },
       requested_by: shop.owner_id,
     })
@@ -726,6 +765,7 @@ export async function proposeQuote(
     inputs: {
       rule: "voice_propose_quote",
       vapi_call_id: ctx.id ?? null,
+      caller_id_verified: true,
       services,
     },
   })
@@ -753,12 +793,9 @@ async function findUpcomingAppointmentByPhone(
   shopId: string,
   phone: string
 ): Promise<UpcomingAppointment | null> {
-  const { data: customer } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("shop_id", shopId)
-    .eq("phone", phone)
-    .maybeSingle()
+  // Canonical-phone match, shop-scoped (findCustomerByChannel) — the caller's
+  // normalized caller ID only; ambiguous matches resolve to no booking.
+  const customer = await findCustomerByChannel(supabase, shopId, { phone })
   if (!customer?.id) return null
 
   const { data } = await supabase
@@ -820,6 +857,7 @@ async function stageAppointmentChange(
     inputs: {
       rule: `voice_${actionType}`,
       vapi_call_id: payload.vapi_call_id ?? null,
+      caller_id_verified: true,
       appointment_id: payload.appointment_id ?? null,
     },
   })
@@ -832,16 +870,15 @@ export async function rescheduleAppointment(
   params: Record<string, unknown>,
   ctx: VapiCallContext
 ): Promise<string> {
+  const bound = bindOrRefuse("reschedule_appointment", shopId, params, ctx)
+  if (!bound.ok) return bound.reply
+  const phone = bound.binding.phone
   const customerName = readParam(params, "customer_name", "customerName")
-  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
   const newWhen = readParam(params, "new_when", "newWhen", "when")
   const isoNewStart = readParam(params, "iso_new_start_time", "isoNewStartTime")
 
-  if (!phone || !newWhen) {
-    const missing = [!phone && "a phone number", !newWhen && "the new time"]
-      .filter(Boolean)
-      .join(" and ")
-    return `Happy to move it — I just need ${missing}.`
+  if (!newWhen) {
+    return "Happy to move it — I just need the new time."
   }
 
   const appointment = await findUpcomingAppointmentByPhone(supabase, shopId, phone)
@@ -871,6 +908,7 @@ export async function rescheduleAppointment(
     iso_new_start_time: isoNewStart || null,
     source: "voice",
     vapi_call_id: ctx.id ?? null,
+    caller_identity: bound.binding.evidence,
     ...(availability ? { availability } : {}),
   })
   if (!staged) {
@@ -887,13 +925,11 @@ export async function cancelAppointment(
   params: Record<string, unknown>,
   ctx: VapiCallContext
 ): Promise<string> {
+  const bound = bindOrRefuse("cancel_appointment", shopId, params, ctx)
+  if (!bound.ok) return bound.reply
+  const phone = bound.binding.phone
   const customerName = readParam(params, "customer_name", "customerName")
-  const phone = readParam(params, "phone") || asString(ctx.callerPhone).trim()
   const reason = readParam(params, "reason", "notes") || null
-
-  if (!phone) {
-    return "Of course — what's the best number on the booking so we cancel the right one?"
-  }
 
   const appointment = await findUpcomingAppointmentByPhone(supabase, shopId, phone)
   const staged = await stageAppointmentChange(supabase, shopId, "cancel_appointment", {
@@ -905,6 +941,7 @@ export async function cancelAppointment(
     reason,
     source: "voice",
     vapi_call_id: ctx.id ?? null,
+    caller_identity: bound.binding.evidence,
   })
   if (!staged) {
     return "Something went wrong on my end — the team will call you right back to sort the cancellation."
