@@ -159,6 +159,9 @@ describe("service-role importer inventory (sweep visibility)", () => {
     "src/lib/mcp/auth.ts",
     "src/lib/rate-limit.ts",
     "src/lib/supabase/service.ts",
+    // Audit finding #6: test-call guard. Every read is by explicit shop id AND owner_id (the
+    // session user); the claim RPC is service-role only and re-scopes by both.
+    "src/lib/voice-test-call.ts",
   ])
 
   it("every createServiceClient importer is on the reviewed list", () => {
