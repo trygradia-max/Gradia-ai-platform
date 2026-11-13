@@ -117,6 +117,9 @@ type AssistantBody = {
  * The five receptionist tools, declared on the assistant model so the LLM
  * can actually call them (without these the webhook dispatcher never
  * fires). Parameter names match what vapi-tools.ts readParam accepts.
+ * No tool declares a phone parameter: customer-bound tools are bound to the
+ * authenticated caller ID server-side (lib/voice-caller-identity.ts), so the
+ * model has no phone to get talked into misusing.
  * HITL invariant lives in the handlers, not here: propose_booking and
  * capture_lead STAGE approvals; nothing executes from a call.
  */
@@ -131,7 +134,6 @@ export const VAPI_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           customer_name: { type: "string", description: "Caller's name" },
-          phone: { type: "string", description: "Caller's phone, if offered" },
           vehicle: { type: "string", description: "Vehicle make/model/year" },
           service: { type: "string", description: "Service they asked about" },
           notes: { type: "string", description: "Anything else the team should know" },
@@ -150,7 +152,6 @@ export const VAPI_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           customer_name: { type: "string" },
-          phone: { type: "string" },
           service: { type: "string", description: "Service to book" },
           when: { type: "string", description: "Requested time in the caller's words" },
           iso_start_time: { type: "string", description: "ISO 8601 start time if determinable" },
@@ -181,12 +182,10 @@ export const VAPI_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "lookup_customer_history",
-      description: "Find an existing customer's past services and notes by phone number.",
+      description: "Recall the CALLER's own past services and notes. Works only for the number they are calling from — never look anyone else up.",
       parameters: {
         type: "object",
-        properties: {
-          phone: { type: "string", description: "Customer phone; defaults to the caller's number" },
-        },
+        properties: {},
       },
     },
   },
@@ -214,7 +213,6 @@ export const VAPI_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           customer_name: { type: "string" },
-          phone: { type: "string", description: "Caller's phone; defaults to the caller's number" },
           vehicle: { type: "string", description: "Vehicle make/model/year/color" },
           services: {
             type: "array",
@@ -237,7 +235,6 @@ export const VAPI_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           customer_name: { type: "string" },
-          phone: { type: "string", description: "Number on the booking; defaults to the caller's" },
           new_when: { type: "string", description: "Requested new time in the caller's words" },
           iso_new_start_time: { type: "string", description: "ISO 8601 new start time if determinable" },
         },
@@ -255,7 +252,6 @@ export const VAPI_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           customer_name: { type: "string" },
-          phone: { type: "string", description: "Number on the booking; defaults to the caller's" },
           reason: { type: "string", description: "Why they're cancelling, if offered" },
         },
       },
