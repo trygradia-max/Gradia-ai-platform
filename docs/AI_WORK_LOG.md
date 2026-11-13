@@ -2716,3 +2716,22 @@ Jobber callback, whose destinations are static `/settings?...` strings (no behav
 `eval/aurinko-oauth-next.test.ts` (246 cases; runs the emitted script in a stub browser for popup and full-page flows).
 Non-goals: findings #2-#10, `src/app/auth/callback/route.ts` (own validator, untouched), no migration, provider call,
 Supabase/Vercel change, secret rotation, deployment or merge.
+
+## 2026-11-10 - [Claude Code] Security fix: protected `shops` columns (audit findings #2, #5, #8)
+[AI: claude-code] [DATE: 2026-11-10] [AREA: platform] [STATUS: done]
+One root cause: `shops_insert_own`/`shops_update_own` let an owner write any column of their own `public.shops` row.
+Migration `20261110130000_shops_protected_columns_guard.sql` adds a SECURITY INVOKER `BEFORE INSERT OR UPDATE` guard
+(same pattern as the texting-number and BYO guards). `authenticated`/`anon` are refused (42501, DETAIL `server_written`,
+HINT = column) on UPDATE for plan, voice_addon, voice_addon_ended_at, stripe_subscription_id, credit_period_start,
+stripe_account_id, stripe_charges_enabled, voice_minutes_budget, gradia_number_e164, gradia_number_sid,
+twilio_subaccount_sid, twilio_subaccount_token_enc, number_purchase_claim and number_purchase_claimed_at, and for
+`vapi_stale` only on true -> false (owner actions still raise it via markVoiceStale). On INSERT every protected column
+must equal its default. service_role, SECURITY DEFINER functions and migrations are unaffected; no existing row is
+touched. Owner-session writers moved to the service client after `requireShop()`/`getOptionalShop()` (shop id still
+comes from the owner session): `stripe-connect.ts`, the two `/api/stripe/connect/*` routes, `disconnectStripe`,
+`saveVoiceMinutesBudget`; the reviewed service-client importer list in `eval/tenant-scoping.test.ts` is updated.
+`credit_limit` (the owner's own auto-top-up ceiling) stays owner-writable. Tests:
+`eval/integration/shops-protected-columns.int.test.ts` (58, real Postgres; fails with the trigger disabled) and
+`scripts/verify-shops-protected-columns-migration.py` (real-SQL upgrade in a rolled-back transaction). Non-goals:
+findings #1, #3, #4, #6, #7, #9, #10; other server-controlled shops columns outside those findings (vapi_assistant_id,
+voice_live, vapi_server_secret_enc); no deploy, shared or production Supabase change, provider call or merge.

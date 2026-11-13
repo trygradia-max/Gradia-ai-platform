@@ -13,6 +13,7 @@ import { redirect } from "next/navigation"
 import { requireShop } from "@/lib/shop"
 import { getConnectedAccount } from "@/lib/stripe"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
 export const runtime = "nodejs"
@@ -35,7 +36,7 @@ export async function GET() {
 
   try {
     const account = await getConnectedAccount(shop.stripe_account_id)
-    await supabase
+    await createServiceClient()
       .from("shops")
       .update({ stripe_charges_enabled: account.charges_enabled })
       .eq("id", shop.id)

@@ -7,6 +7,7 @@ import {
   getConnectedAccount,
 } from "@/lib/stripe"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
 
 export type StripeAccountSessionResult =
@@ -59,7 +60,7 @@ export async function getStripeOnboardingSession(): Promise<StripeAccountSession
       const account = await createConnectedAccount({})
       accountId = account.id
       chargesEnabled = account.charges_enabled
-      await supabase
+      await createServiceClient()
         .from("shops")
         .update({
           stripe_account_id: account.id,
@@ -79,7 +80,7 @@ export async function getStripeOnboardingSession(): Promise<StripeAccountSession
     try {
       const account = await getConnectedAccount(accountId)
       chargesEnabled = account.charges_enabled
-      await supabase
+      await createServiceClient()
         .from("shops")
         .update({ stripe_charges_enabled: account.charges_enabled })
         .eq("id", shop.id)
@@ -140,7 +141,7 @@ export async function refreshStripeAccountStatus(): Promise<RefreshStripeStatusR
 
   try {
     const account = await getConnectedAccount(shop.stripe_account_id)
-    await supabase
+    await createServiceClient()
       .from("shops")
       .update({ stripe_charges_enabled: account.charges_enabled })
       .eq("id", shop.id)
