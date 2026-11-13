@@ -2735,3 +2735,26 @@ comes from the owner session): `stripe-connect.ts`, the two `/api/stripe/connect
 `scripts/verify-shops-protected-columns-migration.py` (real-SQL upgrade in a rolled-back transaction). Non-goals:
 findings #1, #3, #4, #6, #7, #9, #10; other server-controlled shops columns outside those findings (vapi_assistant_id,
 voice_live, vapi_server_secret_enc); no deploy, shared or production Supabase change, provider call or merge.
+
+## 2026-11-13 - [Claude Code] Security fix: voice caller identity binding (audit findings #4, #9, #10)
+[AI: claude-code] [DATE: 2026-11-13] [AREA: platform] [STATUS: done]
+One root cause: Vapi tool handlers used the model-supplied `phone` argument (preferred over the webhook caller ID) to
+look up customers, history and appointments and as the target of staged leads, bookings, quotes, cancels and reschedules,
+so a caller could talk the assistant into reading or staging against another customer. `callContextFrom` also fell back to
+`call.phoneNumber.number` (the shop's own dialed line) when no caller ID was sent. New `src/lib/voice-caller-identity.ts`:
+every customer-bound tool (lookup_customer_history, cancel/reschedule_appointment, propose_booking, propose_quote,
+capture_lead) is bound to the normalized `call.customer.number` via `bindCaller()`; a supplied phone (any alias key) may
+only agree with it (strict E.164 or a bare 10-digit NANP form for a +1 caller; no country guessing). Missing/blocked
+caller ID or a mismatch returns one uniform `CALLER_IDENTITY_REFUSAL` for every tool and reason, reads and stages nothing,
+and logs tool/reason/call id only (no phone numbers). The shop-line fallback is removed. `phone` is removed from all tool
+schemas; handlers still ignore/compare it for assistants not yet re-synced. Staged payloads carry
+`caller_identity {source, verified_phone, supplied_phone: matched|not_supplied, call_id}` (a mismatch is never staged, so
+it never appears on a proposal) and `phone` is always the caller ID; decision-log inputs gain `caller_id_verified`.
+Appointment lookup now uses shop-scoped canonical-phone matching (`findCustomerByChannel`). Approvals card + detail page
+show a `CallerIdentityNote`: verified, "phone edited since the call", or "caller ID not recorded" (legacy cards).
+Tests: `eval/voice-caller-identity.test.ts` (107; 60 fail on the pre-fix handlers) and two existing suites updated to
+supply an authenticated caller ID. Approval requirements, ALWAYS_HITL, consent and executors untouched. Non-goals:
+findings #1-#3, #5-#8; end-of-call transcript/customer resolution (still falls back to `phoneNumber.number`); the shared
+env-global legacy webhook secret; voice prompt wording (evals gate prompt changes); caller-ID spoofing at the carrier
+level; no migration, Vapi/Twilio call, assistant re-sync, deploy, shared-data change or merge. Existing assistants keep
+the old schema until their next sync; the handlers are safe either way.

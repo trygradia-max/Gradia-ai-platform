@@ -9,6 +9,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 
 import { EmptyState } from "@/components/gradia/empty-state"
+import { CallerIdentityNote } from "@/components/gradia/caller-identity-note"
 import { PendingProposalEditor } from "@/components/gradia/pending-proposal-editor"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { SmsQuickReply } from "@/components/gradia/sms-quick-reply"
@@ -154,6 +155,7 @@ export default async function PendingProposalPage({
       </header>
 
       {isMessage?<WhisperReplyEvidence db={supabase} shopId={shop.id} actionId={pending.id}/>:null}
+      <CallerIdentityNote payload={pending.payload as Record<string, unknown>} />
       <PendingProposalEditor {...editorProps} />
       {quickReplyTarget ? (
         <SmsQuickReply

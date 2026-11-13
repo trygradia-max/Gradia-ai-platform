@@ -31,19 +31,23 @@
  *   - Tools (declare each as a function in the Vapi assistant config):
  *
  *     capture_lead — log a general inquiry
- *       { customer_name: string, phone?: string,
- *         vehicle?: string, service?: string, notes?: string }
+ *       { customer_name: string, vehicle?: string, service?: string,
+ *         notes?: string }
  *
  *     propose_booking — log an agreed-upon booking request
- *       { customer_name: string, phone?: string,
- *         service: string, when: string,
+ *       { customer_name: string, service: string, when: string,
  *         vehicle?: string, notes?: string }
  *
  *     quote_service — read the shop's service menu
  *       { service: string }
  *
  *     lookup_customer_history — recall recent touchpoints
- *       { phone?: string }
+ *       {}   (bound to the authenticated caller ID)
+ *
+ *   No tool takes a phone argument: customer-bound tools are bound to the
+ *   authenticated caller ID (`call.customer.number`) — see
+ *   lib/voice-caller-identity.ts. A phone a legacy assistant still sends is
+ *   only compared against it, never used as a target.
  */
 
 import { timingSafeEqual } from "node:crypto"
@@ -219,10 +223,12 @@ function asString(value: unknown): string {
 }
 
 function callContextFrom(message: VapiMessage): VapiCallContext {
-  const callerPhone =
-    asString(message.call?.customer?.number).trim() ||
-    asString(message.call?.phoneNumber?.number).trim() ||
-    undefined
+  // Telephony caller ID ONLY. `call.phoneNumber.number` is the shop's own
+  // dialed line — falling back to it would make "the caller" the shop and
+  // let a blocked-caller-ID call act on whatever customer holds that number.
+  // Missing/blocked caller ID stays undefined and customer-bound tools fail
+  // closed (lib/voice-caller-identity.ts).
+  const callerPhone = asString(message.call?.customer?.number).trim() || undefined
   const callerName = asString(message.call?.customer?.name).trim() || undefined
   return {
     id: message.call?.id,
