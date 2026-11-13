@@ -774,6 +774,60 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(intakeMock).toHaveBeenCalledTimes(1)
   })
 
+  describe("SMS keyword consent is explicit, whole-message, STOP-safe", () => {
+    const consentCalls = () =>
+      fakeDb.calls.filter((c) => c.table === "record_sms_keyword" && c.method === "rpc")
+    beforeEach(() => {
+      findOrCreateMock.mockResolvedValue({ ok: true, customer: { id: "cust-1" }, created: false })
+    })
+
+    it("exploit: prose containing 'start' after STOP writes no consent and cannot lift suppression", async () => {
+      for (const body of [
+        "when can you start on my car?",
+        "Can we start Monday?",
+        "please subscribe me to nothing",
+        "I'd like to opt in to the detail package",
+      ]) {
+        fakeDb.calls = []
+        claimMock.mockResolvedValue(claimed("claimed"))
+        const res = await post(makeForm({ Body: body }))
+        expect(res.status).toBe(200)
+        expect(consentCalls(), body).toHaveLength(0)
+      }
+    })
+
+    it("a valid explicit START is scoped to this shop/customer/sender and opts in", async () => {
+      const res = await post(makeForm({ Body: " Start! " }))
+      expect(res.status).toBe(200)
+      expect(consentCalls()).toHaveLength(1)
+      expect(consentCalls()[0].args[0]).toEqual({
+        p_shop: "shop-1",
+        p_customer: "cust-1",
+        p_destination: "+15035550133",
+        p_opted_in: true,
+      })
+    })
+
+    it("opt-out wins: STOP-containing text never opts in, even alongside START", async () => {
+      for (const body of ["stop start", "START STOP", "please stop, start later"]) {
+        fakeDb.calls = []
+        claimMock.mockResolvedValue(claimed("claimed"))
+        await post(makeForm({ Body: body }))
+        expect(consentCalls(), body).toHaveLength(1)
+        expect(consentCalls()[0].args[0]).toMatchObject({ p_opted_in: false })
+      }
+    })
+
+    it("replayed START applies nothing a second time", async () => {
+      await post(makeForm({ Body: "START" }))
+      expect(consentCalls()).toHaveLength(1)
+      fakeDb.calls = []
+      claimMock.mockResolvedValue(claimed("duplicate_completed"))
+      await post(makeForm({ Body: "START" }))
+      expect(consentCalls()).toHaveLength(0)
+    })
+  })
+
   it("a consent write failure fails the claim (compliance never fails silently)", async () => {
     findOrCreateMock.mockResolvedValue({
       ok: true,
