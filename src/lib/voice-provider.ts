@@ -34,6 +34,7 @@ import {
   synthesizeSystemPrompt,
   type SynthesisInput,
 } from "@/lib/vapi-prompt"
+import type { VoiceTestCallAuthorization } from "@/lib/voice-test-call-authorization"
 import { formatWorkingHours, readWorkingHours } from "@/lib/working-hours"
 import {
   getIncomingPhoneNumberConfig,
@@ -347,19 +348,27 @@ export async function attachVoiceNumber(input: {
 
 export type TestCallResult = { ok: true } | { ok: false; error: string }
 
+/** The provider call seam, exposed as a type so callers/tests never import the vendor module. */
+export type PlaceOutboundCall = typeof createOutboundCall
+
 /** Rings the owner from their business number with the assistant live —
  *  the launch-gate test. Marks voice_test_called_at on success. */
 export async function startVoiceTestCall(input: {
   supabase: SupabaseClient
   shop: VoiceShopFields
-  toNumber: string
+  /** Minted only by `runVoiceTestCall` (audit finding #6): the destination is a verified number
+   *  and the entitlement, budget and rate/concurrency controls have just passed. */
+  authorization: VoiceTestCallAuthorization
+  /** Injectable for tests; defaults to the real Vapi call. */
+  placeCall?: PlaceOutboundCall
 }): Promise<TestCallResult> {
-  const { supabase, shop, toNumber } = input
+  const { supabase, shop, authorization } = input
+  const toNumber = authorization.toNumber
   if (!shop.vapi_assistant_id || !shop.vapi_phone_number_id) {
     return { ok: false, error: "Connect the number to voice first." }
   }
   try {
-    await createOutboundCall({
+    await (input.placeCall ?? createOutboundCall)({
       assistantId: shop.vapi_assistant_id,
       phoneNumberId: shop.vapi_phone_number_id,
       toNumber,
@@ -398,7 +407,10 @@ export type VoiceBudgetState = {
 export async function voiceBudgetState(
   supabase: SupabaseClient,
   shop: Pick<ShopRow, "id" | "voice_addon" | "voice_minutes_budget">,
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** A caller that is about to SPEND (the test call) must not read an outage as "unused":
+   *  with `failClosed` a usage-query error reports the budget as exhausted. */
+  opts: { failClosed?: boolean } = {}
 ): Promise<VoiceBudgetState> {
   const monthStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
@@ -418,12 +430,16 @@ export async function voiceBudgetState(
   ])
   if (usageRes.error) {
     console.error("[voice] budget query failed:", usageRes.error)
+    if (opts.failClosed) return { usedMinutes: 0, budget: 0, warn: false, over: true }
     return { usedMinutes: 0, budget: null, warn: false, over: false }
   }
   const usedMinutes = (
     (usageRes.data as { quantity: number }[] | null) ?? []
   ).reduce((sum, r) => sum + (r.quantity ?? 0), 0)
 
+  if (grantsRes.error && opts.failClosed) {
+    return { usedMinutes: 0, budget: 0, warn: false, over: true }
+  }
   const grantedMinutes = grantsRes.error
     ? 0
     : ((grantsRes.data as { minutes: number }[] | null) ?? []).reduce(
