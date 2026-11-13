@@ -2735,3 +2735,35 @@ comes from the owner session): `stripe-connect.ts`, the two `/api/stripe/connect
 `scripts/verify-shops-protected-columns-migration.py` (real-SQL upgrade in a rolled-back transaction). Non-goals:
 findings #1, #3, #4, #6, #7, #9, #10; other server-controlled shops columns outside those findings (vapi_assistant_id,
 voice_live, vapi_server_secret_enc); no deploy, shared or production Supabase change, provider call or merge.
+
+## 2026-11-13 - [Claude Code] Security fix: voice test call entitlement, budget, rate and destination ownership (audit finding #6)
+[AI: claude-code] [DATE: 2026-11-13] [AREA: platform] [STATUS: done]
+Fixed only confirmed finding #6 of the run-1 security audit. `requestVoiceTestCall` accepted any `+1XXXXXXXXXX` from the
+form and rang it through Vapi with no entitlement, remaining-minutes, rate or ownership proof. Read first: this log and the
+five September 11 documents (outbound calls stay Off for the MVP; this is the owner launch-gate test of the inbound
+receptionist, not outbound calling). There is no existing verified owner/member phone evidence in the repository
+(`shops.phone`, `voice_config.escalation_phone` and the BYO attestation are owner-editable or owner-asserted; sign-in is
+email OTP). The only trusted evidence is Supabase Auth's own `phone` + `phone_confirmed_at` on the signed-in user, set only
+after an SMS code is confirmed, so the guard reads that and otherwise fails closed. No phone-verification flow was built
+(none exists; building one would be live-provider work out of scope), so until an owner has a confirmed auth phone the card
+says test calls are off and why.
+New `src/lib/voice-test-call.ts` (`runVoiceTestCall`) is the only path to the provider. It requires, in order: owner of the
+shop (re-read by id + owner_id, shop id from the session); `hasPackage2` (active plan + Voice add-on); saved assistant,
+connected Vapi number, server-written Gradia number, not stale; the user's confirmed auth phone as the sole destination
+(strict NANP; never the Gradia number; the action no longer takes a destination at all); remaining minutes with a new
+fail-closed `voiceBudgetState(..., { failClosed: true })` option (the webhook keeps its fail-open read); then the atomic
+claim `voice_test_call_claim` (migration `20261110140000_voice_test_call_claims.sql`: shop row lock, in-DB entitlement
+recheck, one in-flight attempt, 60 s minimum interval, 3/hour, 6/day, every attempt counts, service-role only, no phone
+stored beyond the last four digits). Everything is re-read and re-evaluated after the claim, immediately before the call
+(a changed phone, plan, add-on, stale flag or budget aborts the attempt). `startVoiceTestCall` now requires a branded
+authorization only the guard can mint. UI: the free-text number box is gone; the card shows a masked verified number and a
+"Call my verified phone" button, or the written reason (`getVoiceTestCallState`, read-only, same controls).
+Tests: `eval/voice-test-call.test.ts` (48: arbitrary and unverified destinations, free/past_due/cancelled/exhausted shops,
+fail-closed reads, replays, 5-way concurrency, hour/day caps, cross-tenant, post-claim races, UI state, structural locks;
+the entitlement check removed makes 4 fail) and `eval/integration/voice-test-call.int.test.ts` (13, real Postgres: grants,
+12-way concurrent claim admits one, interval, in-flight expiry, hour/day ceilings, in-DB entitlement, tenant scoping,
+end-to-end with a mocked provider). `eval/tenant-scoping.test.ts` reviewed-importer list updated. Non-goals: other audit
+findings; no phone-verification flow; no Vapi/Twilio/Supabase-production contact, deploy, provider configuration or price
+change. Residual, out of scope: `vapi_assistant_id`, `vapi_phone_number_id`, `voice_live` and `voice_test_called_at` are
+still owner-writable `shops` columns (not in the protected-columns guard), so the launch gate and the stored provider ids
+remain owner-forgeable; the guard cannot prove the stored Vapi number id belongs to the shop.

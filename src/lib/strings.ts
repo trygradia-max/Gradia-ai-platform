@@ -449,6 +449,24 @@ export const STRINGS = {
     },
   },
 
+  /** Voice test call (audit finding #6) — why a test call is or isn't available. */
+  voiceTestCall: {
+    needsVerifiedPhone:
+      "Test calls only ring a phone you've verified on your own sign-in. No verified phone is on your account yet, so test calls are off.",
+    needsVoiceAddon: "Turn on the Voice add-on in Billing to place a test call.",
+    notReady: "Save the receptionist and connect your business number first.",
+    stale: "Your receptionist has unsaved changes. Save it, then place the test call.",
+    budgetExhausted: "This month's voice minutes are used up. Add minutes, then try again.",
+    inProgress: "A test call is already ringing. Give it a minute.",
+    tooSoon: "You just placed a test call. Wait a minute and try again.",
+    rateLimited: "That's the limit for test calls right now. Try again later.",
+    unavailable: "We couldn't check this just now, so no call was placed. Try again shortly.",
+    placeFailed: "We couldn't place the test call. Try again.",
+    ringing: "Ringing your verified phone now. Pick up and say hi.",
+    callMe: "Call my verified phone",
+    callingLabel: (masked: string) => `We call ${masked}, you meet the receptionist.`,
+  },
+
   /** Public quote page (/q/[token]) — P0-009. The expired state is the
    *  MINIMAL honest one; a richer re-quote CTA awaits decision Q-04. */
   quotePublic: {
