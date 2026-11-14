@@ -7,8 +7,10 @@ import {
   GOVERNED_EXECUTOR_ENABLED,
   governedWindowKey,
   runCustomAgent,
+  RECIPE_HANDLERS,
   runEventRecipe,
   runGovernedScheduledAgent,
+  runScheduledAgents,
 } from "@/lib/agent-runtime"
 import type { CustomAgentRow } from "@/lib/types/database"
 
@@ -197,6 +199,39 @@ describe("legacy run paths refuse governed agents and fail closed", () => {
   it("if governance cannot be determined, nothing runs", async () => {
     expect(await runCustomAgent(fake({ states: "error", rpc: {} }).client, agent)).toMatchObject({ fired: false, reason: expect.stringContaining("could not verify") })
     expect(await runEventRecipe(fake({ states: "error", rpc: {} }).client, shop, agent, { kind: "lead.received" } as never)).toMatchObject({ fired: false, reason: expect.stringContaining("could not verify") })
+  })
+})
+
+describe("an agent that becomes governed between the tick's state read and its legacy claim", () => {
+  it("is finished as skipped, never parsed or executed as a legacy config", async () => {
+    const recipeId = Object.keys(RECIPE_HANDLERS)[0]
+    const legacy = { ...agent, config: { recipe: { id: recipeId }, schedule: { cadence: "hourly" } }, last_fired_at: null }
+    const handler = vi.spyOn(RECIPE_HANDLERS, recipeId)
+    const rpcCalls: { fn: string; args: Record<string, unknown> }[] = []
+    const client = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        rpcCalls.push({ fn, args })
+        if (fn === "claim_scheduled_agent_run") return { data: claimedReply, error: null }
+        if (fn === "finish_scheduled_agent_run") return { data: true, error: null }
+        throw new Error(`unexpected rpc ${fn}`)
+      },
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {}
+        Object.assign(chain, {
+          select: () => chain,
+          eq: () => (table === "custom_agents" ? Promise.resolve({ data: [legacy], error: null }) : chain),
+          in: async () => ({ data: [], error: null }),
+        })
+        return chain
+      },
+    } as unknown as SupabaseClient
+    const result = await runScheduledAgents(client)
+    expect(result.fired).toBe(0)
+    expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringContaining("became governed") })
+    expect(rpcCalls.map((c) => c.fn)).toEqual(["claim_scheduled_agent_run", "finish_scheduled_agent_run"])
+    expect(rpcCalls[1].args).toMatchObject({ p_state: "skipped", p_fired: false, p_error_code: "governed_during_tick" })
+    expect(handler).not.toHaveBeenCalled()
+    handler.mockRestore()
   })
 })
 

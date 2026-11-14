@@ -2264,6 +2264,29 @@ export async function runScheduledAgents(
       if (claim.shopId !== agent.shop_id) {
         throw new Error("scheduled claim returned a different shop")
       }
+      // The agent became governed after this tick read its state, so the database answered with a
+      // bound claim. This legacy path must never interpret or execute a governed definition: record
+      // the window as skipped and let the next tick take the governed path.
+      if (claim.governed) {
+        const outcome: AgentRunOutcome = {
+          agentId: agent.id,
+          agentName: agent.name,
+          fired: false,
+          reason: "agent became governed during this run — nothing was run",
+        }
+        const done = await finishScheduledAgentRun(supabase, {
+          runId: claim.runId,
+          workerId,
+          attempt: claim.attempt,
+          state: "skipped",
+          fired: false,
+          reason: outcome.reason,
+          errorCode: "governed_during_tick",
+        })
+        if (!done) await markScheduledAgentRunUnknown(supabase, claim.runId)
+        outcomes.push(outcome)
+        continue
+      }
 
       const parsedDefinition = parseAgentConfig(claim.definitionSnapshot)
       if (!parsedDefinition.ok) {
