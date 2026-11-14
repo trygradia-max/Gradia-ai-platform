@@ -2833,3 +2833,19 @@ fails with the guard disabled. Checks on Node 24.15.0: `tsc --noEmit`, `eslint .
 `next build` all clean. NOT re-run after the rebase: the real-Postgres integration suites, because the local Docker
 VM is saturated (58 containers) and the disposable stack would not start; the pre-rebase result (29/29) stands and the
 migration did not change. No deployment, provider call, shared-data or production change.
+
+## 2026-11-14 - [Claude Code] Security fix: spreadsheet formula injection in CSV exports (audit finding #7)
+[AI: claude-code] [DATE: 2026-11-14] [AREA: platform] [STATUS: done]
+Fixed only confirmed finding #7 of the run-1 security audit. Both user-downloadable CSV paths hand-rolled quoting and
+passed externally sourced text (inbound SMS/email `conversations.content`, public-form and imported customer/vehicle/lead
+fields, notes, import `subject`/`drop_reason`) straight into cells, so `=`, `+`, `-`, `@` payloads ran as formulas in
+Excel/Sheets/LibreOffice. New `src/lib/csv.ts` (`csvCell`, `csvRow`, `neutralizeFormula`): after skipping leading
+whitespace, C0/C1 controls, zero-width/bidi characters and BOM it apostrophe-prefixes cells starting with `= + - @`
+(and fullwidth look-alikes); cells starting with tab/CR/LF are prefixed too; then RFC 4180 quoting (now also quotes CR).
+Plain numbers and digits-only strings (`+15551234567`, `-5`) are left alone; `+1+1`, `-1e3` and `+1 (555)...` are not.
+Applied at the two export boundaries only: `rowsToCsv` in `src/lib/export-data.ts` (GET `/api/export`, all five
+entities, header row included) and `buildErrorReportCsv` in `src/lib/recovery/review.ts` (import error report
+download). DB rows, the JSON export and in-memory row objects are unchanged. Tests: `eval/csv.test.ts` (direct
+formulas, whitespace/control/Unicode bypasses, quoting, ordinary values, both export boundaries, plus a source scan
+that fails if another CSV quote-doubler appears in `src/`). Non-goals: findings #1-#6, #8-#10, HTML escaping, JSON
+export, import/parse side; no migration, deploy, provider call or shared-data change.
