@@ -2808,3 +2808,28 @@ findings; no phone-verification flow; no Vapi/Twilio/Supabase-production contact
 change. Residual, out of scope: `vapi_assistant_id`, `vapi_phone_number_id`, `voice_live` and `voice_test_called_at` are
 still owner-writable `shops` columns (not in the protected-columns guard), so the launch gate and the stored provider ids
 remain owner-forgeable; the guard cannot prove the stored Vapi number id belongs to the shop.
+
+## 2026-11-11 - [Claude Code] Trusted revision evaluation and durable runtime binding (Build 3)
+[AI: claude-code] [DATE: 2026-11-14] [AREA: platform] [STATUS: done]
+New branch `claude/agent-runtime-binding` from main `2cb6b20`. Adds a deterministic governance-contract
+evaluator (pure suite + id-only orchestrator that writes only through the existing service-role evaluation
+seam; one server action that only requests it; the Test step now runs it), and binds every governed
+scheduled run, in the database and inside the claim transaction, to the exact active definition revision,
+hash, policy revision, memory pins, newest passing evaluation and activation. Refusals (paused, blocked,
+pointer-changed, stale policy/knowledge/memory, unevaluated or newest-failing evaluation, tampered
+definition, wrong schedule, concurrency and daily limits) write no row. `assert_governed_run_current` and a
+`binding_at_finish` record make a definition that moved mid-run visible. Legacy agents keep their exact
+claim/finish behavior; manual and event runs refuse governed agents; the governed executor is OFF, so
+governed windows are bound and finished as skipped. One migration; no deployment, provider, model call,
+live send, cron or production-gate change. Details and limitations:
+`docs/architecture/AGENT_DEFINITION_REVISIONS.md` (Build 3).
+Reconciliation 2026-11-14: rebased onto `origin/main` `f4879a0` (kept the newer security entries, the
+`20261110130000` shops guard migration and the Aurinko/SMS-consent fixes; the runtime-binding migration
+`20261111120000` is byte-identical and still sorts last). Re-audited the claim, assert and finish functions, the
+cron tick and the manual/event paths against the binding contract. One gap closed: an agent that becomes governed
+between the tick's state read and its legacy claim received a bound claim and fell into the legacy parser; it is now
+finished as `skipped` (`governed_during_tick`) without interpreting or running anything, with a regression test that
+fails with the guard disabled. Checks on Node 24.15.0: `tsc --noEmit`, `eslint .`, unit 2,448 passed / 4 skipped,
+`next build` all clean. NOT re-run after the rebase: the real-Postgres integration suites, because the local Docker
+VM is saturated (58 containers) and the disposable stack would not start; the pre-rebase result (29/29) stands and the
+migration did not change. No deployment, provider call, shared-data or production change.

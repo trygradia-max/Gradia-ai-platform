@@ -48,6 +48,8 @@ export type ScheduledAgentRunClaim =
       definitionHash: string
       policyRevision: number | null
       knowledgeRevision: number | null
+      /** Present only for a governed agent: the exact evidence the database bound this run to. */
+      governed?: GovernedRunBinding
     }
   | {
       outcome: "active_duplicate" | "unknown" | "terminal_duplicate"
@@ -56,6 +58,15 @@ export type ScheduledAgentRunClaim =
       state?: CustomAgentRunRow["state"]
     }
   | { outcome: "agent_unavailable" }
+  /** A governed definition that is not currently runnable (typed reasons). No run row exists. */
+  | { outcome: "refused"; reasons: string[] }
+
+export type GovernedRunBinding = {
+  definitionRevision: number
+  evaluationId: string
+  memoryPins: { source_id: string; memory_revision: number; content_hash: string }[]
+  activationEventSeq: number
+}
 
 type ScheduledAgentRunClaimRow = {
   outcome?: unknown
@@ -67,11 +78,23 @@ type ScheduledAgentRunClaimRow = {
   policy_revision?: unknown
   knowledge_revision?: unknown
   state?: unknown
+  reasons?: unknown
+  governed?: unknown
+  definition_revision?: unknown
+  evaluation_id?: unknown
+  memory_pins?: unknown
+  activation_event_seq?: unknown
 }
 
 function scheduledClaimFromRpc(data: unknown): ScheduledAgentRunClaim {
   const row = (data ?? {}) as ScheduledAgentRunClaimRow
   if (row.outcome === "agent_unavailable") return { outcome: row.outcome }
+  if (row.outcome === "refused") {
+    if (!Array.isArray(row.reasons) || row.reasons.length === 0 || !row.reasons.every((r) => typeof r === "string")) {
+      throw new Error("[agent-runs] scheduled claim returned an invalid refusal")
+    }
+    return { outcome: "refused", reasons: row.reasons as string[] }
+  }
   if (
     (row.outcome === "active_duplicate" ||
       row.outcome === "unknown" ||
@@ -97,6 +120,23 @@ function scheduledClaimFromRpc(data: unknown): ScheduledAgentRunClaim {
     typeof row.definition_snapshot === "object" &&
     typeof row.definition_hash === "string"
   ) {
+    let governed: GovernedRunBinding | undefined
+    if (row.governed === true) {
+      if (
+        !Number.isInteger(row.definition_revision) ||
+        typeof row.evaluation_id !== "string" ||
+        !Array.isArray(row.memory_pins) ||
+        !Number.isInteger(row.activation_event_seq)
+      ) {
+        throw new Error("[agent-runs] governed claim is missing its binding")
+      }
+      governed = {
+        definitionRevision: row.definition_revision as number,
+        evaluationId: row.evaluation_id,
+        memoryPins: row.memory_pins as GovernedRunBinding["memoryPins"],
+        activationEventSeq: row.activation_event_seq as number,
+      }
+    }
     return {
       outcome: row.outcome,
       runId: row.run_id,
@@ -110,6 +150,7 @@ function scheduledClaimFromRpc(data: unknown): ScheduledAgentRunClaim {
         typeof row.knowledge_revision === "number"
           ? row.knowledge_revision
           : null,
+      ...(governed ? { governed } : {}),
     }
   }
   throw new Error("[agent-runs] scheduled claim returned an invalid response")
@@ -167,6 +208,58 @@ export async function finishScheduledAgentRun(
     throw new Error(`[agent-runs] scheduled finish failed: ${error.message}`)
   }
   return data === true
+}
+
+export type GovernedRunCheck = { current: boolean; governed: boolean; reasons: string[] }
+
+/**
+ * Re-verify a running run's binding before an effect. Legacy runs answer `{current:true,
+ * governed:false}`, so the executor may call this unconditionally. Any error or malformed answer
+ * is `current: false`: an unverifiable binding is never treated as current.
+ */
+export async function assertGovernedRunCurrent(
+  supabase: SupabaseClient,
+  input: { runId: string; workerId: string; attempt: number }
+): Promise<GovernedRunCheck> {
+  const { data, error } = await supabase.rpc("assert_governed_run_current", {
+    p_run: input.runId,
+    p_worker: input.workerId,
+    p_attempt: input.attempt,
+  })
+  const row = (data ?? {}) as { current?: unknown; governed?: unknown; reasons?: unknown }
+  if (
+    error ||
+    typeof row.current !== "boolean" ||
+    typeof row.governed !== "boolean" ||
+    !Array.isArray(row.reasons) ||
+    !row.reasons.every((r) => typeof r === "string")
+  ) {
+    return { current: false, governed: true, reasons: ["binding_unverifiable"] }
+  }
+  return { current: row.current, governed: row.governed, reasons: row.reasons as string[] }
+}
+
+/**
+ * Agents that have a definition state row are governed: they run only through a bound claim.
+ * Throws when it cannot tell, so callers fail closed instead of running a governed agent as legacy.
+ */
+export async function loadGovernedAgentStates(
+  supabase: SupabaseClient,
+  agentIds: string[]
+): Promise<Map<string, { lifecycle: string; activeRevision: number | null }>> {
+  const out = new Map<string, { lifecycle: string; activeRevision: number | null }>()
+  if (agentIds.length === 0) return out
+  for (let i = 0; i < agentIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("agent_definition_state")
+      .select("agent_id,lifecycle,active_revision")
+      .in("agent_id", agentIds.slice(i, i + 200))
+    if (error) throw new Error(`[agent-runs] governed state lookup failed: ${error.message}`)
+    for (const row of (data ?? []) as { agent_id: string; lifecycle: string; active_revision: number | null }[]) {
+      out.set(row.agent_id, { lifecycle: row.lifecycle, activeRevision: row.active_revision })
+    }
+  }
+  return out
 }
 
 export async function markScheduledAgentRunUnknown(

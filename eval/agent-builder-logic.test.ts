@@ -71,8 +71,8 @@ describe("blocker copy source lock", () => {
     expect(isActivationBlocker("new_code")).toBe(false)
   })
 
-  it("the evaluation blocker states the honest limitation", () => {
-    expect(BLOCKER_COPY.evaluation_required.detail).toMatch(/not available yet/i)
+  it("the evaluation blocker tells the owner how to clear it", () => {
+    expect(BLOCKER_COPY.evaluation_required.detail).toMatch(/Run the checks from the Test step/)
   })
 })
 
@@ -359,11 +359,13 @@ describe("builder sources keep the contract", () => {
     expect(call).not.toMatch(/policy|knowledge|connector|billing|evaluation/i)
   })
 
-  it("the Test step has no server action, model call or evidence write", () => {
+  it("the Test step only REQUESTS the trusted evaluator: ids out, no result ever authored in the browser", () => {
     const test = parts.slice(parts.indexOf("export function TestStep"))
-    expect(test).not.toMatch(/use server|saveAgentDefinitionRevision|activateAgentDefinition|recordTrusted|record_evaluation|fetch\(|useEffect|onClick/)
-    expect(test).toContain("Test runner not available yet")
-    expect(test).toContain("evaluation_required")
+    expect(test).not.toMatch(/use server|saveAgentDefinitionRevision|activateAgentDefinition|recordTrusted|record_evaluation|fetch\(|useEffect/)
+    expect(test).toContain("runAgentRevisionEvaluation({ agentId, revision: savedRevision })")
+    expect(test).not.toMatch(/passRate:|safetyPassed:|fixtureHash|suiteVersion:|evaluationKey/)
+    expect(test).toContain("never calls a model")
+    expect(test).toContain("not an answer-quality score")
   })
 
   it("never reads or stores builder truth in browser storage", () => {
