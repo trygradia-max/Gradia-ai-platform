@@ -9,9 +9,13 @@ import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import {
+  getVoiceTestCallPreflight,
+  runVoiceTestCall,
+  type VoiceTestCallPreflight,
+} from "@/lib/voice-test-call"
+import {
   attachVoiceNumber,
   composeVoiceAssistant,
-  startVoiceTestCall,
   syncVoiceAssistant,
   voiceLaunchGate,
 } from "@/lib/voice-provider"
@@ -168,31 +172,29 @@ export async function connectVoiceNumber(): Promise<ConnectVoiceNumberResult> {
 
 export type TestCallActionResult = { ok: true } | { ok: false; error: string }
 
-const testCallSchema = z.object({
-  toNumber: z
-    .string()
-    .trim()
-    .refine((v) => /^\+1\d{10}$/.test(v), "US phone in +1XXXXXXXXXX format."),
-})
+/** Read-only: who a test call would ring (masked) or why it is unavailable. Same controls as
+ *  the action, minus the rate claim; the destination itself never leaves the server. */
+export async function getVoiceTestCallState(): Promise<VoiceTestCallPreflight> {
+  const user = await requireUser()
+  const shopCtx = await requireShop()
+  return getVoiceTestCallPreflight({ userId: user.id, shopId: shopCtx.id })
+}
 
-/** Rings the owner with the receptionist live — the launch-gate test. */
-export async function requestVoiceTestCall(input: {
-  toNumber: string
-}): Promise<TestCallActionResult> {
-  await requireUser()
-  const shop = await loadShop()
-  if (!shop) return { ok: false, error: "Finish onboarding first." }
-  const parsed = testCallSchema.safeParse(input)
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the number." }
-  }
-  const result = await startVoiceTestCall({
-    supabase: createServiceClient(),
-    shop,
-    toNumber: parsed.data.toNumber,
-  })
-  if (result.ok) revalidatePath("/settings")
-  return result
+/**
+ * Rings the owner's VERIFIED phone with the receptionist live — the launch-gate test.
+ *
+ * Security audit finding #6: this action takes NO destination. The number is the signed-in
+ * user's own Supabase-confirmed phone, resolved server-side; entitlement, readiness, remaining
+ * minutes and the per-shop rate/concurrency claim are enforced in `runVoiceTestCall`, and
+ * rechecked immediately before the provider call. Anything extra in the arguments is ignored.
+ */
+export async function requestVoiceTestCall(): Promise<TestCallActionResult> {
+  const user = await requireUser()
+  const shopCtx = await requireShop()
+  const result = await runVoiceTestCall({ userId: user.id, shopId: shopCtx.id })
+  if (!result.ok) return { ok: false, error: result.error }
+  revalidatePath("/settings")
+  return { ok: true }
 }
 
 export type SetVoiceLiveResult = { ok: true } | { ok: false; error: string }

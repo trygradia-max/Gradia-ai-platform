@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import {
   connectVoiceNumber,
   getVoicePreview,
+  getVoiceTestCallState,
   requestVoiceTestCall,
   saveVoiceConfig,
   saveVoiceMinutesBudget,
@@ -41,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { ShopRow, VoiceConfig } from "@/lib/types/database"
+import type { VoiceTestCallPreflight } from "@/lib/voice-test-call"
 import { cn } from "@/lib/utils"
 
 type VoiceOption = { id: string; label: string; description: string }
@@ -93,7 +95,24 @@ export function VoiceBuilderCard({
     null | "save" | "preview" | "connect" | "test" | "launch" | "budget"
   >(null)
   const [preview, setPreview] = React.useState<string | null>(null)
-  const [testNumber, setTestNumber] = React.useState(shop.phone ?? "")
+  // Who a test call would ring (or why none is available) — computed server-side from the same
+  // controls the action enforces; the owner never types a destination.
+  const [testCall, setTestCall] = React.useState<VoiceTestCallPreflight | null>(null)
+  React.useEffect(() => {
+    let cancelled = false
+    getVoiceTestCallState()
+      .then((state) => {
+        if (!cancelled) setTestCall(state)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTestCall({ available: false, reason: "unavailable", message: STRINGS.voiceTestCall.unavailable })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [shop.vapi_assistant_id, shop.vapi_phone_number_id, shop.voice_test_called_at])
   const [budget, setBudget] = React.useState(
     shop.voice_minutes_budget != null ? String(shop.voice_minutes_budget) : ""
   )
@@ -388,29 +407,32 @@ export function VoiceBuilderCard({
                 "Test call done"
               ) : (
                 <span className="flex flex-wrap items-center gap-2">
-                  We call you, you meet the receptionist:
-                  <Input
-                    value={testNumber}
-                    onChange={(e) => setTestNumber(e.target.value)}
-                    placeholder="+16175550142"
-                    className="h-8 w-44"
-                    aria-label="Your phone number for the test call"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={pending !== null || !hasNumber}
-                    onClick={() =>
-                      run("test", () => requestVoiceTestCall({ toNumber: testNumber.trim() }), "Ringing you now — pick up and say hi.")
-                    }
-                    className="gap-1.5"
-                  >
-                    {pending === "test" ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                    ) : null}
-                    Call me
-                  </Button>
+                  {testCall === null ? (
+                    <span className="text-muted-foreground">Checking…</span>
+                  ) : testCall.available ? (
+                    <>
+                      {STRINGS.voiceTestCall.callingLabel(testCall.maskedPhone)}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={pending !== null || !hasNumber}
+                        onClick={() =>
+                          run("test", () => requestVoiceTestCall(), STRINGS.voiceTestCall.ringing)
+                        }
+                        className="gap-1.5"
+                      >
+                        {pending === "test" ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                        ) : null}
+                        {STRINGS.voiceTestCall.callMe}
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground" data-testid="test-call-unavailable">
+                      {testCall.message}
+                    </span>
+                  )}
                 </span>
               )}
             </li>
