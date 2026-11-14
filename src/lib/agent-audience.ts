@@ -87,9 +87,38 @@ export function looksOptedOut(content: string): boolean {
   )
 }
 
-/** Affirmative marketing opt-in keywords (the STOP→START counterpart). */
+/**
+ * Explicit SMS opt-in keywords (the STOP→START counterpart). Matched against the
+ * WHOLE normalized message, never inside a sentence. "YES" is deliberately NOT
+ * here: it is a routine appointment-confirm reply and must not lift STOP or
+ * stamp marketing consent (consent-preserving choice; see AI_WORK_LOG).
+ */
+const OPT_IN_KEYWORDS: ReadonlySet<string> = new Set([
+  "START",
+  "UNSTOP",
+  "SUBSCRIBE",
+  "OPT IN",
+  "OPTIN",
+])
+/** Longest raw message considered; anything longer is prose, not a keyword. */
+const OPT_IN_MAX_RAW_LENGTH = 40
+
+/**
+ * True only when the entire message is one opt-in keyword, tolerating bounded
+ * surrounding whitespace/punctuation ("start", " Start! ", "\"UNSTOP\".").
+ * Prose such as "when can you start on my car?" is NOT consent. Opt-out
+ * detection (looksOptedOut) stays permissive and always wins in the webhook.
+ */
 export function looksOptedIn(content: string): boolean {
-  return /\b(start|unstop|subscribe|opt\s?in)\b/i.test(content)
+  if (typeof content !== "string" || content.length > OPT_IN_MAX_RAW_LENGTH) {
+    return false
+  }
+  const normalized = content
+    .normalize("NFKC")
+    .replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gu, "")
+    .replace(/\s+/g, " ")
+    .toUpperCase()
+  return OPT_IN_KEYWORDS.has(normalized)
 }
 
 /** Strip characters that would break a PostgREST ilike / or() filter. */

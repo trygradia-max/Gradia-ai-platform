@@ -32,8 +32,32 @@ describe("opt-in / opt-out keyword detection", () => {
     expect(looksOptedOut("STOP")).toBe(true)
     expect(looksOptedOut("please unsubscribe me")).toBe(true)
     expect(looksOptedIn("START")).toBe(true)
-    expect(looksOptedIn("subscribe please")).toBe(true)
+    expect(looksOptedIn("subscribe please")).toBe(false) // prose is not consent
     expect(looksOptedIn("yes I'll be there Tuesday")).toBe(false) // "yes" is not opt-in
+  })
+
+  it("opt-in is a whole-message match: explicit keywords only, never prose", () => {
+    for (const ok of ["START", "start", " Start! ", "\"UNSTOP\".", "Subscribe", "OPT IN", "opt  in", "optin", "Start.\n"]) {
+      expect(looksOptedIn(ok), ok).toBe(true)
+    }
+    for (const bad of [
+      "when can you start on my car?",
+      "Can we start Monday?",
+      "please subscribe me",
+      "subscribe please",
+      "I want to opt in to your deals",
+      "start start",
+      "yes", "YES", "ok", "stop start", "start stop", "unstop me please",
+      "", "   ", "!!!", "x".repeat(500), "START" + "!".repeat(60),
+    ]) {
+      expect(looksOptedIn(bad), bad).toBe(false)
+    }
+  })
+
+  it("opt-out detection stays permissive (fail-safe)", () => {
+    for (const s of ["stop", "STOP.", "please stop texting me", "Cancel", "opt out", "remove me", "quit", "stopall"]) {
+      expect(looksOptedOut(s), s).toBe(true)
+    }
   })
 })
 

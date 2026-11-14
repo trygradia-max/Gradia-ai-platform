@@ -18,6 +18,24 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-13] [AREA: platform] [STATUS: done]
+Security audit run-1 finding #3 (`claude/security-fix-sms-consent`): inbound SMS opt-in
+detection (`looksOptedIn` in `src/lib/agent-audience.ts`) was an unanchored word regex, so
+ordinary prose such as "when can you start on my car?" called `record_sms_keyword` with
+`p_opted_in=true`, lifting an `sms_keyword` STOP suppression and stamping
+`marketing_consent_at`. Opt-in is now a whole-message match (NFKC, bounded surrounding
+whitespace/punctuation stripped, 40-char raw cap, case-folded) against START, UNSTOP,
+SUBSCRIBE, OPT IN/OPTIN. Deliberately NOT included: YES (a routine appointment-confirm
+reply; Twilio treats it as opt-in, we choose the consent-preserving side) and
+"subscribe please"-style phrases. `looksOptedOut` is unchanged and still permissive, and
+still wins in the route. No SQL/RPC change (`record_sms_keyword` already ties destination
+to customer and shop), so tenant scoping is asserted at the route. Regression tests in
+`eval/send-policy.test.ts` and `eval/webhooks.test.ts`: exploit prose writes no consent,
+valid START, opt-out precedence, replayed START idempotency, shop/customer/destination
+binding. No Twilio/live call, deploy, secret or migration change. The unit suite ran with
+`platform/node_modules` symlinked; `jsdom`/`@testing-library` are absent there, so
+`eval/agent-builder-navigation.test.tsx` could not start (unrelated).
+
 [AI: claude-code] [DATE: 2026-11-04] [AREA: platform] [STATUS: done]
 Commercial Billing PR B (`claude/billing-seat-proration`): replaced PR A's
 `seat_proration_unavailable` with immutable membership billing history and
