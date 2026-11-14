@@ -656,6 +656,7 @@ describe("voice proposeBooking — refuses to stage a knowingly-conflicting slot
     const inserts: { table: string; row: Record<string, unknown> }[] = []
     const spoken = await proposeBooking(voiceDb(inserts), "shop-1", params, {
       id: "call-1",
+      callerPhone: "+16175550142",
     })
     expect(spoken).toContain("already taken")
     expect(spoken).toContain("another")
@@ -671,6 +672,7 @@ describe("voice proposeBooking — refuses to stage a knowingly-conflicting slot
     const inserts: { table: string; row: Record<string, unknown> }[] = []
     const spoken = await proposeBooking(voiceDb(inserts), "shop-1", params, {
       id: "call-1",
+      callerPhone: "+16175550142",
     })
     const staged = inserts.filter((i) => i.table === "pending_actions")
     expect(staged).toHaveLength(1)
