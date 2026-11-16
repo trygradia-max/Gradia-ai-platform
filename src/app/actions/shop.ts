@@ -169,58 +169,6 @@ export async function saveShop(
   return { ok: true, shop: data as ShopRow }
 }
 
-const saveVapiAssistantSchema = z.object({
-  vapi_assistant_id: z.string().trim().max(120).nullable(),
-})
-
-export type SaveVapiAssistantResult =
-  | { ok: true; shop: ShopRow }
-  | { ok: false; error: string }
-
-/**
- * Connects a shop to its Vapi assistant. The webhook resolves the shop
- * by matching the incoming call's assistantId against this column, so
- * each shop's calls route to their own brain.
- */
-export async function saveVapiAssistantId(
-  input: z.infer<typeof saveVapiAssistantSchema>
-): Promise<SaveVapiAssistantResult> {
-  const parsed = saveVapiAssistantSchema.safeParse(input)
-  if (!parsed.success) {
-    return { ok: false, error: "Assistant ID is too long." }
-  }
-
-  await requireUser()
-  const existing = await getOptionalShop()
-  if (!existing) {
-    return { ok: false, error: "Finish onboarding first." }
-  }
-
-  const supabase = await createClient()
-  const value = parsed.data.vapi_assistant_id?.trim() || null
-
-  const { data, error } = await supabase
-    .from("shops")
-    .update({ vapi_assistant_id: value })
-    .eq("id", existing.id)
-    .select("*")
-    .single()
-
-  if (error || !data) {
-    // 23505 = unique_violation — another shop already claimed this assistant.
-    if (error?.code === "23505") {
-      return {
-        ok: false,
-        error: "That assistant is already connected to another shop.",
-      }
-    }
-    return { ok: false, error: error?.message ?? "Could not save." }
-  }
-
-  revalidatePath("/settings")
-  return { ok: true, shop: data as ShopRow }
-}
-
 const saveReviewLinkSchema = z.object({
   review_link: z.string().max(500).nullable(),
 })
