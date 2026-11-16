@@ -2754,6 +2754,30 @@ comes from the owner session): `stripe-connect.ts`, the two `/api/stripe/connect
 findings #1, #3, #4, #6, #7, #9, #10; other server-controlled shops columns outside those findings (vapi_assistant_id,
 voice_live, vapi_server_secret_enc); no deploy, shared or production Supabase change, provider call or merge.
 
+[AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: done]
+Security fix: `a2p_registrations` is now server-written (run-1 audit, NEEDS-VALIDATION item; branch
+`claude/security-fix-a2p-registration-state`, based on main `c71035f`). Root cause: the policy was `FOR ALL ... WITH CHECK (owner)` and
+`authenticated`/`anon` held table-wide write grants, so a signed-in owner could, through PostgREST, rewrite status, every provider SID,
+the claim lease, evidence timestamps and attempt counters on their own row, delete it, or insert a forged one. `startA2pRegistration`
+trusts that row, so resetting `approved`/`suspended`/`*_pending` to `draft` re-entered provider registration through trusted service code.
+Reproduced first, with a real authenticated owner JWT on the disposable stack: UPDATE reset status to draft and cleared every SID,
+DELETE removed the row, INSERT stored a forged approved row with a fake brand SID (all HTTP success); cross-shop writes were already
+blocked by RLS. Migration `20261114120000_a2p_registrations_server_written.sql` (the existing untracked draft, kept byte-identical): owner
+SELECT-only policy, INSERT/UPDATE/DELETE/TRUNCATE revoked from `authenticated`/`anon`, and a guard trigger refusing any write by those
+roles (42501, DETAIL `server_written`). After it, the same three writes return 42501 and rows are unchanged. No application code change:
+no owner-session code writes the table; `service_role` writers (telephony-provider, reconciler, claim/finish RPCs) are unaffected. Tests:
+the draft's structural lock `eval/a2p-registrations-grants.test.ts` and integration file (extended here with rejected-row tampering,
+service_role claim/checkpoint/finish including the shop-gate write and browser-role RPC refusal, and an owner deleting their own shop
+cascading the row). Integration file: 6 of 7 failed before the migration, 10 of 10 pass after. Also verified: the guard alone still
+refuses owner writes with grants and a permissive policy deliberately re-opened (rolled-back transaction); an in-place upgrade over five
+seeded rows in varied states left them byte-identical (md5); all 121 migrations apply from zero. Gates on Node 24.15.0 (no Node 22 on
+this machine), isolated runner, `gradia-isolated-tests` stack rebuilt (its auth container had been dead two days; no other stack
+touched): full integration 74 files / 902 passed / 1 todo; unit 178 files / 2,655 passed / 4 live skips; lint clean; offline webpack
+build passed. Typecheck shows only 2 errors, both in `eval/agent-builder-navigation.test.tsx` (`@testing-library` absent from the shared
+`node_modules` symlink; unrelated, as in the 2026-11-13 entry); the unit command exits non-zero for that same jsdom resolution. The
+build logged webpack cache ENOSPC warnings: the host disk was at 99%. Twilio was mocked; no live/shared/production database, secret,
+deploy or merge. Deliberately not done: the inert default `REFERENCES`/`TRIGGER` grants to `authenticated` were left (no DDL path).
+
 ## 2026-11-13 - [Claude Code] Security fix: voice caller identity binding (audit findings #4, #9, #10)
 [AI: claude-code] [DATE: 2026-11-13] [AREA: platform] [STATUS: done]
 One root cause: Vapi tool handlers used the model-supplied `phone` argument (preferred over the webhook caller ID) to
