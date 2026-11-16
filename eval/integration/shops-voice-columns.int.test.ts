@@ -283,28 +283,27 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("voice identity and launch-gate colum
     it("the gate is also inside the UPDATE: a shop whose add-on ends between read and write does not go live", async () => {
       await resetAll()
       await serverSet(gateReady())
-      // Revoke the add-on right after the seam's ownership read resolves, before its conditional write.
-      const orig = db.from.bind(db)
-      const patched = {
-        from: (table: string) => {
-          const q = orig(table)
-          const origRead = q.select.bind(q) as (...a: unknown[]) => { eq: (...a: unknown[]) => unknown }
-          ;(q as { select: unknown }).select = (...args: unknown[]) => {
-            const chain = origRead(...args) as { eq: (...a: unknown[]) => { eq: (...a: unknown[]) => { maybeSingle: () => Promise<unknown> } } }
-            const wrapped = (c: typeof chain): typeof chain => ({
-              ...c,
-              eq: (...e: unknown[]) => wrapped(c.eq(...e) as unknown as typeof chain),
-              maybeSingle: async () => {
-                const out = await (c as unknown as { maybeSingle: () => Promise<unknown> }).maybeSingle()
-                await orig("shops").update({ voice_addon: false }).eq("id", a.shopId)
-                return out
-              },
-            }) as typeof chain
-            return wrapped(chain)
+      // Revoke the add-on right after the seam's ownership read (maybeSingle) resolves, before its conditional write.
+      type Fn = (...args: unknown[]) => unknown
+      const hook = (target: object): object => new Proxy(target, {
+        get(t, prop, receiver) {
+          const value = Reflect.get(t, prop, receiver)
+          if (typeof value !== "function") return value
+          if (prop === "then") return (value as Fn).bind(t)
+          if (prop === "maybeSingle") {
+            return async () => {
+              const out = await (value as Fn).call(t)
+              await db.from("shops").update({ voice_addon: false }).eq("id", a.shopId)
+              return out
+            }
           }
-          return q
+          return (...args: unknown[]) => {
+            const out = (value as Fn).apply(t, args)
+            return out && typeof out === "object" ? hook(out) : out
+          }
         },
-      } as unknown as SupabaseClient
+      })
+      const patched = { from: (table: string) => hook(db.from(table)) } as unknown as SupabaseClient
       const res = await setVoiceLiveForOwner({ service: patched, userId: a.ownerId, shopId: a.shopId, live: true })
       expect(res.ok).toBe(false)
       expect((await row()).voice_live).toBe(false)

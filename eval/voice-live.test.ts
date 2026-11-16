@@ -34,7 +34,7 @@ function fakeClient(via: string) {
         select: () => b,
         update: (p: Record<string, unknown>) => { patch = p; return b },
         eq: (col: string, val: unknown) => { filters.push([col, "eq", val]); return b },
-        not: (col: string, _op: string, _val: unknown) => { filters.push([col, "notnull", null]); return b },
+        not: (col: string) => { filters.push([col, "notnull", null]); return b },
         maybeSingle: async () => (h.failRead ? { data: null, error: { message: "boom" } } : { data: matches()[0] ?? null, error: null }),
         then: (resolve: (v: unknown) => unknown) => {
           if (!patch) return resolve({ data: matches(), error: null })
