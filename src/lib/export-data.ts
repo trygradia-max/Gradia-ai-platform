@@ -15,6 +15,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { csvRow } from "@/lib/csv"
+
 export const EXPORT_ENTITIES = [
   "customers",
   "vehicles",
@@ -141,18 +143,11 @@ export function columnsFor(entity: ExportEntity, rows: ExportRow[]): string[] {
   return rows.length > 0 ? Object.keys(rows[0]) : [...FALLBACK_HEADERS[entity]]
 }
 
-/** Matches the existing CSV-escaping convention (lib/recovery/review.ts). */
-function csvEscape(value: unknown): string {
-  if (value === null || value === undefined) return ""
-  const s = typeof value === "string" ? value : JSON.stringify(value)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
 export function rowsToCsv(rows: ExportRow[], entity: ExportEntity): string {
   const columns = columnsFor(entity, rows)
-  const lines = [columns.join(",")]
+  const lines = [csvRow(columns)]
   for (const row of rows) {
-    lines.push(columns.map((c) => csvEscape(row[c])).join(","))
+    lines.push(csvRow(columns.map((c) => row[c])))
   }
   return lines.join("\n")
 }

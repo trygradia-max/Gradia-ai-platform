@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { csvRow } from "@/lib/csv"
 import { parseVehicle, type ParsedVehicle } from "@/lib/vehicle"
 import { buildCandidates, type ExtractedRow } from "@/lib/recovery/candidates"
 import type { CrmStage } from "@/lib/types/database"
@@ -197,10 +198,10 @@ export function buildMergeUndo(
 export function buildErrorReportCsv(
   rows: { subject: string | null; drop_reason: string | null }[]
 ): string {
-  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+  // `subject` comes from the imported file / inbound messages — untrusted.
   const lines = ["row,reason"]
   for (const r of rows) {
-    lines.push(`${esc(r.subject ?? "(unnamed row)")},${esc(r.drop_reason ?? "unknown")}`)
+    lines.push(csvRow([r.subject ?? "(unnamed row)", r.drop_reason ?? "unknown"]))
   }
   return lines.join("\n")
 }
