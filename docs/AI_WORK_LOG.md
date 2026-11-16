@@ -2873,3 +2873,24 @@ download). DB rows, the JSON export and in-memory row objects are unchanged. Tes
 formulas, whitespace/control/Unicode bypasses, quoting, ordinary values, both export boundaries, plus a source scan
 that fails if another CSV quote-doubler appears in `src/`). Non-goals: findings #1-#6, #8-#10, HTML escaping, JSON
 export, import/parse side; no migration, deploy, provider call or shared-data change.
+
+## 2026-11-15 - [Codex] Controlled-pilot and full-launch readiness assessment
+[AI: codex] [DATE: 2026-11-15] [AREA: platform] [STATUS: assessed]
+Reviewed current `origin/main` at `c71035f`, the five September 11 governing documents, the November 4
+production-readiness/build-order documents, current open PR inventory and active A2P security work. No open PRs were
+present at assessment time. Controlled pilot remains gated by completing and reviewing the A2P registration-state fix,
+an exact-commit release verification, private signed-in desktop/mobile acceptance, production migration/deploy evidence,
+and independently authorized SMS/website/Meta provider activation for named accounts. Broad self-serve launch additionally
+requires the remaining commercial billing sequence (usage settlement/meters, signed webhooks, dunning/refunds/portal and
+full Stripe sandbox acceptance), production security/operations evidence, and the full five-channel acceptance gate.
+No production deploy, provider activation, shared-data change or release-gate removal occurred in this assessment.
+
+## 2026-11-15 - [Codex] Go-to-market and sales master
+[AI: codex] [DATE: 2026-11-15] [AREA: marketing] [STATUS: done]
+Created `docs/marketing/GRADIA_GTM_SALES_MASTER.md`, an evidence-grounded founder and marketing-agent playbook based on
+current governing documents, approved pricing and merged `main` at `c71035f`. It covers category and positioning,
+problems, ICP/anti-ICP, personas and jobs, an honest feature-availability matrix, offer/pricing, funnel and website copy,
+sales stages, discovery/qualification, demo and objection handling, pilot/onboarding, case-study evidence, outreach,
+content, a 30/60/90 plan, metrics, claim/privacy guardrails and an execution handoff. It makes no customer-result,
+production-availability, legal/compliance or unsupported competitor claim. No application code, provider, billing,
+deployment, shared data or production state changed.
