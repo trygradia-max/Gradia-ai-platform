@@ -34,23 +34,53 @@ checkout or subscription state (PRs A/B/C).
 
 ## Current checkpoint
 
-0. Mandatory reading done (AGENTS.md, AI_WORK_LOG billing entries + head/tail, five governing
-   docs by grep for billing relevance + CHEAT_SHEET, catalog, PR A/B/C architecture docs).
-   Handoff created. No implementation yet.
+1. DONE: mandatory reading; handoff; migration `supabase/migrations/20261115120000_commercial_settlement.sql`
+   (applied to disposable stack `gradia-isolated-tests` :56531 via `docker exec -i supabase_db_gradia-isolated-tests psql`
+   + a `supabase_migrations.schema_migrations` insert); pure contract `src/lib/commercial-settlement.ts`;
+   provider boundary `src/lib/commercial-settlement-provider.ts`; service
+   `src/lib/commercial-settlement-service.ts`; small refactor of `commercial-usage-service.ts`
+   (exports `assembleCommercialPeriodPreview`, `parseMembershipRead`; behavior unchanged);
+   unit tests `eval/commercial-settlement.test.ts` (30 pass).
+2. TODO (in order): integration test `eval/integration/commercial-settlement.int.test.ts`; upgrade verifier
+   `scripts/verify-commercial-settlement-migration.py`; architecture doc
+   `docs/architecture/COMMERCIAL_SETTLEMENT.md`; `docs/AI_WORK_LOG.md` entry; lint / typecheck /
+   production build / full unit; rebase on origin/main; push; open non-draft PR to main (do NOT merge).
+
+## Design decisions (for reviewers)
+
+- One settlement per exact window (UNIQUE shop+window); changed replay or late evidence => `CB409`.
+- DB recomputes an evidence digest (usage + membership reads at the fixed `as_of`) and refuses on mismatch.
+- Meter mapping is reviewed code and ships UNPROVISIONED (all event names null) => fail closed.
+  Value basis (PROPOSED; founder confirmation needed at provisioning): outcomes = `billed_quantity`,
+  voice/SMS/seat = `charge_cents` (their price is per-fact/per-day, one provider unit price cannot express it).
+  Seat proration is a 6th component (otherwise it has no delivery path).
+- Delivery: claim (token) -> provider -> record; stale in_flight (>120 s) => unknown; never auto-retried.
+- Rejected deliveries are terminal in PR D (no requeue path) -> PR E reconciliation.
+- Meter API version: the adapter pins Stripe API `2024-06-20`; confirm `/v1/billing/meter_events` support
+  (Meters launched with `2024-09-30.acacia`) before provisioning. PR F dependency.
 
 ## Commands run / results
 
-- `git fetch`; HEAD == origin/main c71035f, tree clean.
+- `git fetch`; HEAD == origin/main c71035f, tree clean at start.
+- `npx tsc --noEmit`: only pre-existing errors (`@testing-library/*` missing from linked node_modules).
+- Existing usage/seat unit tests after refactor: 87 pass. New unit file: 30 pass.
+- Migration applied cleanly on the disposable stack.
 
 ## Files changed
 
-- `docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md` (this file)
+- supabase/migrations/20261115120000_commercial_settlement.sql
+- src/lib/commercial-settlement.ts, commercial-settlement-provider.ts, commercial-settlement-service.ts
+- src/lib/commercial-usage-service.ts (refactor only)
+- eval/commercial-settlement.test.ts
+- docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md
 
 ## Next exact action
 
-Read `src/lib/commercial-usage-preview.ts`, `commercial-usage-service.ts`, `commercial-billing*.ts`,
-`stripe-commercial*.ts`, and the PR A/B/C migrations; then design the settlement migration.
+Write `eval/integration/commercial-settlement.int.test.ts` (seed shop + bound platform customer + usage +
+membership coverage; env from `supabase status --workdir tests -o env`, `GRADIA_DISPOSABLE_TEST=gradia-isolated-tests`,
+run `EVAL_LIVE=0 INTEGRATION=1 npx vitest run --fileParallelism=false eval/integration/commercial-settlement.int.test.ts`).
 
 ## Blockers
 
-None yet. Known: worktree has no `node_modules` (symlink from a sibling checkout for tests).
+None. Worktree `node_modules` is a symlink to `/Users/harryhatch/Gradia/platform/node_modules`
+(lacks @testing-library, so `eval/agent-builder-navigation.test.tsx` cannot run; unrelated).
