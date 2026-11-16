@@ -33,16 +33,31 @@ Writers found:
 | voice_live | `setVoiceLive` (actions/voice-builder.ts) | OWNER SESSION | service client after owner re-verify + gate |
 | voice_live=false | stripe webhook | service | unchanged |
 
-## State
+## State (2026-11-15, final)
 
-- [x] Reading done (AGENTS.md, AI_WORK_LOG, five governing docs).
+- [x] Reading done (AGENTS.md, AI_WORK_LOG, five governing docs; Next `use server` doc).
 - [x] Audit table above.
-- [ ] Reproduce the forge primitive on a disposable local Supabase stack (BEFORE evidence).
-- [ ] Migration extending the guard; defaults on INSERT; UPDATE transitions.
-- [ ] Move `setVoiceLive` to a service-client seam; delete `saveVapiAssistantId`.
-- [ ] Integration tests (cross-tenant, service writers, rollback), unit tests, upgrade verifier.
-- [ ] typecheck, lint, build, focused unit + integration.
-- [ ] AI_WORK_LOG entry, rebase on origin/main, push, non-draft PR (do not merge).
+- [x] Primitive reproduced on private stack `gradia-voice-columns` (port 59431) before the fix.
+- [x] Migration `20261115120000_shops_voice_columns_guard.sql` (extends the existing guard in place).
+- [x] `setVoiceLive` -> `src/lib/voice-live.ts` service seam; `saveVapiAssistantId` deleted.
+- [x] Integration (`shops-voice-columns.int.test.ts`, extended `shops-protected-columns.int.test.ts`), unit
+      (`voice-live.test.ts`), upgrade verifier, read-only preflight SQL.
+- [x] Full integration 952, unit 2,679, tsc, eslint, offline build all green; rebased on origin/main `1ce68de`.
+- [x] Work log entry appended; pushed; non-draft PR opened. DO NOT MERGE from this session.
+
+Branch note: the first checkpoints were pushed to `claude/security-fix-remaining-voice-columns` before the final
+rebase; force-push is not permitted, so the rebased history is on `claude/security-fix-voice-columns-rebased`
+and the PR is opened from that branch. The older branch is superseded and can be deleted by a human.
+
+Remaining for a human: merge decision; run `scripts/preflight-voice-columns.sql` read-only against any
+real database before release; CI runs the integration files on its own stack.
+
+## Local-only note
+
+The private stack is not in the repo allowlists (`eval/integration/_db.ts`, `eval/_network-guard.ts`), so to rerun
+the integration files there, add `gradia-voice-columns` / `http://127.0.0.1:59431` to both locally and revert
+before committing. The stack lives in `.local-tools/voice-columns` (git-excluded); `supabase --workdir
+.local-tools/voice-columns stop --no-backup` removes it.
 
 ## Commands
 

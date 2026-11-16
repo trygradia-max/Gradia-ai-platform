@@ -40,9 +40,10 @@ webhook) already used the service client; a structural unit test now locks that 
 Vapi; that rests on the trusted writers, and there is no unique index on `vapi_phone_number_id` (existing data was not
 inspected, so none was added). Existing rows are not repaired; `scripts/preflight-voice-columns.sql` is a read-only
 operator query for shops that may already hold forged values. Evidence on the private stack, Node 24.15.0: new
-integration suite 31 tests plus the extended protected-columns suite, 108 passed together and 24 fail with the
-previous guard function restored; full integration 942 passed (74 files, zero failures); full unit 2,673 passed
-(4 existing skips); `scripts/verify-shops-voice-columns-migration.py` PASS (real migration SQL in a rolled-back
+integration suite 35 tests plus the extended protected-columns suite (73), 108 passed together and 24 fail with the
+previous guard function restored; full integration 952 passed (75 files, zero failures) and full unit 2,679 passed
+(4 existing skips), both after rebasing onto main `1ce68de` (PR #144's migration sorts before this one, so
+on a stack that already held this migration it needs `migration up --include-all`); `scripts/verify-shops-voice-columns-migration.py` PASS (real migration SQL in a rolled-back
 transaction: exploit reproduced on the old guard, rows unchanged, defaults, transitions, cross-tenant, anon, service
 and definer writers); tsc, eslint and the offline webpack build clean. The literal `supabase db reset` from-zero path
 was blocked by the auto-mode classifier and not used; the stack had been built from all 120 migrations before this one
