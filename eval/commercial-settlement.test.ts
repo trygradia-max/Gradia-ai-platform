@@ -98,19 +98,21 @@ describe("reviewed meter mapping", () => {
 
   it("accepts a fully provisioned mapping and rejects every malformed one", () => {
     expect(validateMeterMapping(TEST_MAPPING).ok).toBe(true)
-    const bad = (mutate: (m: { -readonly [K in keyof MeterMapping]: MeterMapping[K] }) => void) => {
-      const copy = { ...TEST_MAPPING, entries: TEST_MAPPING.entries.map((e) => ({ ...e })) }
+    type Entry = { component: (typeof SETTLEMENT_COMPONENTS)[number]; valueBasis: "billed_quantity" | "charge_cents"; eventName: string | null }
+    const bad = (mutate: (m: { version: string; entries: Entry[] }) => void) => {
+      const copy = { version: TEST_MAPPING.version, entries: TEST_MAPPING.entries.map((e): Entry => ({ ...e })) }
       mutate(copy)
-      return validateMeterMapping(copy)
+      return validateMeterMapping({ ...TEST_MAPPING, ...copy })
     }
-    expect(bad((m) => { m.entries = m.entries.slice(1) })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
-    expect(bad((m) => { m.entries = [...m.entries.slice(0, 5), { ...m.entries[0] }] })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
-    expect(bad((m) => { (m.entries as { eventName: string | null }[])[0].eventName = null })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
-    expect(bad((m) => { (m.entries as { eventName: string | null }[])[0].eventName = "Bad Name!" })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
-    expect(bad((m) => { (m.entries as { eventName: string | null }[])[1].eventName = (m.entries as { eventName: string | null }[])[0].eventName })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
+    const invalid = { ok: false, reason: "settlement_mapping_invalid" }
+    expect(bad((m) => { m.entries = m.entries.slice(1) })).toEqual(invalid)
+    expect(bad((m) => { m.entries = [...m.entries.slice(0, 5), { ...m.entries[0] }] })).toEqual(invalid)
+    expect(bad((m) => { m.entries[0].eventName = null })).toEqual(invalid)
+    expect(bad((m) => { m.entries[0].eventName = "Bad Name!" })).toEqual(invalid)
+    expect(bad((m) => { m.entries[1].eventName = m.entries[0].eventName })).toEqual(invalid)
     // A mapping may supply names only: it cannot change the reviewed value basis.
-    expect(bad((m) => { (m.entries as { valueBasis: string }[])[3].valueBasis = "billed_quantity" })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
-    expect(bad((m) => { m.version = "settlement-mapping.v1-unprovisioned" })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
+    expect(bad((m) => { m.entries[3].valueBasis = "billed_quantity" })).toEqual(invalid)
+    expect(bad((m) => { m.version = "settlement-mapping.v1-unprovisioned" })).toEqual(invalid)
   })
 })
 

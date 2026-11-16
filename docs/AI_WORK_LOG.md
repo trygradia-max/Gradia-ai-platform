@@ -2754,6 +2754,30 @@ comes from the owner session): `stripe-connect.ts`, the two `/api/stripe/connect
 findings #1, #3, #4, #6, #7, #9, #10; other server-controlled shops columns outside those findings (vapi_assistant_id,
 voice_live, vapi_server_secret_enc); no deploy, shared or production Supabase change, provider call or merge.
 
+[AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: done]
+Security fix: `a2p_registrations` is now server-written (run-1 audit, NEEDS-VALIDATION item; branch
+`claude/security-fix-a2p-registration-state`, based on main `c71035f`). Root cause: the policy was `FOR ALL ... WITH CHECK (owner)` and
+`authenticated`/`anon` held table-wide write grants, so a signed-in owner could, through PostgREST, rewrite status, every provider SID,
+the claim lease, evidence timestamps and attempt counters on their own row, delete it, or insert a forged one. `startA2pRegistration`
+trusts that row, so resetting `approved`/`suspended`/`*_pending` to `draft` re-entered provider registration through trusted service code.
+Reproduced first, with a real authenticated owner JWT on the disposable stack: UPDATE reset status to draft and cleared every SID,
+DELETE removed the row, INSERT stored a forged approved row with a fake brand SID (all HTTP success); cross-shop writes were already
+blocked by RLS. Migration `20261114120000_a2p_registrations_server_written.sql` (the existing untracked draft, kept byte-identical): owner
+SELECT-only policy, INSERT/UPDATE/DELETE/TRUNCATE revoked from `authenticated`/`anon`, and a guard trigger refusing any write by those
+roles (42501, DETAIL `server_written`). After it, the same three writes return 42501 and rows are unchanged. No application code change:
+no owner-session code writes the table; `service_role` writers (telephony-provider, reconciler, claim/finish RPCs) are unaffected. Tests:
+the draft's structural lock `eval/a2p-registrations-grants.test.ts` and integration file (extended here with rejected-row tampering,
+service_role claim/checkpoint/finish including the shop-gate write and browser-role RPC refusal, and an owner deleting their own shop
+cascading the row). Integration file: 6 of 7 failed before the migration, 10 of 10 pass after. Also verified: the guard alone still
+refuses owner writes with grants and a permissive policy deliberately re-opened (rolled-back transaction); an in-place upgrade over five
+seeded rows in varied states left them byte-identical (md5); all 121 migrations apply from zero. Gates on Node 24.15.0 (no Node 22 on
+this machine), isolated runner, `gradia-isolated-tests` stack rebuilt (its auth container had been dead two days; no other stack
+touched): full integration 74 files / 902 passed / 1 todo; unit 178 files / 2,655 passed / 4 live skips; lint clean; offline webpack
+build passed. Typecheck shows only 2 errors, both in `eval/agent-builder-navigation.test.tsx` (`@testing-library` absent from the shared
+`node_modules` symlink; unrelated, as in the 2026-11-13 entry); the unit command exits non-zero for that same jsdom resolution. The
+build logged webpack cache ENOSPC warnings: the host disk was at 99%. Twilio was mocked; no live/shared/production database, secret,
+deploy or merge. Deliberately not done: the inert default `REFERENCES`/`TRIGGER` grants to `authenticated` were left (no DDL path).
+
 ## 2026-11-13 - [Claude Code] Security fix: voice caller identity binding (audit findings #4, #9, #10)
 [AI: claude-code] [DATE: 2026-11-13] [AREA: platform] [STATUS: done]
 One root cause: Vapi tool handlers used the model-supplied `phone` argument (preferred over the webhook caller ID) to
@@ -2849,3 +2873,30 @@ download). DB rows, the JSON export and in-memory row objects are unchanged. Tes
 formulas, whitespace/control/Unicode bypasses, quoting, ordinary values, both export boundaries, plus a source scan
 that fails if another CSV quote-doubler appears in `src/`). Non-goals: findings #1-#6, #8-#10, HTML escaping, JSON
 export, import/parse side; no migration, deploy, provider call or shared-data change.
+
+[AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: in-progress]
+Commercial Billing PR D (`claude/commercial-billing-settlement`, base `1ce68de`): reviewed Stripe event mapping, deterministic
+settlement of one closed window and a settlement preview. Sandbox/test mode only; the PR is open for review and is not merged.
+Migration `20261115120000_commercial_settlement.sql` adds an immutable settlement header (tenant, exact half-open UTC window of
+28-31 UTC-midnight days, fixed evidence instant, database-recomputed evidence digest, document digest, settled totals), immutable
+lines carrying a forward-only delivery outbox (`pending -> in_flight -> delivered | rejected | unknown`, write-once claim token,
+120 s stale claim becomes `unknown`) and append-only events that refuse URLs and key-shaped text. Writers are service-role only;
+`begin` must name a live owner of that exact shop; claim/record are bound to (shop, settlement, line); browser roles have no table or
+writer access; owners read through authority-checked functions. The database rechecks authority, closedness, complete membership
+coverage, a bound platform customer, that the evidence is still exactly the evidence read, arithmetic invariants (totals, cap, each
+delivery equals the settled charge or quantity) and refuses overlap and changed replay. Pricing is NOT reimplemented:
+`assembleCommercialPeriodPreview` (extracted from the PR A/B readers, behavior unchanged) is the one assembly, and only an `ok`
+preview with an available invoice total can settle. `REVIEWED_SETTLEMENT_METER_MAPPING` ships UNPROVISIONED (every event name null),
+so settlement fails closed with `settlement_mapping_unprovisioned`; no meter, event name, lookup key, tax, discount, trial or credit
+was invented. The proposed value basis (outcomes = billed quantity; voice, SMS, seat = charge cents) needs founder confirmation at
+provisioning. Nothing retries an `unknown` or `rejected` line, and nothing marks an invoice paid or a subscription active.
+Validation: unit 30/30 for the new file and 2,679 passed / 4 skipped across 178 files (one environment error: `jsdom` is absent from
+the symlinked `node_modules`, so `eval/agent-builder-navigation.test.tsx` cannot start; unrelated); integration 33/33 on the
+disposable `gradia-isolated-tests` stack plus PR A (21), PR B (15) and PR C (70) suites re-run green; upgrade verifier PASS (and shown
+to fail when an expectation is mutated); focused eslint and `tsc --noEmit` clean apart from the missing `@testing-library` types;
+`next build --webpack` passes (the default Turbopack build refuses the symlinked `node_modules`, an environment limit). The full
+69-file integration suite was NOT run. No Stripe call, Dashboard object, live key, deploy, shared Supabase change or merge.
+Not done and owned later: sandbox meter provisioning and the reviewed commit that names them, Stripe API version check for
+`/v1/billing/meter_events`, period alignment with the subscription (PR E/F), signed adjustments for late evidence, reconciliation of
+`unknown`/`rejected` lines (PR E), UI. Details: `docs/architecture/COMMERCIAL_SETTLEMENT.md`, handoff
+`docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md`.
