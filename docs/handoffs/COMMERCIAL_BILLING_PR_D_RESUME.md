@@ -12,7 +12,10 @@ recognition, seat history, checkout or subscription state (PRs A/B/C).
 
 - Worktree: `/Users/harryhatch/Gradia/worktrees/claude-commercial-billing-settlement`
 - Branch: `claude/commercial-billing-settlement`
-- Started from `origin/main` `c71035f`; rebased onto `1ce68de` (PR #144) before the PR was opened.
+- Started from `origin/main` `c71035f`. `origin/main` then advanced to `1ce68de` (PR #144). The branch had already been pushed,
+  and force-push was not permitted, so instead of a rebase the branch was brought up to date with a merge commit
+  (`414af35`) whose tree is identical to the locally rebased tip; the PR diff against `main` is the same either way.
+  If a linear history is wanted, a maintainer can squash-merge.
 
 ## Invariants (do not weaken)
 
