@@ -27,8 +27,8 @@ deploy, pricing/package change or merge. Full design: `docs/architecture/COMMERC
       PR C (70) and PR D (33) integration fixtures updated to seed a verified period
 - [x] Upgrade verifier `scripts/verify-commercial-reconciliation-migration.py` (PASS; fails when mutated)
 - [x] AI_WORK_LOG entry
-- [ ] Full validation after rebase (see "Remaining" below)
-- [ ] PR opened (non-draft), do not merge
+- [x] Full validation (see "Last checks")
+- [x] PR opened (non-draft), not merged
 
 ## Decisions (recorded; do not re-litigate)
 
@@ -48,22 +48,29 @@ deploy, pricing/package change or merge. Full design: `docs/architecture/COMMERC
 8. The older per-migration verifiers (`verify-commercial-billing-migration.py`, `verify-commercial-settlement-migration.py`) assert their
    migration is the latest and are historical (the PR C one already was after PR D). Not changed.
 
-## Last checks
+## Last checks (final)
 
-- Unit `commercial-webhook` 22/22, `commercial-settlement` 30/30; `tsc --noEmit` clean (except the known missing `@testing-library` types);
-  eslint clean on touched files.
-- Integration on `gradia-isolated-tests` (:56531): reconciliation 48/48, PR C 70/70, PR D 33/33, usage, agent-runtime-binding and
-  agent-definition-revisions suites all green together (232 tests in the 6-file run).
-- Upgrade verifier PASS.
-- Full 69+-file integration run: started in the background (log under the job tmp dir `full-int.log`); result recorded in the PR body.
+- `origin/main` had not advanced (`a56a150`), so no rebase was needed. Branch pushed.
+- Unit (full, excluding eval/integration): 181 files, 2,725 passed / 4 skipped, 0 failed. New: `commercial-webhook` 22; updated: `commercial-settlement` 30,
+  `agent-runtime-binding` (+2 lapse-gate tests), `tenant-scoping` (commercial webhook route is a reviewed service-role importer).
+- `tsc --noEmit` clean (except the known missing `@testing-library` types); eslint clean on touched files; `next build --webpack` passes and lists
+  `/api/stripe/commercial-webhook`.
+- Integration on `gradia-isolated-tests` (:56531): reconciliation 48/48; PR C 70/70; PR D 33/33; usage, agent-runtime-binding and
+  agent-definition-revisions green. FULL integration run (77 files): 969 passed / 64 failed in 10 files (service-proof-replay, whisper-reply-context,
+  held-quote-send, qualification-stale-at-send, qualification-delivery-acceptance, delivery-lifecycle-acceptance, lead-workflow-acceptance,
+  delegated-message-approval, twilio-disconnect-mid-send, tenant-relationships). ALL of them fail identically on a pristine `origin/main` worktree against
+  the same stack (re-run: 63 in the first nine files, 1 in tenant-relationships): messaging/delivery suites, environment drift from the shared stack,
+  not caused by E1. No billing, agent-runtime or settlement suite fails.
+- Upgrade verifier `python3 scripts/verify-commercial-reconciliation-migration.py`: PASS (and FAIL under a mutated expectation).
 
 ## Remaining
 
-1. Rebase on the latest `origin/main`; if a newer migration version collides, rename ours to a later unused version and update
+1. PR is open for review. Do NOT merge. Address review findings.
+2. If a newer migration lands on `main` with a colliding or later version, rename ours to a later unused version and update
    `scripts/verify-commercial-reconciliation-migration.py` (`NEW`) and the doc/log references.
-2. Re-apply the migration to a clean stack if the version changed; rerun unit (`npm test`), the commercial integration subset, the
-   verifier, `npx tsc --noEmit -p .`, eslint on touched files and `npx next build --webpack` (default Turbopack refuses the symlinked node_modules).
-3. Open a non-draft PR against `main` with the body from the work-log entry; do not merge.
+3. Founder decisions still needed (all fail closed): partial-day seat proration for an unaligned Stripe period, grace length and dunning timing, tax,
+   refund/credit eligibility and who reviews adjustments, meter names and the API-version check, Customer Portal Dashboard configuration,
+   resubscription after cancellation, whether voice/SMS channel handlers must also be gated.
 
 ## Uncommitted paths
 
