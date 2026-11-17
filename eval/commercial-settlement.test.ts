@@ -118,22 +118,23 @@ describe("reviewed meter mapping", () => {
 
 describe("settlement window", () => {
   const NOW = Date.parse("2027-01-01T00:00:00Z")
-  it("accepts only an exact, closed, UTC-midnight, month-length window", () => {
+  it("accepts a closed UTC window of at most 40 days (the subscription period itself is attested by the database)", () => {
     expect(validateSettlementWindow(START, END, NOW)).toEqual([])
-    expect(validateSettlementWindow("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", NOW)).toEqual([])
+    // A Stripe period is NOT UTC-midnight aligned and need not be a calendar month.
+    expect(validateSettlementWindow("2026-11-03T14:22:09Z", "2026-12-03T14:22:09Z", NOW)).toEqual([])
     expect(validateSettlementWindow("2026-11-01T00:00:00Z", "2026-12-01T00:00:00+00:00", NOW)).toEqual([])
   })
-  it("refuses open, partial, misaligned, wrong-length and non-UTC windows", () => {
+  it("refuses open, backwards, over-long and non-UTC windows", () => {
     expect(validateSettlementWindow(START, END, Date.parse("2026-11-20T00:00:00Z"))).toEqual(["window_not_closed"])
-    expect(validateSettlementWindow("2026-11-01T01:00:00Z", "2026-12-01T01:00:00Z", NOW)).toContain("window_not_utc_day_aligned")
-    expect(validateSettlementWindow("2026-11-01T00:00:00Z", "2026-11-15T00:00:00Z", NOW)).toContain("window_not_billing_month")
-    expect(validateSettlementWindow("2026-11-01T00:00:00Z", "2027-01-01T00:00:00Z", NOW)).toContain("window_not_billing_month")
+    expect(validateSettlementWindow("2026-12-01T00:00:00Z", "2026-11-01T00:00:00Z", NOW)).toContain("window_not_subscription_period")
+    expect(validateSettlementWindow("2026-11-01T00:00:00Z", "2027-01-01T00:00:00Z", NOW)).toContain("window_not_subscription_period")
     expect(validateSettlementWindow("2026-11-01T00:00:00+05:00", END, NOW)).toEqual(["window_not_utc_instant"])
     expect(validateSettlementWindow("2026-11-01", END, NOW)).toEqual(["window_not_utc_instant"])
   })
-  it("maps database eligibility facts to exact blocks", () => {
+  it("maps database eligibility facts to exact blocks, including the exact verified subscription period", () => {
     const ok = {
-      window_closed: true, utc_day_aligned: true, window_days: 30, account_present: true,
+      window_closed: true, subscription_period: { verified: true, chain_complete: true }, account_state: "active",
+      account_present: true,
       catalog_version: APPROVED_COMMERCIAL_CATALOG_VERSION, plan_key: "founder-pilot",
       has_platform_customer: true, overlapping_settlement_id: null,
     }
@@ -143,6 +144,11 @@ describe("settlement window", () => {
     expect(evaluateEligibility({ ...ok, catalog_version: "old" })).toEqual(["catalog_mismatch"])
     expect(evaluateEligibility({ ...ok, window_closed: false })).toEqual(["window_not_closed"])
     expect(evaluateEligibility({ ...ok, overlapping_settlement_id: SHOP })).toEqual(["overlapping_settlement"])
+    expect(evaluateEligibility({ ...ok, subscription_period: { verified: false, chain_complete: false } })).toEqual(["subscription_period_not_verified"])
+    expect(evaluateEligibility({ ...ok, subscription_period: { verified: true, chain_complete: false } })).toEqual(["subscription_period_history_incomplete"])
+    expect(evaluateEligibility({ ...ok, account_state: "reconciliation_required" })).toEqual(["account_requires_reconciliation"])
+    // A canceled account can still owe a closed, verified period (PR D rule is unchanged).
+    expect(evaluateEligibility({ ...ok, account_state: "canceled" })).toEqual([])
   })
 })
 

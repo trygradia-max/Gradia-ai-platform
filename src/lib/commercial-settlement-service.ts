@@ -69,8 +69,8 @@ export function resolveSettlementRuntime(
 
 const eligibilitySchema = z.object({
   window_closed: z.boolean(),
-  utc_day_aligned: z.boolean(),
-  window_days: z.number().int(),
+  subscription_period: z.object({ verified: z.boolean(), chain_complete: z.boolean() }).passthrough(),
+  account_state: z.string().nullable().optional(),
   account_present: z.boolean(),
   catalog_version: z.string().nullable(),
   plan_key: z.string().nullable(),

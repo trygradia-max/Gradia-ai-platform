@@ -114,14 +114,17 @@ const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]
 
 export type WindowIssue =
   | "window_not_utc_instant"
-  | "window_not_utc_day_aligned"
-  | "window_not_billing_month"
+  | "window_not_subscription_period"
   | "window_not_closed"
 
 /**
- * The exact half-open window [start, end): UTC midnight to UTC midnight, 28–31
- * days, and already closed at `nowMs`. The database re-checks all of this; this
- * is the pure mirror used before any read or write.
+ * The structural shape of a settlement window: a half-open UTC interval [start, end) of
+ * at most 40 days that is already closed at `nowMs`. This does NOT authorize anything:
+ * since PR E1 (founder decision 2026-11-16) the window must also EXACTLY equal a verified
+ * Stripe subscription period, which only the database can attest (`subscription_period`
+ * in the eligibility facts). The old UTC-midnight / 28–31-day rule was a placeholder and
+ * is gone. The database re-checks all of this; this is the pure mirror used before any
+ * read or write.
  */
 export function validateSettlementWindow(start: string, end: string, nowMs: number): WindowIssue[] {
   if (!UTC_INSTANT.test(start) || !UTC_INSTANT.test(end)) return ["window_not_utc_instant"]
@@ -129,9 +132,7 @@ export function validateSettlementWindow(start: string, end: string, nowMs: numb
   const endMs = Date.parse(end)
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return ["window_not_utc_instant"]
   const issues: WindowIssue[] = []
-  if (startMs % DAY_MS !== 0 || endMs % DAY_MS !== 0) issues.push("window_not_utc_day_aligned")
-  const days = (endMs - startMs) / DAY_MS
-  if (!Number.isInteger(days) || days < 28 || days > 31) issues.push("window_not_billing_month")
+  if (endMs <= startMs || endMs - startMs > 40 * DAY_MS) issues.push("window_not_subscription_period")
   if (endMs > nowMs) issues.push("window_not_closed")
   return issues
 }
@@ -146,6 +147,9 @@ export type SettlementBlock =
   | "no_billing_account"
   | "catalog_mismatch"
   | "no_platform_customer"
+  | "account_requires_reconciliation"
+  | "subscription_period_not_verified"
+  | "subscription_period_history_incomplete"
   | "overlapping_settlement"
   | "preview_unavailable"
   | "preview_conflict"
@@ -156,8 +160,9 @@ export type SettlementBlock =
 
 export type SettlementEligibilityFacts = {
   window_closed: boolean
-  utc_day_aligned: boolean
-  window_days: number
+  /** The database's verdict on the exact verified Stripe subscription period (PR E1). */
+  subscription_period: { verified: boolean; chain_complete: boolean }
+  account_state?: string | null
   account_present: boolean
   catalog_version: string | null
   plan_key: string | null
@@ -168,8 +173,9 @@ export type SettlementEligibilityFacts = {
 export function evaluateEligibility(facts: SettlementEligibilityFacts): SettlementBlock[] {
   const blocks: SettlementBlock[] = []
   if (!facts.window_closed) blocks.push("window_not_closed")
-  if (!facts.utc_day_aligned) blocks.push("window_not_utc_day_aligned")
-  if (facts.window_days < 28 || facts.window_days > 31) blocks.push("window_not_billing_month")
+  if (!facts.subscription_period.verified) blocks.push("subscription_period_not_verified")
+  else if (!facts.subscription_period.chain_complete) blocks.push("subscription_period_history_incomplete")
+  if (facts.account_state === "reconciliation_required") blocks.push("account_requires_reconciliation")
   if (!facts.account_present) {
     blocks.push("no_billing_account")
   } else {
