@@ -28,6 +28,7 @@ import {
   type TriggerSource,
 } from "@/lib/agent-runs"
 import { isAutonomyAllowed } from "@/lib/autonomy"
+import { assessCommercialExecution, billingBlockedReason } from "@/lib/commercial-execution-gate"
 import { isOverCreditLimit, recordUsage } from "@/lib/credits"
 import { recordActionDecision } from "@/lib/decision-log"
 import { buildDrafterGrounding } from "@/lib/drafting-context"
@@ -1777,6 +1778,13 @@ export async function runEventRecipe(
       reason: "could not verify this agent's governance state — nothing was run",
     }
   }
+  // Commercial lapse gate: no NEW paid work unless billing is active. Nothing is disabled.
+  const billingGate = await assessCommercialExecution(supabase, shop.id)
+  if (!billingGate.allowed) {
+    const outcome: AgentRunOutcome = { agentId: agent.id, agentName: agent.name, fired: false, reason: billingBlockedReason(billingGate) }
+    await recordAgentRun(supabase, { agentId: agent.id, shopId: shop.id, triggerSource, outcome })
+    return outcome
+  }
   const recipeId = agent.config.recipe?.id
   if (!recipeId) {
     const outcome: AgentRunOutcome = {
@@ -2054,6 +2062,11 @@ export async function runCustomAgent(
       reason: "could not verify this agent's governance state — nothing was run",
     }
   }
+  // Commercial lapse gate: no NEW paid work unless billing is active. Nothing is disabled.
+  const billingGate = await assessCommercialExecution(supabase, agent.shop_id)
+  if (!billingGate.allowed) {
+    return recordAndReturn({ agentId: agent.id, agentName: agent.name, fired: false, reason: billingBlockedReason(billingGate) })
+  }
   const handler = resolveScheduledHandler(agent)
   if (!handler) {
     return recordAndReturn({
@@ -2170,11 +2183,24 @@ export async function runScheduledAgents(
     return shopCache.get(shopId) ?? null
   }
 
+  // Commercial lapse gate, once per shop per tick, BEFORE any claim or recipe work. A blocked
+  // shop's agents are skipped for this tick only: nothing is disabled, edited or deleted.
+  const gateCache = new Map<string, Awaited<ReturnType<typeof assessCommercialExecution>>>()
+  async function billingGateFor(shopId: string) {
+    if (!gateCache.has(shopId)) gateCache.set(shopId, await assessCommercialExecution(supabase, shopId))
+    return gateCache.get(shopId)!
+  }
+
   for (const agent of agents) {
     let claimContext:
       | { runId: string; attempt: number; workerId: string }
       | null = null
     try {
+      const billingGate = await billingGateFor(agent.shop_id)
+      if (!billingGate.allowed) {
+        outcomes.push({ agentId: agent.id, agentName: agent.name, fired: false, reason: billingBlockedReason(billingGate) })
+        continue
+      }
       const governedState = governedStates.get(agent.id)
       if (governedState) {
         const governedOutcome = await runGovernedScheduledAgent(

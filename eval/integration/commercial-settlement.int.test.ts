@@ -133,6 +133,16 @@ async function fixture(opts: { covered?: boolean; customer?: boolean | "account_
         p_shop: shop.shopId, p_actor: shop.ownerId, p_attempt: (begun.data as { attempt_id: string }).attempt_id, p_customer: customerId,
       })
       expect(bound.error).toBeNull()
+      // PR E1: a settlement window must equal a VERIFIED Stripe subscription period. Seed one
+      // through the single evidence writer (reviewed source), starting at the subscription's start.
+      const evidence = await db.rpc("commercial_subscription_apply_evidence", {
+        p_shop: shop.shopId, p_subscription: `sub_IntFix${uniq().replace(/[^A-Za-z0-9]/g, "")}`, p_customer: customerId,
+        p_status: "active", p_catalog_version: APPROVED_COMMERCIAL_CATALOG_VERSION, p_plan_key: "founder-pilot",
+        p_lookup_key: FOUNDER_PILOT_PRICE.lookupKey, p_source: "reviewed_reconciliation",
+        p_event_id: `evt_intfix_${uniq()}`, p_event_created_at: W.windowStart, p_livemode: false,
+        p_period_start: W.windowStart, p_period_end: W.windowEnd, p_started_at: W.windowStart,
+      })
+      expect(evidence.error).toBeNull()
     }
   }
   return { shop, owner: await ownerSessionClient(shop.email, PW), extra, customerId }
@@ -238,12 +248,12 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial settlement", () => {
       expect(await rows("commercial_settlements", f.shop.shopId)).toHaveLength(0)
     })
 
-    it("blocks an open window, a partial window and a misaligned window with the exact reason", async () => {
+    it("blocks an open window and any window that is not an exact verified subscription period, with the exact reason", async () => {
       const month = new Date()
       const open = { windowStart: `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, "0")}-01T00:00:00.000Z`, windowEnd: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)).toISOString() }
       expect(await previewCommercialSettlement(base.owner, { shopId: base.shop.shopId, ...open })).toMatchObject({ status: "blocked", blocks: expect.arrayContaining(["window_not_closed"]) })
-      expect(await previewCommercialSettlement(base.owner, { shopId: base.shop.shopId, windowStart: W.windowStart, windowEnd: "2026-08-15T00:00:00.000Z" })).toMatchObject({ status: "blocked", blocks: ["window_not_billing_month"] })
-      expect(await previewCommercialSettlement(base.owner, { shopId: base.shop.shopId, windowStart: "2026-08-01T06:00:00.000Z", windowEnd: "2026-09-01T06:00:00.000Z" })).toMatchObject({ status: "blocked", blocks: ["window_not_utc_day_aligned"] })
+      expect(await previewCommercialSettlement(base.owner, { shopId: base.shop.shopId, windowStart: W.windowStart, windowEnd: "2026-08-15T00:00:00.000Z" })).toMatchObject({ status: "blocked", blocks: ["subscription_period_not_verified"] })
+      expect(await previewCommercialSettlement(base.owner, { shopId: base.shop.shopId, windowStart: "2026-08-01T06:00:00.000Z", windowEnd: "2026-09-01T06:00:00.000Z" })).toMatchObject({ status: "blocked", blocks: ["subscription_period_not_verified"] })
       expect(await previewCommercialSettlement(base.owner, { shopId: base.shop.shopId, windowStart: "2026-08-01", windowEnd: "2026-09-01" })).toEqual({ status: "unavailable", reason: "invalid_window" })
     })
 
@@ -254,9 +264,9 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial settlement", () => {
 
     it("blocks a missing account, a missing customer, and unknown wholesale evidence", async () => {
       const noAccount = await fixture({ customer: false })
-      expect(await previewCommercialSettlement(noAccount.owner, { shopId: noAccount.shop.shopId, ...W })).toMatchObject({ status: "blocked", blocks: ["no_billing_account"] })
+      expect(await previewCommercialSettlement(noAccount.owner, { shopId: noAccount.shop.shopId, ...W })).toMatchObject({ status: "blocked", blocks: ["subscription_period_not_verified", "no_billing_account"] })
       const noCustomer = await fixture({ customer: "account_only" })
-      expect(await previewCommercialSettlement(noCustomer.owner, { shopId: noCustomer.shop.shopId, ...W })).toMatchObject({ status: "blocked", blocks: ["no_platform_customer"] })
+      expect(await previewCommercialSettlement(noCustomer.owner, { shopId: noCustomer.shop.shopId, ...W })).toMatchObject({ status: "blocked", blocks: ["subscription_period_not_verified", "no_platform_customer"] })
       const noCost = await fixture()
       await recognizeSms(noCost.shop.shopId, 10, null)
       expect(await previewCommercialSettlement(noCost.owner, { shopId: noCost.shop.shopId, ...W })).toMatchObject({ status: "blocked", blocks: ["preview_unavailable"], detail: "wholesale_evidence_missing" })
@@ -383,12 +393,12 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial settlement", () => {
       expect(read).toMatchObject({ status: "settled", settlement: { id: first.settlementId, usage_cents: 500 } })
     })
 
-    it("refuses an overlapping window", async () => {
+    it("refuses a window that overlaps a settled period (it is not an exact verified period)", async () => {
       const f = await fixture()
       const fake = fakeProvider()
       expect((await settle(f, fake.runtime)).ok).toBe(true)
       const overlap = { windowStart: "2026-08-05T00:00:00.000Z", windowEnd: "2026-09-03T00:00:00.000Z" }
-      expect(await previewCommercialSettlement(f.owner, { shopId: f.shop.shopId, ...overlap })).toMatchObject({ status: "blocked", blocks: expect.arrayContaining(["overlapping_settlement"]) })
+      expect(await previewCommercialSettlement(f.owner, { shopId: f.shop.shopId, ...overlap })).toMatchObject({ status: "blocked", blocks: expect.arrayContaining(["subscription_period_not_verified"]) })
       expect(await settle(f, fake.runtime, overlap)).toMatchObject({ ok: false, reason: "blocked" })
     })
   })
@@ -549,7 +559,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial settlement", () => {
       await recognizeOutcomes(f.shop.shopId, "qualified_lead", 1)
     }, 60_000)
 
-    it("refuses a window that is not closed, aligned or month-length", async () => {
+    it("refuses a window that is not closed or not an exact verified subscription period", async () => {
       const now = new Date()
       const futureEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1)).toISOString()
       expect(await code(f, { p_window_end: futureEnd, p_as_of: futureEnd })).toBe("CB422") // as_of after now

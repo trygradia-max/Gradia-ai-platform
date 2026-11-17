@@ -11,6 +11,7 @@ import {
   billingDto,
   blockedDto,
   buildCheckoutReturnUrls,
+  buildPortalReturnUrl,
   customerIdempotencyKey,
   evaluateBillingSnapshot,
   isReturnTarget,
@@ -19,11 +20,14 @@ import {
   type CheckoutRequestIdentity,
   type CheckoutReturnTarget,
   type CommercialBillingDto,
+  type CommercialBlockingReason,
 } from "@/lib/commercial-billing"
 import {
+  createPlatformPortalClient,
   createPlatformStripeClient,
   isDefinitiveRejection,
   resolveCommercialStripeConfig,
+  type PlatformPortalClient,
   type PlatformStripeClient,
 } from "@/lib/stripe-commercial"
 
@@ -400,4 +404,67 @@ export async function requestFounderPilotCheckout(
 
   // Two expired sessions in a row: stop rather than loop; the next request continues.
   return pendingDto("provider_unavailable")
+}
+
+// ---------- Customer Portal handoff (owner only, test mode) ----------
+
+export type PortalRuntime =
+  | { ok: true; portal: PlatformPortalClient; returnOrigin: string | null }
+  | { ok: false; reason: "billing_unconfigured" | "billing_misconfigured" }
+
+/** Same sandbox gate as Checkout: absent → unconfigured, live/ambiguous → misconfigured. */
+export function resolvePortalRuntime(env: Record<string, string | undefined> = process.env): PortalRuntime {
+  const resolved = resolveCommercialStripeConfig(env)
+  if (!resolved.ok) return resolved
+  return { ok: true, portal: createPlatformPortalClient(resolved.config), returnOrigin: resolved.returnOrigin }
+}
+
+export type PortalResult =
+  | { ok: true; url: string }
+  | { ok: false; reason: CommercialBlockingReason }
+
+const portalAuthSchema = z.object({
+  authorized: z.boolean(),
+  customer_id: z.string().regex(/^cus_[A-Za-z0-9_]{4,120}$/).optional(),
+  reason: z.string().optional(),
+})
+
+/**
+ * Opens a Customer Portal session for the workspace's EXACT bound platform customer.
+ * The database verifies the actor is a live owner of that exact shop and returns the
+ * customer; nothing about the customer, shop or URL comes from the caller. The returned
+ * URL is a short-lived bearer link: it is never stored and never logged here.
+ * A provider failure creates nothing locally and is never retried automatically.
+ */
+export async function requestCommercialBillingPortal(
+  deps: { service: SupabaseClient; runtime: PortalRuntime },
+  request: { shopId: string; actorId: string; returnTarget?: CheckoutReturnTarget }
+): Promise<PortalResult> {
+  const { service, runtime } = deps
+  if (!runtime.ok) return { ok: false, reason: runtime.reason }
+  const target = request.returnTarget ?? "billing"
+  if (!isReturnTarget(target)) return { ok: false, reason: "billing_state_unavailable" }
+  const built = buildPortalReturnUrl(runtime.returnOrigin, target)
+  if (!built.ok) return { ok: false, reason: built.reason }
+
+  const authorized = await callRpc(
+    service,
+    "commercial_portal_authorize",
+    { p_shop: request.shopId, p_actor: request.actorId, p_return_target: target },
+    portalAuthSchema
+  )
+  if (!authorized.ok) {
+    return { ok: false, reason: authorized.kind === "forbidden" ? "owner_required" : "billing_state_unavailable" }
+  }
+  if (!authorized.data.authorized || !authorized.data.customer_id) return { ok: false, reason: "no_platform_customer" }
+
+  try {
+    const session = await runtime.portal.createBillingPortalSession({
+      customerId: authorized.data.customer_id,
+      returnUrl: built.returnUrl,
+    })
+    return { ok: true, url: session.url }
+  } catch {
+    return { ok: false, reason: "portal_unavailable" }
+  }
 }

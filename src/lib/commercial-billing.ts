@@ -73,6 +73,13 @@ export const COMMERCIAL_BLOCKING_REASONS = [
   "session_binding_mismatch",
   "stale_in_flight",
   "reconciliation_required",
+  // PR E1: reconciliation and lapse reasons recorded by the database.
+  "tenant_conflict",
+  "period_conflict",
+  "period_unverified",
+  "subscription_period_elapsed",
+  "portal_unavailable",
+  "no_platform_customer",
 ] as const
 export type CommercialBlockingReason = (typeof COMMERCIAL_BLOCKING_REASONS)[number]
 
@@ -131,6 +138,20 @@ export function buildCheckoutReturnUrls(
     successUrl: `${origin.origin}${path}?billing_return=success`,
     cancelUrl: `${origin.origin}${path}?billing_return=canceled`,
   }
+}
+
+/**
+ * Customer Portal return URL: same server-configured origin and allowlisted path rules as
+ * Checkout. The browser supplies at most a target KEY, never a URL.
+ */
+export function buildPortalReturnUrl(
+  configuredOrigin: string | undefined | null,
+  target: CheckoutReturnTarget
+): { ok: true; returnUrl: string } | { ok: false; reason: "return_origin_unconfigured" } {
+  const urls = buildCheckoutReturnUrls(configuredOrigin, target)
+  if (!urls.ok) return urls
+  const origin = new URL(urls.successUrl).origin
+  return { ok: true, returnUrl: `${origin}${CHECKOUT_RETURN_TARGETS[target]}?billing_return=portal` }
 }
 
 export type CheckoutRequestIdentity = {
