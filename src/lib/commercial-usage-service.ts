@@ -155,19 +155,8 @@ const membershipDto = z.object({
   events: z.array(membershipEventRow),
 })
 
-async function readMembershipEvidence(
-  client: SupabaseClient,
-  args: { shopId: string; windowStart: string; windowEnd: string; asOf: string }
-): Promise<MembershipEvidence | MembershipEvidenceUnavailable | "forbidden"> {
-  const { data, error } = await client.rpc("commercial_membership_read", {
-    p_shop: args.shopId,
-    p_window_start: args.windowStart,
-    p_window_end: args.windowEnd,
-    p_as_of: args.asOf,
-  })
-  if (error) {
-    return error.code === "42501" ? "forbidden" : { status: "unavailable", code: "membership_read_failed" }
-  }
+/** Parses a raw `commercial_membership_read` payload; shared with the settlement evidence reader. */
+export function parseMembershipRead(data: unknown): MembershipEvidence | MembershipEvidenceUnavailable {
   const dto = membershipDto.safeParse(data)
   if (!dto.success) return { status: "unavailable", code: "malformed_membership_evidence" }
   return {
@@ -189,6 +178,68 @@ async function readMembershipEvidence(
       recordedAt: event.recorded_at,
     })),
   }
+}
+
+/**
+ * Builds the deterministic period preview from raw usage + membership reads. This is the ONE
+ * assembly used by the preview readers and by settlement, so settlement can never price
+ * differently from the preview.
+ */
+export function assembleCommercialPeriodPreview(args: {
+  usageRead: unknown
+  membership: MembershipEvidence | MembershipEvidenceUnavailable | undefined
+  windowStart: string
+  windowEnd: string
+}): { ok: true; asOf: string; preview: CommercialPeriodPreview } | { ok: false } {
+  const dto = readDto.safeParse(args.usageRead)
+  if (!dto.success) return { ok: false }
+  return {
+    ok: true,
+    asOf: dto.data.as_of,
+    preview: previewCommercialPeriod({
+      catalog: FOUNDER_APPROVED_COMMERCIAL_CATALOG,
+      planKey: FOUNDER_PILOT_POLICY.planKey,
+      windowStart: args.windowStart,
+      windowEnd: args.windowEnd,
+      asOf: dto.data.as_of,
+      facts: dto.data.facts.map((fact) => ({
+        id: fact.id,
+        catalogVersion: fact.catalog_version,
+        metric: fact.metric,
+        quantity: fact.quantity,
+        workflowKey: fact.workflow_key,
+        wholesaleUnitCostCents: fact.wholesale_unit_cost_cents,
+        wholesaleBasis: fact.wholesale_basis,
+        recognizedAt: fact.recognized_at,
+        recordedAt: fact.recorded_at,
+      })),
+      corrections: dto.data.corrections.map((correction) => ({
+        id: correction.id,
+        recognitionId: correction.recognition_id,
+        quantity: correction.quantity,
+        reason: correction.reason,
+        recordedAt: correction.recorded_at,
+      })),
+      priorWorkflowMetrics: dto.data.prior_workflow_metrics,
+      ...(args.membership ? { membership: args.membership } : {}),
+    }),
+  }
+}
+
+async function readMembershipEvidence(
+  client: SupabaseClient,
+  args: { shopId: string; windowStart: string; windowEnd: string; asOf: string }
+): Promise<MembershipEvidence | MembershipEvidenceUnavailable | "forbidden"> {
+  const { data, error } = await client.rpc("commercial_membership_read", {
+    p_shop: args.shopId,
+    p_window_start: args.windowStart,
+    p_window_end: args.windowEnd,
+    p_as_of: args.asOf,
+  })
+  if (error) {
+    return error.code === "42501" ? "forbidden" : { status: "unavailable", code: "membership_read_failed" }
+  }
+  return parseMembershipRead(data)
 }
 
 async function readPreview(
@@ -221,36 +272,14 @@ async function readPreview(
     membership = evidence
   }
 
-  return {
-    status: "ready",
-    preview: previewCommercialPeriod({
-      catalog: FOUNDER_APPROVED_COMMERCIAL_CATALOG,
-      planKey: FOUNDER_PILOT_POLICY.planKey,
-      windowStart: args.windowStart,
-      windowEnd: args.windowEnd,
-      asOf: dto.data.as_of,
-      facts: dto.data.facts.map((fact) => ({
-        id: fact.id,
-        catalogVersion: fact.catalog_version,
-        metric: fact.metric,
-        quantity: fact.quantity,
-        workflowKey: fact.workflow_key,
-        wholesaleUnitCostCents: fact.wholesale_unit_cost_cents,
-        wholesaleBasis: fact.wholesale_basis,
-        recognizedAt: fact.recognized_at,
-        recordedAt: fact.recorded_at,
-      })),
-      corrections: dto.data.corrections.map((correction) => ({
-        id: correction.id,
-        recognitionId: correction.recognition_id,
-        quantity: correction.quantity,
-        reason: correction.reason,
-        recordedAt: correction.recorded_at,
-      })),
-      priorWorkflowMetrics: dto.data.prior_workflow_metrics,
-      ...(membership ? { membership } : {}),
-    }),
-  }
+  const assembled = assembleCommercialPeriodPreview({
+    usageRead: data,
+    membership,
+    windowStart: args.windowStart,
+    windowEnd: args.windowEnd,
+  })
+  if (!assembled.ok) return { status: "unavailable", reason: "malformed_evidence" }
+  return { status: "ready", preview: assembled.preview }
 }
 
 /**
