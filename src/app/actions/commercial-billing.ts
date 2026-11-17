@@ -7,8 +7,11 @@ import {
 } from "@/lib/commercial-billing"
 import {
   readCommercialBillingDto,
+  requestCommercialBillingPortal,
   requestFounderPilotCheckout,
   resolveBillingRuntime,
+  resolvePortalRuntime,
+  type PortalResult,
 } from "@/lib/commercial-billing-service"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
@@ -52,6 +55,31 @@ export async function requestFounderPilotCheckoutAction(
   }
   return requestFounderPilotCheckout(
     { service, runtime: resolveBillingRuntime() },
+    { shopId: shop.id, actorId: user.id, returnTarget }
+  )
+}
+
+/**
+ * Opens the Stripe Customer Portal (test mode) for the active workspace's bound platform
+ * customer. OWNER ONLY: the database re-verifies a live owner of this exact shop, so a
+ * manager, staff member, revoked operator, other-workspace owner or anonymous caller gets
+ * `owner_required`. The only client input is an allowlisted return-target KEY. The returned
+ * URL is a short-lived bearer link: the caller should redirect to it and must not store it.
+ */
+export async function openCommercialBillingPortalAction(returnTarget?: unknown): Promise<PortalResult> {
+  const user = await requireUser()
+  const shop = await requireShop()
+  if (returnTarget !== undefined && !isReturnTarget(returnTarget)) {
+    return { ok: false, reason: "billing_state_unavailable" }
+  }
+  let service
+  try {
+    service = createServiceClient()
+  } catch {
+    return { ok: false, reason: "billing_state_unavailable" }
+  }
+  return requestCommercialBillingPortal(
+    { service, runtime: resolvePortalRuntime() },
     { shopId: shop.id, actorId: user.id, returnTarget }
   )
 }
