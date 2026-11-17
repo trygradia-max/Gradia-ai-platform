@@ -49,6 +49,12 @@ const CASES: Case[] = [
   { col: "twilio_subaccount_token_enc", server: () => "enc:" + rnd(), forged: () => "enc:" + rnd(), cleared: null },
   { col: "number_purchase_claim", server: () => randomUUID(), forged: () => randomUUID(), cleared: null },
   { col: "number_purchase_claimed_at", server: () => iso(-1000), forged: () => iso(5000), cleared: null },
+  // Voice provider identity and launch gate (shops_voice_columns_guard migration; see shops-voice-columns.int.test.ts).
+  { col: "vapi_assistant_id", server: () => "asst_" + rnd(), forged: () => "asst_" + rnd(), cleared: null },
+  { col: "vapi_phone_number_id", server: () => "pn_" + rnd(), forged: () => "pn_" + rnd(), cleared: null },
+  { col: "voice_live", server: () => true, forged: () => false },
+  { col: "voice_test_called_at", server: () => iso(-1000), forged: () => iso(5000), cleared: null },
+  { col: "vapi_server_secret_enc", server: () => "enc:" + rnd(), forged: () => "enc:" + rnd(), cleared: null },
 ]
 /** Server-written columns the owner may not even set from their default (vapi_stale is special-cased below). */
 const FORGE_FROM_DEFAULT: Record<string, unknown> = {
@@ -57,6 +63,8 @@ const FORGE_FROM_DEFAULT: Record<string, unknown> = {
   voice_minutes_budget: 5, gradia_number_e164: "+15550000001", gradia_number_sid: "PNforged",
   twilio_subaccount_sid: "ACforged", twilio_subaccount_token_enc: "enc:forged",
   number_purchase_claim: "00000000-0000-4000-8000-000000000001", number_purchase_claimed_at: iso(),
+  vapi_assistant_id: "asst_forged", vapi_phone_number_id: "pn_forged", voice_live: true,
+  voice_test_called_at: iso(), vapi_server_secret_enc: "enc:forged",
 }
 
 describe.skipIf(!INTEGRATION_WITH_SESSION)("shops protected columns are server-written", () => {
@@ -75,6 +83,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("shops protected columns are server-w
     gradia_number_e164: null, gradia_number_sid: null, twilio_subaccount_sid: null,
     twilio_subaccount_token_enc: null, number_purchase_claim: null, number_purchase_claimed_at: null,
     credit_period_start: iso(-3_600_000),
+    vapi_assistant_id: null, vapi_phone_number_id: null, voice_live: false, voice_test_called_at: null, vapi_server_secret_enc: null,
   })
   const refused = (error: { code?: string; details?: string; hint?: string } | null, col?: string) => {
     expect(error).not.toBeNull()
@@ -191,6 +200,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("shops protected columns are server-w
         stripe_charges_enabled: false, vapi_stale: false, voice_minutes_budget: null, gradia_number_e164: null,
         gradia_number_sid: null, twilio_subaccount_sid: null, twilio_subaccount_token_enc: null,
         number_purchase_claim: null, number_purchase_claimed_at: null, credit_limit: 1000,
+        vapi_assistant_id: null, vapi_phone_number_id: null, voice_live: false, voice_test_called_at: null, vapi_server_secret_enc: null,
       })
       await db.from("shops").delete().eq("id", ins.data!.id)
     })
@@ -223,22 +233,21 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("shops protected columns are server-w
   })
 
   describe("legitimate owner-editable settings still work", () => {
-    it("name, contact fields, settings, voice config, voice_live and credit_limit save through the owner session", async () => {
+    it("name, contact fields, settings, voice config and credit_limit save through the owner session", async () => {
       await resetA()
       const settings = { onboarding_done: true, business_kind: "detailing", custom: rnd() }
       const res = await ownerA.from("shops").update({
         name: "Renamed Shop", location: "New City", phone: "+15559998888", settings,
-        voice_config: { greeting: "Hello", tone: "warm" }, voice_live: true, credit_limit: 4321,
+        voice_config: { greeting: "Hello", tone: "warm" }, credit_limit: 4321,
         timezone: "America/Chicago", quiet_hours_start: 21, quiet_hours_end: 8,
       }).eq("id", a.shopId).select("*").single()
       expect(res.error).toBeNull()
       expect(res.data).toMatchObject({
-        name: "Renamed Shop", location: "New City", phone: "+15559998888", settings, voice_live: true, credit_limit: 4321,
+        name: "Renamed Shop", location: "New City", phone: "+15559998888", settings, voice_live: false, credit_limit: 4321,
         timezone: "America/Chicago", quiet_hours_start: 21, quiet_hours_end: 8,
       })
       // Protected columns untouched by a normal save.
       expect(res.data).toMatchObject({ plan: "free", voice_addon: false, stripe_account_id: null, vapi_stale: false })
-      await serverSet({ voice_live: false })
     })
   })
 
