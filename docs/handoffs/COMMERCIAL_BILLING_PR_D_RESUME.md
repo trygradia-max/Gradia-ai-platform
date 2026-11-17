@@ -17,6 +17,21 @@ recognition, seat history, checkout or subscription state (PRs A/B/C).
   (`414af35`) whose tree is identical to the locally rebased tip; the PR diff against `main` is the same either way.
   If a linear history is wanted, a maintainer can squash-merge.
 
+## Founder decisions 2026-11-16 (recorded; docs only, no code change)
+
+Received 2026-11-16 Pacific for PR #147:
+
+1. **Value basis approved:** outcome meters = billed quantity; voice, SMS and seat proration = settled charge in cents (as shipped).
+2. **Period boundaries:** exact Stripe subscription periods beginning at first agent activation, not calendar months.
+3. **Late evidence:** never rewrite a settled period; create a signed append-only adjustment for the next invoice, with human review
+   for credits or refunds.
+
+Consequences for PR D: it stays **fail-closed and unprovisioned** (mapping event names all `null`). Its UTC-midnight 28-31-day window is a
+placeholder that is **not authorized for sandbox settlement** until PR E/F binds and validates the exact Stripe subscription period.
+Late-evidence adjustments are **follow-on work and must not be invented in PR D**. Still undecided: meter provisioning/event names, Stripe API
+version check, tax, discounts, trials, dunning, cancellation, refund/credit policy beyond human review. No pricing, meter, Stripe,
+shared/production data, deploy or merge occurred. Details: `docs/architecture/COMMERCIAL_SETTLEMENT.md` ("Founder decisions").
+
 ## Reconciliation 2026-11-16 (migration version collision)
 
 PR #146 merged `20261115120000_shops_voice_columns_guard.sql` to `main` (`b3694ce`). This branch's settlement migration used the same
@@ -24,8 +39,8 @@ version, so it was renamed to `20261115130000_commercial_settlement.sql` (SQL un
 only `docs/AI_WORK_LOG.md` conflicted, both entries kept). Results: scratch stack from zero 123/123 migrations in order; settlement and
 voice-columns upgrade verifiers PASS; integration 232/232 on `gradia-isolated-tests` (its ledger was corrected: settlement re-versioned to
 `…130000`, guard applied as `…120000`); unit 2,701 passed / 4 skipped (+ the known `jsdom` error); tsc, eslint, `next build --webpack` clean.
-No business decision was needed. Still open and unchanged: the value basis, partial period, late evidence, tax, dunning, cancellation,
-refund, credit, meter provisioning and Stripe API-version decisions below.
+No business decision was needed. (Value basis, period and late-evidence decisions were made later; see the section above. Still open: tax,
+dunning, cancellation, refund/credit policy, meter provisioning and the Stripe API-version check.)
 
 ## Invariants (do not weaken)
 
@@ -62,14 +77,14 @@ verifier `scripts/verify-commercial-settlement-migration.py`; doc `docs/architec
 ## Next exact action (after review)
 
 Address review findings. Do NOT merge. Follow-ups are owned elsewhere (see the "Stripe configuration and the later
-provisioning dependency" section of `docs/architecture/COMMERCIAL_SETTLEMENT.md`): founder confirmation of the proposed
-value basis, sandbox meter provisioning + a reviewed commit naming the events and flipping the mapping to `provisioned`,
+provisioning dependency" section of `docs/architecture/COMMERCIAL_SETTLEMENT.md`): binding/validating the exact Stripe
+subscription period (PR E/F), signed late-evidence adjustments (follow-on), sandbox meter provisioning + a reviewed commit naming the events and flipping the mapping to `provisioned`,
 Stripe API version check for `/v1/billing/meter_events`, subscription-period alignment (PR E/F).
 
 ## Blockers
 
 None. Decision boundary reached and recorded, not guessed: no approved Stripe meter/event names exist, so the mapping
-ships unprovisioned (fail closed); the value basis for voice/SMS/seat (charge cents) is a proposal needing founder sign-off.
+ships unprovisioned (fail closed); the value basis (voice/SMS/seat = charge cents) was approved 2026-11-16.
 
 ## Environment notes
 

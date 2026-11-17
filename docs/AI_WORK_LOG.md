@@ -2969,3 +2969,13 @@ policy was invented or changed; the mapping is still unprovisioned. Results: fre
 (settlement 33, commercial billing, commercial usage, shops voice and protected columns) on `gradia-isolated-tests`; unit 180 files, 2,701
 passed / 4 skipped plus the same 1 `jsdom` environment error as before; `tsc --noEmit` and focused eslint clean; `next build --webpack` passes.
 Full 69+-file integration suite NOT run. Not merged, no deploy, no Stripe call.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: docs] [STATUS: done]
+Commercial Billing PR D (#147): recorded founder decisions received 2026-11-16 Pacific, documentation only. (1) Outcome meters use billed
+quantity; voice, SMS and seat proration use settled charge cents (value basis approved as shipped). (2) Settlement periods are the exact
+Stripe subscription periods beginning at first agent activation, not calendar months. (3) A settled period is never rewritten; late evidence
+becomes a signed append-only adjustment on the next invoice, with human review for credits or refunds. Updated
+`docs/architecture/COMMERCIAL_SETTLEMENT.md` (new "Founder decisions" section; proposal wording, limitation 2 and provisioning items revised),
+`docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md` and the PR body. PR D remains fail-closed/unprovisioned; its UTC 28-31-day window is a
+placeholder NOT authorized for sandbox settlement until PR E/F binds and validates the exact Stripe subscription period; adjustment
+implementation is follow-on and was not started. No code, pricing, meter, Stripe call, shared/production data, deploy or merge.

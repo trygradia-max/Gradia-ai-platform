@@ -11,6 +11,46 @@ Gradia's database is the billing authority. Stripe is a collection/reconciliatio
 that is *told* what the ledger settled. Nothing here reads Stripe state and nothing bills
 from model text.
 
+## Founder decisions (2026-11-16, recorded for PR #147)
+
+Received 2026-11-16 (Pacific). These are decisions, not code. **This PR implements none of
+the new period or adjustment behavior**, and changes no pricing, meter, Stripe object or
+shared/production data.
+
+1. **Value basis (approved).** Outcome meters (`standard_digital_outcome`, `qualified_lead`,
+   `confirmed_appointment`) carry the **billed quantity**. Voice, SMS and seat proration
+   carry the **settled charge in cents**. This matches `REVIEWED_VALUE_BASIS` as shipped;
+   the "proposal" caveat is retired. Approval of the basis does not provision anything.
+2. **Period boundaries (approved direction).** A settlement period is the **exact Stripe
+   subscription period**, beginning at **first agent activation** (not a calendar month).
+   Calendar-month or UTC-aligned 28-31-day windows are not the commercial period.
+3. **Late evidence (approved direction).** A settled period is **never rewritten**. Evidence
+   that arrives after settlement produces a **signed, append-only adjustment applied to the
+   next invoice**. Any adjustment that is a **credit or refund requires human review**
+   before it takes effect.
+
+### What this means for PR D as it stands
+
+- PR D remains **fail-closed and unprovisioned**: `REVIEWED_SETTLEMENT_METER_MAPPING` still has
+  every event name `null`, so `settlement_mapping_unprovisioned` refuses before the database
+  or provider is touched.
+- PR D's current window rule (UTC-midnight, 28-31 days, closed at the database clock) is a
+  **placeholder that does not match decision 2**. It is **not authorized for sandbox
+  settlement**. It must not be used to settle, send meter events, or reconcile against an
+  invoice until PR E/F binds each settlement to the **exact Stripe subscription period**
+  (start and end taken from Stripe's own record of the subscription period, which begins at
+  first agent activation) and validates it. The first partial period
+  and non-calendar anchor questions are answered by decision 2 but are **implemented by
+  PR E/F**, not here.
+- The refusal of late evidence (`CB409` "evidence changed") stays as the safe behavior. It is
+  consistent with "never rewrite a settled period". The signed append-only adjustment record,
+  its next-invoice application and the human review step for credits/refunds are
+  **follow-on work and are not invented in PR D**: no table, function, sign convention,
+  threshold or review workflow exists or is implied.
+- Still open and **not** decided by this record: Stripe meter provisioning and event names,
+  the Stripe API version check for `/v1/billing/meter_events`, tax, discounts, trials,
+  dunning, cancellation, and the refund/credit policy beyond "human review".
+
 ## What exists
 
 | Piece | Location |
@@ -34,8 +74,10 @@ One **settlement per exact window**, immutable:
 
 - Window: half-open `[start, end)`, UTC midnight to UTC midnight, **28–31 days**, and
   closed at the database clock. Open, partial, misaligned and wrong-length windows are
-  refused (`CB422`). A first partial period (activation mid-month) is therefore *not*
-  settleable until a decision defines it.
+  refused (`CB422`). This UTC window rule is a **placeholder**: founder decision 2 (2026-11-16)
+  says the commercial period is the exact Stripe subscription period starting at first agent
+  activation. Until PR E/F binds and validates that period, no window is authorized for
+  sandbox settlement (see "Founder decisions" above).
 - Evidence: the usage + membership reads at one fixed instant (`as_of`, fixed by the
   database clock). The database recomputes a SHA-256 **evidence digest** over exactly the
   immutable evidence a settlement consumes (facts, corrections, prior workflow metrics,
@@ -79,9 +121,9 @@ components and what number each event carries (`REVIEWED_VALUE_BASIS`):
 | extra_operator_seat_proration | settled charge in cents |
 
 The voice, SMS and seat values are cents because their unit price varies per fact (markup
-floors) or per day; a single provider unit price cannot reproduce it. **This value basis is a
-proposal.** It is not an approved commercial term and must be confirmed when meters are
-provisioned (see below).
+floors) or per day; a single provider unit price cannot reproduce it. **This value basis was
+approved by the founder on 2026-11-16** (see "Founder decisions"). Approval does not provision
+any meter; the mapping stays unprovisioned.
 
 The mapping **ships unprovisioned**: every event name is `null` and `status` is
 `unprovisioned`, so `resolveSettlementRuntime` returns `settlement_mapping_unprovisioned` and
@@ -146,10 +188,9 @@ client is exercised only against a stubbed `fetch`.
 
 Not done here, and required before any sandbox settlement can run (each needs its own review):
 
-1. **Founder decisions.** Confirm the value basis above (or choose invoice items instead of
-   meter events for the markup metrics and seats); define how a first partial period and any
-   non-calendar subscription anchor are settled; decide whether late evidence after a
-   settlement becomes a signed adjustment (today it is refused).
+1. **Founder decisions: made 2026-11-16** (value basis, subscription-period boundaries,
+   signed-adjustment handling of late evidence; see "Founder decisions"). What remains is
+   *implementing* them: period binding in PR E/F, adjustments as follow-on work.
 2. **Sandbox provisioning (Stripe Dashboard/API, not code).** Create one sandbox meter per
    component with the agreed aggregation and price, attach the metered prices to the
    Founder Pilot subscription, and record the real event names.
@@ -159,9 +200,10 @@ Not done here, and required before any sandbox settlement can run (each needs it
 4. **API version.** The adapter pins Stripe API `2024-06-20`. Billing meters launched with
    `2024-09-30.acacia`; verify `/v1/billing/meter_events` against the pinned version (or
    move the pin in a reviewed change) before the first sandbox send.
-5. **Period alignment.** Stripe attributes a meter event to the subscription period that
-   contains the event timestamp. The settlement window (UTC-aligned, 28–31 days) must be
-   aligned to the subscription's billing period in PR E/F; Stripe also rejects timestamps
+5. **Period alignment (required; decision 2).** Stripe attributes a meter event to the
+   subscription period that contains the event timestamp. The settlement window (UTC-aligned,
+   28–31 days) must be replaced by, or validated against, the exact subscription period in
+   PR E/F; Stripe also rejects timestamps
    older than 35 days, so a late settlement is `rejected`, never retried.
 6. **Reconciliation of the `base` and seat amounts against the Stripe invoice** belongs to PR E
    (signed webhooks) and PR F (test-clock acceptance). Settlement records the base, seat and
@@ -194,7 +236,9 @@ Not done here, and required before any sandbox settlement can run (each needs it
 
 1. Nothing can be settled until the mapping is provisioned (by design).
 2. One settlement per window; late evidence and corrections after settlement are refused, not
-   adjusted. A signed adjustment record is future work.
+   adjusted. Decision 3 (2026-11-16) says they will become signed append-only adjustments on
+   the next invoice, with human review for credits/refunds; that record is follow-on work and
+   does not exist in PR D.
 3. The database re-checks arithmetic, evidence identity and authority, not pricing; a correct
    document depends on the one reviewed preview code path.
 4. `rejected` has no requeue; `unknown` has no automatic exit. PR E reconciliation owns both.
