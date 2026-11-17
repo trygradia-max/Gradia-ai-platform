@@ -67,10 +67,10 @@ function tally(report: DispatchReport, deliveries: DeliveryReport[]) {
 export async function dispatchPendingSettlementDeliveries(
   serviceClient: SupabaseClient,
   runtime: SettlementRuntime,
-  options: { limit?: number } = {}
+  options: { limit?: number; shopId?: string } = {}
 ): Promise<{ ok: true; report: DispatchReport } | { ok: false; reason: "runtime_unavailable" | "worklist_failed" }> {
   if (!runtime.ok) return { ok: false, reason: "runtime_unavailable" }
-  const listed = await serviceClient.rpc("commercial_settlement_delivery_pending", { p_limit: options.limit ?? 50 })
+  const listed = await serviceClient.rpc("commercial_settlement_delivery_pending", { p_limit: options.limit ?? 50, p_shop: options.shopId ?? null })
   const parsed = worklistSchema.safeParse(listed.data)
   if (listed.error || !parsed.success) return { ok: false, reason: "worklist_failed" }
   const seen = new Set<string>()
@@ -115,9 +115,9 @@ export function createRuntimeEvidenceReader(env: Record<string, string | undefin
 export async function reconcileUnknownDeliveries(
   serviceClient: SupabaseClient,
   reader: MeterEvidenceReader,
-  options: { limit?: number } = {}
+  options: { limit?: number; shopId?: string } = {}
 ): Promise<{ ok: true; report: ReconcileReport } | { ok: false; reason: "worklist_failed" }> {
-  const listed = await serviceClient.rpc("commercial_settlement_delivery_unresolved", { p_limit: options.limit ?? 50 })
+  const listed = await serviceClient.rpc("commercial_settlement_delivery_unresolved", { p_limit: options.limit ?? 50, p_shop: options.shopId ?? null })
   const parsed = unresolvedSchema.safeParse(listed.data)
   if (listed.error || !parsed.success) return { ok: false, reason: "worklist_failed" }
   const report: ReconcileReport = {
@@ -229,10 +229,10 @@ export async function applyApprovedAdjustment(
 export async function applyApprovedAdjustments(
   serviceClient: SupabaseClient,
   runtime: AdjustmentRuntime,
-  options: { limit?: number } = {}
+  options: { limit?: number; shopId?: string } = {}
 ): Promise<{ ok: true; reports: AdjustmentReport[] } | { ok: false; reason: "runtime_unavailable" | "worklist_failed" }> {
   if (!runtime.ok) return { ok: false, reason: "runtime_unavailable" }
-  const listed = await serviceClient.rpc("commercial_adjustment_application_pending", { p_limit: options.limit ?? 50 })
+  const listed = await serviceClient.rpc("commercial_adjustment_application_pending", { p_limit: options.limit ?? 50, p_shop: options.shopId ?? null })
   const parsed = adjustmentWorklist.safeParse(listed.data)
   if (listed.error || !parsed.success) return { ok: false, reason: "worklist_failed" }
   const reports: AdjustmentReport[] = []

@@ -31,7 +31,7 @@ END $$;
 -- ---------------------------------------------------------------------------
 -- Worklists (service role, read only)
 -- ---------------------------------------------------------------------------
-CREATE FUNCTION public.commercial_settlement_delivery_pending(p_limit integer DEFAULT 50) RETURNS jsonb
+CREATE FUNCTION public.commercial_settlement_delivery_pending(p_limit integer DEFAULT 50, p_shop uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
   PERFORM public.commercial_billing_require_service();
@@ -42,7 +42,7 @@ BEGIN
       SELECT l.shop_id, l.settlement_id, l.id, l.delivery_status, l.component, s.created_at
         FROM public.commercial_settlement_lines l
         JOIN public.commercial_settlements s ON s.shop_id = l.shop_id AND s.id = l.settlement_id
-       WHERE l.delivery_status IN ('pending', 'in_flight')
+       WHERE l.delivery_status IN ('pending', 'in_flight') AND (p_shop IS NULL OR l.shop_id = p_shop)
        ORDER BY s.created_at, l.component
        LIMIT greatest(1, least(coalesce(p_limit, 50), 200))
     ) w);
@@ -83,7 +83,7 @@ CREATE TRIGGER commercial_delivery_reconciliations_no_truncate
   BEFORE TRUNCATE ON public.commercial_delivery_reconciliations
   FOR EACH STATEMENT EXECUTE FUNCTION public.commercial_usage_append_only();
 
-CREATE FUNCTION public.commercial_settlement_delivery_unresolved(p_limit integer DEFAULT 50) RETURNS jsonb
+CREATE FUNCTION public.commercial_settlement_delivery_unresolved(p_limit integer DEFAULT 50, p_shop uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
   PERFORM public.commercial_billing_require_service();
@@ -97,7 +97,7 @@ BEGIN
              l.failure_code, s.stripe_customer_id, s.created_at
         FROM public.commercial_settlement_lines l
         JOIN public.commercial_settlements s ON s.shop_id = l.shop_id AND s.id = l.settlement_id
-       WHERE l.delivery_status = 'unknown'
+       WHERE l.delivery_status = 'unknown' AND (p_shop IS NULL OR l.shop_id = p_shop)
          AND NOT EXISTS (SELECT 1 FROM public.commercial_delivery_reconciliations r
                           WHERE r.line_id = l.id AND r.outcome = 'confirmed_delivered')
        ORDER BY s.created_at, l.component
@@ -241,7 +241,7 @@ CREATE TRIGGER commercial_adjustment_applications_guard
   BEFORE UPDATE OR DELETE ON public.commercial_adjustment_applications
   FOR EACH ROW EXECUTE FUNCTION public.commercial_adjustment_applications_guard();
 
-CREATE FUNCTION public.commercial_adjustment_application_pending(p_limit integer DEFAULT 50) RETURNS jsonb
+CREATE FUNCTION public.commercial_adjustment_application_pending(p_limit integer DEFAULT 50, p_shop uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
   PERFORM public.commercial_billing_require_service();
@@ -252,7 +252,7 @@ BEGIN
         FROM public.commercial_settlement_adjustments a
         JOIN public.commercial_adjustment_reviews r ON r.adjustment_id = a.id AND r.decision = 'approved'
         LEFT JOIN public.commercial_adjustment_applications ap ON ap.adjustment_id = a.id
-       WHERE ap.id IS NULL OR ap.status = 'in_flight'
+       WHERE (ap.id IS NULL OR ap.status = 'in_flight') AND (p_shop IS NULL OR a.shop_id = p_shop)
        ORDER BY a.created_at, a.id
        LIMIT greatest(1, least(coalesce(p_limit, 50), 200))
     ) w);
@@ -374,22 +374,22 @@ GRANT SELECT ON public.commercial_delivery_reconciliations, public.commercial_ad
 -- Function ACLs. Browser roles get nothing; the owner may READ evidence of own shop.
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION
-  public.commercial_settlement_delivery_pending(integer),
-  public.commercial_settlement_delivery_unresolved(integer),
+  public.commercial_settlement_delivery_pending(integer, uuid),
+  public.commercial_settlement_delivery_unresolved(integer, uuid),
   public.commercial_delivery_reconcile_record(uuid, uuid, uuid, bigint, timestamptz),
   public.commercial_delivery_reconciliation_read(uuid, uuid),
   public.commercial_adjustment_applications_guard(),
-  public.commercial_adjustment_application_pending(integer),
+  public.commercial_adjustment_application_pending(integer, uuid),
   public.commercial_adjustment_application_claim(uuid, uuid),
   public.commercial_adjustment_application_record(uuid, uuid, uuid, text, text),
   public.commercial_adjustment_application_read(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
-  public.commercial_settlement_delivery_pending(integer),
-  public.commercial_settlement_delivery_unresolved(integer),
+  public.commercial_settlement_delivery_pending(integer, uuid),
+  public.commercial_settlement_delivery_unresolved(integer, uuid),
   public.commercial_delivery_reconcile_record(uuid, uuid, uuid, bigint, timestamptz),
-  public.commercial_adjustment_application_pending(integer),
+  public.commercial_adjustment_application_pending(integer, uuid),
   public.commercial_adjustment_application_claim(uuid, uuid),
   public.commercial_adjustment_application_record(uuid, uuid, uuid, text, text)
   TO service_role;
