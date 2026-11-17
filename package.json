@@ -11,7 +11,8 @@
     "test": "EVAL_LIVE=0 INTEGRATION=0 vitest run --exclude '**/*.eval.test.ts' --exclude '**/integration/**'",
     "eval": "EVAL_LIVE=1 vitest run --config vitest.live.config.ts --exclude '**/integration/**'",
     "test:int": "EVAL_LIVE=0 INTEGRATION=1 vitest run --fileParallelism=false eval/integration",
-    "check:isolated": "node scripts/isolated-check.mjs"
+    "check:isolated": "node scripts/isolated-check.mjs",
+    "billing:sandbox-acceptance": "node scripts/commercial-sandbox-acceptance.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

@@ -363,6 +363,6 @@ export const SANDBOX_MANUAL_STEPS: readonly { id: string; text: string }[] = [
   { id: "metered_prices", text: "Create one metered monthly USD Price per meter on the same Product with the printed lookup key and unit amount (outcomes at the approved retail rate; voice, SMS and seat at 1 cent per cent-valued unit)." },
   { id: "webhook_endpoint", text: `Add a TEST-mode webhook endpoint for POST /api/stripe/commercial-webhook pinned to API version ${COMMERCIAL_METER_API_VERSION}; copy its signing secret into GRADIA_COMMERCIAL_STRIPE_WEBHOOK_SECRET locally only.` },
   { id: "portal_config", text: "Configure the test-mode Customer Portal (what a customer may cancel/change is a founder decision)." },
-  { id: "mapping_commit", text: "After the verifier reports READY and the founder confirms the contract, a REVIEWED commit replaces the null event names in REVIEWED_SETTLEMENT_METER_MAPPING and flips its status. No environment variable can do this." },
+  { id: "mapping_commit", text: "When the only blocker left is settlement_mapping_unprovisioned and the founder has confirmed the contract, a REVIEWED commit replaces the null event names in REVIEWED_SETTLEMENT_METER_MAPPING and flips its status. No environment variable can do this." },
   { id: "attach_metered_items", text: "Attaching metered Prices to the subscription (and the webhook rule that accepts them) is PR F2 and a founder decision. Until then meter events cannot appear on a Stripe invoice." },
 ]
