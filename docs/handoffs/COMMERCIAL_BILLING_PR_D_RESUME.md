@@ -17,6 +17,16 @@ recognition, seat history, checkout or subscription state (PRs A/B/C).
   (`414af35`) whose tree is identical to the locally rebased tip; the PR diff against `main` is the same either way.
   If a linear history is wanted, a maintainer can squash-merge.
 
+## Reconciliation 2026-11-16 (migration version collision)
+
+PR #146 merged `20261115120000_shops_voice_columns_guard.sql` to `main` (`b3694ce`). This branch's settlement migration used the same
+version, so it was renamed to `20261115130000_commercial_settlement.sql` (SQL unchanged) and `origin/main` was merged in (no rewrite;
+only `docs/AI_WORK_LOG.md` conflicted, both entries kept). Results: scratch stack from zero 123/123 migrations in order; settlement and
+voice-columns upgrade verifiers PASS; integration 232/232 on `gradia-isolated-tests` (its ledger was corrected: settlement re-versioned to
+`…130000`, guard applied as `…120000`); unit 2,701 passed / 4 skipped (+ the known `jsdom` error); tsc, eslint, `next build --webpack` clean.
+No business decision was needed. Still open and unchanged: the value basis, partial period, late evidence, tax, dunning, cancellation,
+refund, credit, meter provisioning and Stripe API-version decisions below.
+
 ## Invariants (do not weaken)
 
 - Postgres ledger is billing authority; Stripe is a test-mode collection adapter only.
@@ -30,7 +40,7 @@ recognition, seat history, checkout or subscription state (PRs A/B/C).
 
 ## Current checkpoint: IMPLEMENTATION COMPLETE, PR opened for review (do not merge)
 
-Done: migration `supabase/migrations/20261115120000_commercial_settlement.sql`; `src/lib/commercial-settlement.ts`,
+Done: migration `supabase/migrations/20261115130000_commercial_settlement.sql`; `src/lib/commercial-settlement.ts`,
 `commercial-settlement-provider.ts`, `commercial-settlement-service.ts`; refactor of `commercial-usage-service.ts`
 (exports `assembleCommercialPeriodPreview`, `parseMembershipRead`; behavior unchanged); unit tests
 `eval/commercial-settlement.test.ts` (30); integration `eval/integration/commercial-settlement.int.test.ts` (33);

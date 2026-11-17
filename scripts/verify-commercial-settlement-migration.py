@@ -2,7 +2,7 @@
 
 Everything runs inside ONE transaction on the unlinked gradia-isolated-tests stack and
 ends with ROLLBACK, so no database state is ever changed or destroyed. Inside it the probe
-  1. removes exactly the objects 20261115120000 created, which restores the schema the
+  1. removes exactly the objects 20261115130000 created, which restores the schema the
      previous migrations left behind (this migration adds objects only; it alters nothing else),
   2. seeds fictional legacy shops, memberships, a PR C billing account with a platform
      customer, PR A commercial usage and PR B membership billing evidence (coverage
@@ -36,7 +36,7 @@ config = root / 'tests/supabase/config.toml'
 assert f'project_id = "{project}"' in config.read_text() and 'env(' not in config.read_text()
 assert not (root / '.local-tools/supabase-test/supabase/.temp/project-ref').exists(), 'remote links forbidden'
 
-NEW = '20261115120000'
+NEW = '20261115130000'
 
 
 def migration_body(version):

@@ -17,8 +17,8 @@ import {
   attachVoiceNumber,
   composeVoiceAssistant,
   syncVoiceAssistant,
-  voiceLaunchGate,
 } from "@/lib/voice-provider"
+import { setVoiceLiveForOwner, type SetVoiceLiveResult } from "@/lib/voice-live"
 import type { ServiceRow, ShopRow, VoiceConfig } from "@/lib/types/database"
 
 async function resolveOrigin(): Promise<string> {
@@ -197,43 +197,25 @@ export async function requestVoiceTestCall(): Promise<TestCallActionResult> {
   return { ok: true }
 }
 
-export type SetVoiceLiveResult = { ok: true } | { ok: false; error: string }
+export type { SetVoiceLiveResult } from "@/lib/voice-live"
 
-/** Launch toggle — gated on number + assistant + completed test call. */
+/**
+ * Launch toggle. `voice_live` is server-written (shops_protected_columns_guard), so this does
+ * not write through the owner's session: the shop and user come from the session, ownership is
+ * re-verified and the launch gate (add-on, number, assistant, completed test call) is enforced
+ * in `setVoiceLiveForOwner`, including inside the UPDATE itself.
+ */
 export async function setVoiceLive(live: boolean): Promise<SetVoiceLiveResult> {
-  await requireUser()
-  const shop = await loadShop()
-  if (!shop) return { ok: false, error: "Finish onboarding first." }
-
-  if (live) {
-    if (!shop.voice_addon) {
-      return {
-        ok: false,
-        error: "The Voice Receptionist is part of the +$29/mo add-on — add it in Billing first.",
-      }
-    }
-    const gate = voiceLaunchGate(shop)
-    if (!gate.ready) {
-      const labels: Record<string, string> = {
-        number: "connect your business number",
-        assistant: "save the receptionist",
-        test_call: "do a test call",
-      }
-      return {
-        ok: false,
-        error: `Almost there — first ${gate.missing.map((m) => labels[m]).join(", then ")}.`,
-      }
-    }
-  }
-
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("shops")
-    .update({ voice_live: live })
-    .eq("id", shop.id)
-  if (error) return { ok: false, error: error.message }
-  revalidatePath("/settings")
-  return { ok: true }
+  const user = await requireUser()
+  const shopCtx = await requireShop()
+  const result = await setVoiceLiveForOwner({
+    service: createServiceClient(),
+    userId: user.id,
+    shopId: shopCtx.id,
+    live: live === true,
+  })
+  if (result.ok) revalidatePath("/settings")
+  return result
 }
 
 const budgetSchema = z.object({

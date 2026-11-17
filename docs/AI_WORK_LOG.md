@@ -18,6 +18,40 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: done]
+Security audit run-1 residual of finding #6 (`claude/security-fix-remaining-voice-columns`): the voice
+provider identity and launch gate on `public.shops` were still owner-writable through PostgREST. Reproduced
+first on a private disposable Supabase stack (`gradia-voice-columns`, port 59431): an owner JWT PATCHed
+`vapi_assistant_id`, `vapi_phone_number_id`, `voice_live`, `voice_test_called_at` and `vapi_server_secret_enc` on its
+own row in one request (accepted), and INSERTed a shop born live with a provider identity (accepted); only the
+existing unique index stopped claiming an assistant id held by another shop. Migration
+`20261115120000_shops_voice_columns_guard.sql` extends the existing `shops_protected_columns_guard` in place
+(CREATE OR REPLACE; same trigger, SECURITY INVOKER, 42501 / DETAIL server_written / HINT column): all five are
+refused on UPDATE (including clearing, and `voice_live` in both directions) and must equal their defaults on INSERT
+for `authenticated`/`anon`; service_role, SECURITY DEFINER and migrations are unaffected; no row is rewritten.
+`setVoiceLive` previously ran the launch gate in the action and then wrote through the owner session, so a direct
+PATCH skipped the gate; it now goes through `src/lib/voice-live.ts`, which takes shop and user from the session,
+re-verifies ownership with the service client, evaluates the gate on the fresh row and repeats it in the UPDATE's own
+WHERE clause (a lost add-on or cleared assistant between read and write writes nothing). The unused owner-session
+`saveVapiAssistantId` (it let an owner store any assistant id, which the hourly sync would then PATCH) is deleted.
+The other writers (`syncVoiceAssistant`, `attachVoiceNumber`, `startVoiceTestCall`, the voice-sync cron, the Stripe
+webhook) already used the service client; a structural unit test now locks that set. Deliberately left owner-writable:
+`voice_config` and `credit_limit`. Not claimed: the guard cannot prove a stored provider id belongs to the shop at
+Vapi; that rests on the trusted writers, and there is no unique index on `vapi_phone_number_id` (existing data was not
+inspected, so none was added). Existing rows are not repaired; `scripts/preflight-voice-columns.sql` is a read-only
+operator query for shops that may already hold forged values. Evidence on the private stack, Node 24.15.0: new
+integration suite 35 tests plus the extended protected-columns suite (73), 108 passed together and 24 fail with the
+previous guard function restored; full integration 952 passed (75 files, zero failures) and full unit 2,679 passed
+(4 existing skips), both after rebasing onto main `1ce68de` (PR #144's migration sorts before this one, so
+on a stack that already held this migration it needs `migration up --include-all`); `scripts/verify-shops-voice-columns-migration.py` PASS (real migration SQL in a rolled-back
+transaction: exploit reproduced on the old guard, rows unchanged, defaults, transitions, cross-tenant, anon, service
+and definer writers); tsc, eslint and the offline webpack build clean. The literal `supabase db reset` from-zero path
+was blocked by the auto-mode classifier and not used; the stack had been built from all 120 migrations before this one
+was upgraded onto it. The integration allowlists (`_db.ts`, `_network-guard.ts`) name only the fixed stacks, so the
+private stack was allow-listed locally and that change is NOT committed; CI runs these files on its own stack. No
+live Vapi/Twilio call, shared or production data, secret, deploy, provider configuration, billing or A2P change, and
+no merge. Handoff: `docs/handoffs/CLAUDE_SECURITY_VOICE_COLUMNS_RESUME.md`.
+
 [AI: claude-code] [DATE: 2026-11-13] [AREA: platform] [STATUS: done]
 Security audit run-1 finding #3 (`claude/security-fix-sms-consent`): inbound SMS opt-in
 detection (`looksOptedIn` in `src/lib/agent-audience.ts`) was an unanchored word regex, so
@@ -2877,7 +2911,7 @@ export, import/parse side; no migration, deploy, provider call or shared-data ch
 [AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: in-progress]
 Commercial Billing PR D (`claude/commercial-billing-settlement`, base `1ce68de`): reviewed Stripe event mapping, deterministic
 settlement of one closed window and a settlement preview. Sandbox/test mode only; the PR is open for review and is not merged.
-Migration `20261115120000_commercial_settlement.sql` adds an immutable settlement header (tenant, exact half-open UTC window of
+Migration `20261115130000_commercial_settlement.sql` adds an immutable settlement header (tenant, exact half-open UTC window of
 28-31 UTC-midnight days, fixed evidence instant, database-recomputed evidence digest, document digest, settled totals), immutable
 lines carrying a forward-only delivery outbox (`pending -> in_flight -> delivered | rejected | unknown`, write-once claim token,
 120 s stale claim becomes `unknown`) and append-only events that refuse URLs and key-shaped text. Writers are service-role only;
@@ -2900,3 +2934,38 @@ Not done and owned later: sandbox meter provisioning and the reviewed commit tha
 `/v1/billing/meter_events`, period alignment with the subscription (PR E/F), signed adjustments for late evidence, reconciliation of
 `unknown`/`rejected` lines (PR E), UI. Details: `docs/architecture/COMMERCIAL_SETTLEMENT.md`, handoff
 `docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md`.
+
+## 2026-11-15 - [Codex] Controlled-pilot and full-launch readiness assessment
+[AI: codex] [DATE: 2026-11-15] [AREA: platform] [STATUS: assessed]
+Reviewed current `origin/main` at `c71035f`, the five September 11 governing documents, the November 4
+production-readiness/build-order documents, current open PR inventory and active A2P security work. No open PRs were
+present at assessment time. Controlled pilot remains gated by completing and reviewing the A2P registration-state fix,
+an exact-commit release verification, private signed-in desktop/mobile acceptance, production migration/deploy evidence,
+and independently authorized SMS/website/Meta provider activation for named accounts. Broad self-serve launch additionally
+requires the remaining commercial billing sequence (usage settlement/meters, signed webhooks, dunning/refunds/portal and
+full Stripe sandbox acceptance), production security/operations evidence, and the full five-channel acceptance gate.
+No production deploy, provider activation, shared-data change or release-gate removal occurred in this assessment.
+
+## 2026-11-15 - [Codex] Go-to-market and sales master
+[AI: codex] [DATE: 2026-11-15] [AREA: marketing] [STATUS: done]
+Created `docs/marketing/GRADIA_GTM_SALES_MASTER.md`, an evidence-grounded founder and marketing-agent playbook based on
+current governing documents, approved pricing and merged `main` at `c71035f`. It covers category and positioning,
+problems, ICP/anti-ICP, personas and jobs, an honest feature-availability matrix, offer/pricing, funnel and website copy,
+sales stages, discovery/qualification, demo and objection handling, pilot/onboarding, case-study evidence, outreach,
+content, a 30/60/90 plan, metrics, claim/privacy guardrails and an execution handoff. It makes no customer-result,
+production-availability, legal/compliance or unsupported competitor claim. No application code, provider, billing,
+deployment, shared data or production state changed.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Commercial Billing PR D (#147) reconciled with `origin/main` `b3694ce` after PR #146 merged. #146's
+`20261115120000_shops_voice_columns_guard.sql` collided with this branch's `20261115120000_commercial_settlement.sql`
+(same version). Only the settlement migration was renamed, to `20261115130000_commercial_settlement.sql` (`git mv`, SQL body
+byte-identical); the guard keeps `20261115120000`. Updated every exact reference: `scripts/verify-commercial-settlement-migration.py`
+(`NEW`), `docs/architecture/COMMERCIAL_SETTLEMENT.md`, `docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md` and the PR D entry above. The only
+merge conflict was this log (both sides appended); both entries kept. History was brought up to date with a merge commit, nothing rewritten.
+No pricing, meter value basis, partial-period, late-evidence, tax, dunning, cancellation, refund, credit, meter provisioning or Stripe
+policy was invented or changed; the mapping is still unprovisioned. Results: fresh from-zero stack applied 123/123 migrations in order
+(`…120000` guard then `…130000` settlement); upgrade verifiers for settlement and voice-columns PASS; integration 232/232
+(settlement 33, commercial billing, commercial usage, shops voice and protected columns) on `gradia-isolated-tests`; unit 180 files, 2,701
+passed / 4 skipped plus the same 1 `jsdom` environment error as before; `tsc --noEmit` and focused eslint clean; `next build --webpack` passes.
+Full 69+-file integration suite NOT run. Not merged, no deploy, no Stripe call.

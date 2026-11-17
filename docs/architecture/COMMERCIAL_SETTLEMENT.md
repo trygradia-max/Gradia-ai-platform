@@ -15,7 +15,7 @@ from model text.
 
 | Piece | Location |
 | --- | --- |
-| Migration | `supabase/migrations/20261115120000_commercial_settlement.sql` |
+| Migration | `supabase/migrations/20261115130000_commercial_settlement.sql` |
 | Pure contract (components, reviewed mapping, window rules, document, delivery plan, ack verification) | `src/lib/commercial-settlement.ts` |
 | Provider boundary (one operation) | `src/lib/commercial-settlement-provider.ts` |
 | Server orchestration (preview, settle, deliver, read) | `src/lib/commercial-settlement-service.ts` |
