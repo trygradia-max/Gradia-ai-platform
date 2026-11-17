@@ -32,10 +32,13 @@ export type SettlementProvider = {
   submitMeterEvent(event: SettlementMeterEvent): Promise<unknown>
 }
 
-export function createSettlementProvider(config: CommercialStripeTransportConfig): SettlementProvider {
+export function createSettlementProvider(
+  config: CommercialStripeTransportConfig,
+  request: typeof stripeCommercialRequest = stripeCommercialRequest
+): SettlementProvider {
   return {
     submitMeterEvent(event) {
-      return stripeCommercialRequest<unknown>(config, {
+      return request<unknown>(config, {
         method: "POST",
         path: "/billing/meter_events",
         idempotencyKey: event.identifier,
@@ -87,9 +90,12 @@ export type MeterEvidenceReader = {
 
 type ListEnvelope = { data?: unknown; has_more?: unknown }
 
-export function createMeterEvidenceReader(config: CommercialStripeTransportConfig): MeterEvidenceReader {
+export function createMeterEvidenceReader(
+  config: CommercialStripeTransportConfig,
+  request: typeof stripeCommercialRequest = stripeCommercialRequest
+): MeterEvidenceReader {
   const get = <T>(path: string, body?: Record<string, string | number>) =>
-    stripeCommercialRequest<T>(config, { method: "GET", path, body, apiVersion: COMMERCIAL_METER_API_VERSION })
+    request<T>(config, { method: "GET", path, body, apiVersion: COMMERCIAL_METER_API_VERSION })
   return {
     async readObservedTotal(query) {
       if (!Number.isInteger(query.startSeconds) || query.startSeconds % 60 !== 0) throw new Error("window_not_minute_aligned")

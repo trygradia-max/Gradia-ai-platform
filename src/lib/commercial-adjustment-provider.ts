@@ -25,10 +25,13 @@ export type AdjustmentProvider = {
 
 export const ADJUSTMENT_DESCRIPTION = "Gradia billing adjustment"
 
-export function createAdjustmentProvider(config: CommercialStripeTransportConfig): AdjustmentProvider {
+export function createAdjustmentProvider(
+  config: CommercialStripeTransportConfig,
+  request: typeof stripeCommercialRequest = stripeCommercialRequest
+): AdjustmentProvider {
   return {
     createPendingInvoiceItem(item) {
-      return stripeCommercialRequest<unknown>(config, {
+      return request<unknown>(config, {
         method: "POST",
         path: "/invoiceitems",
         idempotencyKey: item.identifier,
