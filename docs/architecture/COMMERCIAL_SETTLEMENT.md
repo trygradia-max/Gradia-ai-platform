@@ -11,6 +11,14 @@ Gradia's database is the billing authority. Stripe is a collection/reconciliatio
 that is *told* what the ledger settled. Nothing here reads Stripe state and nothing bills
 from model text.
 
+> **Update 2026-11-16 (PR E1, `COMMERCIAL_RECONCILIATION.md`).** Settlement now binds to the **exact verified Stripe
+> subscription period**: `commercial_settlement_begin` / `commercial_settlement_evidence` require the window to equal a
+> verified period with a complete chain back to the subscription's start. The UTC-midnight / 28-31-day rule described
+> below as "the window" is **gone as an authorization**, and the placeholder warning in "Founder decisions" is resolved
+> for binding. Still open and failing closed: seat proration refuses a period that is not UTC-midnight aligned, the
+> signed-adjustment contract exists (tables + functions) but nothing applies it, and meters remain unprovisioned.
+> `scripts/verify-commercial-settlement-migration.py` is historical (it asserts its migration is the latest).
+
 ## Founder decisions (2026-11-16, recorded for PR #147)
 
 Received 2026-11-16 (Pacific). These are decisions, not code. **This PR implements none of

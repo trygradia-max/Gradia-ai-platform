@@ -2979,3 +2979,30 @@ becomes a signed append-only adjustment on the next invoice, with human review f
 `docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md` and the PR body. PR D remains fail-closed/unprovisioned; its UTC 28-31-day window is a
 placeholder NOT authorized for sandbox settlement until PR E/F binds and validates the exact Stripe subscription period; adjustment
 implementation is follow-on and was not started. No code, pricing, meter, Stripe call, shared/production data, deploy or merge.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Commercial Billing PR E1 (`claude/commercial-billing-reconciliation`, sandbox/test mode only): signed PLATFORM Stripe webhook
+reconciliation, subscription lifecycle evidence, safe lapse enforcement, an owner-only Customer Portal handoff, exact
+subscription-period settlement binding and the signed-adjustment contract. New dedicated route `POST /api/stripe/commercial-webhook`
+with its own secret (`GRADIA_COMMERCIAL_STRIPE_WEBHOOK_SECRET`; disabled unless test mode + a well-formed secret, refused if it equals the
+Connect secret or a live-shaped key is present). The raw body is signature-verified before it is parsed; Connect envelopes, live
+events and live/unmarked objects are refused with no database call. Migration `20261116140000_commercial_reconciliation.sql`: durable
+receipt = replay claim written in the same transaction as the effect; tenant resolved only from the bound customer / known
+subscription / own Checkout attempt (metadata is only a cross-check, a disagreement blocks the customer's own shop); the PR C
+`commercial_subscription_apply_evidence` is extended in place (still the single truth) with deterministic ordering (older never
+advances, same-instant severity rank, canceled terminal, duplicate subscription blocks in any order, sticky integrity reasons cleared
+only by a reviewed reconciliation, signed `active` needs a verified period); checkout completion is never active. Append-only
+provider facts (payment failure/success, cancellation, refund, credit note) change no state and trigger no refund, credit,
+cancellation or retry. Lapse gate `commercial_execution_gate` wired before any claim or recipe work in the scheduled tick, "Run now"
+and event recipes (no account = legacy, unchanged; non-active/uncertain blocks new work only, nothing deleted, disabled or revoked;
+no grace). Owner-only Customer Portal action (database-verified live owner, exact bound customer, server-built allowlisted return URL,
+URL host-validated and never stored or logged). Settlement begin/evidence (PR D functions replaced in place, ACLs unchanged) now
+require the exact verified Stripe period with a complete chain to the subscription start; the UTC/28-31-day placeholder is gone; value
+basis unchanged. Signed-adjustment contract (append-only tables + service-role propose/review/read; negative = credit, one human
+decision, no applied state, nothing applies it). Tests: unit 22 (+30 updated), integration 48 new (+ PR C 70 and PR D 33 updated and
+green), upgrade verifier `scripts/verify-commercial-reconciliation-migration.py` PASS (and fails when mutated). Doc:
+`docs/architecture/COMMERCIAL_RECONCILIATION.md`; handoff `docs/handoffs/COMMERCIAL_BILLING_PR_E_RESUME.md`. Deliberately NOT done and
+failing closed: tax, grace length, automatic dunning timing, refund eligibility/credit policy, partial-day seat proration for a period
+not aligned to UTC midnight (PR B refuses it; founder decision needed), meter provisioning/event names, the API-version check for
+meter events, resubscription, voice/SMS channel gating, polling reconciliation (PR F), any application of an approved adjustment. No
+live Stripe, Dashboard mutation, shared Supabase, Vercel, production secret or data, deploy, pricing/package change or merge.

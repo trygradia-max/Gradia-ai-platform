@@ -7,6 +7,14 @@ agent activation boundary. It adds no usage meters or settlement (PR D), no webh
 reconciliation, dunning, refunds or Customer Portal (PR E), no live mode, deployment or
 shared-data change, and it does not lift the production activation freeze._
 
+> **Update 2026-11-16 (PR E1, `COMMERCIAL_RECONCILIATION.md`).** The signed PLATFORM webhook now exists
+> (`POST /api/stripe/commercial-webhook`, its own secret) and is the caller of `commercial_subscription_apply_evidence`
+> (extended in place with period fields and deterministic ordering). Lapse handling, the owner-only Customer Portal and the
+> exact subscription-period binding for settlement are implemented there. Limitations 1, 2, 4 and 6 below are superseded:
+> `reconciliation_required` caused by an ambiguous Checkout can now be resolved by signed evidence, integrity reasons are
+> sticky until a reviewed reconciliation, and new agent runs are gated on active billing. Dunning timing, grace, refunds,
+> credits and tax remain founder-policy-required and fail closed.
+
 ## Contract implemented
 
 - Only **Founder Pilot** is sellable: $199 USD/workspace/month, resolved at Stripe by the

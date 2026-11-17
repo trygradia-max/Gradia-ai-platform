@@ -93,7 +93,8 @@ describe("envelope refusal and normalization (after the signature)", () => {
     expect(parseVerifiedWebhook(event({ account: "acct_Connected1" }))).toEqual({ ok: false, code: "connect_event_refused" })
     expect(parseVerifiedWebhook(event({ livemode: true }))).toEqual({ ok: false, code: "live_event_refused" })
     expect(parseVerifiedWebhook(event({}, { ...SUB, livemode: true }))).toEqual({ ok: false, code: "live_object_refused" })
-    const { livemode: _omit, ...unmarked } = SUB
+    const unmarked: Record<string, unknown> = { ...SUB }
+    delete unmarked.livemode
     expect(parseVerifiedWebhook(event({}, unmarked))).toEqual({ ok: false, code: "live_object_refused" })
     expect(parseVerifiedWebhook(event({}, { ...SUB, id: "sub_live_Something" }))).toEqual({ ok: false, code: "live_object_refused" })
   })
@@ -130,7 +131,9 @@ describe("envelope refusal and normalization (after the signature)", () => {
     expect(facts({ ...SUB, items: { data: [...SUB.items.data, ...SUB.items.data] } }).price_lookup_key).toBe("invalid_items")
     expect(facts({ ...SUB, items: { data: [] } }).price_lookup_key).toBe("invalid_items")
     // Newer API shape: the period lives on the item.
-    const { current_period_start: _s, current_period_end: _e, ...noTop } = SUB
+    const noTop: Record<string, unknown> = { ...SUB }
+    delete noTop.current_period_start
+    delete noTop.current_period_end
     const moved = facts({ ...noTop, items: { data: [{ quantity: 1, current_period_start: 1_790_000_000, current_period_end: 1_792_592_000, price: { lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }] } })
     expect(moved.period_start).toBe(new Date(1_790_000_000_000).toISOString())
     // Top-level and item disagree: unverified, never guessed.
