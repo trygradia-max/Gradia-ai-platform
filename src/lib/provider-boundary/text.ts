@@ -16,7 +16,6 @@ const BIDI_MARKS = /[؜‎‏]/g
 const ZERO_WIDTH = /[​‌⁠-⁤﻿­᠎͏ᅟᅠㅤﾠ]/g
 const ZWJ = /‍/g
 /** C0/C1 controls except TAB, LF, CR. */
-// eslint-disable-next-line no-control-regex
 const CONTROLS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g
 /** Unicode tag characters (invisible ASCII smuggling) and variation selectors. */
 const TAG_CHARS = /[\u{E0000}-\u{E007F}]/gu

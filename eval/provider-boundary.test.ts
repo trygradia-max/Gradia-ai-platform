@@ -311,7 +311,7 @@ describe("classifySms through the boundary", () => {
     expect(req).toContain("2022 Tesla Model 3")
     expect(req).not.toMatch(/555-0133|dana@example|\+1503/)
     expect(c.calls).toHaveLength(1)
-    expect(c.calls[0].timeoutMs).toBeUndefined()
+    expect(c.calls[0]).toMatchObject({ task: "classify_sms", temperature: 0 })
   })
   it("a non-lead stays a non-lead (legitimate behavior preserved)", async () => {
     const r = await classifySms({ body: "thanks, see you sat" }, { client: mockClient(NOT_LEAD) })
