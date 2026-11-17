@@ -29,8 +29,8 @@ failure -> truthful hold; no raw content/credentials/prompts/PII in logs.
       PRODUCTION_LAUNCH_READINESS, Next route-handler docs: no route-convention change needed)
 - [x] M1 boundary module `src/lib/provider-boundary/` (text, redact, preflight, output-policy, log, run, hold) — commit 2358937
 - [x] M2 SMS/email classifiers + inbound drafters migrated; Twilio SMS + Aurinko routes wired — commit b7d33e2
-- [ ] M3 adversarial tests: unit (`eval/provider-boundary.test.ts`) + route (`eval/provider-boundary-routes.test.ts`)
-- [ ] M4 docs (`docs/architecture/PROVIDER_BOUNDARY.md`), AI_WORK_LOG entry, rebase origin/main, full checks, PR
+- [x] M3 adversarial tests: unit (`eval/provider-boundary.test.ts`, 124) + route (`eval/provider-boundary-routes.test.ts`, 50)
+- [x] M4 docs (`docs/architecture/PROVIDER_BOUNDARY.md`), AI_WORK_LOG entry, origin/main re-checked (unchanged at b3694ce, no rebase needed), full checks, PR opened (non-draft; DO NOT MERGE from this session)
 
 ## Key design decisions
 
@@ -59,14 +59,26 @@ no disposable DB stack here).
 `node_modules` is a symlink to `../claude-commercial-billing-settlement/node_modules` (identical package-lock; gitignored).
 `eval/agent-builder-navigation.test.tsx` fails to type/run without `@testing-library/*` (pre-existing, unrelated).
 
-## Last checks
+## Last checks (2026-11-16, Node 24.15.0, borrowed node_modules)
 
-- `npx tsc --noEmit`: clean except pre-existing `@testing-library` errors in `eval/agent-builder-navigation.test.tsx`
-- `npx vitest run eval/webhooks.test.ts`: 93 passed
+- `node scripts/isolated-check.mjs lint`: exit 0
+- `node scripts/isolated-check.mjs unit`: 181 files, 2,846 passed / 4 skipped. One runner "error": `jsdom` missing for
+  `eval/agent-builder-navigation.test.tsx` (borrowed node_modules; pre-existing, not touched here)
+- `node scripts/isolated-check.mjs build` (offline, webpack): exit 0
+- `node scripts/isolated-check.mjs types`: only the two `@testing-library/*` errors in `agent-builder-navigation.test.tsx`
+- New suites: provider-boundary 124 + routes 50 pass; `eval/webhooks.test.ts` 93 pass
+- Mutation check: no-op preflight => 83 new tests fail; no-op output text policy => 16 fail
+- NOT run: integration files (`twilio-inbound-replay`, `delivery-lifecycle-acceptance` had mock shapes updated), live evals
 
 ## Uncommitted paths
 
-none at last checkpoint
+none
+
+## Remaining for a human
+
+- Review/merge decision (not merged here). Run `npm run eval` (live) before any provider activation: prompts changed.
+- CI `integration` job runs the two touched integration files on its own stack.
+- Follow-ups: held-message review surface; Aurinko replay claim; migrate remaining drafters/call sites to `runBoundaryTask`.
 
 ## Exact resume command
 
