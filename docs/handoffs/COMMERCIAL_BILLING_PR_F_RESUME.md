@@ -50,11 +50,18 @@ Design: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` (written with the c
 - [x] Reading phase (AGENTS.md, AI_WORK_LOG head, five governing docs via targeted reading, CHECKOUT/SETTLEMENT/RECONCILIATION docs, E1 handoff, catalog, settlement + webhook + stripe adapter code and migrations, Stripe docs for meter events / summaries / meters / prices)
 - [x] Audit + gap list (this file)
 - [x] Sandbox contract (`stripe-sandbox-contract.ts`) + read-only verifier (`stripe-sandbox-verifier.ts`); transport got `apiVersion` + echoed-version capture
-- [ ] Operator command `npm run billing:sandbox-acceptance`
+- [x] Operator command `npm run billing:sandbox-acceptance` (offline by default; `--network` = read-only GETs) + `commercial-sandbox-report.ts` + unit tests
 - [x] Migration `20261117120000_commercial_sandbox_acceptance.sql` (applied to the local stack + recorded in schema_migrations); services `commercial-billing-operations.ts`, `commercial-adjustment-provider.ts`, reader in `commercial-settlement-provider.ts`
-- [ ] Upgrade verifier `scripts/verify-commercial-sandbox-acceptance-migration.py`
-- [ ] Services + tests (unit, integration, acceptance fixture)
-- [ ] Docs (architecture, runbook), AI_WORK_LOG, full validation, PR
+- [x] Upgrade verifier `scripts/verify-commercial-sandbox-acceptance-migration.py` (PASS; fails under a mutated migration)
+- [x] Tests: unit 43 (contract/verifier/providers/report), integration operations 14 + lifecycle acceptance 9 (all green on the disposable stack; faithful local Stripe fake `eval/_fake-stripe-sandbox.ts`)
+- [ ] REMAINING (usage limit hit here): (1) docs: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` + operator runbook (`docs/qa/`), covering the contract, outboxes, fake, command, limitations; (2) `docs/AI_WORK_LOG.md` tagged entry; (3) full validation: unit run was started (log not reviewed), `npx tsc --noEmit`, eslint on touched files, `next build --webpack`, FULL integration run compared with pristine `origin/main` (known baseline: ~64 failures in 10 messaging/delivery suites per E1 handoff); (4) `git push -u origin claude/commercial-billing-sandbox-acceptance`, open NON-draft PR to main (no production statement, scope, evidence, limits, founder decisions), do NOT merge.
+
+## Observations to carry into the PR text
+
+- A period whose usage exceeds the single combined cap is `cap_exceeded`: it can never settle (no clamp, no cap-raise flow). Founder decision needed.
+- Meter events must reach Stripe before the renewal invoice finalizes; the fake shows later usage as `late_unbilled`. F2 must close this with a real test-clock run.
+- Metered prices are not on the subscription and the webhook demands exactly one item (D1). Meter event names / lookup keys / API version `2024-09-30.acacia` are a PROPOSAL; the settlement mapping stays unprovisioned.
+- New migration `20261117120000` only adds objects (dispatch worklists, `commercial_delivery_reconciliations`, `commercial_adjustment_applications` + events). `settleCommercialPeriod` gained optional `deferDelivery`.
 
 ## Provider facts verified from Stripe docs (2026-11-17)
 
