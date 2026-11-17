@@ -49,8 +49,10 @@ Design: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` (written with the c
 
 - [x] Reading phase (AGENTS.md, AI_WORK_LOG head, five governing docs via targeted reading, CHECKOUT/SETTLEMENT/RECONCILIATION docs, E1 handoff, catalog, settlement + webhook + stripe adapter code and migrations, Stripe docs for meter events / summaries / meters / prices)
 - [x] Audit + gap list (this file)
-- [ ] Sandbox contract + verifier (pure + read-only client) + command
-- [ ] Migration (dispatch sweep, reconciliation, adjustment application) + upgrade verifier
+- [x] Sandbox contract (`stripe-sandbox-contract.ts`) + read-only verifier (`stripe-sandbox-verifier.ts`); transport got `apiVersion` + echoed-version capture
+- [ ] Operator command `npm run billing:sandbox-acceptance`
+- [x] Migration `20261117120000_commercial_sandbox_acceptance.sql` (applied to the local stack + recorded in schema_migrations); services `commercial-billing-operations.ts`, `commercial-adjustment-provider.ts`, reader in `commercial-settlement-provider.ts`
+- [ ] Upgrade verifier `scripts/verify-commercial-sandbox-acceptance-migration.py`
 - [ ] Services + tests (unit, integration, acceptance fixture)
 - [ ] Docs (architecture, runbook), AI_WORK_LOG, full validation, PR
 
@@ -72,7 +74,7 @@ Design: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` (written with the c
 
 ## Uncommitted paths
 
-Everything (nothing committed yet).
+See `git status`; commit after every milestone.
 
 ## Exact resume command
 
