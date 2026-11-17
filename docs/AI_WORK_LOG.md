@@ -18,6 +18,29 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: in-progress]
+Provider boundary V1 (`claude/provider-boundary-sms-email`): the first bounded Gradia-owned model/provider security
+boundary, for public inbound SMS and email classification and immediate drafting only (`src/lib/provider-boundary/`;
+`sms-classifier`, `email-classifier`, `sms-drafter.draftSmsReply`, `email-drafter.draftEmailReply`; the Twilio SMS and
+Aurinko email routes). A finite deterministic preflight holds clear role/tool/policy override, secret-exfiltration,
+alternate-recipient, claimed consent/price/booking, smuggling-shaped (bidi/control/invisible) and oversized input
+before any CRM write or model call; a held message keeps its raw evidence and gets one content-free idempotent
+`system` thread note, with no model call, metering, customer, lead, draft or send. Model input is a bounded, redacted,
+fenced excerpt (no phone/email/links/ids/headers/secrets/sender/display name; email phone now extracted in code);
+structured output is strict-schema plus an output policy, and model output cannot carry tenant, recipient, channel,
+consent, purpose, policy, tool, price, booking or execution authority. Provider error/timeout/malformed/unsafe output is
+a typed hold, never `is_lead:false`; email's old fail-open "treat as inquiry" path is removed; SMS now completes the
+event as a hold instead of 5xx-retrying (an unexpected throw still meters and fails the claim). Logs carry closed
+fields only. Normalization is applied only at the proposal boundary; stored evidence is untouched. Also fixed: the
+inbound-email drafter prompt's literal `{make/model}` made LangChain throw before the model call on every draft
+(swallowed by the route's try/catch); now escaped. Evidence: `eval/provider-boundary.test.ts` and
+`eval/provider-boundary-routes.test.ts` (all providers mocked; mutation check: removing the preflight fails 83 tests,
+the output text policy 16). Deliberately NOT done: live evaluations (prompt wording changed, so a human must run
+`npm run eval` before provider activation), a dedicated held-message review surface, other drafters/call sites,
+Aurinko provider-event replay claim, embeddings, billing, voice, Agent OS storage, deploy, merge. Integration files
+`twilio-inbound-replay` and `delivery-lifecycle-acceptance` had mock shapes updated but were not run locally.
+Details: `docs/architecture/PROVIDER_BOUNDARY.md`; handoff: `docs/handoffs/PROVIDER_BOUNDARY_V1_RESUME.md`.
+
 [AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: done]
 Security audit run-1 residual of finding #6 (`claude/security-fix-remaining-voice-columns`): the voice
 provider identity and launch gate on `public.shops` were still owner-writable through PostgREST. Reproduced
