@@ -369,8 +369,10 @@ BEGIN
   IF prior.id IS NOT NULL THEN
     IF prior.provider_subscription_id <> p_subscription THEN
       IF prior.derived_state IN ('active', 'past_due', 'incomplete') THEN
-        IF v_derived IN ('active', 'past_due', 'incomplete') THEN
-          -- A second live subscription for the same workspace: possible duplicate charge.
+        IF v_derived IN ('active', 'past_due', 'incomplete', 'reconciliation_required') THEN
+          -- A second live (or integrity-flagged) subscription for the same workspace: possible
+          -- duplicate charge. This blocks regardless of arrival order: it is a different
+          -- subscription, so it is not 'older evidence' about the current one.
           v_derived := 'reconciliation_required'; v_reason := 'duplicate_subscription';
         ELSE
           v_advance := false; v_nc := 'other_subscription';
@@ -379,10 +381,12 @@ BEGIN
     ELSIF prior.derived_state = 'canceled' AND v_derived <> 'canceled' THEN
       v_advance := false; v_nc := 'subscription_terminal';
     END IF;
-    IF v_advance AND p_event_created_at < prior.source_event_created_at THEN
+    IF v_advance AND v_reason IS DISTINCT FROM 'duplicate_subscription'
+       AND p_event_created_at < prior.source_event_created_at THEN
       v_advance := false; v_nc := 'out_of_order';
     END IF;
-    IF v_advance AND p_event_created_at = prior.source_event_created_at AND prior.derived_state <> v_derived THEN
+    IF v_advance AND v_reason IS DISTINCT FROM 'duplicate_subscription'
+       AND p_event_created_at = prior.source_event_created_at AND prior.derived_state <> v_derived THEN
       v_rank_new := CASE v_derived WHEN 'canceled' THEN 6 WHEN 'reconciliation_required' THEN 5 WHEN 'past_due' THEN 4
                                    WHEN 'incomplete' THEN 3 WHEN 'unknown' THEN 2 ELSE 1 END;
       v_rank_prior := CASE prior.derived_state WHEN 'canceled' THEN 6 WHEN 'reconciliation_required' THEN 5 WHEN 'past_due' THEN 4
