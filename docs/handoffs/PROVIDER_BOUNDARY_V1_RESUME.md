@@ -25,26 +25,51 @@ failure -> truthful hold; no raw content/credentials/prompts/PII in logs.
 
 ## Milestones
 
-- [ ] M0 reading + audit (in progress: governing docs 1-2 read)
-- [ ] M1 boundary module + preflight + tests
-- [ ] M2 SMS/email classifier + drafter migration + route wiring
-- [ ] M3 adversarial tests, no-PII-in-logs proof
-- [ ] M4 docs, work log, rebase, full checks, PR
+- [x] M0 reading + audit (AGENTS.md, AI_WORK_LOG, five governing docs, AGENT_OS_LAYERING, AGENTIC_OS_MASTER_BUILD,
+      PRODUCTION_LAUNCH_READINESS, Next route-handler docs: no route-convention change needed)
+- [x] M1 boundary module `src/lib/provider-boundary/` (text, redact, preflight, output-policy, log, run, hold) — commit 2358937
+- [x] M2 SMS/email classifiers + inbound drafters migrated; Twilio SMS + Aurinko routes wired — commit b7d33e2
+- [ ] M3 adversarial tests: unit (`eval/provider-boundary.test.ts`) + route (`eval/provider-boundary-routes.test.ts`)
+- [ ] M4 docs (`docs/architecture/PROVIDER_BOUNDARY.md`), AI_WORK_LOG entry, rebase origin/main, full checks, PR
 
-## Files (planned/touched)
+## Key design decisions
 
-(update as work proceeds)
+- Preflight runs BEFORE any CRM write or model call (in the route and again inside classifier/drafter).
+- Hold = raw evidence already stored (interaction row; SMS also the intake envelope) + ONE content-free, idempotent
+  `system`-role interaction note (`metadata.boundary_hold_key = stage:sourceRef`). No pending action, customer
+  (read-only lookup for held), lead, draft, send. No migration.
+- Provider failure/timeout/malformed/unsafe output => `held`, claim COMPLETES (SMS) — it used to 5xx-retry (SMS) or
+  fail-open "treat as inquiry" (email). A thrown (unexpected) classifier error still meters + fails the claim.
+- Model never receives phone/email/links/ids/headers/display name/From; email `phone` is extracted in code.
+- Drafts: recipient is always the verified sender (code). Output policy forbids contact details, placeholders, booking /
+  consent claims, and price/percent/free claims not stated in the shop knowledge.
+- Prompts changed minimally (untrusted-data fence + no-contact rule). LIVE EVALS NOT RUN (forbidden here) — a human
+  must run `npm run eval` before provider activation. `eval/classification.eval.test.ts` updated for the new result shape.
+
+## Files
+
+New: `src/lib/provider-boundary/{text,redact,preflight,output-policy,log,run,hold,index}.ts`
+Changed: `src/lib/{sms,email}-{classifier,drafter}.ts`, `src/app/api/twilio/sms/route.ts`,
+`src/app/api/aurinko/webhook/route.ts`, `eval/webhooks.test.ts`, `eval/classification.eval.test.ts`,
+`eval/integration/{twilio-inbound-replay,delivery-lifecycle-acceptance}.int.test.ts` (mock shapes only; NOT run —
+no disposable DB stack here).
+
+## Setup note
+
+`node_modules` is a symlink to `../claude-commercial-billing-settlement/node_modules` (identical package-lock; gitignored).
+`eval/agent-builder-navigation.test.tsx` fails to type/run without `@testing-library/*` (pre-existing, unrelated).
 
 ## Last checks
 
-none yet
+- `npx tsc --noEmit`: clean except pre-existing `@testing-library` errors in `eval/agent-builder-navigation.test.tsx`
+- `npx vitest run eval/webhooks.test.ts`: 93 passed
 
 ## Uncommitted paths
 
-this file (new)
+none at last checkpoint
 
 ## Exact resume command
 
 ```
-cd /Users/harryhatch/Gradia/worktrees/claude-provider-boundary-sms-email && git status -sb && sed -n 1,200p docs/handoffs/PROVIDER_BOUNDARY_V1_RESUME.md
+cd /Users/harryhatch/Gradia/worktrees/claude-provider-boundary-sms-email && git status -sb && git log --oneline -5 && sed -n 1,200p docs/handoffs/PROVIDER_BOUNDARY_V1_RESUME.md
 ```
