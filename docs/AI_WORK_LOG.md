@@ -18,6 +18,44 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Provider boundary V1 review follow-up (PR #148, `claude/provider-boundary-sms-email`): the content-free hold marker
+claimed idempotency but `recordBoundaryHold` did a lookup then an insert, and Aurinko email has no durable replay claim,
+so simultaneous duplicate deliveries could each write a marker. Reproduced on the disposable Postgres stack first
+(24 concurrent writers wrote 22 markers; the lookup also matched unrelated system rows carrying the same key text).
+Migration `20261116120000_provider_boundary_hold_unique.sql` adds a partial unique index over marker rows only
+(`shop_id, channel, metadata->>'boundary_hold_key'`, `role='system'`, `source='provider_boundary'`, `kind='hold'`) after
+removing any later duplicate markers; `hold.ts` is now a single atomic insert where `23505` means already recorded.
+No new table, column, grant, policy or function; RLS, cascades and service writers unchanged; raw evidence untouched.
+Verified: new `eval/integration/provider-boundary-hold.int.test.ts` (3/6 failed before, 6/6 after, 3 runs), rolled-back
+upgrade probe `scripts/verify-provider-boundary-hold-migration.py`, from-zero stack reset (124 migrations),
+`twilio-inbound-replay` and `delivery-lifecycle-acceptance` integration files, unit 2,877 passed, lint, types (only the
+pre-existing `@testing-library` errors), build. origin/main merged in. Deliberately NOT done: Aurinko provider-event
+replay claim/lifecycle, billing, voice, live evals, deploy, production, merge.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Provider boundary V1 (`claude/provider-boundary-sms-email`): the first bounded Gradia-owned model/provider security
+boundary, for public inbound SMS and email classification and immediate drafting only (`src/lib/provider-boundary/`;
+`sms-classifier`, `email-classifier`, `sms-drafter.draftSmsReply`, `email-drafter.draftEmailReply`; the Twilio SMS and
+Aurinko email routes). A finite deterministic preflight holds clear role/tool/policy override, secret-exfiltration,
+alternate-recipient, claimed consent/price/booking, smuggling-shaped (bidi/control/invisible) and oversized input
+before any CRM write or model call; a held message keeps its raw evidence and gets one content-free idempotent
+`system` thread note, with no model call, metering, customer, lead, draft or send. Model input is a bounded, redacted,
+fenced excerpt (no phone/email/links/ids/headers/secrets/sender/display name; email phone now extracted in code);
+structured output is strict-schema plus an output policy, and model output cannot carry tenant, recipient, channel,
+consent, purpose, policy, tool, price, booking or execution authority. Provider error/timeout/malformed/unsafe output is
+a typed hold, never `is_lead:false`; email's old fail-open "treat as inquiry" path is removed; SMS now completes the
+event as a hold instead of 5xx-retrying (an unexpected throw still meters and fails the claim). Logs carry closed
+fields only. Normalization is applied only at the proposal boundary; stored evidence is untouched. Also fixed: the
+inbound-email drafter prompt's literal `{make/model}` made LangChain throw before the model call on every draft
+(swallowed by the route's try/catch); now escaped. Evidence: `eval/provider-boundary.test.ts` and
+`eval/provider-boundary-routes.test.ts` (all providers mocked; mutation check: removing the preflight fails 83 tests,
+the output text policy 16). Deliberately NOT done: live evaluations (prompt wording changed, so a human must run
+`npm run eval` before provider activation), a dedicated held-message review surface, other drafters/call sites,
+Aurinko provider-event replay claim, embeddings, billing, voice, Agent OS storage, deploy, merge. Integration files
+`twilio-inbound-replay` and `delivery-lifecycle-acceptance` had mock shapes updated but were not run locally.
+Details: `docs/architecture/PROVIDER_BOUNDARY.md`; handoff: `docs/handoffs/PROVIDER_BOUNDARY_V1_RESUME.md`.
+
 [AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: done]
 Security audit run-1 residual of finding #6 (`claude/security-fix-remaining-voice-columns`): the voice
 provider identity and launch gate on `public.shops` were still owner-writable through PostgREST. Reproduced
@@ -2995,3 +3033,30 @@ Everything is PROPOSED, not approved or sellable; Founder Pilot ($199, catalog 2
 Findings worth knowing: the previously planned Growth/Scale rows fail the 65% stress gate; 70% voice margin at the high cost end needs
 about $0.46/min; Scale passes stress by only 0.9 points. Documentation only: no code, migration, Stripe, provider, checkout,
 sales page, deploy, shared-data or production change. Not merged.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Commercial Billing PR E1 (`claude/commercial-billing-reconciliation`, sandbox/test mode only): signed PLATFORM Stripe webhook
+reconciliation, subscription lifecycle evidence, safe lapse enforcement, an owner-only Customer Portal handoff, exact
+subscription-period settlement binding and the signed-adjustment contract. New dedicated route `POST /api/stripe/commercial-webhook`
+with its own secret (`GRADIA_COMMERCIAL_STRIPE_WEBHOOK_SECRET`; disabled unless test mode + a well-formed secret, refused if it equals the
+Connect secret or a live-shaped key is present). The raw body is signature-verified before it is parsed; Connect envelopes, live
+events and live/unmarked objects are refused with no database call. Migration `20261116140000_commercial_reconciliation.sql`: durable
+receipt = replay claim written in the same transaction as the effect; tenant resolved only from the bound customer / known
+subscription / own Checkout attempt (metadata is only a cross-check, a disagreement blocks the customer's own shop); the PR C
+`commercial_subscription_apply_evidence` is extended in place (still the single truth) with deterministic ordering (older never
+advances, same-instant severity rank, canceled terminal, duplicate subscription blocks in any order, sticky integrity reasons cleared
+only by a reviewed reconciliation, signed `active` needs a verified period); checkout completion is never active. Append-only
+provider facts (payment failure/success, cancellation, refund, credit note) change no state and trigger no refund, credit,
+cancellation or retry. Lapse gate `commercial_execution_gate` wired before any claim or recipe work in the scheduled tick, "Run now"
+and event recipes (no account = legacy, unchanged; non-active/uncertain blocks new work only, nothing deleted, disabled or revoked;
+no grace). Owner-only Customer Portal action (database-verified live owner, exact bound customer, server-built allowlisted return URL,
+URL host-validated and never stored or logged). Settlement begin/evidence (PR D functions replaced in place, ACLs unchanged) now
+require the exact verified Stripe period with a complete chain to the subscription start; the UTC/28-31-day placeholder is gone; value
+basis unchanged. Signed-adjustment contract (append-only tables + service-role propose/review/read; negative = credit, one human
+decision, no applied state, nothing applies it). Tests: unit 22 (+30 updated), integration 48 new (+ PR C 70 and PR D 33 updated and
+green), upgrade verifier `scripts/verify-commercial-reconciliation-migration.py` PASS (and fails when mutated). Doc:
+`docs/architecture/COMMERCIAL_RECONCILIATION.md`; handoff `docs/handoffs/COMMERCIAL_BILLING_PR_E_RESUME.md`. Deliberately NOT done and
+failing closed: tax, grace length, automatic dunning timing, refund eligibility/credit policy, partial-day seat proration for a period
+not aligned to UTC midnight (PR B refuses it; founder decision needed), meter provisioning/event names, the API-version check for
+meter events, resubscription, voice/SMS channel gating, polling reconciliation (PR F), any application of an approved adjustment. No
+live Stripe, Dashboard mutation, shared Supabase, Vercel, production secret or data, deploy, pricing/package change or merge.

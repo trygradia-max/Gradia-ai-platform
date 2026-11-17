@@ -202,6 +202,50 @@ describe("legacy run paths refuse governed agents and fail closed", () => {
   })
 })
 
+describe("commercial lapse gate on the scheduled tick (PR E1)", () => {
+  const run = async (gate: () => unknown) => {
+    const recipeId = Object.keys(RECIPE_HANDLERS)[0]
+    const due = { ...agent, config: { recipe: { id: recipeId }, schedule: { cadence: "hourly" } }, last_fired_at: null }
+    const handler = vi.spyOn(RECIPE_HANDLERS, recipeId)
+    const rpcCalls: string[] = []
+    const client = {
+      rpc: async (fn: string) => {
+        rpcCalls.push(fn)
+        if (fn === "commercial_execution_gate") return gate()
+        throw new Error(`unexpected rpc ${fn}`)
+      },
+      from: (table: string) => {
+        const chain: Record<string, unknown> = {}
+        Object.assign(chain, {
+          select: () => chain,
+          eq: () => (table === "custom_agents" ? Promise.resolve({ data: [due], error: null }) : chain),
+          in: async () => ({ data: [], error: null }),
+        })
+        return chain
+      },
+    } as unknown as SupabaseClient
+    const result = await runScheduledAgents(client)
+    const called = handler.mock.calls.length
+    handler.mockRestore()
+    return { result, rpcCalls, called }
+  }
+  it("starts nothing when billing is not active: no claim, no recipe, nothing written", async () => {
+    const { result, rpcCalls, called } = await run(() => ({ data: { allowed: false, mode: "commercial", state: "past_due", reason: "subscription_past_due" }, error: null }))
+    expect(result.fired).toBe(0)
+    expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringMatching(/billing is not active \(subscription_past_due\)/) })
+    expect(rpcCalls).toEqual(["commercial_execution_gate"])
+    expect(called).toBe(0)
+  })
+  it("fails closed when the gate cannot be read or answers nonsense", async () => {
+    for (const gate of [() => ({ data: null, error: { code: "XX000", message: "down" } }), () => ({ data: { allowed: "yes" }, error: null }), () => { throw new Error("boom") }]) {
+      const { result, rpcCalls, called } = await run(gate)
+      expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringMatching(/billing is not active \(billing_state_unavailable\)/) })
+      expect(rpcCalls).toEqual(["commercial_execution_gate"])
+      expect(called).toBe(0)
+    }
+  })
+})
+
 describe("an agent that becomes governed between the tick's state read and its legacy claim", () => {
   it("is finished as skipped, never parsed or executed as a legacy config", async () => {
     const recipeId = Object.keys(RECIPE_HANDLERS)[0]
@@ -211,6 +255,8 @@ describe("an agent that becomes governed between the tick's state read and its l
     const client = {
       rpc: async (fn: string, args: Record<string, unknown>) => {
         rpcCalls.push({ fn, args })
+        // The commercial lapse gate runs before any claim; a workspace with no billing account is legacy.
+        if (fn === "commercial_execution_gate") return { data: { allowed: true, mode: "legacy_no_commercial_account", state: null, reason: null }, error: null }
         if (fn === "claim_scheduled_agent_run") return { data: claimedReply, error: null }
         if (fn === "finish_scheduled_agent_run") return { data: true, error: null }
         throw new Error(`unexpected rpc ${fn}`)
@@ -228,8 +274,8 @@ describe("an agent that becomes governed between the tick's state read and its l
     const result = await runScheduledAgents(client)
     expect(result.fired).toBe(0)
     expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringContaining("became governed") })
-    expect(rpcCalls.map((c) => c.fn)).toEqual(["claim_scheduled_agent_run", "finish_scheduled_agent_run"])
-    expect(rpcCalls[1].args).toMatchObject({ p_state: "skipped", p_fired: false, p_error_code: "governed_during_tick" })
+    expect(rpcCalls.map((c) => c.fn)).toEqual(["commercial_execution_gate", "claim_scheduled_agent_run", "finish_scheduled_agent_run"])
+    expect(rpcCalls[2].args).toMatchObject({ p_state: "skipped", p_fired: false, p_error_code: "governed_during_tick" })
     expect(handler).not.toHaveBeenCalled()
     handler.mockRestore()
   })

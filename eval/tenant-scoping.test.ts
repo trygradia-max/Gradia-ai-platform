@@ -71,6 +71,11 @@ describe("service-role importer inventory (sweep visibility)", () => {
     // writer functions, which re-verify in the database that the named actor is a
     // live, active owner of that exact shop; it has no direct table write grant.
     "src/app/actions/commercial-billing.ts",
+    // Signed PLATFORM commercial webhook (PR E1, sandbox only). The route has NO tenant input: it verifies the raw-body
+    // signature first, then makes ONE call to commercial_webhook_ingest, which resolves the tenant inside the database
+    // only from server-held bindings (bound customer, known subscription, own Checkout attempt). The service client has
+    // no table write grant; the function is service-role only and takes no shop id.
+    "src/app/api/stripe/commercial-webhook/route.ts",
     // First-agent-activation seam wiring. Same authority model as above: the service
     // client is created lazily and only after the existing-gate and active-agent
     // checks pass, and it reaches nothing but the owner-verified Checkout writers.

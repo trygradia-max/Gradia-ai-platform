@@ -311,3 +311,53 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
     },
   }
 }
+
+// ---------- Customer Portal (owner-only handoff, PR E1) ----------
+
+const portalSessionSchema = z.object({
+  id: z.string().regex(/^bps_[A-Za-z0-9_]{4,200}$/),
+  object: z.literal("billing_portal.session"),
+  livemode: z.boolean(),
+  customer: z.string(),
+  url: z.string(),
+})
+
+/** The portal URL is a short-lived bearer link: https on billing.stripe.com only. */
+function safePortalUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== "https:" || parsed.hostname !== "billing.stripe.com" || parsed.username || parsed.password) return null
+    return url
+  } catch {
+    return null
+  }
+}
+
+export type PlatformPortalClient = {
+  /**
+   * Creates one Customer Portal session for the EXACT bound platform customer. Test mode only,
+   * PLATFORM account only (no connected-account parameter). The returned URL is never stored
+   * or logged by callers. An unreadable, live-mode, mismatched or off-host reply throws an
+   * ambiguous StripeError and yields no URL.
+   */
+  createBillingPortalSession(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>
+}
+
+export function createPlatformPortalClient(config: CommercialStripeTransportConfig): PlatformPortalClient {
+  return {
+    async createBillingPortalSession({ customerId, returnUrl }) {
+      const payload = await stripeCommercialRequest<unknown>(config, {
+        method: "POST",
+        path: "/billing_portal/sessions",
+        body: { customer: customerId, return_url: returnUrl },
+      })
+      const parsed = portalSessionSchema.safeParse(payload)
+      if (!parsed.success) throw unreadable()
+      if (parsed.data.livemode !== false) throw new StripeError(0, "Live-mode object refused", "live_object_refused")
+      if (parsed.data.customer !== customerId) throw unreadable()
+      const url = safePortalUrl(parsed.data.url)
+      if (!url) throw unreadable()
+      return { url }
+    },
+  }
+}

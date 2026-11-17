@@ -76,17 +76,28 @@ vi.mock("@/lib/sms-classifier", () => ({
     cls.calls++
     if (cls.fail) throw new Error("classifier down (test)")
     return {
-      is_lead: cls.isLead,
-      customer_name: "Int Test",
-      service: "ceramic coating",
-      vehicle: null,
-      summary: "integration inquiry",
+      status: "ok" as const,
+      invoked: true as const,
+      durationMs: 1,
+      value: {
+        is_lead: cls.isLead,
+        customer_name: "Int Test",
+        service: "ceramic coating",
+        vehicle: "",
+        summary: "integration inquiry",
+      },
     }
   },
 }))
 vi.mock("@/lib/sms-drafter", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sms-drafter")>()),
-  draftSmsReply: vi.fn(async () => null),
+  draftSmsReply: vi.fn(async () => ({
+    status: "held" as const,
+    reason: "provider_failure" as const,
+    reasons: ["provider_failure" as const],
+    invoked: true,
+    durationMs: 1,
+  })),
 }))
 vi.mock("@/lib/knowledge", () => ({
   searchShopKnowledge: vi.fn(async () => []),
