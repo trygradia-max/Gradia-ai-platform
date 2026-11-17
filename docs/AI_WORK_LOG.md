@@ -18,7 +18,7 @@ merged, deployed, or changed production.
 
 ## Entries
 
-[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: in-progress]
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
 Provider boundary V1 (`claude/provider-boundary-sms-email`): the first bounded Gradia-owned model/provider security
 boundary, for public inbound SMS and email classification and immediate drafting only (`src/lib/provider-boundary/`;
 `sms-classifier`, `email-classifier`, `sms-drafter.draftSmsReply`, `email-drafter.draftEmailReply`; the Twilio SMS and
