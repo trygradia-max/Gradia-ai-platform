@@ -271,7 +271,10 @@ CREATE FUNCTION public.commercial_subscription_apply_evidence(
   p_period_end timestamptz DEFAULT NULL,
   p_started_at timestamptz DEFAULT NULL,
   p_cancel_at_period_end boolean DEFAULT NULL,
-  p_canceled_at timestamptz DEFAULT NULL
+  p_canceled_at timestamptz DEFAULT NULL,
+  -- The signed-webhook path sets this: an 'active' without a verified period is NOT active.
+  -- Reviewed/legacy callers keep their existing behavior (no period required).
+  p_require_period boolean DEFAULT false
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
@@ -332,8 +335,8 @@ BEGIN
     v_derived := 'reconciliation_required'; v_reason := 'customer_mismatch';
   END IF;
 
-  -- A signed 'active' is only active with a verified period (the settlement boundary).
-  IF v_derived = 'active' AND p_source = 'signed_webhook'
+  -- On the signed-webhook path an 'active' is only active with a verified period (the settlement boundary).
+  IF v_derived = 'active' AND p_require_period
      AND (p_period_start IS NULL OR p_started_at IS NULL) THEN
     v_derived := 'reconciliation_required'; v_reason := 'period_unverified';
   END IF;
@@ -740,7 +743,7 @@ BEGIN
       'signed_webhook', p_event_id, p_event_created, false, v_attempt,
       (p_facts ->> 'period_start')::timestamptz, (p_facts ->> 'period_end')::timestamptz,
       (p_facts ->> 'started_at')::timestamptz,
-      (p_facts ->> 'cancel_at_period_end')::boolean, (p_facts ->> 'canceled_at')::timestamptz);
+      (p_facts ->> 'cancel_at_period_end')::boolean, (p_facts ->> 'canceled_at')::timestamptz, true);
     v_evidence := (v_applied ->> 'id')::uuid;
     v_outcome := CASE WHEN (v_applied ->> 'advanced')::boolean THEN 'applied' ELSE 'not_current' END;
     v_reason := v_applied ->> 'reason';
@@ -1205,7 +1208,7 @@ END $$;
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION
   public.commercial_subscription_periods_guard(),
-  public.commercial_subscription_apply_evidence(uuid, text, text, text, text, text, text, text, text, timestamptz, boolean, uuid, timestamptz, timestamptz, timestamptz, boolean, timestamptz),
+  public.commercial_subscription_apply_evidence(uuid, text, text, text, text, text, text, text, text, timestamptz, boolean, uuid, timestamptz, timestamptz, timestamptz, boolean, timestamptz, boolean),
   public.commercial_subscription_period_status(uuid, timestamptz, timestamptz),
   public.commercial_execution_gate(uuid),
   public.commercial_portal_authorize(uuid, uuid, text),
@@ -1216,7 +1219,7 @@ REVOKE ALL ON FUNCTION
   FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
-  public.commercial_subscription_apply_evidence(uuid, text, text, text, text, text, text, text, text, timestamptz, boolean, uuid, timestamptz, timestamptz, timestamptz, boolean, timestamptz),
+  public.commercial_subscription_apply_evidence(uuid, text, text, text, text, text, text, text, text, timestamptz, boolean, uuid, timestamptz, timestamptz, timestamptz, boolean, timestamptz, boolean),
   public.commercial_subscription_period_status(uuid, timestamptz, timestamptz),
   public.commercial_execution_gate(uuid),
   public.commercial_portal_authorize(uuid, uuid, text),
