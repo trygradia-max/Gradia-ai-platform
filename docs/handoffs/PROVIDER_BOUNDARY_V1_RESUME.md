@@ -37,7 +37,7 @@ failure -> truthful hold; no raw content/credentials/prompts/PII in logs.
 - Preflight runs BEFORE any CRM write or model call (in the route and again inside classifier/drafter).
 - Hold = raw evidence already stored (interaction row; SMS also the intake envelope) + ONE content-free, idempotent
   `system`-role interaction note (`metadata.boundary_hold_key = stage:sourceRef`). No pending action, customer
-  (read-only lookup for held), lead, draft, send. No migration.
+  (read-only lookup for held), lead, draft, send. Exactly-once is a partial unique index (see Review follow-up).
 - Provider failure/timeout/malformed/unsafe output => `held`, claim COMPLETES (SMS) — it used to 5xx-retry (SMS) or
   fail-open "treat as inquiry" (email). A thrown (unexpected) classifier error still meters + fails the claim.
 - Model never receives phone/email/links/ids/headers/display name/From; email `phone` is extracted in code.
@@ -54,6 +54,27 @@ Changed: `src/lib/{sms,email}-{classifier,drafter}.ts`, `src/app/api/twilio/sms/
 `eval/integration/{twilio-inbound-replay,delivery-lifecycle-acceptance}.int.test.ts` (mock shapes only; NOT run —
 no disposable DB stack here).
 
+## Review follow-up (PR #148): hold marker race
+
+- Reproduced first on the disposable stack (`gradia-isolated-tests`, :56531): 24 simultaneous `recordBoundaryHold`
+  calls wrote 22 markers (SELECT-then-INSERT). The same test also showed the old lookup matched ANY system row with the
+  same key text, so an unrelated note could suppress a real marker.
+- Fix: migration `20261116120000_provider_boundary_hold_unique.sql` (next free version after main's
+  `20261115130000`): partial unique index `interactions_provider_boundary_hold_unique` on
+  `(shop_id, channel, (metadata->>'boundary_hold_key'))` for marker rows only; it first removes later duplicate
+  markers (oldest kept; markers existed only on this unmerged branch). `hold.ts` is now one atomic INSERT; `23505` =>
+  `{ok:true, recorded:false}`, other errors => `{ok:false}`. No new table/column/grant/policy; RLS, cascades and
+  service writers unchanged.
+- Evidence: `eval/integration/provider-boundary-hold.int.test.ts` (6; race, replay, per-stage/channel/shop isolation,
+  mixed customer attribution, same-text non-markers untouched, RLS + customer/shop cascade) failed 3/6 before the
+  migration and passes 3x after; `python3 -I scripts/verify-provider-boundary-hold-migration.py` (upgrade probe in one
+  rolled-back transaction: dedupe, index shape, 23505, scoping, cascade, RLS/grants/columns/triggers unchanged; only
+  runs on a stack still at the previous migration); from-zero `node scripts/test-stack.mjs reset` applied all 124
+  migrations; `twilio-inbound-replay` (18) and `delivery-lifecycle-acceptance` (5) pass.
+- Unit/route tests rewritten for the single-insert shape (`23505` => recorded:false, other codes => ok:false, no
+  SELECT). origin/main merged in (7 commits, no conflicts). Not done: Aurinko provider-event replay claim, billing,
+  voice, live evals, deploy, merge.
+
 ## Setup note
 
 `node_modules` is a symlink to `../claude-commercial-billing-settlement/node_modules` (identical package-lock; gitignored).
@@ -68,7 +89,7 @@ no disposable DB stack here).
 - `node scripts/isolated-check.mjs types`: only the two `@testing-library/*` errors in `agent-builder-navigation.test.tsx`
 - New suites: provider-boundary 124 + routes 50 pass; `eval/webhooks.test.ts` 93 pass
 - Mutation check: no-op preflight => 83 new tests fail; no-op output text policy => 16 fail
-- NOT run: integration files (`twilio-inbound-replay`, `delivery-lifecycle-acceptance` had mock shapes updated), live evals
+- Integration files now run (see Review follow-up). NOT run: live evals
 
 ## Uncommitted paths
 

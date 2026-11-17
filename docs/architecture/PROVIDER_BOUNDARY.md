@@ -47,7 +47,16 @@ inbound (verified) ─► evidence stored raw ─► preflight (deterministic) �
    proposal, draft, send or provider effect. Exactly one content-free,
    idempotent `system`-role thread note is written
    (`metadata.boundary_hold_key = <stage>:<provider message id>`; fixed text, closed
-   reason codes, no customer content). STOP/START keyword handling is compliance, not
+   reason codes, no customer content). "Exactly one" is enforced by the database, not by
+   a lookup: the marker is a single `INSERT`, and the partial unique index
+   `interactions_provider_boundary_hold_unique` (migration `20261116120000`) over
+   `(shop_id, channel, boundary_hold_key)`, limited to marker rows (`role = 'system'`,
+   `source = 'provider_boundary'`, `kind = 'hold'`), makes simultaneous duplicate
+   deliveries race to one winner. The loser gets `23505`, which `recordBoundaryHold`
+   reports as `{ ok: true, recorded: false }`; any other error is `{ ok: false }`.
+   Other interaction rows (raw customer evidence, replies, ordinary notes) are outside the
+   index. `shop_id` leads the key, so tenants cannot collide; cascades and RLS are
+   unchanged. STOP/START keyword handling is compliance, not
    content, and still runs for a held message; a sender who said STOP is never
    auto-drafted a reply.
 4. **PII minimization.** The model receives only a bounded, redacted excerpt: phone
@@ -128,7 +137,7 @@ fails 16.
   content to the embeddings provider (embeddings are out of scope here).
 - The Aurinko route has no provider-event replay claim (pre-existing). A replayed
   *clean* email can still duplicate its interaction / lead card / draft; only the hold
-  marker is idempotent. The "classification rate-limit exceeded" path still returns
+  marker is idempotent (durably, under concurrency: see the unique index above). The "classification rate-limit exceeded" path still returns
   without a classification (pre-existing).
 - Fixed on the way: the inbound email drafter prompt contained a literal `{make/model}`
   that LangChain treated as a template variable, so every inbound-email draft threw
@@ -136,5 +145,6 @@ fails 16.
   now escaped (`{{make/model}}`) and covered by a route test.
 - The two integration files touched (`twilio-inbound-replay`,
   `delivery-lifecycle-acceptance`) changed only their classifier/drafter mock return
-  shapes; they were not run locally (no private disposable stack was started). CI's
-  `integration` job runs them.
+  shapes. They pass against the disposable stack after the review follow-up (18 and 5
+  tests). `eval/integration/provider-boundary-hold.int.test.ts` covers the concurrent
+  hold-marker race (24 simultaneous writers => one row) on real Postgres.

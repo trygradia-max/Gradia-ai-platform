@@ -533,31 +533,36 @@ describe("logs never carry content, identifiers, prompts, provider bodies or cre
 // ───────────────────────── hold marker ─────────────────────────
 
 describe("recordBoundaryHold", () => {
-  function fakeSupabase(existing: boolean) {
+  function fakeSupabase(result: { error: { code?: string } | null }) {
     const inserts: unknown[] = []
-    const filters: Array<[string, unknown]> = []
-    const q: Record<string, unknown> = {}
-    q.select = () => q
-    q.eq = (k: string, v: unknown) => { filters.push([k, v]); return q }
-    q.limit = () => Promise.resolve({ data: existing ? [{ id: "x" }] : [], error: null })
+    let selects = 0
     return {
-      inserts, filters,
+      inserts,
+      selects: () => selects,
       client: {
-        from: () => ({ select: () => q, insert: (row: unknown) => { inserts.push(row); return Promise.resolve({ error: null }) } }),
+        from: () => ({
+          select: () => { selects++; throw new Error("no check-then-insert: the unique index is the guard") },
+          insert: (row: unknown) => { inserts.push(row); return Promise.resolve(result) },
+        }),
       } as never,
     }
   }
-  it("writes one content-free system note, scoped to the shop, keyed by stage + source ref", async () => {
-    const f = fakeSupabase(false)
-    const r = await recordBoundaryHold(f.client, { shopId: "shop-1", customerId: null, channel: "sms", stage: "classify", sourceRef: "SM1", reasons: ["override_role"] })
-    expect(r).toEqual({ ok: true, recorded: true })
+  const base = { shopId: "shop-1", customerId: null, channel: "sms", stage: "classify", sourceRef: "SM1", reasons: ["override_role"] } as const
+  it("writes one content-free system note in a single atomic insert, scoped to the shop, keyed by stage + source ref", async () => {
+    const f = fakeSupabase({ error: null })
+    expect(await recordBoundaryHold(f.client, base)).toEqual({ ok: true, recorded: true })
     expect(f.inserts).toHaveLength(1)
-    expect(f.inserts[0]).toMatchObject({ shop_id: "shop-1", role: "system", channel: "sms", metadata: { boundary_hold_key: "classify:SM1", reasons: ["override_role"] } })
-    expect(f.filters).toContainEqual(["shop_id", "shop-1"])
+    expect(f.inserts[0]).toMatchObject({ shop_id: "shop-1", role: "system", channel: "sms", metadata: { source: "provider_boundary", kind: "hold", boundary_hold_key: "classify:SM1", reasons: ["override_role"] } })
+    expect(f.selects()).toBe(0)
   })
-  it("replay writes nothing more", async () => {
-    const f = fakeSupabase(true)
-    expect(await recordBoundaryHold(f.client, { shopId: "shop-1", customerId: null, channel: "email", stage: "draft", sourceRef: "m1", reasons: ["provider_failure"] })).toEqual({ ok: true, recorded: false })
-    expect(f.inserts).toHaveLength(0)
+  it("a duplicate (unique violation 23505) is already recorded, not a failure", async () => {
+    const f = fakeSupabase({ error: { code: "23505" } })
+    expect(await recordBoundaryHold(f.client, { ...base, channel: "email", stage: "draft", sourceRef: "m1", reasons: ["provider_failure"] })).toEqual({ ok: true, recorded: false })
+  })
+  it("any other database error is a failure, never reported as recorded", async () => {
+    for (const code of ["42501", "23503", "57014", undefined]) {
+      const f = fakeSupabase({ error: { code } })
+      expect(await recordBoundaryHold(f.client, base)).toEqual({ ok: false })
+    }
   })
 })

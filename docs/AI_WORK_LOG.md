@@ -19,6 +19,21 @@ merged, deployed, or changed production.
 ## Entries
 
 [AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Provider boundary V1 review follow-up (PR #148, `claude/provider-boundary-sms-email`): the content-free hold marker
+claimed idempotency but `recordBoundaryHold` did a lookup then an insert, and Aurinko email has no durable replay claim,
+so simultaneous duplicate deliveries could each write a marker. Reproduced on the disposable Postgres stack first
+(24 concurrent writers wrote 22 markers; the lookup also matched unrelated system rows carrying the same key text).
+Migration `20261116120000_provider_boundary_hold_unique.sql` adds a partial unique index over marker rows only
+(`shop_id, channel, metadata->>'boundary_hold_key'`, `role='system'`, `source='provider_boundary'`, `kind='hold'`) after
+removing any later duplicate markers; `hold.ts` is now a single atomic insert where `23505` means already recorded.
+No new table, column, grant, policy or function; RLS, cascades and service writers unchanged; raw evidence untouched.
+Verified: new `eval/integration/provider-boundary-hold.int.test.ts` (3/6 failed before, 6/6 after, 3 runs), rolled-back
+upgrade probe `scripts/verify-provider-boundary-hold-migration.py`, from-zero stack reset (124 migrations),
+`twilio-inbound-replay` and `delivery-lifecycle-acceptance` integration files, unit 2,877 passed, lint, types (only the
+pre-existing `@testing-library` errors), build. origin/main merged in. Deliberately NOT done: Aurinko provider-event
+replay claim/lifecycle, billing, voice, live evals, deploy, production, merge.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
 Provider boundary V1 (`claude/provider-boundary-sms-email`): the first bounded Gradia-owned model/provider security
 boundary, for public inbound SMS and email classification and immediate drafting only (`src/lib/provider-boundary/`;
 `sms-classifier`, `email-classifier`, `sms-drafter.draftSmsReply`, `email-drafter.draftEmailReply`; the Twilio SMS and

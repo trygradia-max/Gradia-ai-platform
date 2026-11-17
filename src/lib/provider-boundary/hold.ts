@@ -7,7 +7,8 @@
  * fixed text, closed reason codes and the provider message reference only — no
  * customer content, no model output. It is evidence, not a proposal: it creates
  * no pending action, lead, customer, draft or send, and is idempotent so a
- * replayed provider event never writes a second marker.
+ * replayed or simultaneously duplicated provider event never writes a second marker (a
+ * partial unique index makes the single INSERT atomic).
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -33,22 +34,17 @@ export type RecordHoldInput = {
 
 export type RecordHoldResult = { ok: true; recorded: boolean } | { ok: false }
 
+/** Postgres unique_violation, surfaced by PostgREST as `error.code`. */
+const UNIQUE_VIOLATION = "23505"
+
 export async function recordBoundaryHold(
   supabase: SupabaseClient,
   input: RecordHoldInput,
 ): Promise<RecordHoldResult> {
-  const holdKey = `${input.stage}:${input.sourceRef}`
-  const { data: existing, error: lookupErr } = await supabase
-    .from("interactions")
-    .select("id")
-    .eq("shop_id", input.shopId)
-    .eq("channel", input.channel)
-    .eq("role", "system")
-    .eq("metadata->>boundary_hold_key", holdKey)
-    .limit(1)
-  if (lookupErr) return { ok: false }
-  if ((existing?.length ?? 0) > 0) return { ok: true, recorded: false }
-
+  // One atomic INSERT. Exactly-once is enforced by the partial unique index
+  // `interactions_provider_boundary_hold_unique` (shop_id, channel, boundary_hold_key), not by a
+  // lookup: a check-then-insert lets two simultaneous deliveries of the same provider message
+  // both pass the check. The loser gets 23505, which means "already recorded", not a failure.
   const { error } = await supabase.from("interactions").insert({
     shop_id: input.shopId,
     customer_id: input.customerId,
@@ -59,9 +55,11 @@ export async function recordBoundaryHold(
       source: "provider_boundary",
       kind: "hold",
       stage: input.stage,
-      boundary_hold_key: holdKey,
+      boundary_hold_key: `${input.stage}:${input.sourceRef}`,
       reasons: [...input.reasons],
     },
   })
-  return error ? { ok: false } : { ok: true, recorded: true }
+  if (!error) return { ok: true, recorded: true }
+  if (error.code === UNIQUE_VIOLATION) return { ok: true, recorded: false }
+  return { ok: false }
 }
