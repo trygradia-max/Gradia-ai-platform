@@ -2931,6 +2931,33 @@ formulas, whitespace/control/Unicode bypasses, quoting, ordinary values, both ex
 that fails if another CSV quote-doubler appears in `src/`). Non-goals: findings #1-#6, #8-#10, HTML escaping, JSON
 export, import/parse side; no migration, deploy, provider call or shared-data change.
 
+[AI: claude-code] [DATE: 2026-11-15] [AREA: platform] [STATUS: in-progress]
+Commercial Billing PR D (`claude/commercial-billing-settlement`, base `1ce68de`): reviewed Stripe event mapping, deterministic
+settlement of one closed window and a settlement preview. Sandbox/test mode only; the PR is open for review and is not merged.
+Migration `20261115130000_commercial_settlement.sql` adds an immutable settlement header (tenant, exact half-open UTC window of
+28-31 UTC-midnight days, fixed evidence instant, database-recomputed evidence digest, document digest, settled totals), immutable
+lines carrying a forward-only delivery outbox (`pending -> in_flight -> delivered | rejected | unknown`, write-once claim token,
+120 s stale claim becomes `unknown`) and append-only events that refuse URLs and key-shaped text. Writers are service-role only;
+`begin` must name a live owner of that exact shop; claim/record are bound to (shop, settlement, line); browser roles have no table or
+writer access; owners read through authority-checked functions. The database rechecks authority, closedness, complete membership
+coverage, a bound platform customer, that the evidence is still exactly the evidence read, arithmetic invariants (totals, cap, each
+delivery equals the settled charge or quantity) and refuses overlap and changed replay. Pricing is NOT reimplemented:
+`assembleCommercialPeriodPreview` (extracted from the PR A/B readers, behavior unchanged) is the one assembly, and only an `ok`
+preview with an available invoice total can settle. `REVIEWED_SETTLEMENT_METER_MAPPING` ships UNPROVISIONED (every event name null),
+so settlement fails closed with `settlement_mapping_unprovisioned`; no meter, event name, lookup key, tax, discount, trial or credit
+was invented. The proposed value basis (outcomes = billed quantity; voice, SMS, seat = charge cents) needs founder confirmation at
+provisioning. Nothing retries an `unknown` or `rejected` line, and nothing marks an invoice paid or a subscription active.
+Validation: unit 30/30 for the new file and 2,679 passed / 4 skipped across 178 files (one environment error: `jsdom` is absent from
+the symlinked `node_modules`, so `eval/agent-builder-navigation.test.tsx` cannot start; unrelated); integration 33/33 on the
+disposable `gradia-isolated-tests` stack plus PR A (21), PR B (15) and PR C (70) suites re-run green; upgrade verifier PASS (and shown
+to fail when an expectation is mutated); focused eslint and `tsc --noEmit` clean apart from the missing `@testing-library` types;
+`next build --webpack` passes (the default Turbopack build refuses the symlinked `node_modules`, an environment limit). The full
+69-file integration suite was NOT run. No Stripe call, Dashboard object, live key, deploy, shared Supabase change or merge.
+Not done and owned later: sandbox meter provisioning and the reviewed commit that names them, Stripe API version check for
+`/v1/billing/meter_events`, period alignment with the subscription (PR E/F), signed adjustments for late evidence, reconciliation of
+`unknown`/`rejected` lines (PR E), UI. Details: `docs/architecture/COMMERCIAL_SETTLEMENT.md`, handoff
+`docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md`.
+
 ## 2026-11-15 - [Codex] Controlled-pilot and full-launch readiness assessment
 [AI: codex] [DATE: 2026-11-15] [AREA: platform] [STATUS: assessed]
 Reviewed current `origin/main` at `c71035f`, the five September 11 governing documents, the November 4
@@ -2951,3 +2978,27 @@ sales stages, discovery/qualification, demo and objection handling, pilot/onboar
 content, a 30/60/90 plan, metrics, claim/privacy guardrails and an execution handoff. It makes no customer-result,
 production-availability, legal/compliance or unsupported competitor claim. No application code, provider, billing,
 deployment, shared data or production state changed.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
+Commercial Billing PR D (#147) reconciled with `origin/main` `b3694ce` after PR #146 merged. #146's
+`20261115120000_shops_voice_columns_guard.sql` collided with this branch's `20261115120000_commercial_settlement.sql`
+(same version). Only the settlement migration was renamed, to `20261115130000_commercial_settlement.sql` (`git mv`, SQL body
+byte-identical); the guard keeps `20261115120000`. Updated every exact reference: `scripts/verify-commercial-settlement-migration.py`
+(`NEW`), `docs/architecture/COMMERCIAL_SETTLEMENT.md`, `docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md` and the PR D entry above. The only
+merge conflict was this log (both sides appended); both entries kept. History was brought up to date with a merge commit, nothing rewritten.
+No pricing, meter value basis, partial-period, late-evidence, tax, dunning, cancellation, refund, credit, meter provisioning or Stripe
+policy was invented or changed; the mapping is still unprovisioned. Results: fresh from-zero stack applied 123/123 migrations in order
+(`…120000` guard then `…130000` settlement); upgrade verifiers for settlement and voice-columns PASS; integration 232/232
+(settlement 33, commercial billing, commercial usage, shops voice and protected columns) on `gradia-isolated-tests`; unit 180 files, 2,701
+passed / 4 skipped plus the same 1 `jsdom` environment error as before; `tsc --noEmit` and focused eslint clean; `next build --webpack` passes.
+Full 69+-file integration suite NOT run. Not merged, no deploy, no Stripe call.
+
+[AI: claude-code] [DATE: 2026-11-16] [AREA: docs] [STATUS: done]
+Commercial Billing PR D (#147): recorded founder decisions received 2026-11-16 Pacific, documentation only. (1) Outcome meters use billed
+quantity; voice, SMS and seat proration use settled charge cents (value basis approved as shipped). (2) Settlement periods are the exact
+Stripe subscription periods beginning at first agent activation, not calendar months. (3) A settled period is never rewritten; late evidence
+becomes a signed append-only adjustment on the next invoice, with human review for credits or refunds. Updated
+`docs/architecture/COMMERCIAL_SETTLEMENT.md` (new "Founder decisions" section; proposal wording, limitation 2 and provisioning items revised),
+`docs/handoffs/COMMERCIAL_BILLING_PR_D_RESUME.md` and the PR body. PR D remains fail-closed/unprovisioned; its UTC 28-31-day window is a
+placeholder NOT authorized for sandbox settlement until PR E/F binds and validates the exact Stripe subscription period; adjustment
+implementation is follow-on and was not started. No code, pricing, meter, Stripe call, shared/production data, deploy or merge.
