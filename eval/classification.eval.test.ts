@@ -30,7 +30,10 @@ type EmailCase = {
  */
 describe.skipIf(!LIVE)("SMS classification golden [live]", () => {
   it.each(smsCases as SmsCase[])("$name", async (c) => {
-    const out = await classifySms({ from: c.from, body: c.body })
+    const res = await classifySms({ body: c.body })
+    expect(res.status, `${c.name} → held by the provider boundary`).toBe("ok")
+    if (res.status !== "ok") return
+    const out = res.value
     expect(out.is_lead, `${c.name} → is_lead`).toBe(c.expect.is_lead)
     for (const [field, spec] of Object.entries(c.expect)) {
       if (field === "is_lead") continue
@@ -45,11 +48,14 @@ describe.skipIf(!LIVE)("SMS classification golden [live]", () => {
 
 describe.skipIf(!LIVE)("Email classification golden [live]", () => {
   it.each(emailCases as EmailCase[])("$name", async (c) => {
-    const out = await classifyEmail({
-      from: c.from,
+    const res = await classifyEmail({
+      displayName: c.from,
       subject: c.subject,
       body: c.body,
     })
+    expect(res.status, `${c.name} → held by the provider boundary`).toBe("ok")
+    if (res.status !== "ok") return
+    const out = res.value
     expect(out.is_lead, `${c.name} → is_lead`).toBe(c.expect.is_lead)
     for (const [field, spec] of Object.entries(c.expect)) {
       if (field === "is_lead") continue

@@ -40,7 +40,11 @@ import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { findOrCreateCustomer, normalizePhone } from "@/lib/customers"
+import {
+  findCustomerByChannel,
+  findOrCreateCustomer,
+  normalizePhone,
+} from "@/lib/customers"
 import {
   formatKnowledgeForPrompt,
   searchShopKnowledge,
@@ -58,6 +62,14 @@ import {
   failProviderEvent,
   type ProviderEventClaim,
 } from "@/lib/provider-events"
+import {
+  normalizeForProposal,
+  preflightInbound,
+  prepareForModel,
+  recordBoundaryHold,
+  safeErrorName,
+  type HoldReason,
+} from "@/lib/provider-boundary"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { classifySms, type SmsClassification } from "@/lib/sms-classifier"
 import { draftSmsReply } from "@/lib/sms-drafter"
@@ -207,7 +219,7 @@ export async function POST(request: Request) {
   try {
     await handleMessage(supabase, shop, sms, claim)
   } catch (err) {
-    console.error("[twilio sms] handle failed:", err)
+    console.error("[twilio sms] handle failed:", safeErrorName(err))
     try {
       await failProviderEvent(supabase, "twilio", messageSid, err)
     } catch (markErr) {
@@ -254,10 +266,25 @@ async function handleMessage(
 
   const fromPhone = normalizePhone(sms.from) ?? sms.from
 
-  const customerResult = await findOrCreateCustomer(supabase, shop.id, {
-    phone: fromPhone,
-  })
-  const customerId = customerResult.ok ? customerResult.customer.id : null
+  // Provider boundary: deterministic preflight on the untrusted body, before any
+  // CRM write or model call. A hold keeps the raw evidence (intake envelope +
+  // interaction below) and stops there. STOP/START keyword handling is
+  // compliance, not content: it still runs for a held message.
+  const gate = preflightInbound({ channel: "sms", body: sms.body })
+  const held = gate.verdict === "hold"
+  const isKeyword = looksOptedOut(sms.body) || looksOptedIn(sms.body)
+
+  let customerId: string | null
+  if (held && !isKeyword) {
+    // Read-only: a suspicious message never creates a customer record.
+    const existing = await findCustomerByChannel(supabase, shop.id, { phone: fromPhone })
+    customerId = existing?.id ?? null
+  } else {
+    const customerResult = await findOrCreateCustomer(supabase, shop.id, {
+      phone: fromPhone,
+    })
+    customerId = customerResult.ok ? customerResult.customer.id : null
+  }
 
   // Retry-after-failure reprocesses the whole event (ADR-001), but the
   // first attempt may already have written the interaction row before it
@@ -320,6 +347,7 @@ async function handleMessage(
   if (
     FEATURES.noShowLadder &&
     customerId &&
+    !held &&
     !looksOptedOut(sms.body) &&
     looksLikeConfirm(sms.body)
   ) {
@@ -342,6 +370,12 @@ async function handleMessage(
     }
   }
 
+  if (gate.verdict === "hold") {
+    // No model call, no metering, no lead/draft proposal, no CRM write.
+    await holdOrThrow(supabase, shop.id, customerId, sms.messageSid, "classify", gate.reasons)
+    return
+  }
+
   // Inbound classification: rate-limited (spam ceiling) AND metered as
   // `inbound_classify` — wholesale cost in the ledger, retail 0 / credits 0
   // (shops aren't charged for receiving messages; 2026-07-13 audit fixed
@@ -355,22 +389,26 @@ async function handleMessage(
     return
   }
 
-  let classification: SmsClassification | null = null
-  let classifyErr: unknown = null
+  // The boundary reports provider/preflight/output problems as a typed hold and
+  // never throws. A throw here is an unexpected crash: meter, then fail the
+  // claim so the provider's retry reprocesses (unchanged P0-006 semantics).
+  let result: Awaited<ReturnType<typeof classifySms>> | null = null
+  let unexpectedErr: unknown = null
   try {
-    classification = await classifySms({ from: fromPhone, body: sms.body })
+    result = await classifySms({ body: sms.body })
   } catch (err) {
-    classifyErr = err
+    unexpectedErr = err
   }
 
-  // Meter the LLM work regardless of outcome — the cost was incurred.
+  // Meter the LLM work whenever a model was actually invoked, regardless of
+  // outcome — the cost was incurred. A preflight hold never reaches here.
   // Replay-safe: (shop_id, kind, vendor_ref) carries a DB unique, so a
   // failure-retry re-metering the same MessageSid is a clean duplicate
   // (idempotent success). This write is REQUIRED before any downstream
   // staging: a real DB failure here must fail the claim so the retry can
   // land the ledger row — completing with the row permanently missing is
   // exactly the silent-loss D-024 forbids.
-  {
+  if (!result || result.invoked) {
     const pricing = await getPricing(supabase)
     const priced = priceUsage(pricing, "inbound_classify", 1)
     const metered = await recordUsage(supabase, shop.id, "inbound_classify", {
@@ -387,14 +425,18 @@ async function handleMessage(
     }
   }
 
-  if (classifyErr) {
-    // Classifier outage: fail the claim (after metering) so the provider's
-    // retry reprocesses once the classifier is back — never a silent
-    // captured-but-unclassified success (P0-006 manual acceptance step 4).
-    throw classifyErr
+  if (unexpectedErr || !result) throw unexpectedErr ?? new Error("[twilio sms] classifier returned nothing")
+
+  if (result.status === "held") {
+    // Provider outage, timeout, malformed or unsafe output: a truthful hold with
+    // the evidence already stored — never a silent "not a lead". The marker
+    // write is required; if it fails the claim fails and Twilio's retry runs.
+    await holdOrThrow(supabase, shop.id, customerId, sms.messageSid, "classify", result.reasons)
+    return
   }
 
-  if (!classification || !classification.is_lead) return
+  const classification: SmsClassification = result.value
+  if (!classification.is_lead) return
 
   await proposeLead(supabase, shop, sms, fromPhone, customerId, classification)
   // Best-effort auto-draft. A drafter failure must not block
@@ -409,10 +451,29 @@ async function handleMessage(
       classification
     )
   } catch (err) {
-    console.warn("[twilio sms] auto-draft failed:", err)
+    console.warn("[twilio sms] auto-draft failed:", safeErrorName(err))
   }
   revalidatePath("/approvals")
   revalidatePath("/dashboard")
+}
+
+async function holdOrThrow(
+  supabase: SupabaseClient,
+  shopId: string,
+  customerId: string | null,
+  messageSid: string,
+  stage: "classify" | "draft",
+  reasons: readonly HoldReason[]
+): Promise<void> {
+  const res = await recordBoundaryHold(supabase, {
+    shopId,
+    customerId,
+    channel: "sms",
+    stage,
+    sourceRef: messageSid,
+    reasons,
+  })
+  if (!res.ok) throw new Error("[twilio sms] hold marker write failed — failing event for retry")
 }
 
 async function proposeDraftReply(
@@ -423,13 +484,18 @@ async function proposeDraftReply(
   customerId: string | null,
   classification: SmsClassification
 ): Promise<void> {
+  // A sender who opted out never gets an automatic draft (the send gate would
+  // refuse it anyway; do not even stage one).
+  if (looksOptedOut(sms.body)) return
+
   // Ground the draft in any shop knowledge that overlaps with the
   // inquiry. Best-effort — RAG failures fall through to a generic
-  // draft instead of blocking the auto-reply.
+  // draft instead of blocking the auto-reply. The retrieval query carries a
+  // redacted, bounded excerpt, never the raw message.
   const knowledgeQuery = [
     classification.summary,
     classification.service,
-    sms.body,
+    prepareForModel(sms.body, { maxLength: 300, singleLine: true }),
   ]
     .filter((s): s is string => Boolean(s?.trim()))
     .join(" ")
@@ -440,16 +506,20 @@ async function proposeDraftReply(
     : []
   const knowledge = formatKnowledgeForPrompt(matches)
 
-  const draft = await draftSmsReply({
+  const drafted = await draftSmsReply({
     shopName: shop.name,
-    from: fromPhone,
     body: sms.body,
     summary: classification.summary,
     service: classification.service,
     vehicle: classification.vehicle,
     knowledge,
   })
-  if (!draft) return
+  if (drafted.status === "held") {
+    // No draft is staged. The lead card (clean message) is already visible.
+    await holdOrThrow(supabase, shop.id, customerId, sms.messageSid, "draft", drafted.reasons)
+    return
+  }
+  const draft = drafted.value
 
   const customerName = classification.customer_name?.trim() || null
   const reason = classification.service?.trim()
@@ -497,7 +567,7 @@ async function proposeLead(
   const vehicle = classification.vehicle?.trim() || null
   const service = classification.service?.trim() || null
   const summary = classification.summary?.trim() || null
-  const bodyPreview = sms.body.trim().slice(0, 280)
+  const bodyPreview = normalizeForProposal(sms.body, 280, { singleLine: true })
 
   const pinNotesParts = [
     summary ? summary : null,
