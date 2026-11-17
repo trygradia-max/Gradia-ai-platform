@@ -27,7 +27,9 @@ No code, migration, provider, Stripe, deploy, shared-data or production change. 
   - Scale 1999: 1300, 900, 2000, 3 numbers, 20 seats, 15 agents → 83.3 / 78.9 / 65.9
   - (target / minimum-planning / stress contribution %)
   - Voice retail floor cost/0.30 (≈ $0.46 at $0.1374); SMS cost/0.30 (≈ 3.33x).
-- [ ] Write the proposal doc, append work log, commit, push, `gh pr create` (non-draft).
+- [x] Proposal doc written, work log appended, pushed.
+- [x] PR #149 opened (non-draft): https://github.com/trygradia-max/Gradia-ai-platform/pull/149. **Not merged.**
+- Remaining: founder review only. Re-confirm vendor prices on live pages before external use.
 
 ## Resume steps
 
