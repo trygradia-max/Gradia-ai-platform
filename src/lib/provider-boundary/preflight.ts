@@ -53,8 +53,9 @@ const RULES: Rule[] = [
     code: "override_role",
     patterns: [
       /\b(ignore|disregard|forget|override|bypass|discard|drop|skip)\b[^.\n]{0,40}\b(previous|prior|above|earlier|preceding|all|any|your|the|these|those|every)\b[^.\n]{0,30}\b(instructions?|prompts?|rules?|guidelines?|polic(?:y|ies)|directives?|constraints?|guardrails?|programming|training)\b/,
-      /\b(you are now|you will now|from now on,? you|new instructions?:|updated instructions?:|act as|pretend (?:to be|you are|that you)|role-?play as|simulate being|developer mode|debug mode|dan mode|jailbreak|do anything now)\b/,
+      /\b(you are now|you will now|from now on,? you|act as|pretend (?:to be|you are|that you)|role-?play as|simulate being|developer mode|debug mode|dan mode|jailbreak|do anything now)\b/,
       /\b(system|developer|assistant|admin(?:istrator)?)\s*(?:prompt|message|instruction|override|role)\b/,
+      /\b(?:new|updated|revised|override) (?:instructions?|rules?|directives?)\s*:/,
       /(?:^|\n|\s)(?:system|assistant|developer)\s*:\s*\S/,
       /<\|?\/?(?:system|assistant|user|im_start|im_end|endoftext)\|?>|\[\/?inst\]|<<\/?sys>>|###\s*(?:instruction|system)\b/,
     ],

@@ -87,7 +87,9 @@ export function normalizeForProposal(
   if (typeof text !== "string") return ""
   let t = stripInvisible(text.normalize("NFKC"))
   t = t.replace(/\r\n?/g, "\n")
-  t = options.singleLine ? t.replace(/\s+/g, " ") : t.replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n")
+  t = options.singleLine
+    ? t.replace(/\s+/g, " ")
+    : t.replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n")
   t = t.trim()
   if (t.length > maxLength) t = t.slice(0, maxLength).trimEnd()
   return t
