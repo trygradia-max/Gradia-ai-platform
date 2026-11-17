@@ -33,8 +33,8 @@ vi.mock("@/lib/embeddings", () => ({
   embedText: async () => { throw new Error("embeddings disabled in integration test") },
   embedTexts: async () => { throw new Error("embeddings disabled in integration test") },
 }))
-vi.mock("@/lib/sms-classifier", () => ({ classifySms: vi.fn(async () => ({ is_lead: false })) }))
-vi.mock("@/lib/sms-drafter", async original => ({ ...await original<typeof import("@/lib/sms-drafter")>(), draftSmsReply: vi.fn(async () => null) }))
+vi.mock("@/lib/sms-classifier", () => ({ classifySms: vi.fn(async () => ({ status: "ok" as const, invoked: true as const, durationMs: 1, value: { is_lead: false, customer_name: "", vehicle: "", service: "", summary: "" } })) }))
+vi.mock("@/lib/sms-drafter", async original => ({ ...await original<typeof import("@/lib/sms-drafter")>(), draftSmsReply: vi.fn(async () => ({ status: "held" as const, reason: "provider_failure" as const, reasons: ["provider_failure" as const], invoked: true, durationMs: 1 })) }))
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => ({ allowed: true })) }))
 vi.mock("@/lib/credits", async original => ({ ...await original<typeof import("@/lib/credits")>(), recordUsage: vi.fn() }))
 vi.mock("@/lib/pricing", async original => ({ ...await original<typeof import("@/lib/pricing")>(), getPricing: vi.fn(), priceUsage: () => ({ credits: 0, wholesale_cost: 0, retail_cost: 0 }) }))
