@@ -1,54 +1,85 @@
 # Commercial Billing PR E1 — resume handoff
 
-_Created 2026-11-16. Keep current at every milestone._
+_Updated 2026-11-16. Keep current at every milestone._
 
 ## Scope (PR E1)
 
 Signed PLATFORM Stripe webhook reconciliation, subscription lifecycle evidence, safe lapse enforcement, owner-only
 test-mode Customer Portal handoff, exact-subscription-period settlement binding, and the append-only signed-adjustment
 contract. Fake/local Stripe only. No live Stripe, Dashboard mutation, shared Supabase, Vercel, production secrets/data,
-deploy, pricing/package change or merge.
+deploy, pricing/package change or merge. Full design: `docs/architecture/COMMERCIAL_RECONCILIATION.md`.
 
 ## Base / branch
 
 - Worktree: `/Users/harryhatch/Gradia/worktrees/claude-commercial-billing-reconciliation`
-- Branch: `claude/commercial-billing-reconciliation`
-- Base: `origin/main` @ `a56a150` (merge of PR #147 settlement).
+- Branch: `claude/commercial-billing-reconciliation` (pushed to `origin`)
+- Started from `origin/main` @ `a56a150` (merge of PR #147 settlement). Rebase onto the latest `origin/main` before opening the PR.
+- `node_modules` is a symlink to `/Users/harryhatch/Gradia/platform/node_modules` (untracked; never `git add -A`, add explicit paths).
 
 ## Status
 
-- [ ] Reading phase (AGENTS.md, AI_WORK_LOG, five governing docs, catalog, PR A/B/C/D docs, Next.js docs)
-- [ ] Design recorded in `docs/architecture/COMMERCIAL_RECONCILIATION.md`
-- [ ] Migration
-- [ ] Libraries + route
-- [ ] Tests (unit + integration)
-- [ ] Migration/grant/tenant/upgrade verifier
-- [ ] AI_WORK_LOG entry
-- [ ] Rebase on latest origin/main, full validation
-- [ ] PR opened (non-draft)
+- [x] Reading phase (AGENTS.md, AI_WORK_LOG, catalog, PR A/B/C/D architecture + handoffs, Next.js Route Handler docs). The five governing
+      documents were read for the billing-relevant sections (owner controls billing; approval-first) via targeted search, not every line.
+- [x] Design: `docs/architecture/COMMERCIAL_RECONCILIATION.md`
+- [x] Migration `supabase/migrations/20261116140000_commercial_reconciliation.sql` (applied to the local stack)
+- [x] Libraries + route (`commercial-webhook*.ts`, `commercial-execution-gate.ts`, portal, settlement rules, agent-runtime wiring)
+- [x] Tests: unit `eval/commercial-webhook.test.ts` (22), integration `eval/integration/commercial-reconciliation.int.test.ts` (48);
+      PR C (70) and PR D (33) integration fixtures updated to seed a verified period
+- [x] Upgrade verifier `scripts/verify-commercial-reconciliation-migration.py` (PASS; fails when mutated)
+- [x] AI_WORK_LOG entry
+- [ ] Full validation after rebase (see "Remaining" below)
+- [ ] PR opened (non-draft), do not merge
 
-## Decisions
+## Decisions (recorded; do not re-litigate)
 
-1. Migration `20261116140000_commercial_reconciliation.sql` (the local stack already holds an unrelated `20261116120000_provider_boundary_hold_unique`; avoid that version).
-2. One transactional DB ingest function (`commercial_webhook_ingest`): the durable receipt is the replay claim (unique event id + payload digest, advisory lock). Tenant is resolved ONLY from
-   bound customer / known subscription / checkout attempt / catalog+plan+price. It calls `commercial_subscription_apply_evidence` (extended in place with period params; still the single truth).
-3. Ordering: older events never advance; same-second ties resolved by severity rank; canceled is terminal per subscription; integrity reconciliation reasons are sticky until `reviewed_reconciliation`.
-4. Periods: new append-only `commercial_subscription_periods` (verified Stripe periods, chain back to subscription start). Settlement begin/evidence now require an exact verified period + complete chain; the UTC-day/28-31-day placeholder is removed for settlement.
-   OPEN (fail closed, documented, NOT invented): seat proration refuses windows that are not UTC-midnight aligned (PR B), so unaligned Stripe periods cannot settle until the founder decides partial-day seat policy.
-5. Lapse gate: `commercial_execution_gate(shop)`; shops with NO commercial account row are legacy (allowed, explicit). With an account: only `active` + reviewed evidence + period not elapsed allows. Wired at scheduled/run-now agent seams; nothing is deleted or disabled.
-6. Provider facts (payment_failed/succeeded, cancellation(+scheduled), refund, credit_note) are append-only; NO automatic refund/credit/cancel/retry. Adjustments: append-only proposal + one human review decision; no `applied` state exists.
-7. Portal: owner-only, DB authorizes + returns bound customer, `billing_portal/sessions` test mode, URL host-validated, never stored/logged.
+1. Migration version `20261116140000` (the local stack already holds an unrelated `20261116120000_provider_boundary_hold_unique`).
+2. One transactional DB ingest function: durable receipt = replay claim; tenant resolved ONLY from bound customer / known subscription / own
+   Checkout attempt; calls `commercial_subscription_apply_evidence` (extended in place; `p_require_period` is true only on the webhook path so
+   existing reviewed/legacy fixtures keep working).
+3. Ordering: older never advances; same-second severity rank; canceled terminal; duplicate subscription blocks in any arrival order; integrity
+   reasons sticky until `reviewed_reconciliation`.
+4. Periods: append-only `commercial_subscription_periods`; settlement begin/evidence require an exact verified period + complete chain.
+   OPEN founder decision (fails closed): seat proration refuses windows not aligned to UTC midnight, so an unaligned Stripe period verifies but
+   previews `seat_proration_unavailable`.
+5. Lapse gate: no account row = legacy (allowed); account present = only reviewed `active` with the period not elapsed; no grace. Wired at the
+   scheduled tick, run-now and event recipes only (voice/SMS handlers are a documented follow-on).
+6. Provider facts and adjustments never act: no refund/credit/cancel/retry; no `applied` state.
+7. Portal: owner-only via DB authority; URL validated, never stored/logged.
+8. The older per-migration verifiers (`verify-commercial-billing-migration.py`, `verify-commercial-settlement-migration.py`) assert their
+   migration is the latest and are historical (the PR C one already was after PR D). Not changed.
 
 ## Last checks
 
-(none yet)
+- Unit `commercial-webhook` 22/22, `commercial-settlement` 30/30; `tsc --noEmit` clean (except the known missing `@testing-library` types);
+  eslint clean on touched files.
+- Integration on `gradia-isolated-tests` (:56531): reconciliation 48/48, PR C 70/70, PR D 33/33, usage, agent-runtime-binding and
+  agent-definition-revisions suites all green together (232 tests in the 6-file run).
+- Upgrade verifier PASS.
+- Full 69+-file integration run: started in the background (log under the job tmp dir `full-int.log`); result recorded in the PR body.
+
+## Remaining
+
+1. Rebase on the latest `origin/main`; if a newer migration version collides, rename ours to a later unused version and update
+   `scripts/verify-commercial-reconciliation-migration.py` (`NEW`) and the doc/log references.
+2. Re-apply the migration to a clean stack if the version changed; rerun unit (`npm test`), the commercial integration subset, the
+   verifier, `npx tsc --noEmit -p .`, eslint on touched files and `npx next build --webpack` (default Turbopack refuses the symlinked node_modules).
+3. Open a non-draft PR against `main` with the body from the work-log entry; do not merge.
 
 ## Uncommitted paths
 
-- `docs/handoffs/COMMERCIAL_BILLING_PR_E_RESUME.md` (this file)
+None at this checkpoint (everything committed and pushed) except the untracked `tests/supabase/.temp/` stack scratch directory (never add it).
 
 ## Exact resume command
 
 ```
-cd /Users/harryhatch/Gradia/worktrees/claude-commercial-billing-reconciliation && git status -sb && cat docs/handoffs/COMMERCIAL_BILLING_PR_E_RESUME.md
+cd /Users/harryhatch/Gradia/worktrees/claude-commercial-billing-reconciliation && git status -sb && git log --oneline -8 && cat docs/handoffs/COMMERCIAL_BILLING_PR_E_RESUME.md
+```
+
+Test env (disposable stack only):
+
+```
+export SUPABASE_TEST_URL=http://127.0.0.1:56531 GRADIA_DISPOSABLE_TEST=gradia-isolated-tests EVAL_LIVE=0 INTEGRATION=1
+# SUPABASE_TEST_ANON_KEY / SUPABASE_TEST_SERVICE_ROLE_KEY: from `supabase status --workdir tests -o env`
+npx vitest run --fileParallelism=false eval/integration/commercial-reconciliation.int.test.ts
+python3 scripts/verify-commercial-reconciliation-migration.py
 ```
