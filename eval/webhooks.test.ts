@@ -75,12 +75,38 @@ vi.mock("@/lib/rate-limit", () => ({
   checkRateLimit: vi.fn(async () => ({ allowed: true, remaining: 99, resetInSeconds: 60 })),
 }))
 vi.mock("@/lib/sms-classifier", () => ({
-  classifySms: vi.fn(async () => ({ is_lead: false })),
+  classifySms: vi.fn(async () => ({
+    status: "ok" as const,
+    invoked: true as const,
+    durationMs: 1,
+    value: { is_lead: false, customer_name: "", vehicle: "", service: "", summary: "" },
+  })),
 }))
 vi.mock("@/lib/sms-drafter", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sms-drafter")>()),
-  draftSmsReply: vi.fn(async () => null),
+  draftSmsReply: vi.fn(async () => ({
+    status: "held" as const,
+    reason: "provider_failure" as const,
+    reasons: ["provider_failure" as const],
+    invoked: true,
+    durationMs: 1,
+  })),
 }))
+
+/** A boundary `ok` classification result (the route-level mocks return these). */
+const classified = (v: Partial<{ is_lead: boolean; customer_name: string; vehicle: string; service: string; summary: string }>) => ({
+  status: "ok" as const,
+  invoked: true as const,
+  durationMs: 1,
+  value: { is_lead: false, customer_name: "", vehicle: "", service: "", summary: "", ...v },
+})
+const heldByProvider = {
+  status: "held" as const,
+  reason: "provider_failure" as const,
+  reasons: ["provider_failure" as const],
+  invoked: true,
+  durationMs: 1,
+}
 vi.mock("@/lib/lead-intake", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/lead-intake")>()
   return {
@@ -482,11 +508,11 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     completeMock.mockResolvedValue(true)
     failMock.mockResolvedValue(true)
     recordInteractionMock.mockResolvedValue({ ok: true, id: "int-1", embedded: false })
-    classifyMock.mockResolvedValue({ is_lead: false })
+    classifyMock.mockResolvedValue(classified({ is_lead: false }))
     recordUsageMock.mockResolvedValue("written")
     findOrCreateMock.mockResolvedValue({ ok: false, error: "no customer" })
     rateLimitMock.mockResolvedValue({ allowed: true, remaining: 99, resetInSeconds: 60 })
-    draftMock.mockResolvedValue(null)
+    draftMock.mockResolvedValue(heldByProvider)
     intakeMock.mockResolvedValue({
       status: "recorded",
       envelopeId: "env-1",
@@ -544,13 +570,15 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   })
 
   it("valid first delivery: claims before any side effect, processes once, completes, stages one card", async () => {
-    classifyMock.mockResolvedValue({
-      is_lead: true,
-      customer_name: "Dana",
-      service: "ceramic coating",
-      vehicle: null,
-      summary: "wants ceramic",
-    })
+    classifyMock.mockResolvedValue(
+      classified({
+        is_lead: true,
+        customer_name: "Dana",
+        service: "ceramic coating",
+        vehicle: "",
+        summary: "wants ceramic",
+      })
+    )
     const res = await post(makeForm())
     expect(res.status).toBe(200)
     expect(await res.text()).toContain("<Response></Response>")
@@ -644,7 +672,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(completeMock).not.toHaveBeenCalled()
   })
 
-  it("classifier outage: still meters once, fails the claim, 5xx (manual-acceptance step 4 semantics)", async () => {
+  it("unexpected classifier crash (a throw, not a boundary hold): still meters once, fails the claim, 5xx so the provider retries", async () => {
     classifyMock.mockRejectedValue(new Error("anthropic down"))
     const res = await post(makeForm())
     expect(res.status).toBe(500)
@@ -653,8 +681,25 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
     expect(completeMock).not.toHaveBeenCalled()
   })
 
+  it("provider outage/timeout/malformed output is a truthful HOLD: metered, one content-free marker, no lead card, no draft, claim completes", async () => {
+    classifyMock.mockResolvedValue(heldByProvider)
+    const res = await post(makeForm())
+    expect(res.status).toBe(200)
+    expect(recordUsageMock).toHaveBeenCalledTimes(1)
+    expect(completeMock).toHaveBeenCalledTimes(1)
+    expect(failMock).not.toHaveBeenCalled()
+    expect(draftMock).not.toHaveBeenCalled()
+    expect(fakeDb.calls.filter((c) => c.table === "pending_actions")).toHaveLength(0)
+    const inserts = fakeDb.calls.filter((c) => c.table === "interactions" && c.method === "insert")
+    expect(inserts).toHaveLength(1)
+    const row = inserts[0].args[0] as { role: string; content: string; metadata: Record<string, unknown> }
+    expect(row.role).toBe("system")
+    expect(row.metadata).toMatchObject({ source: "provider_boundary", kind: "hold", stage: "classify", reasons: ["provider_failure"] })
+    expect(JSON.stringify(row)).not.toContain("ceramic")
+  })
+
   it("a real metering write failure fails the claim BEFORE any staging — retryable 5xx, no card", async () => {
-    classifyMock.mockResolvedValue({ is_lead: true, summary: "would stage" })
+    classifyMock.mockResolvedValue(classified({ is_lead: true, summary: "would stage" }))
     recordUsageMock.mockResolvedValue("failed")
     const res = await post(makeForm())
     expect(res.status).toBe(500)
@@ -667,7 +712,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   })
 
   it("a duplicate metering write is idempotent success — processing continues and completes", async () => {
-    classifyMock.mockResolvedValue({ is_lead: true, summary: "stages fine" })
+    classifyMock.mockResolvedValue(classified({ is_lead: true, summary: "stages fine" }))
     recordUsageMock.mockResolvedValue("duplicate")
     const res = await post(makeForm())
     expect(res.status).toBe(200)
@@ -736,7 +781,7 @@ describe("Twilio inbound SMS route — claim after verify + replay suppression (
   })
 
   it("non-lead message completes the claim without staging any card", async () => {
-    classifyMock.mockResolvedValue({ is_lead: false })
+    classifyMock.mockResolvedValue(classified({ is_lead: false }))
     const res = await post(makeForm())
     expect(res.status).toBe(200)
     expect(completeMock).toHaveBeenCalledTimes(1)

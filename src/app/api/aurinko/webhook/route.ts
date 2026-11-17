@@ -39,7 +39,7 @@ import {
   type AurinkoMessage,
 } from "@/lib/aurinko"
 import { recordUsage } from "@/lib/credits"
-import { findOrCreateCustomer } from "@/lib/customers"
+import { findCustomerByChannel, findOrCreateCustomer } from "@/lib/customers"
 import { classifyEmail, type EmailClassification } from "@/lib/email-classifier"
 import { draftEmailReply } from "@/lib/email-drafter"
 import { getPricing, priceUsage } from "@/lib/pricing"
@@ -48,6 +48,14 @@ import {
   searchShopKnowledge,
 } from "@/lib/knowledge"
 import { recordInteraction } from "@/lib/memory"
+import {
+  normalizeForProposal,
+  preflightInbound,
+  prepareForModel,
+  recordBoundaryHold,
+  safeErrorName,
+  type HoldReason,
+} from "@/lib/provider-boundary"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { createServiceClient } from "@/lib/supabase/service"
 import type { ShopRow } from "@/lib/types/database"
@@ -146,7 +154,7 @@ export async function POST(request: Request) {
       const handled = await handleMessage(supabase, shop, accessToken, payload.id)
       if (handled) proposed += 1
     } catch (err) {
-      console.error("[aurinko webhook] message handle failed:", err)
+      console.error("[aurinko webhook] message handle failed:", safeErrorName(err))
     }
   }
 
@@ -174,15 +182,33 @@ async function handleMessage(
     return false
   }
 
+  // Provider boundary: deterministic preflight on the untrusted subject, body
+  // and sender display name, before any CRM write or model call. A hold keeps
+  // the raw evidence (the interaction below) and stops there.
+  const gate = preflightInbound({
+    channel: "email",
+    body: message.bodyPlain ?? "",
+    subject: message.subject ?? "",
+    displayName: message.fromName ?? "",
+  })
+  const held = gate.verdict === "hold"
+
   // Best-effort customer resolution. Emails without a usable From address
-  // still get logged as an interaction but skipped for lead capture.
+  // still get logged as an interaction but skipped for lead capture. A held
+  // message never creates a customer (read-only lookup); a clean one stores a
+  // normalized display name, not the raw sender-controlled string.
   let customerId: string | null = null
   if (senderEmail) {
-    const result = await findOrCreateCustomer(supabase, shop.id, {
-      email: senderEmail,
-      name: message.fromName,
-    })
-    if (result.ok) customerId = result.customer.id
+    if (held) {
+      const existing = await findCustomerByChannel(supabase, shop.id, { email: senderEmail })
+      customerId = existing?.id ?? null
+    } else {
+      const result = await findOrCreateCustomer(supabase, shop.id, {
+        email: senderEmail,
+        name: normalizeForProposal(message.fromName, 120, { singleLine: true }) || null,
+      })
+      if (result.ok) customerId = result.customer.id
+    }
   }
 
   const inbound = await recordInteraction(supabase, {
@@ -207,6 +233,12 @@ async function handleMessage(
   }
   if (!senderEmail) return false
 
+  if (gate.verdict === "hold") {
+    // No model call, no metering, no lead/draft proposal, no CRM write.
+    await holdOrThrow(supabase, shop.id, customerId, message.id, "classify", gate.reasons)
+    return false
+  }
+
   // Inbound classification: rate-limited (inbox-flood ceiling) AND metered
   // as `inbound_classify` — wholesale cost in the ledger, retail 0 /
   // credits 0 (shops aren't charged for receiving mail; 2026-07-13 audit
@@ -220,22 +252,21 @@ async function handleMessage(
     return false
   }
 
-  let classification: EmailClassification | null = null
+  // The boundary never throws; an unexpected crash is also a hold, never an
+  // inquiry (the old catch-and-treat-as-inquiry path is gone).
+  let result: Awaited<ReturnType<typeof classifyEmail>>
   try {
-    classification = await classifyEmail({
-      from: composeFrom(message),
+    result = await classifyEmail({
+      displayName: message.fromName ?? "",
       subject: message.subject ?? "",
       body: message.bodyPlain ?? "",
     })
-  } catch (err) {
-    console.warn(
-      "[aurinko webhook] classification failed, treating as inquiry:",
-      err
-    )
+  } catch {
+    result = { status: "held", reason: "provider_failure", reasons: ["provider_failure"], invoked: true, durationMs: 0 }
   }
 
-  // Meter the LLM work regardless of outcome — the cost was incurred.
-  {
+  // Meter the LLM work whenever a model was actually invoked — the cost was incurred.
+  if (result.invoked) {
     const pricing = await getPricing(supabase)
     const priced = priceUsage(pricing, "inbound_classify", 1)
     await recordUsage(supabase, shop.id, "inbound_classify", {
@@ -247,7 +278,16 @@ async function handleMessage(
     })
   }
 
-  if (classification && !classification.is_lead) return false
+  if (result.status === "held") {
+    // Provider outage, timeout, malformed or unsafe output. This used to fall
+    // through as "treat as an inquiry" (propose + draft): that is the fail-open
+    // path the boundary closes. Truthful hold; evidence already stored.
+    await holdOrThrow(supabase, shop.id, customerId, message.id, "classify", result.reasons)
+    return false
+  }
+
+  const classification: EmailClassification = result.value
+  if (!classification.is_lead) return false
 
   const proposed = await proposeLead(
     supabase,
@@ -269,7 +309,7 @@ async function handleMessage(
       classification
     )
   } catch (err) {
-    console.warn("[aurinko webhook] auto-draft email reply failed:", err)
+    console.warn("[aurinko webhook] auto-draft email reply failed:", safeErrorName(err))
   }
   return proposed
 }
@@ -280,15 +320,16 @@ async function proposeDraftEmailReply(
   message: AurinkoMessage,
   senderEmail: string,
   customerId: string | null,
-  classification: EmailClassification | null
+  classification: EmailClassification
 ): Promise<void> {
   // Best-effort RAG against shop knowledge so drafted replies cite
   // real policies. Empty / failed search degrades to generic drafting.
+  // The retrieval query carries redacted, bounded excerpts, never the raw message.
   const knowledgeQuery = [
-    classification?.summary,
-    classification?.service,
-    message.subject,
-    message.bodyPlain,
+    classification.summary,
+    classification.service,
+    prepareForModel(message.subject, { maxLength: 120, singleLine: true }),
+    prepareForModel(message.bodyPlain, { maxLength: 300, singleLine: true, stripQuoted: true }),
   ]
     .filter((s): s is string => Boolean(s?.trim()))
     .join(" ")
@@ -299,20 +340,28 @@ async function proposeDraftEmailReply(
     : []
   const knowledge = formatKnowledgeForPrompt(matches)
 
-  const draft = await draftEmailReply({
+  const drafted = await draftEmailReply({
     shopName: shop.name,
-    from: senderEmail,
+    displayName: message.fromName ?? "",
     subject: message.subject ?? "",
     body: message.bodyPlain ?? "",
-    summary: classification?.summary ?? "",
-    service: classification?.service ?? "",
-    vehicle: classification?.vehicle ?? "",
+    summary: classification.summary,
+    service: classification.service,
+    vehicle: classification.vehicle,
     knowledge,
   })
-  if (!draft) return
+  if (drafted.status === "held") {
+    // No draft is staged. The lead card (clean message) is already visible.
+    await holdOrThrow(supabase, shop.id, customerId, message.id, "draft", drafted.reasons)
+    return
+  }
+  const draft = drafted.value
 
-  const customerName = classification?.customer_name?.trim() || message.fromName || null
-  const reason = classification?.service?.trim()
+  const customerName =
+    classification.customer_name.trim() ||
+    normalizeForProposal(message.fromName, 120, { singleLine: true }) ||
+    null
+  const reason = classification.service.trim()
     ? `Reply to inquiry about ${classification.service.trim()}`
     : "Reply to new email inquiry"
 
@@ -352,11 +401,23 @@ function interactionContent(m: AurinkoMessage): string {
   return body ? `Subject: ${subject}\n\n${body}` : `Subject: ${subject}`
 }
 
-function composeFrom(m: AurinkoMessage): string {
-  const name = m.fromName?.trim()
-  const email = m.fromEmail?.trim()
-  if (name && email) return `${name} <${email}>`
-  return email || name || "(unknown sender)"
+async function holdOrThrow(
+  supabase: SupabaseClient,
+  shopId: string,
+  customerId: string | null,
+  messageId: string,
+  stage: "classify" | "draft",
+  reasons: readonly HoldReason[]
+): Promise<void> {
+  const res = await recordBoundaryHold(supabase, {
+    shopId,
+    customerId,
+    channel: "email",
+    stage,
+    sourceRef: messageId,
+    reasons,
+  })
+  if (!res.ok) throw new Error("[aurinko webhook] hold marker write failed")
 }
 
 async function proposeLead(
@@ -365,23 +426,24 @@ async function proposeLead(
   message: AurinkoMessage,
   senderEmail: string,
   customerId: string | null,
-  classification: EmailClassification | null
+  classification: EmailClassification
 ): Promise<boolean> {
   const customerName =
-    classification?.customer_name?.trim() ||
-    message.fromName?.trim() ||
+    classification.customer_name.trim() ||
+    normalizeForProposal(message.fromName, 120, { singleLine: true }) ||
     senderEmail
 
-  const phone = classification?.phone?.trim() ?? ""
-  const vehicle = classification?.vehicle?.trim() || null
-  const service = classification?.service?.trim() || null
-  const summary = classification?.summary?.trim() || null
+  const phone = classification.phone.trim()
+  const vehicle = classification.vehicle.trim() || null
+  const service = classification.service.trim() || null
+  const summary = classification.summary.trim() || null
+  const subject = normalizeForProposal(message.subject, 200, { singleLine: true })
 
   const pinNotesParts = [
     summary ? summary : null,
     service ? `Requested: ${service}` : null,
     `From: ${senderEmail}`,
-    message.subject ? `Subject: ${message.subject}` : null,
+    subject ? `Subject: ${subject}` : null,
   ].filter((s): s is string => Boolean(s))
   const pinNotes = pinNotesParts.join(" — ") || null
 
