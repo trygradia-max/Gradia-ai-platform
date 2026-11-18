@@ -3060,3 +3060,21 @@ failing closed: tax, grace length, automatic dunning timing, refund eligibility/
 not aligned to UTC midnight (PR B refuses it; founder decision needed), meter provisioning/event names, the API-version check for
 meter events, resubscription, voice/SMS channel gating, polling reconciliation (PR F), any application of an approved adjustment. No
 live Stripe, Dashboard mutation, shared Supabase, Vercel, production secret or data, deploy, pricing/package change or merge.
+
+[AI: claude-code] [DATE: 2026-11-17] [AREA: platform] [STATUS: done]
+Commercial Billing PR F1 (`claude/commercial-billing-sandbox-acceptance`, sandbox/test mode only): Founder Pilot sandbox acceptance slice.
+Added a deterministic Stripe sandbox contract + read-only verifier (exact Product, base Price lookup key, six meters, six metered Prices, one
+reviewed meter API version; refuses absent/duplicate/live/wrong currency/amount/interval/aggregation/API version; no object ids or secrets) and
+`npm run billing:sandbox-acceptance` (offline by default, `--network` = GET only; READY or a finite blocker list; manual Dashboard steps listed,
+never claimed done). Migration `20261117120000_commercial_sandbox_acceptance.sql` (adds objects only): dispatch/reconcile worklists, append-only
+`commercial_delivery_reconciliations` (provider-reported evidence for `unknown` meter deliveries; never resends) and an outbox
+`commercial_adjustment_applications` that carries ONLY human-approved signed adjustments (either sign) to Stripe as one pending invoice item each.
+`settleCommercialPeriod` gained optional `deferDelivery`; meter sends use the reviewed API version. Pure invoice reconstruction proves meter
+values x metered prices + base equal the settled total and never exceed base + seats + cap. Tests: unit 50 new, integration 23 new (operations
++ lifecycle acceptance against a faithful local Stripe fake with test clock, signed webhooks, failure/recovery/cancel, cap, finalization race),
+upgrade verifier PASS (fails when mutated). Docs: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md`, `docs/qa/COMMERCIAL_SANDBOX_ACCEPTANCE_RUNBOOK.md`,
+handoff `docs/handoffs/COMMERCIAL_BILLING_PR_F_RESUME.md`. Deliberately NOT done: metered Prices on the subscription and the webhook item rule
+(F2), a real Stripe test-clock run, any schedule for the workers, resend of unknown deliveries, polling reconciliation, seat partial-day
+proration, grace/dunning, tax, refund eligibility, resubscription, voice/SMS gating, reviewer role/UI; meter names/API version are a proposal
+awaiting founder confirmation and the settlement mapping stays unprovisioned. No live Stripe, Dashboard mutation, shared Supabase, Vercel,
+production secret or data, deploy, public pricing UI or merge.
