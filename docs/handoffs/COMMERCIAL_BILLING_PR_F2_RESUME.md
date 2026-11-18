@@ -56,7 +56,7 @@ Do **not** merge the PR.
 - [x] M2 Checkout create/retrieve with exact set (metered items carry no quantity; retrieval expands `line_items`; reviewed API version) + fingerprint includes item-set digest
 - [x] M3 webhook normalization (exact set, any order; item periods must agree) + mapping promoted to provisioned (`SETTLEMENT_METER_EVENT_NAMES` single source) + unit/int fixtures updated; int suites billing/reconciliation/settlement/acceptance/operations green (176)
 - [x] M4 migration `20261118120000_commercial_worker_lease.sql` (applied to the local stack + recorded in schema_migrations), `commercial-billing-worker.ts` (leased, bounded, gated, sandbox-preflight), cron route `/api/cron/commercial-billing` (+ CRON_REGISTRY, vercel.json `*/10`, tenant-scoping allowlist), unit 13 + integration 11 green, `scripts/verify-commercial-worker-lease-migration.py` PASS and fails under a mutation (F1 verifier relaxed from "latest" to "present")
-- [ ] M5 test-clock harness + runbook + tests
+- [x] M5 harness `src/lib/stripe-test-clock-acceptance.ts` (+ `scripts/stripe-test-clock-acceptance.mjs`, `npm run billing:test-clock-acceptance`): opt-in env + confirm flag, CI refused, live refused, allowlisted/owned-object fenced transport, always cleans up, finite evidence; fake `eval/_fake-stripe-test-clock.ts`; tests 25. Real run NOT executed (no credentials). `createPlatformStripeClient` now takes an injectable transport; commercial transport allows DELETE (harness-only, fenced). Runbook still to write (M7).
 - [ ] M6 readiness report
 - [ ] M7 docs, work log, validation, PR
 

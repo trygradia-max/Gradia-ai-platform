@@ -495,7 +495,9 @@ export type CommercialStripeTransportConfig = {
 export async function stripeCommercialRequest<T>(
   config: CommercialStripeTransportConfig,
   input: {
-    method: "GET" | "POST"
+    // DELETE exists ONLY for the opt-in test-clock acceptance harness, which fences it behind an allowlist of
+    // the exact test objects it created (`stripe-test-clock-acceptance.ts`). No other commercial caller uses it.
+    method: "GET" | "POST" | "DELETE"
     path: string
     body?: Record<string, string | number | boolean | undefined | null>
     idempotencyKey?: string

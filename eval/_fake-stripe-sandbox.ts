@@ -106,6 +106,11 @@ export class FakeStripeSandbox {
     throw new StripeError(404, "Unknown fake route", "resource_missing")
   }) as typeof stripeCommercialRequest
 
+  /** When the provider "received" an event (default: the fake wall clock). A test-clock subclass uses the clock's time. */
+  protected receiveTime(_customer: string): number {
+    return this.clock
+  }
+
   private takeFailure(): FakeFailure | undefined {
     return this.failures.shift()
   }
@@ -129,7 +134,7 @@ export class FakeStripeSandbox {
     if (stored) {
       this.duplicateMeterEventAttempts++
     } else {
-      stored = { identifier, eventName: name, customer, value: Number(value), timestamp, receivedAt: this.clock }
+      stored = { identifier, eventName: name, customer, value: Number(value), timestamp, receivedAt: this.receiveTime(customer) }
       this.events.set(identifier, stored)
     }
     if (failure === "timeout_after_record") throw new StripeError(0, "Stripe request timed out", "timeout")

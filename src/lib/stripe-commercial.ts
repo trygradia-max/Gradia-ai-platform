@@ -190,7 +190,11 @@ function unreadable(): StripeError {
 }
 
 /** Builds the real client over the shared Stripe adapter. Network-free until called. */
-export function createPlatformStripeClient(config: CommercialStripeTransportConfig): PlatformStripeClient {
+export function createPlatformStripeClient(
+  config: CommercialStripeTransportConfig,
+  /** Injectable transport (the opt-in test-clock harness passes an allowlisted, live-refusing one). */
+  request: typeof stripeCommercialRequest = stripeCommercialRequest
+): PlatformStripeClient {
   // Tenant / catalog / attempt binding, written under `prefix` (Stripe nests form keys).
   const metadataFor = (shopId: string, attemptId?: string, prefix = "metadata") => {
     const base: Record<string, string> = {
@@ -203,7 +207,7 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
   }
   return {
     async resolveFounderPilotItemSet() {
-      const snapshot = await collectSandboxSnapshot(config)
+      const snapshot = await collectSandboxSnapshot(config, request)
       // Unreachable provider: an ambiguous READ, never "not ready". The caller handles it as unavailable.
       if ("failure" in snapshot) throw new StripeError(0, "Stripe sandbox could not be read", "provider_unreachable")
       const readiness = evaluateSandboxReadiness(snapshot)
@@ -215,7 +219,7 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
     },
 
     async createCustomer({ shopId, idempotencyKey }) {
-      const payload = await stripeCommercialRequest<unknown>(config, {
+      const payload = await request<unknown>(config, {
         method: "POST",
         path: "/customers",
         body: metadataFor(shopId),
@@ -232,7 +236,7 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
     async createCheckoutSession(input) {
       const meta = metadataFor(input.shopId, input.attemptId)
       const subscriptionMeta = metadataFor(input.shopId, input.attemptId, "subscription_data[metadata]")
-      const payload = await stripeCommercialRequest<unknown>(config, {
+      const payload = await request<unknown>(config, {
         method: "POST",
         path: "/checkout/sessions",
         idempotencyKey: input.idempotencyKey,
@@ -262,7 +266,7 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
     },
 
     async retrieveCheckoutSession({ sessionId, binding }) {
-      const payload = await stripeCommercialRequest<unknown>(config, {
+      const payload = await request<unknown>(config, {
         method: "GET",
         path: `/checkout/sessions/${encodeURIComponent(sessionId)}`,
         apiVersion: COMMERCIAL_METER_API_VERSION,
