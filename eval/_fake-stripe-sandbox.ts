@@ -97,7 +97,7 @@ export class FakeStripeSandbox {
       return { object: "list", data: this.prices[key] ?? [], has_more: false } as never
     }
     if (input.method === "GET" && input.path === "/billing/meters") {
-      return { object: "list", data: this.meters.map(({ component: _c, unitCents: _u, ...meter }) => meter), has_more: false } as never
+      return { object: "list", data: this.meters.map((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== "component" && k !== "unitCents"))), has_more: false } as never
     }
     const summary = /^\/billing\/meters\/([^/]+)\/event_summaries$/.exec(input.path)
     if (input.method === "GET" && summary) return this.summaries(decodeURIComponent(summary[1]), body) as never

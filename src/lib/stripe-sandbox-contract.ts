@@ -234,14 +234,26 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
       }
       const meter = active[0]
       let ok = true
-      if (meter.livemode !== false) (add(findings, "meter_live", subject), (ok = false))
-      if (meter.default_aggregation.formula !== spec.aggregation) (add(findings, "meter_aggregation_mismatch", subject), (ok = false))
+      if (meter.livemode !== false) {
+        add(findings, "meter_live", subject)
+        ok = false
+      }
+      if (meter.default_aggregation.formula !== spec.aggregation) {
+        add(findings, "meter_aggregation_mismatch", subject)
+        ok = false
+      }
       if (meter.customer_mapping.type !== "by_id" || meter.customer_mapping.event_payload_key !== spec.customerMappingKey) {
         add(findings, "meter_customer_mapping_mismatch", subject)
         ok = false
       }
-      if (meter.value_settings.event_payload_key !== spec.valueKey) (add(findings, "meter_value_key_mismatch", subject), (ok = false))
-      if (meter.event_time_window !== null) (add(findings, "meter_time_window_mismatch", subject), (ok = false))
+      if (meter.value_settings.event_payload_key !== spec.valueKey) {
+        add(findings, "meter_value_key_mismatch", subject)
+        ok = false
+      }
+      if (meter.event_time_window !== null) {
+        add(findings, "meter_time_window_mismatch", subject)
+        ok = false
+      }
       if (ok) verifiedMeterIds[spec.component] = meter.id
     }
   }

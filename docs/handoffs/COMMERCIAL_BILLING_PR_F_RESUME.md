@@ -54,7 +54,9 @@ Design: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` (written with the c
 - [x] Migration `20261117120000_commercial_sandbox_acceptance.sql` (applied to the local stack + recorded in schema_migrations); services `commercial-billing-operations.ts`, `commercial-adjustment-provider.ts`, reader in `commercial-settlement-provider.ts`
 - [x] Upgrade verifier `scripts/verify-commercial-sandbox-acceptance-migration.py` (PASS; fails under a mutated migration)
 - [x] Tests: unit 43 (contract/verifier/providers/report), integration operations 14 + lifecycle acceptance 9 (all green on the disposable stack; faithful local Stripe fake `eval/_fake-stripe-sandbox.ts`)
-- [ ] REMAINING (usage limit hit here): (1) docs: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` + operator runbook (`docs/qa/`), covering the contract, outboxes, fake, command, limitations; (2) `docs/AI_WORK_LOG.md` tagged entry; (3) full validation: unit run was started (log not reviewed), `npx tsc --noEmit`, eslint on touched files, `next build --webpack`, FULL integration run compared with pristine `origin/main` (known baseline: ~64 failures in 10 messaging/delivery suites per E1 handoff); (4) `git push -u origin claude/commercial-billing-sandbox-acceptance`, open NON-draft PR to main (no production statement, scope, evidence, limits, founder decisions), do NOT merge.
+- [x] Merged `origin/main` (PR #149, docs only) into the branch; docs written (`COMMERCIAL_SANDBOX_ACCEPTANCE.md`, `docs/qa/COMMERCIAL_SANDBOX_ACCEPTANCE_RUNBOOK.md`), `AI_WORK_LOG` entry added; lint warnings cleaned.
+- [x] Validation so far: `tsc` clean (known `@testing-library` types aside), eslint 0 problems on touched files, unit 186 files / 2951 passed / 4 skipped (+1 environmental `jsdom` worker error that also exists on main: the shared `node_modules` symlink lacks jsdom).
+- [ ] IN PROGRESS: `next build --webpack`, FULL integration run (+ pristine `origin/main` comparison of any failing suites), then push + open the non-draft PR (do NOT merge).
 
 ## Observations to carry into the PR text
 

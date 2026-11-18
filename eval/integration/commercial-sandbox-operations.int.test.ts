@@ -32,7 +32,6 @@ import {
   settleableShop,
   sql,
   uniq,
-  type Fixture,
 } from "./_commercial-fixture"
 
 const midnight = Math.floor(Date.now() / 1000 / DAY_S) * DAY_S
@@ -247,7 +246,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial sandbox operations (PR F1
 
     it("evidence tables are append-only for every role including the table owner", async () => {
       const fake = fakeFor()
-      const { f, settlementId } = await settledPending(fake)
+      const { f } = await settledPending(fake)
       fake.failNext("timeout_after_record")
       await dispatchPendingSettlementDeliveries(db, runtimeFor(fake), { limit: 200, shopId: f.shop.shopId })
       await reconcileUnknownDeliveries(db, createMeterEvidenceReader(FAKE_CONFIG, fake.request), { limit: 200, shopId: f.shop.shopId })
