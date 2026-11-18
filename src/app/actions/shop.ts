@@ -112,7 +112,7 @@ export async function saveShop(
     const settings = {
       ...(((current as { settings?: Record<string, unknown> } | null)?.settings) ??
         {}),
-      ...(parsed.data.businessKind ? { business_kind: parsed.data.businessKind, onboarding_step: 2 } : {}),
+      ...(parsed.data.businessKind ? { business_kind: parsed.data.businessKind, onboarding_step: 4 } : {}),
     }
     const { data, error } = await supabase
       .from("shops")
@@ -140,7 +140,7 @@ export async function saveShop(
       owner_id: user.id,
       settings: {
         onboarding_done: false,
-        onboarding_step: 2,
+        onboarding_step: 4,
         business_kind: businessKind,
       },
     })

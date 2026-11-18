@@ -40,7 +40,7 @@ describe("onboarding wizard presentation", () => {
     expect(html).toContain("Your business")
     expect(html).toContain("Save and continue")
     expect(html).toContain("Something else")
-    expect(html).toContain("Step 1 of 3")
+    expect(html).toContain("Step 1 of 4")
   })
 
   it("shows number actions, carrier status, and saved progress on step 2", () => {

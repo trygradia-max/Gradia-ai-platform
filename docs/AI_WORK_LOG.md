@@ -3099,3 +3099,20 @@ handoff `docs/handoffs/COMMERCIAL_BILLING_PR_F_RESUME.md`. Deliberately NOT done
 proration, grace/dunning, tax, refund eligibility, resubscription, voice/SMS gating, reviewer role/UI; meter names/API version are a proposal
 awaiting founder confirmation and the settlement mapping stays unprovisioned. No live Stripe, Dashboard mutation, shared Supabase, Vercel,
 production secret or data, deploy, public pricing UI or merge.
+
+[AI: claude-code] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Onboarding baseline customer experience (`claude/onboarding-baseline-ui`, base `536bb6b`): the resumable Starting point quiz and
+evidence-labelled report over the already-merged baseline backend; no schema, billing, provider, model, deploy or production change.
+Baseline actions are now session-derived (no shop id, role, period or evidence from the client; strict schemas; period = 90 days
+ending yesterday UTC computed on the server; owner first, else a manager holding `baseline.draft`); the database still decides
+authority. The `ready` DTO gained an additive `answers` field so an update starts from the current revision. New canonical route
+`/starting-point` (report, `?revise=1` update), a wizard step after the business profile (stable persisted ids, display order
+`WIZARD_STEP_ORDER`; `saveShop` persists step 4), a status card on Home and in Settings, and a notice on the Agents home; no sidebar
+item. Resume uses the existing server draft with compare-and-set versions (nothing in browser storage; "saved" only after the server
+confirms; conflict asks for a reload). 24 approved questions in five pages plus review, explicit "I'm not sure" (unknown) versus blank
+versus typed 0, shared catalog validator, written loading/error/permission-denied/already-completed/revision states. Report shows four
+sections with Owner estimate / Connected / Observed by Gradia labels, exact period, revision and question-set version; no ROI,
+savings, score or causal claim. Validation: unit 192 files / 3,076 passed / 4 skipped; lint, `tsc --noEmit`, `next build` clean;
+focused integration (baseline + onboarding-progress) 14/14 on the disposable `gradia-isolated-tests` stack; headless layout check at
+390px and 1280px. Deliberately NOT done: evidence-attachment UI, day-30 comparison UI, workspace selector for multi-shop managers,
+signed-in human acceptance, deploy, merge. Details: `docs/handoffs/ONBOARDING_BASELINE_UI_RESUME.md`.
