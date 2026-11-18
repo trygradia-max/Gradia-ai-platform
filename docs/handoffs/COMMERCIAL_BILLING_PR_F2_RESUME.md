@@ -64,7 +64,7 @@ Do **not** merge the PR.
   66 failed. The SAME 10 files fail identically on a pristine `git archive origin/main` export against the same stack (65 failed there) and `booking-atomicity` is flaky (13/13 in isolation
   on this branch; 1 failure on pristine main in the comparison run, 2 in the full run): messaging/delivery drift, not billing. Every billing suite passes (PR C/D/E1/F1/F2). Upgrade verifiers
   for F2 and F1 PASS; the F2 verifier fails under a mutation. Mutation checks: removing the duplicate-item rule fails 2 unit tests; making the webhook ignore the item set fails the webhook and report tests.
-- [x] Branch pushed; non-draft PR opened (see PR). Do NOT merge.
+- [x] Branch pushed; non-draft PR #153 opened (https://github.com/trygradia-max/Gradia-ai-platform/pull/153). Do NOT merge.
 - Real Stripe run: NOT executed (no credentials provided to this session; the auto-mode classifier also denied reading env files). First thing for the next session/operator: run the harness (runbook section 4).
 
 ## Founder decisions still open (all fail closed)
