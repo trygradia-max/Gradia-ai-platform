@@ -24,8 +24,10 @@ Added a founder practice guide for the proposed December 23 Spider Capital call 
 story, outcome-first positioning, focused market wedge, demo flow, architecture
 explanation, investor questions, objections and practice drills. Current product
 claims distinguish merged foundations, in-progress launch acceptance and future
-enterprise requirements. No application code, pricing authority, provider, shared
-data, deployment or production state changed.
+enterprise requirements. Also generated and visually verified the seven-page PDF
+workbook in `output/pdf/gradia-spider-capital-call-prep.pdf`; all rendered pages and
+required text passed review. No application code, pricing authority, provider,
+shared data, deployment or production state changed.
 
 [AI: claude-code] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
 Commercial Billing PR F2 (`claude/commercial-billing-sandbox-f2`, Stripe TEST mode only; PR opened non-draft, not merged): the exact Founder Pilot
