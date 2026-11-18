@@ -133,9 +133,9 @@ export function StartingPointReport({
       </header>
 
       <section aria-labelledby="sp-legend" className="rounded-md bg-muted/40 p-4 ring-1 ring-border">
-        <h4 id="sp-legend" className="text-sm font-medium text-foreground">
+        <h3 id="sp-legend" className="text-sm font-medium text-foreground">
           {T.legendTitle}
-        </h4>
+        </h3>
         <ul className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
           {(["owner_estimate", "connected_evidence", "gradia_observed", "unknown"] as const).map((k) => (
             <li key={k} className="flex items-start gap-2">
