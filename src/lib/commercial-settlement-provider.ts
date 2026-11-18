@@ -1,5 +1,6 @@
 import { StripeError, stripeCommercialRequest, type CommercialStripeTransportConfig } from "@/lib/stripe"
 import { isDefinitiveRejection } from "@/lib/stripe-commercial"
+import { COMMERCIAL_METER_API_VERSION } from "@/lib/stripe-sandbox-contract"
 
 /**
  * The provider boundary for settlement deliveries (Commercial Billing PR D).
@@ -31,13 +32,17 @@ export type SettlementProvider = {
   submitMeterEvent(event: SettlementMeterEvent): Promise<unknown>
 }
 
-export function createSettlementProvider(config: CommercialStripeTransportConfig): SettlementProvider {
+export function createSettlementProvider(
+  config: CommercialStripeTransportConfig,
+  request: typeof stripeCommercialRequest = stripeCommercialRequest
+): SettlementProvider {
   return {
     submitMeterEvent(event) {
-      return stripeCommercialRequest<unknown>(config, {
+      return request<unknown>(config, {
         method: "POST",
         path: "/billing/meter_events",
         idempotencyKey: event.identifier,
+        apiVersion: COMMERCIAL_METER_API_VERSION,
         body: {
           event_name: event.eventName,
           identifier: event.identifier,
@@ -61,4 +66,61 @@ export function classifyProviderFailure(error: unknown): { outcome: ProviderFail
   if (isDefinitiveRejection(error)) return { outcome: "rejected", code: "provider_rejected" }
   if (error instanceof StripeError) return { outcome: "unknown", code: "provider_outcome_unknown" }
   return { outcome: "unknown", code: "provider_outcome_unknown" }
+}
+
+// ---------------------------------------------------------------------------
+// Read-only reconciliation evidence (PR F)
+// ---------------------------------------------------------------------------
+
+export type MeterEvidenceQuery = {
+  eventName: string
+  customerId: string
+  /** Minute-aligned unix seconds; the window is [start, start + 60). */
+  startSeconds: number
+}
+
+/**
+ * What the provider REPORTS it aggregated for one customer in one minute on one meter. Evidence
+ * only: it never resends, creates or changes anything. Throws on anything unreadable or
+ * ambiguous (unresolvable meter, live object, paginated result) so the caller records nothing.
+ */
+export type MeterEvidenceReader = {
+  readObservedTotal(query: MeterEvidenceQuery): Promise<number>
+}
+
+type ListEnvelope = { data?: unknown; has_more?: unknown }
+
+export function createMeterEvidenceReader(
+  config: CommercialStripeTransportConfig,
+  request: typeof stripeCommercialRequest = stripeCommercialRequest
+): MeterEvidenceReader {
+  const get = <T>(path: string, body?: Record<string, string | number>) =>
+    request<T>(config, { method: "GET", path, body, apiVersion: COMMERCIAL_METER_API_VERSION })
+  return {
+    async readObservedTotal(query) {
+      if (!Number.isInteger(query.startSeconds) || query.startSeconds % 60 !== 0) throw new Error("window_not_minute_aligned")
+      const meters = await get<ListEnvelope>("/billing/meters", { limit: 100 })
+      if (!Array.isArray(meters.data) || meters.has_more !== false) throw new Error("meters_unreadable")
+      const matching = (meters.data as Record<string, unknown>[]).filter(
+        (meter) => meter?.event_name === query.eventName && meter?.status === "active"
+      )
+      if (matching.length !== 1 || typeof matching[0].id !== "string" || matching[0].livemode !== false) throw new Error("meter_unresolved")
+      const meterId = matching[0].id
+      const summaries = await get<ListEnvelope>(`/billing/meters/${encodeURIComponent(meterId)}/event_summaries`, {
+        customer: query.customerId,
+        start_time: query.startSeconds,
+        end_time: query.startSeconds + 60,
+        limit: 100,
+      })
+      if (!Array.isArray(summaries.data) || summaries.has_more !== false) throw new Error("summaries_unreadable")
+      let total = 0
+      for (const raw of summaries.data as Record<string, unknown>[]) {
+        if (raw?.object !== "billing.meter_event_summary" || raw.livemode !== false || raw.meter !== meterId) throw new Error("summary_unreadable")
+        const value = raw.aggregated_value
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 0) throw new Error("summary_unreadable")
+        total += value
+      }
+      return total
+    },
+  }
 }

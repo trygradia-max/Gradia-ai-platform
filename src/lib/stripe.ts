@@ -78,6 +78,10 @@ type StripeFetchOptions = {
     /** Stripe replays the stored result for the same key within 24h. */
     idempotencyKey?: string
     timeoutMs: number
+    /** Reviewed per-call API version override (meter endpoints). Default: the adapter pin. */
+    apiVersion?: string
+    /** Filled on success with the `Stripe-Version` the provider echoed. Never contains a secret. */
+    responseMeta?: { stripeVersion: string | null }
   }
 }
 
@@ -88,7 +92,7 @@ async function stripeFetch<T>(opts: StripeFetchOptions): Promise<T> {
   }
   const headers: Record<string, string> = {
     Authorization: `Bearer ${opts.commercial?.secretKey ?? platformKey()}`,
-    "Stripe-Version": STRIPE_API_VERSION,
+    "Stripe-Version": opts.commercial?.apiVersion ?? STRIPE_API_VERSION,
   }
   if (opts.stripeAccount) {
     headers["Stripe-Account"] = opts.stripeAccount
@@ -146,6 +150,7 @@ async function stripeFetch<T>(opts: StripeFetchOptions): Promise<T> {
   }
 
   if (opts.commercial) {
+    if (opts.commercial.responseMeta) opts.commercial.responseMeta.stripeVersion = res.headers.get("stripe-version")
     try {
       return JSON.parse(text) as T
     } catch {
@@ -494,6 +499,8 @@ export async function stripeCommercialRequest<T>(
     path: string
     body?: Record<string, string | number | boolean | undefined | null>
     idempotencyKey?: string
+    apiVersion?: string
+    responseMeta?: { stripeVersion: string | null }
   }
 ): Promise<T> {
   return stripeFetch<T>({
@@ -505,6 +512,8 @@ export async function stripeCommercialRequest<T>(
       apiBase: config.apiBase,
       timeoutMs: config.timeoutMs,
       idempotencyKey: input.idempotencyKey,
+      apiVersion: input.apiVersion,
+      responseMeta: input.responseMeta,
     },
   })
 }

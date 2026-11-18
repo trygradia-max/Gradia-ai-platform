@@ -427,6 +427,11 @@ const settleInput = z
     actorId: z.string().uuid(),
     windowStart: z.string(),
     windowEnd: z.string(),
+    /**
+     * Settle (immutable, replay-safe) but leave every delivery to the dispatcher worker
+     * (`dispatchPendingSettlementDeliveries`). Same claim/record path; nothing is sent here.
+     */
+    deferDelivery: z.boolean().optional(),
   })
   .strict()
 
@@ -443,7 +448,7 @@ const settleInput = z
 export async function settleCommercialPeriod(
   serviceClient: SupabaseClient,
   runtime: SettlementRuntime,
-  input: { shopId: string; actorId: string; windowStart: string; windowEnd: string }
+  input: { shopId: string; actorId: string; windowStart: string; windowEnd: string; deferDelivery?: boolean }
 ): Promise<SettleResult> {
   const parsed = settleInput.safeParse(input)
   if (!parsed.success) return { ok: false, reason: "invalid", detail: parsed.error.issues[0]?.message }
@@ -482,6 +487,22 @@ export async function settleCommercialPeriod(
   if (begun.error) return { ok: false, ...classify(begun.error) }
   const result = beginSchema.safeParse(begun.data)
   if (!result.success) return { ok: false, reason: "failed" }
+
+  if (parsed.data.deferDelivery) {
+    const statuses = await serviceClient
+      .from("commercial_settlement_lines")
+      .select("delivery_status")
+      .eq("shop_id", w.shopId)
+      .eq("settlement_id", result.data.settlement_id)
+    if (statuses.error || !statuses.data) return { ok: false, reason: "failed" }
+    return {
+      ok: true,
+      action: result.data.action,
+      settlementId: result.data.settlement_id,
+      deliveries: [],
+      delivery: deriveDeliveryState((statuses.data as { delivery_status: LineDeliveryStatus }[]).map((row) => row.delivery_status)),
+    }
+  }
 
   const delivered = await deliverCommercialSettlement(serviceClient, runtime, {
     shopId: w.shopId,
