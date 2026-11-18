@@ -43,12 +43,32 @@ No local draft store is needed or added; "saved" is only ever shown after the se
 
 - [x] M0 audit + this file
 - [x] M1 session-derived actions + seam tests (`src/app/actions/onboarding-baseline.ts`, `period.ts`, `eval/onboarding-baseline-actions.test.ts`)
-- [ ] M2 UI model + copy + tests
-- [ ] M3 quiz + report components + tests
-- [ ] M4 route, wizard step, links
-- [ ] M5 full checks, docs, work log, PR
+- [x] M2 UI model + copy + tests (`form-model.ts`, `report-model.ts`, `format.ts`, `copy.ts`, `eval/onboarding-baseline-ui-model.test.ts`)
+- [x] M3 quiz + report + container components + tests (`src/components/gradia/starting-point/*`, `eval/starting-point-*.test.tsx`)
+- [x] M4 route `/starting-point`, wizard step, Home/Settings/Agents links
+- [x] M5 checks, work log, PR
 
-## Environment notes
+## What shipped
 
-- Worktree had no `node_modules`; `npm ci` was run locally (981 packages). Not committed.
-- Local integration needs a disposable Supabase stack; see earlier handoffs for the recipe. No shared or production database is touched.
+- **Seam.** `getBaselineStartingPoint()`, `saveBaselineDraft`, `submitBaselineAssessment`, `getBaselineComparison` no longer take a
+  shop id, role, period or evidence (strict schemas reject them). Workspace = owner's active shop, else the one workspace where the
+  caller is an active manager holding `baseline.draft`. Reporting period is computed server-side: 90 days ending yesterday (UTC).
+  The database remains the authority (owner submits, manager drafts, staff/revoked/anonymous/cross-shop refused).
+- **Additive DTO field.** The `ready` DTO now carries the revision's `answers` so an owner can start an update from them. No
+  migration, no change to the database contract.
+- **Resume.** Server draft with compare-and-set `draft_version`. Nothing is stored in the browser; "Saved" is shown only after the
+  server confirms. Conflict asks for a reload and never overwrites.
+- **Wizard.** Persisted step ids stay stable (1 business, 2 number, 3 help); 4 = Starting point; display order is
+  `WIZARD_STEP_ORDER = [1, 4, 2, 3]`. `saveShop` now persists 4 after the business profile. Shops already past that point are unaffected.
+- **Entry points.** Status card on Home and in Settings (`#starting-point`), notice on the Agents home while not started, wizard step.
+  No sidebar item (final IA is locked). One route: `/starting-point` (`?revise=1` opens the update flow).
+
+## Limitations / next dependency
+
+- A manager of several workspaces reaches the first one with the `baseline.draft` grant (no workspace selector yet).
+- Evidence attachment (`p_evidence`) has no UI: connected/observed measurements are service-written, so every figure is labelled
+  Owner estimate until that pipeline exists. The day-30 comparison UI is not built (the action exists and is session-derived).
+- The period is fixed at 90 days; an owner cannot pick another window.
+- Pending: signed-in desktop/mobile acceptance on a real shop with real owner/manager/staff accounts (not done here), 200%-zoom and
+  screen-reader pass by a human. Layout was checked in a headless browser at 390px and 1280px (no horizontal overflow, 44px tap rows).
+- Evals are not affected (no prompt, model or recipe change).
