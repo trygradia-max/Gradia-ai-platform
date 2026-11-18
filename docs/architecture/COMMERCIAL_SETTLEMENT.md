@@ -19,6 +19,13 @@ from model text.
 > signed-adjustment contract exists (tables + functions) but nothing applies it, and meters remain unprovisioned.
 > `scripts/verify-commercial-settlement-migration.py` is historical (it asserts its migration is the latest).
 
+> **Update 2026-11-18 (PR F2).** `REVIEWED_SETTLEMENT_METER_MAPPING` is now **provisioned** with the founder-directed TEST-mode event names
+> (`SETTLEMENT_METER_EVENT_NAMES`, version `settlement-mapping.v2-sandbox-contract`), exactly equal to the sandbox contract; the value basis is unchanged
+> (outcomes by billed quantity; voice, SMS and seat by settled cents). The statements below that the mapping "ships unprovisioned" and refuses with
+> `settlement_mapping_unprovisioned` describe PR D; that refusal still happens for any mapping that is unprovisioned or not valid, and the dispatch worker
+> additionally refuses to send unless the read-only sandbox verification passes. This is a TEST-mode contract; production promotion needs a final reviewed
+> release decision.
+
 ## Founder decisions (2026-11-16, recorded for PR #147)
 
 Received 2026-11-16 (Pacific). These are decisions, not code. **This PR implements none of

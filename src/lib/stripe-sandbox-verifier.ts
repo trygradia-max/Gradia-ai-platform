@@ -1,7 +1,6 @@
 import {
   evaluateSandboxReadiness,
   type SandboxReadiness,
-  type SandboxSnapshot,
 } from "@/lib/stripe-sandbox-contract"
 import { resolveCommercialStripeConfig } from "@/lib/stripe-commercial"
 import { stripeCommercialRequest } from "@/lib/stripe"

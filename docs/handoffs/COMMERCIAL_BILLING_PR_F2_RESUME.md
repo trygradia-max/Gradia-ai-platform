@@ -58,7 +58,14 @@ Do **not** merge the PR.
 - [x] M4 migration `20261118120000_commercial_worker_lease.sql` (applied to the local stack + recorded in schema_migrations), `commercial-billing-worker.ts` (leased, bounded, gated, sandbox-preflight), cron route `/api/cron/commercial-billing` (+ CRON_REGISTRY, vercel.json `*/10`, tenant-scoping allowlist), unit 13 + integration 11 green, `scripts/verify-commercial-worker-lease-migration.py` PASS and fails under a mutation (F1 verifier relaxed from "latest" to "present")
 - [x] M5 harness `src/lib/stripe-test-clock-acceptance.ts` (+ `scripts/stripe-test-clock-acceptance.mjs`, `npm run billing:test-clock-acceptance`): opt-in env + confirm flag, CI refused, live refused, allowlisted/owned-object fenced transport, always cleans up, finite evidence; fake `eval/_fake-stripe-test-clock.ts`; tests 25. Real run NOT executed (no credentials). `createPlatformStripeClient` now takes an injectable transport; commercial transport allows DELETE (harness-only, fenced). Runbook still to write (M7).
 - [x] M6 readiness report rewritten (`commercial-sandbox-report.ts`, `commercial-readiness-fixtures.ts`, `commercial-acceptance-evidence.ts`; script flags `--local`, `--evidence <file>`, `--attest <manual step>`): READY needs local fixtures + exact items + webhook rule + worker config + `--network` sandbox + current real evidence + attested manual steps; offline prints `REAL STRIPE ACCEPTANCE: NOT RUN`; tests 9
-- [ ] M7 docs, work log, validation, PR
+- [x] M7 docs (SANDBOX_ACCEPTANCE "PR F2" section, update notes in CHECKOUT/RECONCILIATION/SETTLEMENT, rewritten runbook), `AI_WORK_LOG` entry, validation
+- [x] Validation (2026-11-18, branch = `origin/main` @ `536bb6b` + F2): `tsc` clean (known `@testing-library` types aside); eslint 0 problems on touched files; unit `npm test` 189 files / 3012 passed / 4 skipped
+  (+1 environmental `jsdom` module error that also exists on main); `next build --webpack` exit 0 (the new cron route is in the build); FULL integration 81 files: 70 passed / 11 failed, 1009 passed /
+  66 failed. The SAME 10 files fail identically on a pristine `git archive origin/main` export against the same stack (65 failed there) and `booking-atomicity` is flaky (13/13 in isolation
+  on this branch; 1 failure on pristine main in the comparison run, 2 in the full run): messaging/delivery drift, not billing. Every billing suite passes (PR C/D/E1/F1/F2). Upgrade verifiers
+  for F2 and F1 PASS; the F2 verifier fails under a mutation. Mutation checks: removing the duplicate-item rule fails 2 unit tests; making the webhook ignore the item set fails the webhook and report tests.
+- [x] Branch pushed; non-draft PR opened (see PR). Do NOT merge.
+- Real Stripe run: NOT executed (no credentials provided to this session; the auto-mode classifier also denied reading env files). First thing for the next session/operator: run the harness (runbook section 4).
 
 ## Founder decisions still open (all fail closed)
 

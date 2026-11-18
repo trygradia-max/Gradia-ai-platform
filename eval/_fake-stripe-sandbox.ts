@@ -107,7 +107,8 @@ export class FakeStripeSandbox {
   }) as typeof stripeCommercialRequest
 
   /** When the provider "received" an event (default: the fake wall clock). A test-clock subclass uses the clock's time. */
-  protected receiveTime(_customer: string): number {
+  protected receiveTime(customer: string): number {
+    void customer
     return this.clock
   }
 

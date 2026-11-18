@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto"
 
-import { buildFounderPilotLineItems, evaluateSubscriptionItems, FOUNDER_PILOT_ITEM_SET_DIGEST } from "@/lib/commercial-subscription-items"
+import { evaluateSubscriptionItems, FOUNDER_PILOT_ITEM_SET_DIGEST } from "@/lib/commercial-subscription-items"
 import { COMMERCIAL_METER_API_VERSION, SANDBOX_CONTRACT_VERSION, SANDBOX_METERS, SANDBOX_BASE_PRICE, evaluateSandboxReadiness } from "@/lib/stripe-sandbox-contract"
 import { parseVerifiedWebhook, verifyCommercialSignature } from "@/lib/commercial-webhook"
 import { REVIEWED_SETTLEMENT_METER_MAPPING, verifyMeterAck, type SettlementComponent } from "@/lib/commercial-settlement"
@@ -206,8 +206,6 @@ const safeCode = (error: unknown): string => {
   return "unexpected_error"
 }
 
-class StopRun extends Error {}
-
 export async function runTestClockAcceptance(
   env: Record<string, string | undefined>,
   confirmed: boolean,
@@ -318,7 +316,7 @@ export async function runTestClockAcceptance(
   let secondPeriodEnd = 0
   let visaPm: string | null = null
   const usageStart = nowSeconds()
-  let expectedTotal = SANDBOX_BASE_PRICE.unitAmountCents + ACCEPTANCE_METERED_CENTS
+  const expectedTotal = SANDBOX_BASE_PRICE.unitAmountCents + ACCEPTANCE_METERED_CENTS
 
   try {
     // 1. The sandbox must hold the exact contract (read-only).

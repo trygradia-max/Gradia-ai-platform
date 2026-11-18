@@ -25,6 +25,12 @@ cancellation, a retry or a payment.
 | Integration tests (48) | `eval/integration/commercial-reconciliation.int.test.ts` (PR C 70 and PR D 33 suites updated and green) |
 | Non-destructive upgrade verifier | `scripts/verify-commercial-reconciliation-migration.py` |
 
+> **Update 2026-11-18 (PR F2, `COMMERCIAL_SANDBOX_ACCEPTANCE.md`).** The "exactly **one** item at quantity 1" rule below is replaced by the **exact item set**
+> in any order: the licensed base Price (quantity 1) + exactly the six reviewed metered Prices (by lookup key; no quantity). A missing, extra, duplicate, unknown
+> or mismatched item (amount, currency, interval, usage type, live price, missing meter, different Product) is `catalog_mismatch` and sticky, as before. Item-level
+> periods must agree with each other and with the top-level period. The database is unchanged; metadata remains a cross-check and the tenant still comes only
+> from server-held bindings. The worker that dispatches/reconciles/applies is described there too (lease, bounds, cron).
+
 ## The endpoint is PLATFORM billing, never Connect
 
 - URL `POST /api/stripe/commercial-webhook`. The Connect/collection webhook (`/api/stripe/webhook`, secret

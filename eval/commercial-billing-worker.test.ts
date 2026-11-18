@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-const { runCronSpy } = vi.hoisted(() => ({ runCronSpy: vi.fn() }))
 vi.mock("@/lib/alerts", () => ({ sendOpsAlert: vi.fn(async () => ({ delivered: true })) }))
 vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({ rpc: vi.fn(async () => ({ data: [], error: null })), from: () => ({ upsert: async () => ({ error: null }) }) }) }))
 
@@ -137,7 +136,7 @@ describe("the worker run", () => {
   })
 
   it("an unreadable lease store fails closed: nothing is swept and the run is not ok", async () => {
-    const rpc = vi.fn(async (..._args: unknown[]) => ({ data: null, error: { code: "42501", message: "x" } }))
+    const rpc = vi.fn(async (name: string) => (name ? { data: null, error: { code: "42501", message: "x" } } : { data: null, error: null }))
     const report = await runCommercialBillingWorker({ rpc } as unknown as SupabaseClient, deps())
     expect(report.ok).toBe(false)
     expect(report.tasks.every((t) => t.status === "skipped" && t.reason === "lease_unavailable")).toBe(true)

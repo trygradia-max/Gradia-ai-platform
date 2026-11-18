@@ -18,6 +18,27 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Commercial Billing PR F2 (`claude/commercial-billing-sandbox-f2`, Stripe TEST mode only; PR opened non-draft, not merged): the exact Founder Pilot
+subscription item set (licensed base x1 + the six reviewed metered Prices, by lookup key, any order, no quantity on metered items) now gates Checkout
+creation and retrieval (read-only resolve of Price/Product/Meter, `line_items` expanded on retrieval, item-set digest in the request fingerprint) and the
+signed subscription webhook (`commercial-subscription-items.ts`; the database is unchanged: anything but the exact set is the existing sticky
+`catalog_mismatch`). Per the founder's 2026-11-18 direction the F1 meter contract is the TEST-mode contract, so `REVIEWED_SETTLEMENT_METER_MAPPING` is
+provisioned from one source of event names and pinned equal to the sandbox contract (value basis unchanged; no price, allowance, cap or catalog change).
+Added a leased, bounded, fail-closed billing worker (pending settlement dispatch, unknown-delivery reconciliation that never resends, approved-only
+adjustment application) with migration `20261118120000_commercial_worker_lease.sql` (objects only; lease is an optimization, per-line claims stay the
+safety), a `CRON_SECRET`-authenticated GET cron route (`/api/cron/commercial-billing`, disabled unless `GRADIA_COMMERCIAL_BILLING_WORKER=enabled` + TEST
+config) and a dispatch preflight that refuses to send unless the read-only sandbox verifies. Added the opt-in real Stripe test-clock harness
+(`npm run billing:test-clock-acceptance`; fenced allowlist, owned-object and live-response guards, CI refused, always deletes its test clock, finite output)
+and a stricter readiness report (offline: local fixtures PASS and real Stripe acceptance `NOT RUN`; READY also needs a verified sandbox, current real evidence
+and operator-attested manual steps). Verified: unit 189 files / 3012 passed, new integration (`commercial-worker` 11) and the updated PR C/D/E1/F1 billing
+suites, upgrade verifier PASS (and fails under mutation), types/lint clean, `next build --webpack` exit 0, and a full integration run whose only failures are the same 10 pre-existing messaging/delivery files that fail identically on pristine main (plus one flaky booking test). **The real Stripe run was NOT
+executed:** no Stripe TEST credentials were available to this session (none were read), so the harness is proven only against a local stand-in; hosted Checkout
+completion and a Stripe-delivered webhook are manual steps. Deliberately NOT done: live mode, deploy, production/shared Supabase, any merge, settlement
+scheduling (system-actor policy undecided), Metronome evaluation, and the open founder policies (partial-day seat proration, grace/dunning, tax, refund/credit
+eligibility, resubscription, reviewer role/UI, voice/SMS runtime gating, unknown-delivery resend). Details: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md`
+("PR F2"), `docs/qa/COMMERCIAL_SANDBOX_ACCEPTANCE_RUNBOOK.md`, `docs/handoffs/COMMERCIAL_BILLING_PR_F2_RESUME.md`.
+
 [AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
 Provider boundary V1 review follow-up (PR #148, `claude/provider-boundary-sms-email`): the content-free hold marker
 claimed idempotency but `recordBoundaryHold` did a lookup then an insert, and Aurinko email has no durable replay claim,
