@@ -3018,6 +3018,22 @@ becomes a signed append-only adjustment on the next invoice, with human review f
 placeholder NOT authorized for sandbox settlement until PR E/F binds and validates the exact Stripe subscription period; adjustment
 implementation is follow-on and was not started. No code, pricing, meter, Stripe call, shared/production data, deploy or merge.
 
+[AI: claude-code] [DATE: 2026-11-16] [AREA: docs] [STATUS: done]
+Post-pilot pricing and expansion proposal (`claude/post-pilot-pricing-strategy`): added
+`docs/product/POST_PILOT_PRICING_AND_EXPANSION_2026-11-16.md` and a resume handoff
+`docs/handoffs/POST_PILOT_PRICING_RESUME.md`. The proposal models an illustrative Core $299 / Growth $799 / Scale $1,999 /
+Custom $3,000+ ladder, tests Lean/Balanced/Generous/Recommended included-usage scenarios against 80% target, 75% minimum and
+65% stress contribution and a 70% variable voice/SMS margin (exact formulas, Stripe Billing 0.7% added to the catalog's
+method), and covers seats, agent slots, outcome/lead/appointment/voice/SMS prices, onboarding, support/SLA, future location and
+analytics items, discounts, annual terms, grandfathering, seven ethical in-product upsell moments, packaging principles,
+enterprise/consulting guardrails, sales-comp principles, value proof, experiments, willingness-to-pay interviews and 16 founder
+decisions. Provider and SaaS reference pricing was fetched 2026-11-16 from primary vendor pages (Vapi, Twilio, Stripe, Intercom,
+Zendesk, Gorgias, Salesforce, HubSpot, Jobber, Smith.ai) and caveated as non-comparable; figures need human re-confirmation before external use.
+Everything is PROPOSED, not approved or sellable; Founder Pilot ($199, catalog 2026-11-03.v1) stays the only approved catalog.
+Findings worth knowing: the previously planned Growth/Scale rows fail the 65% stress gate; 70% voice margin at the high cost end needs
+about $0.46/min; Scale passes stress by only 0.9 points. Documentation only: no code, migration, Stripe, provider, checkout,
+sales page, deploy, shared-data or production change. Not merged.
+
 [AI: claude-code] [DATE: 2026-11-16] [AREA: platform] [STATUS: done]
 Commercial Billing PR E1 (`claude/commercial-billing-reconciliation`, sandbox/test mode only): signed PLATFORM Stripe webhook
 reconciliation, subscription lifecycle evidence, safe lapse enforcement, an owner-only Customer Portal handoff, exact
