@@ -43,6 +43,7 @@ type Status =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved"; at: string; managerDraft?: boolean }
+  | { kind: "nochange" }
   | { kind: "error" }
   | { kind: "conflict" }
 
@@ -135,7 +136,7 @@ export function StartingPointQuiz({
     pendingFocus.current = null
     if (key) {
       const el = document.getElementById(`q-${key}`)
-      el?.scrollIntoView({ block: "center" })
+      el?.scrollIntoView?.({ block: "center" })
       el?.querySelector<HTMLElement>("input, textarea, button")?.focus()
       return
     }
@@ -242,7 +243,9 @@ export function StartingPointQuiz({
     setShowErrors(false)
     if (!isOwner) {
       // A delegated manager drafts; only the owner submits (the database enforces this too).
-      if (await persist(full.answers, true)) setStatus({ kind: "saved", at: timeNow(), managerDraft: true })
+      // Say only what is true: an unchanged form with no draft on file has nothing to save.
+      const nothing = answersFingerprint(full.answers) === savedPrint && draftVersion === null
+      if (await persist(full.answers, true)) setStatus(nothing ? { kind: "nochange" } : { kind: "saved", at: timeNow(), managerDraft: true })
       return
     }
     setSubmitting(true)
@@ -451,7 +454,7 @@ function Progress({ pageNumber, total, title, done, required }: { pageNumber: nu
         aria-valuetext={T.answered(done, required)}
         className="h-1.5 overflow-hidden rounded-full bg-muted"
       >
-        <div className="h-full rounded-full bg-primary transition-[width] duration-(--duration-fast)" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-primary transition-[width] duration-(--duration-fast) motion-reduce:transition-none" style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
@@ -503,6 +506,7 @@ function SaveStatus({ status, dirty }: { status: Status; dirty: boolean }) {
   let text: string | null = null
   if (status.kind === "saving") text = T.saving
   else if (status.kind === "saved") text = status.managerDraft ? `${T.managerSaved} ${T.savedAt(status.at)}` : T.savedAt(status.at)
+  else if (status.kind === "nochange") text = T.nothingToSave
   else if (status.kind === "error") text = T.saveFailed
   else if (dirty) text = T.unsaved
   return (

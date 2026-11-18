@@ -316,6 +316,7 @@ export const STRINGS = {
       saving: "Saving…",
       savedAt: (time: string) => `Saved to your workspace at ${time}`,
       unsaved: "Not saved yet. Changes are only on this screen.",
+      nothingToSave: "Nothing has changed, so there is nothing to save.",
       saveFailed: "We couldn’t save your answers. Nothing was lost on this screen. Try again.",
       conflictTitle: "This starting point changed somewhere else",
       conflictBody:
