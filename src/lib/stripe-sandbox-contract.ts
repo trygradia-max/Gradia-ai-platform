@@ -410,6 +410,8 @@ export const SANDBOX_MANUAL_STEPS: readonly { id: string; text: string }[] = [
   { id: "metered_prices", text: "Create one metered monthly USD Price per meter on the same Product with the printed lookup key and unit amount (outcomes at the approved retail rate; voice, SMS and seat at 1 cent per cent-valued unit)." },
   { id: "webhook_endpoint", text: `Add a TEST-mode webhook endpoint for POST /api/stripe/commercial-webhook pinned to API version ${COMMERCIAL_METER_API_VERSION}; copy its signing secret into GRADIA_COMMERCIAL_STRIPE_WEBHOOK_SECRET locally only.` },
   { id: "portal_config", text: "Configure the test-mode Customer Portal (what a customer may cancel/change is a founder decision)." },
-  { id: "mapping_commit", text: "When the only blocker left is settlement_mapping_unprovisioned and the founder has confirmed the contract, a REVIEWED commit replaces the null event names in REVIEWED_SETTLEMENT_METER_MAPPING and flips its status. No environment variable can do this." },
-  { id: "attach_metered_items", text: "Attaching metered Prices to the subscription (and the webhook rule that accepts them) is PR F2 and a founder decision. Until then meter events cannot appear on a Stripe invoice." },
+  { id: "attach_metered_items", text: "The subscription (and Checkout) carry the exact item set: the licensed base plus the six metered Prices. Verified by the opt-in test-clock run, not by this command." },
+  { id: "hosted_checkout", text: "Complete one HOSTED Checkout in a browser with a Stripe test card for the exact item set (Stripe's API cannot do this), then attest it with --attest hosted_checkout_completion." },
+  { id: "webhook_delivery", text: "Confirm in the Stripe TEST Dashboard that a Stripe-delivered, signed event reached the commercial webhook endpoint with a 2xx, then attest it with --attest stripe_delivered_webhook." },
+  { id: "test_clock_run", text: "Run `npm run billing:test-clock-acceptance -- --i-understand-this-mutates-stripe-test --evidence-out <file>` (opt-in; mutates only the Stripe TEST sandbox) and pass --evidence <file> here." },
 ]
