@@ -23,6 +23,7 @@ import { createServiceClient } from "@/lib/supabase/service"
 export const CRON_REGISTRY = {
   agents: { periodMinutes: 60 },
   automations: { periodMinutes: 5 },
+  "commercial-billing": { periodMinutes: 10 },
   "no-show-ladder": { periodMinutes: 60 },
   "provider-events-prune": { periodMinutes: 24 * 60 },
   reconcile: { periodMinutes: 24 * 60 },

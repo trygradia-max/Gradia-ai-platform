@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { runCustomAgent, runEventRecipe } from "@/lib/agent-runtime"
 import { APPROVED_COMMERCIAL_CATALOG_VERSION } from "@/lib/approved-commercial-catalog"
 import { COMMERCIAL_CATALOG_VERSION, FOUNDER_PILOT_PRICE } from "@/lib/commercial-billing"
+import { exactFixtureItems } from "../_commercial-item-fixtures"
 import { requestCommercialBillingPortal, type PortalRuntime } from "@/lib/commercial-billing-service"
 import { assessCommercialExecution } from "@/lib/commercial-execution-gate"
 import { previewCommercialSettlement } from "@/lib/commercial-settlement-service"
@@ -117,9 +118,16 @@ const envelope = (type: string, object: Record<string, unknown>, o: { id?: strin
   id: o.id ?? evId(), object: "event", type, created: o.created ?? NOW_S, livemode: o.livemode ?? false,
   ...(o.account ? { account: o.account } : {}), data: { object },
 })
+/** The exact Founder Pilot item set (PR F2), with optional corruption of the licensed base item. */
+const itemSet = (o: { lookup?: string; qty?: number }) =>
+  exactFixtureItems().map((item) =>
+    item.price.lookup_key === FOUNDER_PILOT_PRICE.lookupKey
+      ? { ...item, quantity: o.qty ?? 1, price: { ...item.price, lookup_key: o.lookup ?? FOUNDER_PILOT_PRICE.lookupKey } }
+      : item
+  )
 type SubOpts = {
   sub?: string; customer?: string; status?: string; start?: number; ps?: number; pe?: number; cap?: boolean; canceledAt?: number | null
-  metaShop?: string; attempt?: string; lookup?: string; qty?: number; noPeriod?: boolean
+  metaShop?: string; attempt?: string; lookup?: string; qty?: number; noPeriod?: boolean; items?: unknown[]
 }
 const subObj = (b: Bound, o: SubOpts = {}) => {
   const start = o.start ?? NOW_S - DAY
@@ -128,7 +136,7 @@ const subObj = (b: Bound, o: SubOpts = {}) => {
     start_date: start, ...(o.noPeriod ? {} : { current_period_start: o.ps ?? start, current_period_end: o.pe ?? (o.ps ?? start) + 30 * DAY }),
     cancel_at_period_end: o.cap ?? false, canceled_at: o.canceledAt ?? null,
     metadata: { shop_id: o.metaShop ?? b.s.shopId, catalog_version: "2026-11-03.v1", plan_key: "founder-pilot", checkout_attempt_id: o.attempt ?? b.attemptId },
-    items: { data: [{ quantity: o.qty ?? 1, price: { lookup_key: o.lookup ?? FOUNDER_PILOT_PRICE.lookupKey } }] },
+    items: { data: o.items ?? itemSet(o) },
   }
 }
 const subEvent = (b: Bound, o: SubOpts & { created?: number; id?: string; type?: string } = {}) =>
@@ -360,7 +368,12 @@ maybe("commercial reconciliation (PR E1)", () => {
       expect(await gate(b.s.shopId)).toMatchObject({ allowed: false, reason: "period_unverified" })
     })
     it("a wrong price, wrong quantity or wrong catalog is reconciliation_required, never active, and is sticky until reviewed", async () => {
-      for (const o of [{ lookup: "gradia_other_price" }, { qty: 2 }]) {
+      for (const o of [
+        { lookup: "gradia_other_price" }, { qty: 2 },
+        // PR F2: the old single-item shape, a missing/extra/duplicate metered item and a wrong-product metered item.
+        { items: exactFixtureItems().slice(0, 1) }, { items: exactFixtureItems().slice(0, 6) },
+        { items: [...exactFixtureItems(), exactFixtureItems()[2]] }, { items: [...exactFixtureItems().slice(0, 6), exactFixtureItems()[1]] },
+      ]) {
         const b = await bound()
         await deliver(subEvent(b, { ...o, created: NOW_S - 100 }))
         expect(await acct(b.s.shopId)).toMatchObject({ state: "reconciliation_required", state_reason: "catalog_mismatch" })

@@ -15,6 +15,13 @@ shared-data change, and it does not lift the production activation freeze._
 > sticky until a reviewed reconciliation, and new agent runs are gated on active billing. Dunning timing, grace, refunds,
 > credits and tax remain founder-policy-required and fail closed.
 
+> **Update 2026-11-18 (PR F2, `COMMERCIAL_SANDBOX_ACCEPTANCE.md`).** Checkout no longer carries ONE line item. It carries the **exact Founder Pilot item
+> set**: the approved licensed base Price ×1 plus exactly six reviewed metered Prices with **no quantity** (Stripe: quantity must not be defined for metered
+> Prices), resolved by lookup key and verified read-only (Price, Product, Meter). Retrieval expands `line_items` and requires the same set; the request
+> fingerprint includes the item-set digest; Checkout requests use the reviewed API version `2024-09-30.acacia`. "Extra seats and pay-as-you-go are ledger/preview
+> facts" below still holds: the metered items carry no guessed quantity; usage reaches Stripe only as settled meter events. Everything else stands (no trial,
+> Checkout completion is never payment proof, platform billing only).
+
 ## Contract implemented
 
 - Only **Founder Pilot** is sellable: $199 USD/workspace/month, resolved at Stripe by the

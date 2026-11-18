@@ -132,6 +132,9 @@ describe("service-role importer inventory (sweep visibility)", () => {
   "src/app/api/intake/public-form/[formId]/route.ts",
     "src/app/api/cron/agents/route.ts",
     "src/app/api/cron/automations/route.ts",
+    // PR F2 commercial billing worker: cross-shop by design like the crons; every item is bound to its own shop by the
+    // database row it claims (settlement line / adjustment). The request names no tenant. Disabled unless enabled.
+    "src/app/api/cron/commercial-billing/route.ts",
     "src/app/api/cron/no-show-ladder/route.ts",
     // P0-005A: tenant-blind by spec — its only query is the service-role
     // prune_provider_events RPC (time/status keyed, reads no request input).

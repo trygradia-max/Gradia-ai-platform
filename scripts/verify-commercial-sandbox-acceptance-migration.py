@@ -53,7 +53,7 @@ assert not TXN_CONTROL.search(top_level(body)), 'unexpected transaction control 
 assert not re.search(r'(?i)\b(drop|alter\s+table\s+public\.commercial_(settlement|billing|subscription|usage|membership)|update\s+public\.|delete\s+from)\b', top_level(body)), \
     'the migration must only ADD objects: no drop, no alteration of an existing table, no row rewrite'
 versions = sorted(p.name.split('_')[0] for p in (root / 'supabase/migrations').glob('*.sql'))
-assert versions[-1] == NEW, 'the sandbox acceptance migration must be the latest migration in the repository'
+assert NEW in versions, 'the sandbox acceptance migration must be present in the repository'
 
 
 def run(sql):

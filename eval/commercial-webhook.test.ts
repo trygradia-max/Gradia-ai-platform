@@ -14,6 +14,7 @@ import {
 } from "@/lib/commercial-webhook"
 import { handleCommercialWebhook } from "@/lib/commercial-webhook-service"
 import { StripeError } from "@/lib/stripe"
+import { exactFixtureItems, subscriptionItems } from "./_commercial-item-fixtures"
 import { createPlatformPortalClient } from "@/lib/stripe-commercial"
 
 const SECRET = "whsec_" + "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
@@ -33,7 +34,7 @@ const SUB = {
   cancel_at_period_end: false,
   canceled_at: null,
   metadata: { shop_id: "11111111-1111-4111-8111-111111111111", catalog_version: "2026-11-03.v1", plan_key: "founder-pilot", checkout_attempt_id: "22222222-2222-4222-8222-222222222222" },
-  items: { data: [{ quantity: 1, price: { id: "price_x", lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }] },
+  items: subscriptionItems(),
 }
 const event = (over: Record<string, unknown> = {}, object: Record<string, unknown> = SUB) =>
   JSON.stringify({ id: "evt_Unit000001", object: "event", type: "customer.subscription.updated", created: 1_790_000_100, livemode: false, data: { object }, ...over })
@@ -119,26 +120,39 @@ describe("envelope refusal and normalization (after the signature)", () => {
       started_at: new Date(1_790_000_000_000).toISOString(),
     })
   })
-  it("a wrong price, quantity or extra line is not the approved item; a period that disagrees is unverified", () => {
+  it("only the EXACT item set (base + six metered, any order) is the approved item; a period that disagrees is unverified", () => {
     const facts = (object: Record<string, unknown>) => {
       const p = parseVerifiedWebhook(event({}, object))
       if (!p.ok || p.kind !== "handled") throw new Error("unreachable")
       return p.event.facts
     }
-    const price = (lookup_key: string) => ({ ...SUB, items: { data: [{ quantity: 1, price: { lookup_key } }] } })
-    expect(facts(price("some_other_price")).price_lookup_key).toBe("invalid_items")
-    expect(facts({ ...SUB, items: { data: [{ quantity: 2, price: { lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }] } }).price_lookup_key).toBe("invalid_items")
-    expect(facts({ ...SUB, items: { data: [...SUB.items.data, ...SUB.items.data] } }).price_lookup_key).toBe("invalid_items")
+    const withItems = (items: unknown[]) => ({ ...SUB, items: { data: items } })
+    expect(facts(SUB).price_lookup_key).toBe(FOUNDER_PILOT_PRICE.lookupKey)
+    expect(facts(withItems([...exactFixtureItems()].reverse())).price_lookup_key).toBe(FOUNDER_PILOT_PRICE.lookupKey)
+    // The pre-F2 single-item shape is no longer the approved set.
+    expect(facts(withItems(exactFixtureItems().slice(0, 1))).price_lookup_key).toBe("invalid_items")
+    expect(facts(withItems(exactFixtureItems().slice(0, 6))).price_lookup_key).toBe("invalid_items")
+    expect(facts(withItems([...exactFixtureItems(), exactFixtureItems()[1]])).price_lookup_key).toBe("invalid_items")
+    expect(facts(withItems([...exactFixtureItems().slice(0, 6), { quantity: 1, price: { lookup_key: "some_other_price" } }])).price_lookup_key).toBe("invalid_items")
+    expect(facts(withItems([{ ...exactFixtureItems()[0], quantity: 2 }, ...exactFixtureItems().slice(1)])).price_lookup_key).toBe("invalid_items")
     expect(facts({ ...SUB, items: { data: [] } }).price_lookup_key).toBe("invalid_items")
-    // Newer API shape: the period lives on the item.
+    expect(facts({ ...SUB, items: undefined }).price_lookup_key).toBe("invalid_items")
+    // Metadata never rescues a wrong item set.
+    expect(facts({ ...withItems(exactFixtureItems().slice(0, 6)), metadata: { ...SUB.metadata, lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }).price_lookup_key).toBe("invalid_items")
+    // Newer API shape: the period lives on the items (every item reports the same period).
     const noTop: Record<string, unknown> = { ...SUB }
     delete noTop.current_period_start
     delete noTop.current_period_end
-    const moved = facts({ ...noTop, items: { data: [{ quantity: 1, current_period_start: 1_790_000_000, current_period_end: 1_792_592_000, price: { lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }] } })
+    const period = { current_period_start: 1_790_000_000, current_period_end: 1_792_592_000 }
+    const moved = facts({ ...noTop, items: { data: exactFixtureItems().map((item) => ({ ...item, ...period })) } })
     expect(moved.period_start).toBe(new Date(1_790_000_000_000).toISOString())
-    // Top-level and item disagree: unverified, never guessed.
-    const disagree = facts({ ...SUB, items: { data: [{ quantity: 1, current_period_start: 1_790_000_999, current_period_end: 1_792_592_000, price: { lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }] } })
+    expect(moved.price_lookup_key).toBe(FOUNDER_PILOT_PRICE.lookupKey)
+    // Top-level and an item disagree: unverified, never guessed.
+    const disagree = facts({ ...SUB, items: { data: exactFixtureItems().map((item, i) => ({ ...item, current_period_start: i === 0 ? 1_790_000_999 : 1_790_000_000, current_period_end: 1_792_592_000 })) } })
     expect(disagree.period_start).toBeNull()
+    // Items disagree with each other (no top-level period): unverified.
+    const itemsDisagree = facts({ ...noTop, items: { data: exactFixtureItems().map((item, i) => ({ ...item, current_period_start: 1_790_000_000 + (i === 3 ? 60 : 0), current_period_end: 1_792_592_000 })) } })
+    expect(itemsDisagree.period_start).toBeNull()
     expect(facts({ ...SUB, current_period_end: SUB.current_period_start }).period_start).toBeNull()
   })
   it("normalizes payment failure, refund, credit and Checkout observations as facts only", () => {

@@ -9,6 +9,9 @@ import { FOUNDER_PILOT_PRICE } from "@/lib/commercial-billing"
 import {
   REVIEWED_VALUE_BASIS,
   SETTLEMENT_COMPONENTS,
+  SETTLEMENT_METER_EVENT_NAMES,
+  validateMeterMapping,
+  type MeterMapping,
   type SettlementComponent,
   type SettlementDocument,
 } from "@/lib/commercial-settlement"
@@ -22,14 +25,18 @@ import { STRIPE_COMMERCIAL_PROVISIONING_MANIFEST } from "@/lib/stripe-commercial
  * of the sandbox against it. It provisions nothing: the founder (Dashboard) or a later
  * reviewed command creates the objects; this only REFUSES a sandbox that does not match.
  *
- * STATUS: the meter event names, metered-price lookup keys and the meter API version are a
- * PROPOSAL (`proposed_pending_founder_confirmation`). The base Product/Price come from the
- * already-approved catalog and manifest. The settlement mapping stays unprovisioned until a
- * reviewed commit names the verified meters (`REVIEWED_SETTLEMENT_METER_MAPPING`).
+ * STATUS (PR F2): the meter event names, metered-price lookup keys and the meter API version are the
+ * founder-directed TEST-mode implementation contract (2026-11-18). The base Product/Price come from the
+ * already-approved catalog and manifest. `REVIEWED_SETTLEMENT_METER_MAPPING` carries the same event
+ * names (single source: `SETTLEMENT_METER_EVENT_NAMES`). Promotion to production still requires a
+ * final reviewed release decision (`SANDBOX_PRODUCTION_PROMOTION`).
  */
 
-export const SANDBOX_CONTRACT_VERSION = "sandbox-contract.v1"
-export const SANDBOX_CONTRACT_STATUS = "proposed_pending_founder_confirmation" as const
+export const SANDBOX_CONTRACT_VERSION = "sandbox-contract.v2"
+/** Founder-directed (2026-11-18) TEST-mode implementation contract. Not a production approval. */
+export const SANDBOX_CONTRACT_STATUS = "founder_directed_test_mode_contract" as const
+/** Production/live activation is NOT part of this contract; it needs a final reviewed release decision. */
+export const SANDBOX_PRODUCTION_PROMOTION = "requires_final_reviewed_release_decision" as const
 
 /**
  * One reviewed API version for the meter objects and meter events (the adapter's older pin,
@@ -77,7 +84,7 @@ export type SandboxMeterSpec = {
 export const SANDBOX_METERS: readonly SandboxMeterSpec[] = SETTLEMENT_COMPONENTS.map((component) => ({
   component,
   valueBasis: REVIEWED_VALUE_BASIS[component],
-  eventName: `gradia_fp_2026_11_${component}`,
+  eventName: SETTLEMENT_METER_EVENT_NAMES[component],
   displayName: `Gradia Founder Pilot ${component.replace(/_/g, " ")}`,
   aggregation: "sum" as const,
   customerMappingKey: "stripe_customer_id" as const,
@@ -85,6 +92,20 @@ export const SANDBOX_METERS: readonly SandboxMeterSpec[] = SETTLEMENT_COMPONENTS
   meteredPriceLookupKey: `gradia_fp_2026_11_${component}_metered`,
   meteredUnitAmountCents: meteredUnitCents(component),
 }))
+
+/**
+ * True only when a settlement mapping is provisioned, valid, and EXACTLY the sandbox contract: the same six
+ * components, the same event names, the same value basis, nothing extra. The mapping is promoted from null names only
+ * on this condition (PR F2); the readiness report and the worker re-check it at run time.
+ */
+export function mappingMatchesSandboxContract(mapping: MeterMapping): boolean {
+  if (!validateMeterMapping(mapping).ok) return false
+  if (mapping.entries.length !== SANDBOX_METERS.length) return false
+  return SANDBOX_METERS.every((meter) => {
+    const entry = mapping.entries.find((candidate) => candidate.component === meter.component)
+    return entry !== undefined && entry.eventName === meter.eventName && entry.valueBasis === meter.valueBasis
+  })
+}
 
 export const SANDBOX_REQUIRED_PRICE_LOOKUP_KEYS = [
   SANDBOX_BASE_PRICE.lookupKey,
@@ -190,6 +211,11 @@ export type SandboxReadiness = {
   findings: SandboxFinding[]
   /** Verified provider-side meter ids by component, only for meters that passed every check. */
   verifiedMeterIds: Partial<Record<SettlementComponent, string>>
+  /**
+   * Provider Price ids of the exact Founder Pilot item set, ONLY when `ready` (every Price passed every check).
+   * Resolved by lookup key at run time; never committed. Empty when not ready.
+   */
+  verifiedPrices: { base: string; metered: Partial<Record<SettlementComponent, string>> } | null
 }
 
 const add = (findings: SandboxFinding[], code: SandboxFindingCode, subject: string) => {
@@ -260,6 +286,7 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
 
   // ---- Product + prices ----
   const productIds = new Set<string>()
+  const priceIds: Record<string, string> = {}
   const checkPrice = (
     lookupKey: string,
     subject: string,
@@ -272,6 +299,7 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
     const parsed = priceSchema.safeParse(list[0])
     if (!parsed.success) return add(findings, "price_unreadable", subject)
     const price = parsed.data
+    priceIds[subject] = price.id
     if (price.livemode !== false) add(findings, "price_live", subject)
     if (!price.active) add(findings, "price_inactive", subject)
     if (price.lookup_key !== lookupKey) add(findings, "price_lookup_mismatch", subject)
@@ -315,7 +343,14 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
 
   const order = (f: SandboxFinding) => `${f.code}\u0000${f.subject}`
   findings.sort((a, b) => (order(a) < order(b) ? -1 : 1))
-  return { ready: findings.length === 0, findings, verifiedMeterIds }
+  const ready = findings.length === 0
+  const verifiedPrices = ready
+    ? {
+        base: priceIds.base_price,
+        metered: Object.fromEntries(SANDBOX_METERS.map((m) => [m.component, priceIds[m.component]])) as Partial<Record<SettlementComponent, string>>,
+      }
+    : null
+  return { ready, findings, verifiedMeterIds, verifiedPrices }
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +410,8 @@ export const SANDBOX_MANUAL_STEPS: readonly { id: string; text: string }[] = [
   { id: "metered_prices", text: "Create one metered monthly USD Price per meter on the same Product with the printed lookup key and unit amount (outcomes at the approved retail rate; voice, SMS and seat at 1 cent per cent-valued unit)." },
   { id: "webhook_endpoint", text: `Add a TEST-mode webhook endpoint for POST /api/stripe/commercial-webhook pinned to API version ${COMMERCIAL_METER_API_VERSION}; copy its signing secret into GRADIA_COMMERCIAL_STRIPE_WEBHOOK_SECRET locally only.` },
   { id: "portal_config", text: "Configure the test-mode Customer Portal (what a customer may cancel/change is a founder decision)." },
-  { id: "mapping_commit", text: "When the only blocker left is settlement_mapping_unprovisioned and the founder has confirmed the contract, a REVIEWED commit replaces the null event names in REVIEWED_SETTLEMENT_METER_MAPPING and flips its status. No environment variable can do this." },
-  { id: "attach_metered_items", text: "Attaching metered Prices to the subscription (and the webhook rule that accepts them) is PR F2 and a founder decision. Until then meter events cannot appear on a Stripe invoice." },
+  { id: "attach_metered_items", text: "The subscription (and Checkout) carry the exact item set: the licensed base plus the six metered Prices. Verified by the opt-in test-clock run, not by this command." },
+  { id: "hosted_checkout", text: "Complete one HOSTED Checkout in a browser with a Stripe test card for the exact item set (Stripe's API cannot do this), then attest it with --attest hosted_checkout_completion." },
+  { id: "webhook_delivery", text: "Confirm in the Stripe TEST Dashboard that a Stripe-delivered, signed event reached the commercial webhook endpoint with a 2xx, then attest it with --attest stripe_delivered_webhook." },
+  { id: "test_clock_run", text: "Run `npm run billing:test-clock-acceptance -- --i-understand-this-mutates-stripe-test --evidence-out <file>` (opt-in; mutates only the Stripe TEST sandbox) and pass --evidence <file> here." },
 ]
