@@ -49,7 +49,7 @@ export async function completeOnboarding(): Promise<CompleteOnboardingResult> {
 
 const progressSchema = z
   .object({
-    step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    step: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
     numberSkipped: z.boolean().optional(),
   })
   .strict()

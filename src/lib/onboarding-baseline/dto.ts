@@ -71,6 +71,8 @@ export type StartingPointDto =
         activeChannels: string[] | "unknown" | null
       }
       goal: { primary: string | null; secondary: string | null; note: string | null }
+      /** The revision's stored answers, so an owner can start an update from them (additive; owner/manager reads only). */
+      answers: Record<string, unknown>
       draft: DraftSummary | null
     }
   | { status: "not_started"; role: "owner" | "manager"; draft: DraftSummary | null }

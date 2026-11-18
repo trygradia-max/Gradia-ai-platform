@@ -14,7 +14,7 @@ import type { ShopRow } from "@/lib/types/database"
 
 export const dynamic = "force-dynamic"
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4
 
 export default async function OnboardingPage({
   searchParams,
@@ -51,7 +51,7 @@ export default async function OnboardingPage({
   // for phone help.
   const requested = Number.parseInt(stepParam ?? "", 10)
   const requestedStep: Step | null =
-    requested === 1 || requested === 2 || requested === 3
+    requested === 1 || requested === 2 || requested === 3 || requested === 4
       ? requested
       : requested === 5
         ? 2

@@ -22,17 +22,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { EASE_OUT_EXPO } from "@/components/gradia/motion/page-stagger"
-import { readBusinessKind } from "@/lib/onboarding"
+import { StartingPointExperience } from "@/components/gradia/starting-point/starting-point-experience"
+import { readBusinessKind, WIZARD_STEP_ORDER } from "@/lib/onboarding"
 import { STRINGS } from "@/lib/strings"
 import { cn } from "@/lib/utils"
 import type { ShopRow } from "@/lib/types/database"
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4
 
+// Ids are persisted values (stable); the order owners see is WIZARD_STEP_ORDER.
 const STEP_LABELS: Record<Step, string> = {
   1: STRINGS.pages.onboarding.steps.business,
   2: STRINGS.pages.onboarding.steps.number,
   3: STRINGS.pages.onboarding.steps.help,
+  4: STRINGS.pages.onboarding.steps.startingPoint,
 }
 
 export function OnboardingWizard({
@@ -115,10 +118,19 @@ export function OnboardingWizard({
                 shop={shop}
                 forceCreate={forceCreate && !shop}
                 onSaved={(saved) => {
+                  // saveShop already persisted the place (the Starting point), so a refresh returns here.
                   setShop(saved)
-                  setStep(2)
+                  setStep(4)
                   router.refresh()
                 }}
+              />
+            ) : null}
+            {step === 4 && liveShop ? (
+              <StartingPointExperience
+                mode="wizard"
+                onBackStep={() => void remember(1)}
+                onDone={() => void remember(2)}
+                onSkip={() => void remember(2)}
               />
             ) : null}
             {step === 2 && liveShop ? (
@@ -126,7 +138,7 @@ export function OnboardingWizard({
                 shop={liveShop}
                 a2pState={a2pState}
                 readiness={readiness}
-                onBack={() => void remember(1)}
+                onBack={() => void remember(4)}
                 onSkip={() => void remember(3, true)}
                 onContinue={() => void remember(3, false)}
               />
@@ -156,15 +168,16 @@ function StepIndicator({
   current: Step
   reduce: boolean
 }) {
-  const steps: Step[] = [1, 2, 3]
+  const steps: readonly Step[] = WIZARD_STEP_ORDER
+  const position = steps.indexOf(current) + 1
   return (
     <nav
       className="space-y-3.5"
-      aria-label={`Onboarding progress, step ${current} of 3: ${STEP_LABELS[current]}`}
+      aria-label={`Onboarding progress, step ${position} of ${steps.length}: ${STEP_LABELS[current]}`}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="label-eyebrow text-muted-foreground">
-          {STRINGS.pages.onboarding.stepStatus(current)}
+          {STRINGS.pages.onboarding.stepStatus(position, steps.length)}
         </p>
         <p className="text-xs font-medium tracking-tight text-foreground">
           {STEP_LABELS[current]}
@@ -173,7 +186,7 @@ function StepIndicator({
       <ol className="flex list-none items-center gap-2 p-0">
         {steps.map((id, i) => {
           const isActive = id === current
-          const isComplete = id < current
+          const isComplete = i < position - 1
           return (
             <li
               key={id}
@@ -183,7 +196,7 @@ function StepIndicator({
               )}
             >
               <StepDot
-                id={id}
+                id={i + 1}
                 label={STEP_LABELS[id]}
                 isActive={isActive}
                 isComplete={isComplete}
@@ -210,7 +223,7 @@ function StepDot({
   isComplete,
   reduce,
 }: {
-  id: Step
+  id: number
   label: string
   isActive: boolean
   isComplete: boolean

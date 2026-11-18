@@ -78,7 +78,7 @@ function AgentCardView({ agent }: { agent: AgentSummaryDto }) {
   )
 }
 
-export function AgentsHomeView({ home }: { home: AgentsHomeDto }) {
+export function AgentsHomeView({ home, notice }: { home: AgentsHomeDto; /** Optional pointer shown under the page heading (for example, the Starting point). */ notice?: React.ReactNode }) {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
       <SectionHeader
@@ -97,6 +97,8 @@ export function AgentsHomeView({ home }: { home: AgentsHomeDto }) {
           )
         }
       />
+
+      {notice}
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm" aria-label="Active agents">
         <p>

@@ -27,6 +27,8 @@ const actions = vi.hoisted(() => ({
   createGradiaAgentIdentity: vi.fn(),
 }))
 vi.mock("@/app/actions/agent-definitions", () => actions)
+const baseline = vi.hoisted(() => ({ getBaselineStartingPoint: vi.fn() }))
+vi.mock("@/app/actions/onboarding-baseline", () => baseline)
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }))
@@ -82,6 +84,8 @@ const catalog: DtoResult<MemoryCatalogDto> = { status: "ok", data: { sources: [{
 const ok = <T,>(data: T): DtoResult<T> => ({ status: "ok", data })
 
 beforeEach(() => {
+  baseline.getBaselineStartingPoint.mockReset()
+  baseline.getBaselineStartingPoint.mockResolvedValue({ status: "forbidden" })
   for (const fn of Object.values(actions)) fn.mockReset()
   actions.getSelectableMemory.mockResolvedValue(catalog)
 })
