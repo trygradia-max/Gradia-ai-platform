@@ -1,3 +1,4 @@
+import { getBaselineStartingPoint } from "@/app/actions/onboarding-baseline"
 import { loadIntakeReview } from "@/lib/data/intake-review"
 import { createClient } from "@/lib/supabase/server"
 import { IntakeReviewQueue } from "@/components/gradia/intake-review-queue"
@@ -10,6 +11,7 @@ import { ActivityFeed } from "@/components/gradia/activity-feed"
 import { ApprovalsList } from "@/components/gradia/approvals-list"
 import { DashboardHero } from "@/components/gradia/dashboard-hero"
 import { KpiRow } from "@/components/gradia/kpi-row"
+import { StartingPointStatusCard } from "@/components/gradia/starting-point/starting-point-status-card"
 import { SectionHeader } from "@/components/gradia/section-header"
 import { WelcomeTransition } from "@/components/gradia/welcome-transition"
 import { dashboardEyebrow } from "@/lib/eyebrow"
@@ -33,12 +35,14 @@ export default async function DashboardPage({
   const params = await searchParams
   const shop = await requireShop()
   const db = await createClient()
-  const [channels, kpis, approvals, activity, intake] = await Promise.all([
+  const [channels, kpis, approvals, activity, intake, startingPoint] = await Promise.all([
     getChannelStatusForCurrentShop(),
     getHomeKpis(),
     listOpenApprovalsForCurrentShop(),
     listActivityFeed(),
     loadIntakeReview(db, shop.id, 0, 5),
+    // A failed read renders "status unavailable" on the card; it never blocks Home and is never an empty state.
+    getBaselineStartingPoint().catch(() => ({ status: "unavailable" }) as const),
   ])
 
   const editCount = approvals.filter((a) => a.status === "edit_requested").length
@@ -57,6 +61,8 @@ export default async function DashboardPage({
         eyebrow={dashboardEyebrow()}
         rightSlot={<AddLeadDialog />}
       />
+
+      <StartingPointStatusCard dto={startingPoint} />
 
       <KpiRow kpis={kpis} />
 

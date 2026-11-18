@@ -38,7 +38,6 @@ import {
 
 const SHOP = "11111111-1111-4111-8111-111111111111"
 const OTHER = "22222222-2222-4222-8222-222222222222"
-const baselineCalls = () => state.rpc.mock.calls.map((c) => c[0] as string)
 const ws = (role: string, capabilities: string[], id = SHOP) => ({ id, name: "Shop", role, capabilities, location_id: id })
 const empty = { role: "owner", pointer: null, revision: null, measurements: [], draft: null }
 

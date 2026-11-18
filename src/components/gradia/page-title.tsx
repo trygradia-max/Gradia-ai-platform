@@ -18,6 +18,7 @@ const TITLES: [prefix: string, title: string][] = [
   ["/agents", "Gradia Agents"],
   ["/calendar", "Calendar"],
   ["/settings", "Settings"],
+  ["/starting-point", "Starting point"],
 ]
 
 export function PageTitle() {

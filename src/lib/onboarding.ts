@@ -1,6 +1,9 @@
 /**
- * First-run wizard — three steps, with an explicit saved place.
- * Your business → Your number → What would you like help with first?
+ * First-run wizard — four steps, with an explicit saved place.
+ * Your business → Starting point → Your number → What would you like help with first?
+ *
+ * Step ids are stable persisted values, NOT positions: 1 business, 2 number, 3 help (unchanged, so every
+ * saved place keeps its meaning) and 4 the Starting point. Display order is `WIZARD_STEP_ORDER`.
  */
 
 import { describeA2pRegistration, type A2pNextAction, type A2pRegistrationState } from "@/lib/a2p-state"
@@ -8,7 +11,10 @@ import type { A2pRegistrationStatus } from "@/lib/types/database"
 import type { ShopRow } from "@/lib/types/database"
 import type { AutonomyMode } from "@/lib/autonomy"
 
-export type WizardStep = 1 | 2 | 3
+export type WizardStep = 1 | 2 | 3 | 4
+
+/** The order owners see. The Starting point follows the business profile, before number and connector setup. */
+export const WIZARD_STEP_ORDER: readonly WizardStep[] = [1, 4, 2, 3]
 export type BusinessKind = "detailing" | "general"
 
 type WizardShopFields = Partial<Pick<ShopRow, "settings" | "twilio_phone_number">>
@@ -31,7 +37,7 @@ export function readSavedWizardStep(
   settings: Record<string, unknown> | null | undefined
 ): WizardStep | null {
   const step = settings?.onboarding_step
-  return step === 1 || step === 2 || step === 3 ? step : null
+  return step === 1 || step === 2 || step === 3 || step === 4 ? step : null
 }
 
 /**

@@ -1,3 +1,5 @@
+import { getBaselineStartingPoint } from "@/app/actions/onboarding-baseline"
+import { StartingPointStatusCard } from "@/components/gradia/starting-point/starting-point-status-card"
 import {getManagerNotifications} from "@/app/actions/manager-notifications"
 import {ManagerNotificationSettings} from "@/components/gradia/manager-notification-settings"
 import { getChannelReadiness } from "@/app/actions/channel-readiness"
@@ -188,8 +190,10 @@ export default async function SettingsPage({
   const services = await listServicesForCurrentShop()
   const automationEntries = await getAutomationSettings()
   const websiteForms = await listPublicIntakeForms(shopCtx.id)
+  const startingPoint = await getBaselineStartingPoint().catch(() => ({ status: "unavailable" }) as const)
 
   const sections = [
+    { id: "starting-point", label: "Starting point" },
     { id: "services", label: "Service menu" },
     { id: "hours", label: "Working hours" },
     { id: "automations", label: "Automations" },
@@ -300,6 +304,11 @@ export default async function SettingsPage({
       <div className="space-y-10 pt-8 [&>section]:scroll-mt-24">
         {/* The shop's brain (CRM C3a): one menu feeds quotes, phone answers,
             and drafts through lib/service-pricing — never edited elsewhere. */}
+        {/* Starting point: where the shop begins, so change can be measured honestly. */}
+        <section id="starting-point">
+          <StartingPointStatusCard dto={startingPoint} headingLevel={2} />
+        </section>
+
         <section id="services">
           <ServiceMenuCard
             initialServices={services}

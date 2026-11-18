@@ -180,6 +180,7 @@ export function buildStartingPoint(r: BaselineReadResult): StartingPointDto {
     },
     readiness: { recordsSystem: choice(a, "records_system"), calendarSystem: choice(a, "calendar_system"), activeChannels: channels },
     goal: { primary: goal("pilot_primary_outcome"), secondary: goal("pilot_secondary_outcome"), note },
+    answers: a,
     draft,
   }
 }
