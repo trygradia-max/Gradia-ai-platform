@@ -41,8 +41,8 @@ No local draft store is needed or added; "saved" is only ever shown after the se
 
 ## Milestones and checkpoints
 
-- [ ] M0 audit + this file
-- [ ] M1 session-derived actions + seam tests
+- [x] M0 audit + this file
+- [x] M1 session-derived actions + seam tests (`src/app/actions/onboarding-baseline.ts`, `period.ts`, `eval/onboarding-baseline-actions.test.ts`)
 - [ ] M2 UI model + copy + tests
 - [ ] M3 quiz + report components + tests
 - [ ] M4 route, wizard step, links
