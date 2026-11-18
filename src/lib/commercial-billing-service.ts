@@ -22,6 +22,7 @@ import {
   type CommercialBillingDto,
   type CommercialBlockingReason,
 } from "@/lib/commercial-billing"
+import { FOUNDER_PILOT_ITEM_SET_DIGEST } from "@/lib/commercial-subscription-items"
 import {
   createPlatformPortalClient,
   createPlatformStripeClient,
@@ -69,6 +70,8 @@ export function checkoutRequestFingerprint(identity: CheckoutRequestIdentity): s
         identity.planKey,
         identity.lookupKey,
         identity.returnTarget,
+        // A changed item-set contract is a changed request (PR F2): an in-flight attempt cannot be silently reused.
+        FOUNDER_PILOT_ITEM_SET_DIGEST,
       ])
     )
     .digest("hex")
@@ -323,10 +326,11 @@ export async function requestFounderPilotCheckout(
     if (!b.attempt_id) return blockedDto("unknown", "billing_state_unavailable")
     const attemptId = b.attempt_id
 
-    // 1. Verify the approved Price (read-only; nothing exists remotely yet).
+    // 1. Resolve and verify the EXACT item set: approved licensed base + six metered Prices, Product and
+    //    Meters (read-only; nothing exists remotely yet).
     let price
     try {
-      price = await stripe.verifyFounderPilotPrice()
+      price = await stripe.resolveFounderPilotItemSet()
     } catch {
       await mark("commercial_checkout_reject", attemptId, "price_lookup_unavailable")
       return billingDto({ state: "checkout_required", eligibleToActivate: false, blockingReason: "provider_unavailable" })
@@ -371,7 +375,7 @@ export async function requestFounderPilotCheckout(
     let session
     try {
       session = await stripe.createCheckoutSession({
-        priceId: price.priceId,
+        lineItems: price.lineItems,
         customerId,
         shopId,
         attemptId,

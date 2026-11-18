@@ -6,8 +6,10 @@ import {
   createPlatformStripeClient,
   isDefinitiveRejection,
   resolveCommercialStripeConfig,
-  verifyFounderPilotPrice,
 } from "@/lib/stripe-commercial"
+import { COMMERCIAL_METER_API_VERSION } from "@/lib/stripe-sandbox-contract"
+import { FakeStripeSandbox } from "./_fake-stripe-sandbox"
+import { exactFixtureItems } from "./_commercial-item-fixtures"
 
 const TEST_KEY = "sk_test_FAKEFAKEFAKEFAKE0123"
 const GOOD_ENV = {
@@ -16,20 +18,15 @@ const GOOD_ENV = {
   GRADIA_DASHBOARD_URL: "https://app.gradia.example",
 }
 
-const goodPrice = (patch: Record<string, unknown> = {}) => ({
-  id: "price_fake_founder_pilot",
-  object: "price",
-  active: true,
-  currency: "usd",
-  lookup_key: "gradia_founder_pilot_2026_11_monthly",
-  type: "recurring",
-  unit_amount: 19_900,
-  billing_scheme: "per_unit",
-  livemode: false,
-  recurring: { interval: "month", interval_count: 1, usage_type: "licensed" },
-  ...patch,
-})
-const list = (...prices: unknown[]) => ({ object: "list", data: prices })
+const LINE_ITEMS = [
+  { priceId: "price_Fake_base", quantity: 1 as const },
+  { priceId: "price_Fake_standard_digital_outcome" },
+  { priceId: "price_Fake_qualified_lead" },
+  { priceId: "price_Fake_confirmed_appointment" },
+  { priceId: "price_Fake_inbound_voice_agent_minute" },
+  { priceId: "price_Fake_sms_segment" },
+  { priceId: "price_Fake_extra_operator_seat_proration" },
+]
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -79,33 +76,6 @@ describe("sandbox configuration gate", () => {
   })
 })
 
-describe("approved Price verification (by lookup key, never by name or amount alone)", () => {
-  it("accepts exactly the approved recurring USD $199/month price", () => {
-    expect(verifyFounderPilotPrice(list(goodPrice()))).toEqual({ ok: true, priceId: "price_fake_founder_pilot" })
-  })
-
-  it.each([
-    ["no price", list(), "price_missing"],
-    ["two prices", list(goodPrice(), goodPrice({ id: "price_fake_two" })), "price_ambiguous"],
-    ["a lookup mismatch", list(goodPrice({ lookup_key: "gradia_other" })), "price_lookup_mismatch"],
-    ["no lookup key", list(goodPrice({ lookup_key: null })), "price_lookup_mismatch"],
-    ["an inactive price", list(goodPrice({ active: false })), "price_inactive"],
-    ["the wrong currency", list(goodPrice({ currency: "eur" })), "price_currency_mismatch"],
-    ["the wrong amount", list(goodPrice({ unit_amount: 2_000 })), "price_amount_mismatch"],
-    ["a null amount", list(goodPrice({ unit_amount: null })), "price_amount_mismatch"],
-    ["a one-time price", list(goodPrice({ type: "one_time", recurring: null })), "price_amount_mismatch"],
-    ["a tiered price", list(goodPrice({ billing_scheme: "tiered" })), "price_amount_mismatch"],
-    ["a yearly interval", list(goodPrice({ recurring: { interval: "year", interval_count: 1, usage_type: "licensed" } })), "price_interval_mismatch"],
-    ["a 3-month interval", list(goodPrice({ recurring: { interval: "month", interval_count: 3, usage_type: "licensed" } })), "price_interval_mismatch"],
-    ["metered usage", list(goodPrice({ recurring: { interval: "month", interval_count: 1, usage_type: "metered" } })), "price_usage_mismatch"],
-    ["a live-mode price", list(goodPrice({ livemode: true })), "price_live_object"],
-    ["a malformed payload", { data: "nope" }, "price_invalid_response"],
-    ["a malformed price", list({ id: "price_x" }), "price_invalid_response"],
-  ])("fails closed on %s", (_name, payload, code) => {
-    expect(verifyFounderPilotPrice(payload)).toEqual({ ok: false, code })
-  })
-})
-
 describe("error classification", () => {
   it("treats only 4xx rejections as definitive", () => {
     for (const status of [400, 401, 402, 403, 404]) expect(isDefinitiveRejection(new StripeError(status, "x"))).toBe(true)
@@ -126,7 +96,7 @@ function fixtureFetch(responder: (url: URL, init: RequestInit) => { status?: num
       headers: Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>)),
       body: new URLSearchParams(typeof init?.body === "string" ? init.body : (url.search || "")),
     })
-    return new Response(JSON.stringify(result.body), { status: result.status ?? 200 })
+    return new Response(JSON.stringify(result.body), { status: result.status ?? 200, headers: { "Stripe-Version": COMMERCIAL_METER_API_VERSION } })
   })
   vi.stubGlobal("fetch", impl)
   return calls
@@ -137,18 +107,47 @@ const SHOP = "00000000-0000-4000-8000-0000000000aa"
 const ATTEMPT = "00000000-0000-4000-8000-0000000000bb"
 
 describe("platform Stripe client", () => {
-  it("looks up the price by lookup key on the PLATFORM account, read-only", async () => {
-    const calls = fixtureFetch(() => ({ body: list(goodPrice()) }))
-    const result = await createPlatformStripeClient(config).verifyFounderPilotPrice()
-    expect(result).toEqual({ ok: true, priceId: "price_fake_founder_pilot" })
-    expect(calls).toHaveLength(1)
-    expect(calls[0].init.method).toBe("GET")
-    expect(calls[0].url.pathname).toBe("/v1/prices")
-    expect(calls[0].url.searchParams.get("lookup_keys[0]")).toBe("gradia_founder_pilot_2026_11_monthly")
-    expect(calls[0].headers["Stripe-Version"]).toBe("2024-06-20")
-    expect(calls[0].headers.Authorization).toBe(`Bearer ${TEST_KEY}`)
-    expect(calls[0].headers).not.toHaveProperty("Stripe-Account")
-    expect(calls[0].headers).not.toHaveProperty("Idempotency-Key")
+  it("resolves the EXACT item set by lookup keys on the PLATFORM account, read-only, at the reviewed API version", async () => {
+    const fake = FakeStripeSandbox.provisioned(1_790_000_000)
+    const calls = fixtureFetch((url) =>
+      url.pathname === "/v1/prices"
+        ? { body: { object: "list", data: fake.prices[url.searchParams.get("lookup_keys[0]") ?? ""] ?? [], has_more: false } }
+        : { body: { object: "list", data: fake.meters, has_more: false } }
+    )
+    const result = await createPlatformStripeClient(config).resolveFounderPilotItemSet()
+    expect(result).toEqual({
+      ok: true,
+      lineItems: [
+        { priceId: "price_FakeBase1", quantity: 1 },
+        ...["standard_digital_outcome", "qualified_lead", "confirmed_appointment", "inbound_voice_agent_minute", "sms_segment", "extra_operator_seat_proration"].map((c) => ({ priceId: `price_Fake_${c}` })),
+      ],
+    })
+    // 7 price lookups + 1 meter list, GET only.
+    expect(calls).toHaveLength(8)
+    for (const call of calls) {
+      expect(call.init.method).toBe("GET")
+      expect(call.headers["Stripe-Version"]).toBe(COMMERCIAL_METER_API_VERSION)
+      expect(call.headers.Authorization).toBe(`Bearer ${TEST_KEY}`)
+      expect(call.headers).not.toHaveProperty("Stripe-Account")
+      expect(call.headers).not.toHaveProperty("Idempotency-Key")
+    }
+  })
+
+  it("refuses (never repairs) a sandbox that does not hold the exact set", async () => {
+    const fake = FakeStripeSandbox.provisioned(1_790_000_000)
+    delete fake.prices["gradia_fp_2026_11_sms_segment_metered"]
+    fixtureFetch((url) =>
+      url.pathname === "/v1/prices"
+        ? { body: { object: "list", data: fake.prices[url.searchParams.get("lookup_keys[0]") ?? ""] ?? [], has_more: false } }
+        : { body: { object: "list", data: fake.meters, has_more: false } }
+    )
+    const result = await createPlatformStripeClient(config).resolveFounderPilotItemSet()
+    expect(result).toEqual({ ok: false, code: "item_set_price_missing" })
+  })
+
+  it("treats an unreachable sandbox as an ambiguous read (throws), not as 'not ready'", async () => {
+    fixtureFetch(() => ({ status: 500, body: { error: { message: "x" } } }))
+    await expect(createPlatformStripeClient(config).resolveFounderPilotItemSet()).rejects.toMatchObject({ code: "provider_unreachable" })
   })
 
   it("creates the platform customer with a stable idempotency key and tenant metadata, never Connect", async () => {
@@ -178,7 +177,7 @@ describe("platform Stripe client", () => {
       },
     }))
     const session = await createPlatformStripeClient(config).createCheckoutSession({
-      priceId: "price_fake_founder_pilot",
+      lineItems: LINE_ITEMS,
       customerId: "cus_FakeCustomer1",
       shopId: SHOP,
       attemptId: ATTEMPT,
@@ -192,8 +191,15 @@ describe("platform Stripe client", () => {
     expect(calls[0].headers["Idempotency-Key"]).toBe(`gradia-cb-session-${ATTEMPT}`)
     expect(body.get("mode")).toBe("subscription")
     expect(body.get("customer")).toBe("cus_FakeCustomer1")
-    expect(body.get("line_items[0][price]")).toBe("price_fake_founder_pilot")
+    expect(calls[0].headers["Stripe-Version"]).toBe(COMMERCIAL_METER_API_VERSION)
+    // Licensed base x1, then six metered items with NO quantity (Stripe: must not be defined for metered).
+    expect(body.get("line_items[0][price]")).toBe("price_Fake_base")
     expect(body.get("line_items[0][quantity]")).toBe("1")
+    for (let i = 1; i <= 6; i += 1) {
+      expect(body.get(`line_items[${i}][price]`)).toMatch(/^price_Fake_/)
+      expect(body.get(`line_items[${i}][quantity]`)).toBeNull()
+    }
+    expect(body.get("line_items[7][price]")).toBeNull()
     expect(body.get("client_reference_id")).toBe(ATTEMPT)
     for (const prefix of ["metadata", "subscription_data[metadata]"]) {
       const key = (name: string) => (prefix === "metadata" ? `metadata[${name}]` : `subscription_data[metadata][${name}]`)
@@ -204,8 +210,7 @@ describe("platform Stripe client", () => {
     }
     // There is no Stripe trial; the 14 days are pre-activation build/test access.
     expect([...body.keys()].some((k) => /trial/i.test(k))).toBe(false)
-    // Only one line item: no guessed seat/PAYG quantities.
-    expect(body.get("line_items[1][price]")).toBeNull()
+    // No guessed seat/PAYG quantities: metered items have none.
     expect(body.get("success_url")).toContain("billing_return=success")
     expect(body.get("payment_method_collection")).toBe("always")
     expect(calls[0].headers).not.toHaveProperty("Stripe-Account")
@@ -226,7 +231,7 @@ describe("platform Stripe client", () => {
       },
     }))
     const session = await createPlatformStripeClient(config).createCheckoutSession({
-      priceId: "price_fake_founder_pilot", customerId: "cus_FakeCustomer1", shopId: SHOP, attemptId: ATTEMPT,
+      lineItems: LINE_ITEMS, customerId: "cus_FakeCustomer1", shopId: SHOP, attemptId: ATTEMPT,
       successUrl: "https://app.gradia.example/r", cancelUrl: "https://app.gradia.example/r", idempotencyKey: "k-xxxxxxxxxxxxxxxx",
     })
     expect(session.url).toBeNull()
@@ -239,13 +244,14 @@ describe("platform Stripe client", () => {
         id: "cs_test_FakeSession1", object: "checkout.session", livemode: false, mode: "subscription",
         url: "https://checkout.stripe.com/c/pay/cs_test_FakeSession1", customer: "cus_FakeCustomer1", client_reference_id: ATTEMPT,
         metadata: { shop_id: SHOP, checkout_attempt_id: ATTEMPT, catalog_version: COMMERCIAL_CATALOG_VERSION, plan_key: "founder-pilot" },
+        line_items: { data: exactFixtureItems() },
         ...(status === undefined ? {} : { status }),
       }
       const client = createPlatformStripeClient(config)
       fixtureFetch(() => ({ body }))
       const created = await client
         .createCheckoutSession({
-          priceId: "price_fake_founder_pilot", customerId: "cus_FakeCustomer1", shopId: SHOP, attemptId: ATTEMPT,
+          lineItems: LINE_ITEMS, customerId: "cus_FakeCustomer1", shopId: SHOP, attemptId: ATTEMPT,
           successUrl: "https://app.gradia.example/agents?billing_return=success",
           cancelUrl: "https://app.gradia.example/agents?billing_return=canceled",
           idempotencyKey: `gradia-cb-session-${ATTEMPT}`,
@@ -268,13 +274,19 @@ describe("platform Stripe client", () => {
       id: "cs_test_FakeSession1", object: "checkout.session", livemode: false, mode: "subscription", status: "open",
       url: "https://checkout.stripe.com/c/pay/cs_test_FakeSession1", customer: "cus_FakeCustomer1", client_reference_id: ATTEMPT,
       metadata: { shop_id: SHOP, checkout_attempt_id: ATTEMPT, catalog_version: COMMERCIAL_CATALOG_VERSION, plan_key: "founder-pilot", ...metaPatch },
+      line_items: { data: exactFixtureItems() },
       ...patch,
     })
     const binding = { shopId: SHOP, attemptId: ATTEMPT, customerId: "cus_FakeCustomer1" }
     const client = createPlatformStripeClient(config)
 
-    fixtureFetch(() => ({ body: session() }))
+    const retrievals = fixtureFetch(() => ({ body: session() }))
     expect(await client.retrieveCheckoutSession({ sessionId: "cs_test_FakeSession1", binding })).toMatchObject({ ok: true, session: { status: "open" } })
+    expect(retrievals[0].url.searchParams.get("expand[0]")).toBe("line_items")
+    expect(retrievals[0].headers["Stripe-Version"]).toBe(COMMERCIAL_METER_API_VERSION)
+    // The exact set is order-independent.
+    fixtureFetch(() => ({ body: session({ line_items: { data: [...exactFixtureItems()].reverse() } }) }))
+    expect(await client.retrieveCheckoutSession({ sessionId: "cs_test_FakeSession1", binding })).toMatchObject({ ok: true })
 
     for (const [name, payload] of [
       ["another shop", session({}, { shop_id: "00000000-0000-4000-8000-0000000000cc" })],
@@ -282,6 +294,10 @@ describe("platform Stripe client", () => {
       ["another catalog", session({}, { catalog_version: "2025-01-01.v1" })],
       ["another customer", session({ customer: "cus_SomeoneElse9" })],
       ["a payment-mode session", session({ mode: "payment" })],
+      ["no expanded line items", session({ line_items: undefined })],
+      ["only the base line item", session({ line_items: { data: exactFixtureItems().slice(0, 1) } })],
+      ["an extra line item", session({ line_items: { data: [...exactFixtureItems(), ...exactFixtureItems().slice(0, 1)] } })],
+      ["a missing metered line item", session({ line_items: { data: exactFixtureItems().slice(0, 6) } })],
     ] as const) {
       fixtureFetch(() => ({ body: payload }))
       expect(await client.retrieveCheckoutSession({ sessionId: "cs_test_FakeSession1", binding }), name).toEqual({
@@ -327,7 +343,7 @@ describe("platform Stripe client", () => {
 
   it("does not leak the key, URLs or payloads in thrown errors", async () => {
     fixtureFetch(() => ({ status: 400, body: { error: { message: "No such price", code: "resource_missing" } } }))
-    const error = await createPlatformStripeClient(config).verifyFounderPilotPrice().catch((e: unknown) => e)
+    const error = await createPlatformStripeClient(config).resolveFounderPilotItemSet().catch((e: unknown) => e)
     expect(String((error as Error).message)).not.toContain(TEST_KEY)
   })
 })

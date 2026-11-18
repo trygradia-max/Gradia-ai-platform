@@ -54,27 +54,40 @@ export const REVIEWED_VALUE_BASIS: Readonly<Record<SettlementComponent, MeterVal
 export type MeterMapping = {
   /** Version recorded immutably on every settlement. */
   version: string
-  /** `provisioned` only after sandbox meters exist AND a reviewed commit names them. */
+  /** `provisioned` only when the entries below equal the reviewed sandbox contract exactly. */
   status: "unprovisioned" | "provisioned"
   entries: readonly { component: SettlementComponent; valueBasis: MeterValueBasis; eventName: string | null }[]
 }
 
 /**
- * The reviewed mapping as committed. No approved sandbox meter or event name
- * exists yet (the sandbox contains only the two recurring prices), so every name
- * is null and settlement fails closed with `settlement_mapping_unprovisioned`.
- * The later provisioning step must (1) create one sandbox meter per component,
- * (2) replace `null` with the real event name in a reviewed commit and flip
- * `status` to `provisioned`. Names are never taken from the environment, a request
- * or a model.
+ * The reviewed TEST-mode meter event names, one per settlement component (Commercial Billing PR F2).
+ * Single source of truth: the sandbox contract (`stripe-sandbox-contract.ts`) derives its meters from
+ * this record, and a unit test pins the committed mapping to it. Founder direction 2026-11-18: the F1
+ * recommended contract is the TEST-mode implementation contract. Production promotion still needs a
+ * final reviewed release decision; nothing here is a live-mode name or an environment value.
+ */
+export const SETTLEMENT_METER_EVENT_NAMES: Readonly<Record<SettlementComponent, string>> = {
+  standard_digital_outcome: "gradia_fp_2026_11_standard_digital_outcome",
+  qualified_lead: "gradia_fp_2026_11_qualified_lead",
+  confirmed_appointment: "gradia_fp_2026_11_confirmed_appointment",
+  inbound_voice_agent_minute: "gradia_fp_2026_11_inbound_voice_agent_minute",
+  sms_segment: "gradia_fp_2026_11_sms_segment",
+  extra_operator_seat_proration: "gradia_fp_2026_11_extra_operator_seat_proration",
+}
+
+/**
+ * The reviewed mapping as committed. Promoted from all-null to the reviewed contract names in PR F2
+ * (TEST mode). The value basis is fixed by `REVIEWED_VALUE_BASIS` and cannot be supplied by a mapping.
+ * Names are never taken from the environment, a request or a model. `validateMeterMapping` still checks
+ * format, uniqueness and completeness at runtime, so a malformed edit fails closed.
  */
 export const REVIEWED_SETTLEMENT_METER_MAPPING: MeterMapping = {
-  version: "settlement-mapping.v1-unprovisioned",
-  status: "unprovisioned",
+  version: "settlement-mapping.v2-sandbox-contract",
+  status: "provisioned",
   entries: SETTLEMENT_COMPONENTS.map((component) => ({
     component,
     valueBasis: REVIEWED_VALUE_BASIS[component],
-    eventName: null,
+    eventName: SETTLEMENT_METER_EVENT_NAMES[component],
   })),
 }
 

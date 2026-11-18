@@ -27,6 +27,7 @@ import { resolveSettlementRuntime, settleCommercialPeriod } from "@/lib/commerci
 import type { MembershipEvidence, MembershipEvidenceEvent } from "@/lib/commercial-seat-proration"
 import { previewCommercialPeriod, type EvidenceFact, type PreviewInput } from "@/lib/commercial-usage-preview"
 import { StripeError } from "@/lib/stripe"
+import { SANDBOX_METERS } from "@/lib/stripe-sandbox-contract"
 
 const START = "2026-11-01T00:00:00.000Z"
 const END = "2026-12-01T00:00:00.000Z"
@@ -82,11 +83,36 @@ const TEST_MAPPING: MeterMapping = {
   })),
 }
 
+/** What the mapping looked like before PR F2 (every name null): still must fail closed. */
+const UNPROVISIONED_MAPPING: MeterMapping = {
+  version: "settlement-mapping.v1-unprovisioned",
+  status: "unprovisioned",
+  entries: SETTLEMENT_COMPONENTS.map((component) => ({ component, valueBasis: REVIEWED_VALUE_BASIS[component], eventName: null })),
+}
+
 describe("reviewed meter mapping", () => {
-  it("ships unprovisioned: every name is null and nothing can be planned or sent", () => {
-    expect(REVIEWED_SETTLEMENT_METER_MAPPING.status).toBe("unprovisioned")
-    expect(REVIEWED_SETTLEMENT_METER_MAPPING.entries.map((e) => e.eventName)).toEqual(Array(6).fill(null))
-    expect(validateMeterMapping(REVIEWED_SETTLEMENT_METER_MAPPING)).toEqual({ ok: false, reason: "settlement_mapping_unprovisioned" })
+  it("ships the reviewed TEST-mode contract names, exactly equal to the sandbox contract, with the approved value basis", () => {
+    expect(REVIEWED_SETTLEMENT_METER_MAPPING.status).toBe("provisioned")
+    expect(validateMeterMapping(REVIEWED_SETTLEMENT_METER_MAPPING)).toEqual({ ok: true, mapping: REVIEWED_SETTLEMENT_METER_MAPPING })
+    // Exactly the contract: same six components, same event names, same value basis, nothing else.
+    expect(REVIEWED_SETTLEMENT_METER_MAPPING.entries.map((e) => [e.component, e.eventName, e.valueBasis])).toEqual(
+      SANDBOX_METERS.map((m) => [m.component, m.eventName, m.valueBasis])
+    )
+    expect(new Set(REVIEWED_SETTLEMENT_METER_MAPPING.entries.map((e) => e.eventName)).size).toBe(6)
+    // Value basis (founder-approved 2026-11-16): outcomes by billed quantity; voice, SMS and seat by settled cents.
+    const basis = Object.fromEntries(REVIEWED_SETTLEMENT_METER_MAPPING.entries.map((e) => [e.component, e.valueBasis]))
+    expect(basis).toEqual({
+      standard_digital_outcome: "billed_quantity", qualified_lead: "billed_quantity", confirmed_appointment: "billed_quantity",
+      inbound_voice_agent_minute: "charge_cents", sms_segment: "charge_cents", extra_operator_seat_proration: "charge_cents",
+    })
+    // No object id, secret or environment-derived value.
+    expect(JSON.stringify(REVIEWED_SETTLEMENT_METER_MAPPING)).not.toMatch(/(mtr|price|prod|cus)_[A-Za-z0-9]{6,}|sk_|whsec_/)
+  })
+
+  it("an unprovisioned (all-null) mapping still fails closed and plans nothing", () => {
+    expect(validateMeterMapping(UNPROVISIONED_MAPPING)).toEqual({ ok: false, reason: "settlement_mapping_unprovisioned" })
+    // Flipping only the status is not enough: names must still validate.
+    expect(validateMeterMapping({ ...UNPROVISIONED_MAPPING, status: "provisioned", version: "settlement-mapping.v2-x" })).toEqual({ ok: false, reason: "settlement_mapping_invalid" })
   })
 
   it("covers exactly the five approved metrics plus seat proration, and no other component", () => {
@@ -234,8 +260,8 @@ describe("delivery plan", () => {
     return built.document
   }
 
-  it("plans nothing from the shipped unprovisioned mapping", () => {
-    const plan = buildDeliveryPlan({ shopId: SHOP, document: document(outcomes("qualified_lead", 2)), mapping: REVIEWED_SETTLEMENT_METER_MAPPING })
+  it("plans nothing from an unprovisioned mapping", () => {
+    const plan = buildDeliveryPlan({ shopId: SHOP, document: document(outcomes("qualified_lead", 2)), mapping: UNPROVISIONED_MAPPING })
     expect(plan).toEqual({ ok: true, deliveries: [] })
   })
 
@@ -312,8 +338,11 @@ describe("runtime resolution and the real provider (network blocked)", () => {
     expect(resolveSettlementRuntime({}, TEST_MAPPING)).toEqual({ ok: false, reason: "billing_unconfigured" })
     expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_live_abcdefghijkl" }, TEST_MAPPING)).toEqual({ ok: false, reason: "billing_misconfigured" })
     expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "live", STRIPE_SECRET_KEY: "sk_test_abcdefghijkl" }, TEST_MAPPING)).toEqual({ ok: false, reason: "billing_misconfigured" })
-    // Sandbox config alone is not enough: the shipped mapping is unprovisioned.
-    expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_test_abcdefghijkl" })).toEqual({ ok: false, reason: "settlement_mapping_unprovisioned" })
+    // Sandbox config alone is not enough when the mapping is unprovisioned; the shipped (F2) mapping is provisioned.
+    expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_test_abcdefghijkl" }, UNPROVISIONED_MAPPING)).toEqual({ ok: false, reason: "settlement_mapping_unprovisioned" })
+    expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_test_abcdefghijkl" }).ok).toBe(true)
+    // A live-shaped key is refused even with the provisioned shipped mapping.
+    expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_live_abcdefghijkl" })).toEqual({ ok: false, reason: "billing_misconfigured" })
     expect(resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_test_abcdefghijkl" }, TEST_MAPPING).ok).toBe(true)
   })
 
@@ -345,7 +374,7 @@ describe("settleCommercialPeriod fails closed before touching the database", () 
   const untouchable = new Proxy({}, { get() { throw new Error("database must not be touched") } }) as unknown as SupabaseClient
   const input = { shopId: SHOP, actorId: "33333333-3333-4333-8333-333333333333", windowStart: START, windowEnd: END }
   it("refuses an unprovisioned runtime", async () => {
-    const runtime = resolveSettlementRuntime({}, REVIEWED_SETTLEMENT_METER_MAPPING)
+    const runtime = resolveSettlementRuntime({ GRADIA_COMMERCIAL_BILLING_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_test_abcdefghijkl" }, UNPROVISIONED_MAPPING)
     expect(await settleCommercialPeriod(untouchable, runtime, input)).toMatchObject({ ok: false, reason: "runtime_unavailable" })
   })
   it("refuses malformed input, including model-style extra fields", async () => {

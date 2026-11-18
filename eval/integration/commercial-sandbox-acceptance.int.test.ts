@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { APPROVED_COMMERCIAL_CATALOG_VERSION } from "@/lib/approved-commercial-catalog"
 import { FOUNDER_PILOT_PRICE } from "@/lib/commercial-billing"
+import { exactFixtureItems } from "../_commercial-item-fixtures"
 import { dispatchPendingSettlementDeliveries, reconcileUnknownDeliveries } from "@/lib/commercial-billing-operations"
 import { assessCommercialExecution } from "@/lib/commercial-execution-gate"
 import { createMeterEvidenceReader } from "@/lib/commercial-settlement-provider"
@@ -52,7 +53,7 @@ const subObject = (c: Ctx, status: string, period: { startS: number; endS: numbe
   id: c.sub, object: "subscription", customer: c.customerId, status, livemode: false, start_date: T0,
   current_period_start: period.startS, current_period_end: period.endS, cancel_at_period_end: false, canceled_at: null,
   metadata: { shop_id: c.s.shopId, catalog_version: "2026-11-03.v1", plan_key: "founder-pilot", checkout_attempt_id: c.attemptId },
-  items: { data: [{ quantity: 1, price: { lookup_key: FOUNDER_PILOT_PRICE.lookupKey } }] }, ...extra,
+  items: { data: exactFixtureItems() }, ...extra,
 })
 const invoiceObject = (c: Ctx, id: string, amountDue: number, amountPaid: number, attempt = 1) => ({
   id, object: "invoice", livemode: false, customer: c.customerId, subscription: c.sub, amount_due: amountDue, amount_paid: amountPaid, currency: "usd", attempt_count: attempt,

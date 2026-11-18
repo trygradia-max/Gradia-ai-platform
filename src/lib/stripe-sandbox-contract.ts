@@ -9,6 +9,7 @@ import { FOUNDER_PILOT_PRICE } from "@/lib/commercial-billing"
 import {
   REVIEWED_VALUE_BASIS,
   SETTLEMENT_COMPONENTS,
+  SETTLEMENT_METER_EVENT_NAMES,
   type SettlementComponent,
   type SettlementDocument,
 } from "@/lib/commercial-settlement"
@@ -22,14 +23,18 @@ import { STRIPE_COMMERCIAL_PROVISIONING_MANIFEST } from "@/lib/stripe-commercial
  * of the sandbox against it. It provisions nothing: the founder (Dashboard) or a later
  * reviewed command creates the objects; this only REFUSES a sandbox that does not match.
  *
- * STATUS: the meter event names, metered-price lookup keys and the meter API version are a
- * PROPOSAL (`proposed_pending_founder_confirmation`). The base Product/Price come from the
- * already-approved catalog and manifest. The settlement mapping stays unprovisioned until a
- * reviewed commit names the verified meters (`REVIEWED_SETTLEMENT_METER_MAPPING`).
+ * STATUS (PR F2): the meter event names, metered-price lookup keys and the meter API version are the
+ * founder-directed TEST-mode implementation contract (2026-11-18). The base Product/Price come from the
+ * already-approved catalog and manifest. `REVIEWED_SETTLEMENT_METER_MAPPING` carries the same event
+ * names (single source: `SETTLEMENT_METER_EVENT_NAMES`). Promotion to production still requires a
+ * final reviewed release decision (`SANDBOX_PRODUCTION_PROMOTION`).
  */
 
-export const SANDBOX_CONTRACT_VERSION = "sandbox-contract.v1"
-export const SANDBOX_CONTRACT_STATUS = "proposed_pending_founder_confirmation" as const
+export const SANDBOX_CONTRACT_VERSION = "sandbox-contract.v2"
+/** Founder-directed (2026-11-18) TEST-mode implementation contract. Not a production approval. */
+export const SANDBOX_CONTRACT_STATUS = "founder_directed_test_mode_contract" as const
+/** Production/live activation is NOT part of this contract; it needs a final reviewed release decision. */
+export const SANDBOX_PRODUCTION_PROMOTION = "requires_final_reviewed_release_decision" as const
 
 /**
  * One reviewed API version for the meter objects and meter events (the adapter's older pin,
@@ -77,7 +82,7 @@ export type SandboxMeterSpec = {
 export const SANDBOX_METERS: readonly SandboxMeterSpec[] = SETTLEMENT_COMPONENTS.map((component) => ({
   component,
   valueBasis: REVIEWED_VALUE_BASIS[component],
-  eventName: `gradia_fp_2026_11_${component}`,
+  eventName: SETTLEMENT_METER_EVENT_NAMES[component],
   displayName: `Gradia Founder Pilot ${component.replace(/_/g, " ")}`,
   aggregation: "sum" as const,
   customerMappingKey: "stripe_customer_id" as const,
@@ -190,6 +195,11 @@ export type SandboxReadiness = {
   findings: SandboxFinding[]
   /** Verified provider-side meter ids by component, only for meters that passed every check. */
   verifiedMeterIds: Partial<Record<SettlementComponent, string>>
+  /**
+   * Provider Price ids of the exact Founder Pilot item set, ONLY when `ready` (every Price passed every check).
+   * Resolved by lookup key at run time; never committed. Empty when not ready.
+   */
+  verifiedPrices: { base: string; metered: Partial<Record<SettlementComponent, string>> } | null
 }
 
 const add = (findings: SandboxFinding[], code: SandboxFindingCode, subject: string) => {
@@ -260,6 +270,7 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
 
   // ---- Product + prices ----
   const productIds = new Set<string>()
+  const priceIds: Record<string, string> = {}
   const checkPrice = (
     lookupKey: string,
     subject: string,
@@ -272,6 +283,7 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
     const parsed = priceSchema.safeParse(list[0])
     if (!parsed.success) return add(findings, "price_unreadable", subject)
     const price = parsed.data
+    priceIds[subject] = price.id
     if (price.livemode !== false) add(findings, "price_live", subject)
     if (!price.active) add(findings, "price_inactive", subject)
     if (price.lookup_key !== lookupKey) add(findings, "price_lookup_mismatch", subject)
@@ -315,7 +327,14 @@ export function evaluateSandboxReadiness(snapshot: SandboxSnapshot): SandboxRead
 
   const order = (f: SandboxFinding) => `${f.code}\u0000${f.subject}`
   findings.sort((a, b) => (order(a) < order(b) ? -1 : 1))
-  return { ready: findings.length === 0, findings, verifiedMeterIds }
+  const ready = findings.length === 0
+  const verifiedPrices = ready
+    ? {
+        base: priceIds.base_price,
+        metered: Object.fromEntries(SANDBOX_METERS.map((m) => [m.component, priceIds[m.component]])) as Partial<Record<SettlementComponent, string>>,
+      }
+    : null
+  return { ready, findings, verifiedMeterIds, verifiedPrices }
 }
 
 // ---------------------------------------------------------------------------

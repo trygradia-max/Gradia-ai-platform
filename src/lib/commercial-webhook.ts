@@ -3,6 +3,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto"
 import { z } from "zod"
 
 import { FOUNDER_PILOT_PRICE } from "@/lib/commercial-billing"
+import { evaluateSubscriptionItems } from "@/lib/commercial-subscription-items"
 
 /**
  * Pure rules for the signed PLATFORM commercial webhook (Commercial Billing PR E1).
@@ -147,20 +148,28 @@ function normalizeSubscription(object: Record<string, unknown>): Record<string, 
   const status = typeof object.status === "string" ? object.status : null
   if (!subId || !customer || !status) return null
   const metadata = asRecord(object.metadata)
-  const items = Array.isArray(asRecord(object.items).data) ? (asRecord(object.items).data as unknown[]) : []
-  const first = asRecord(items[0])
-  const price = asRecord(first.price)
-  // Exactly one approved line at quantity 1; anything else is a catalog mismatch, never "active".
-  const exactItem = items.length === 1 && first.quantity === 1 && price.lookup_key === FOUNDER_PILOT_PRICE.lookupKey
+  const itemsRaw = asRecord(object.items).data
+  const items = Array.isArray(itemsRaw) ? (itemsRaw as unknown[]).map(asRecord) : []
+  // The EXACT Founder Pilot item set in any order (PR F2): licensed base x1 + the six reviewed metered Prices, by
+  // lookup key. Anything else (missing, extra, duplicate, unknown, mismatched) is `invalid_items` → catalog_mismatch,
+  // never "active". Metadata above is only a cross-check; the tenant is resolved by the database from server bindings.
+  const exactItems = evaluateSubscriptionItems(itemsRaw).ok
   // Stripe moved the period from the subscription to its items in newer API versions. Accept
-  // either, but only when the two agree; a disagreement is an UNVERIFIED period.
+  // either, but only when every source that reports it agrees; a disagreement is an UNVERIFIED period.
   const topStart = typeof object.current_period_start === "number" ? object.current_period_start : null
   const topEnd = typeof object.current_period_end === "number" ? object.current_period_end : null
-  const itemStart = typeof first.current_period_start === "number" ? first.current_period_start : null
-  const itemEnd = typeof first.current_period_end === "number" ? first.current_period_end : null
+  const itemStarts = new Set(items.map((item) => item.current_period_start).filter((v): v is number => typeof v === "number"))
+  const itemEnds = new Set(items.map((item) => item.current_period_end).filter((v): v is number => typeof v === "number"))
+  const itemStart = itemStarts.size === 1 ? [...itemStarts][0] : null
+  const itemEnd = itemEnds.size === 1 ? [...itemEnds][0] : null
   let start = topStart ?? itemStart
   let end = topEnd ?? itemEnd
-  if ((topStart !== null && itemStart !== null && topStart !== itemStart) || (topEnd !== null && itemEnd !== null && topEnd !== itemEnd)) {
+  if (
+    itemStarts.size > 1 ||
+    itemEnds.size > 1 ||
+    (topStart !== null && itemStart !== null && topStart !== itemStart) ||
+    (topEnd !== null && itemEnd !== null && topEnd !== itemEnd)
+  ) {
     start = null
     end = null
   }
@@ -177,7 +186,7 @@ function normalizeSubscription(object: Record<string, unknown>): Record<string, 
     plan_key: typeof metadata.plan_key === "string" ? metadata.plan_key : "",
     metadata_shop_id: typeof metadata.shop_id === "string" ? metadata.shop_id : null,
     checkout_attempt_id: typeof metadata.checkout_attempt_id === "string" ? metadata.checkout_attempt_id : null,
-    price_lookup_key: exactItem ? FOUNDER_PILOT_PRICE.lookupKey : "invalid_items",
+    price_lookup_key: exactItems ? FOUNDER_PILOT_PRICE.lookupKey : "invalid_items",
     period_start: iso(start),
     period_end: iso(end),
     started_at: iso(typeof object.start_date === "number" ? object.start_date : null),

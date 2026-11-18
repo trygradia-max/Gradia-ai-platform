@@ -3,8 +3,14 @@ import { z } from "zod"
 import {
   COMMERCIAL_CATALOG_VERSION,
   COMMERCIAL_PLAN_KEY,
-  FOUNDER_PILOT_PRICE,
 } from "@/lib/commercial-billing"
+import {
+  buildFounderPilotLineItems,
+  evaluateSubscriptionItems,
+  type CheckoutLineItem,
+} from "@/lib/commercial-subscription-items"
+import { COMMERCIAL_METER_API_VERSION, evaluateSandboxReadiness } from "@/lib/stripe-sandbox-contract"
+import { collectSandboxSnapshot } from "@/lib/stripe-sandbox-snapshot"
 import {
   StripeError,
   stripeCommercialRequest,
@@ -89,65 +95,13 @@ export function isDefinitiveRejection(error: unknown): boolean {
 
 // ---------- Validated provider objects ----------
 
-const priceSchema = z.object({
-  id: z.string().regex(/^price_[A-Za-z0-9_]+$/),
-  object: z.literal("price"),
-  active: z.boolean(),
-  currency: z.string(),
-  lookup_key: z.string().nullable(),
-  type: z.string(),
-  unit_amount: z.number().int().nullable(),
-  billing_scheme: z.string(),
-  livemode: z.boolean(),
-  recurring: z
-    .object({
-      interval: z.string(),
-      interval_count: z.number().int(),
-      usage_type: z.string(),
-    })
-    .nullable(),
-})
-const priceListSchema = z.object({ data: z.array(z.unknown()).max(10) })
-
-export type PriceVerification =
-  | { ok: true; priceId: string }
-  | {
-      ok: false
-      code:
-        | "price_missing"
-        | "price_ambiguous"
-        | "price_invalid_response"
-        | "price_live_object"
-        | "price_lookup_mismatch"
-        | "price_inactive"
-        | "price_currency_mismatch"
-        | "price_amount_mismatch"
-        | "price_interval_mismatch"
-        | "price_usage_mismatch"
-    }
-
-/** Verifies a provider Price against the approved Founder Pilot contract. */
-export function verifyFounderPilotPrice(listPayload: unknown): PriceVerification {
-  const list = priceListSchema.safeParse(listPayload)
-  if (!list.success) return { ok: false, code: "price_invalid_response" }
-  if (list.data.data.length === 0) return { ok: false, code: "price_missing" }
-  if (list.data.data.length > 1) return { ok: false, code: "price_ambiguous" }
-  const parsed = priceSchema.safeParse(list.data.data[0])
-  if (!parsed.success) return { ok: false, code: "price_invalid_response" }
-  const price = parsed.data
-  if (price.livemode !== false) return { ok: false, code: "price_live_object" }
-  if (price.lookup_key !== FOUNDER_PILOT_PRICE.lookupKey) return { ok: false, code: "price_lookup_mismatch" }
-  if (!price.active) return { ok: false, code: "price_inactive" }
-  if (price.currency !== FOUNDER_PILOT_PRICE.currency) return { ok: false, code: "price_currency_mismatch" }
-  if (price.type !== "recurring" || price.billing_scheme !== "per_unit" || price.unit_amount !== FOUNDER_PILOT_PRICE.unitAmountCents) {
-    return { ok: false, code: "price_amount_mismatch" }
-  }
-  if (!price.recurring || price.recurring.interval !== FOUNDER_PILOT_PRICE.interval || price.recurring.interval_count !== 1) {
-    return { ok: false, code: "price_interval_mismatch" }
-  }
-  if (price.recurring.usage_type !== "licensed") return { ok: false, code: "price_usage_mismatch" }
-  return { ok: true, priceId: price.id }
-}
+/**
+ * Why the exact Founder Pilot item set could not be resolved. Every code is a finite, secret-free
+ * contract finding (`evaluateSandboxReadiness`); nothing exists remotely when this is returned.
+ */
+export type ItemSetResolution =
+  | { ok: true; lineItems: CheckoutLineItem[] }
+  | { ok: false; code: string }
 
 const customerSchema = z.object({
   id: z.string().regex(/^cus_[A-Za-z0-9_]{4,120}$/),
@@ -166,6 +120,8 @@ const checkoutSessionSchema = z.object({
   customer: z.string().nullable(),
   client_reference_id: z.string().nullable(),
   metadata: z.record(z.string(), z.string()).nullable(),
+  // Expanded only on retrieval. Absent or unreadable is never "exact".
+  line_items: z.object({ data: z.array(z.unknown()) }).nullable().optional(),
 })
 
 export type CheckoutBinding = {
@@ -182,13 +138,18 @@ export type PlatformCheckoutSession = {
 }
 
 export type PlatformStripeClient = {
-  /** Resolves and verifies the approved Price by lookup key. Read-only. */
-  verifyFounderPilotPrice(): Promise<PriceVerification>
+  /**
+   * Resolves the EXACT Founder Pilot item set (licensed base + six metered Prices) by lookup key and verifies
+   * every Price, the Product and every Meter against the reviewed contract. Read-only. A missing, duplicate,
+   * live, inactive or mismatched object refuses; nothing is created or repaired.
+   */
+  resolveFounderPilotItemSet(): Promise<ItemSetResolution>
   /** Creates (or idempotently replays) the one platform Customer for a shop. */
   createCustomer(input: { shopId: string; idempotencyKey: string }): Promise<{ customerId: string }>
   /** Creates (or idempotently replays) the Checkout Session for one attempt. */
   createCheckoutSession(input: {
-    priceId: string
+    /** From `resolveFounderPilotItemSet`: base x1 first, then six metered items with no quantity. */
+    lineItems: CheckoutLineItem[]
     customerId: string
     shopId: string
     attemptId: string
@@ -214,6 +175,16 @@ function safeCheckoutUrl(url: string | null, status: string | null): string | nu
   }
 }
 
+/** Stripe form keys for the line items. Metered items carry NO quantity (Stripe: it must not be defined). */
+function lineItemParams(lineItems: CheckoutLineItem[]): Record<string, string | number> {
+  const params: Record<string, string | number> = {}
+  lineItems.forEach((item, index) => {
+    params[`line_items[${index}][price]`] = item.priceId
+    if (item.quantity !== undefined) params[`line_items[${index}][quantity]`] = item.quantity
+  })
+  return params
+}
+
 function unreadable(): StripeError {
   return new StripeError(0, "Stripe returned an unexpected response", "unreadable_response")
 }
@@ -231,13 +202,16 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
     return base
   }
   return {
-    async verifyFounderPilotPrice() {
-      const payload = await stripeCommercialRequest<unknown>(config, {
-        method: "GET",
-        path: "/prices",
-        body: { "lookup_keys[0]": FOUNDER_PILOT_PRICE.lookupKey, limit: 3 },
-      })
-      return verifyFounderPilotPrice(payload)
+    async resolveFounderPilotItemSet() {
+      const snapshot = await collectSandboxSnapshot(config)
+      // Unreachable provider: an ambiguous READ, never "not ready". The caller handles it as unavailable.
+      if ("failure" in snapshot) throw new StripeError(0, "Stripe sandbox could not be read", "provider_unreachable")
+      const readiness = evaluateSandboxReadiness(snapshot)
+      if (!readiness.ready || !readiness.verifiedPrices) {
+        return { ok: false, code: `item_set_${readiness.findings[0]?.code ?? "not_ready"}`.slice(0, 63) }
+      }
+      const lineItems = buildFounderPilotLineItems(readiness.verifiedPrices)
+      return lineItems ? { ok: true, lineItems } : { ok: false, code: "item_set_not_ready" }
     },
 
     async createCustomer({ shopId, idempotencyKey }) {
@@ -262,11 +236,11 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
         method: "POST",
         path: "/checkout/sessions",
         idempotencyKey: input.idempotencyKey,
+        apiVersion: COMMERCIAL_METER_API_VERSION,
         body: {
           mode: "subscription",
           customer: input.customerId,
-          "line_items[0][price]": input.priceId,
-          "line_items[0][quantity]": 1,
+          ...lineItemParams(input.lineItems),
           client_reference_id: input.attemptId,
           payment_method_collection: "always",
           success_url: input.successUrl,
@@ -291,6 +265,8 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
       const payload = await stripeCommercialRequest<unknown>(config, {
         method: "GET",
         path: `/checkout/sessions/${encodeURIComponent(sessionId)}`,
+        apiVersion: COMMERCIAL_METER_API_VERSION,
+        body: { "expand[0]": "line_items" },
       })
       const parsed = checkoutSessionSchema.safeParse(payload)
       if (!parsed.success) throw unreadable()
@@ -305,7 +281,9 @@ export function createPlatformStripeClient(config: CommercialStripeTransportConf
         m.checkout_attempt_id === binding.attemptId &&
         m.catalog_version === COMMERCIAL_CATALOG_VERSION &&
         m.plan_key === COMMERCIAL_PLAN_KEY &&
-        s.customer === binding.customerId
+        s.customer === binding.customerId &&
+        // The exact item set, in any order. Metadata above is only a cross-check of the server-held binding.
+        evaluateSubscriptionItems(s.line_items?.data).ok
       if (!bound) return { ok: false, code: "session_binding_mismatch" }
       return { ok: true, session: { id: s.id, status: s.status, url: safeCheckoutUrl(s.url, s.status) } }
     },

@@ -11,7 +11,7 @@ import {
   type BillingRuntime,
 } from "@/lib/commercial-billing-service"
 import { StripeError } from "@/lib/stripe"
-import type { PlatformCheckoutSession, PlatformStripeClient, PriceVerification } from "@/lib/stripe-commercial"
+import type { PlatformCheckoutSession, PlatformStripeClient, ItemSetResolution } from "@/lib/stripe-commercial"
 import {
   INTEGRATION_WITH_SESSION,
   anonClient,
@@ -70,7 +70,7 @@ async function addMember(shopId: string, user: Seeded, role: string, active = tr
 
 // ---------- A fake platform Stripe client that behaves like Stripe's idempotency ----------
 type FakeOpts = {
-  price?: () => Promise<PriceVerification>
+  price?: () => Promise<ItemSetResolution>
   customer?: () => Promise<void>
   session?: () => Promise<void>
 }
@@ -86,9 +86,11 @@ function fakeStripe(opts: FakeOpts = {}) {
     url: s.status === "open" ? `https://checkout.stripe.com/c/pay/${s.id}` : null,
   })
   const client: PlatformStripeClient = {
-    async verifyFounderPilotPrice() {
+    async resolveFounderPilotItemSet() {
       calls.price += 1
-      return opts.price ? opts.price() : { ok: true, priceId: "price_fake_founder_pilot" }
+      return opts.price
+        ? opts.price()
+        : { ok: true, lineItems: [{ priceId: "price_fake_founder_pilot", quantity: 1 as const }, ...Array.from({ length: 6 }, (_, i) => ({ priceId: `price_fake_metered_${i}` }))] }
     },
     async createCustomer({ idempotencyKey }) {
       calls.customer += 1
@@ -532,12 +534,14 @@ maybe("commercial billing state and Checkout handoff (PR C)", () => {
     })
 
     it.each([
-      ["a missing price", { ok: false, code: "price_missing" } as PriceVerification],
-      ["a wrong amount", { ok: false, code: "price_amount_mismatch" } as PriceVerification],
-      ["a wrong currency", { ok: false, code: "price_currency_mismatch" } as PriceVerification],
-      ["a wrong interval", { ok: false, code: "price_interval_mismatch" } as PriceVerification],
-      ["an inactive price", { ok: false, code: "price_inactive" } as PriceVerification],
-      ["a lookup mismatch", { ok: false, code: "price_lookup_mismatch" } as PriceVerification],
+      ["a missing price", { ok: false, code: "item_set_price_missing" } as ItemSetResolution],
+      ["a wrong amount", { ok: false, code: "item_set_price_amount_mismatch" } as ItemSetResolution],
+      ["a wrong currency", { ok: false, code: "item_set_price_currency_mismatch" } as ItemSetResolution],
+      ["a wrong interval", { ok: false, code: "item_set_price_interval_mismatch" } as ItemSetResolution],
+      ["an inactive price", { ok: false, code: "item_set_price_inactive" } as ItemSetResolution],
+      ["a missing metered meter", { ok: false, code: "item_set_meter_missing" } as ItemSetResolution],
+      ["a metered price on the wrong meter", { ok: false, code: "item_set_price_meter_mismatch" } as ItemSetResolution],
+      ["a duplicate metered price", { ok: false, code: "item_set_price_duplicate" } as ItemSetResolution],
     ])("%s fails closed before any customer or session exists", async (_name, verdict) => {
       const s = await newShop()
       const fake = fakeStripe({ price: async () => verdict })

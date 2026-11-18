@@ -226,12 +226,19 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial settlement", () => {
     for (const s of seeded) await cleanup(db, s).catch(() => undefined)
   }, 120_000)
 
-  describe("preview", () => {
+  /** The pre-F2 shape (every name null): still fails closed. */
+const UNPROVISIONED_MAPPING: MeterMapping = {
+  version: "settlement-mapping.v1-unprovisioned",
+  status: "unprovisioned",
+  entries: SETTLEMENT_COMPONENTS.map((component) => ({ component, valueBasis: REVIEWED_VALUE_BASIS[component], eventName: null })),
+}
+
+describe("preview", () => {
     it("shows the exact settlement an owner would get and blocks delivery while the mapping is unprovisioned", async () => {
       const f = await fixture()
       await recognizeOutcomes(f.shop.shopId, "confirmed_appointment", 2)
       await recognizeOutcomes(f.shop.shopId, "standard_digital_outcome", 101)
-      const preview = await previewCommercialSettlement(f.owner, { shopId: f.shop.shopId, ...W })
+      const preview = await previewCommercialSettlement(f.owner, { shopId: f.shop.shopId, ...W, mapping: UNPROVISIONED_MAPPING })
       if (preview.status !== "ready") throw new Error(JSON.stringify(preview))
       const by = Object.fromEntries(preview.document.components.map((c) => [c.component, c]))
       expect(by.confirmed_appointment).toMatchObject({ billed_quantity: "2", charge_cents: 2000 })
@@ -739,12 +746,12 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial settlement", () => {
   })
 
   describe("configuration", () => {
-    it("with the shipped (unprovisioned) mapping nothing is settled and nothing is sent", async () => {
+    it("with an unprovisioned mapping nothing is settled and nothing is sent (the shipped F2 mapping is provisioned)", async () => {
       const f = await fixture()
       await recognizeOutcomes(f.shop.shopId, "qualified_lead", 1)
       const runtime: SettlementRuntime = { ok: false, reason: "settlement_mapping_unprovisioned" }
       expect(await settleCommercialPeriod(db, runtime, { shopId: f.shop.shopId, actorId: f.shop.ownerId, ...W })).toMatchObject({ ok: false, reason: "runtime_unavailable" })
-      expect(REVIEWED_SETTLEMENT_METER_MAPPING.status).toBe("unprovisioned")
+      expect(REVIEWED_SETTLEMENT_METER_MAPPING.status).toBe("provisioned")
       expect(await rows("commercial_settlements", f.shop.shopId)).toHaveLength(0)
     })
   })
