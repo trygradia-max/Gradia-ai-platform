@@ -57,7 +57,7 @@ Design: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` (written with the c
 - [x] Merged `origin/main` (PR #149, docs only) into the branch; docs written (`COMMERCIAL_SANDBOX_ACCEPTANCE.md`, `docs/qa/COMMERCIAL_SANDBOX_ACCEPTANCE_RUNBOOK.md`), `AI_WORK_LOG` entry added; lint warnings cleaned.
 - [x] Validation so far: `tsc` clean (known `@testing-library` types aside), eslint 0 problems on touched files, unit 186 files / 2951 passed / 4 skipped (+1 environmental `jsdom` worker error that also exists on main: the shared `node_modules` symlink lacks jsdom).
 - [x] Final validation (branch = `origin/main` @ `ba34e8e` merged): `next build --webpack` exit 0; FULL integration 70 files passed / 10 failed, 998 tests passed / 64 failed. The SAME 10 files (delegated-message-approval, delivery-lifecycle-acceptance, held-quote-send, lead-workflow-acceptance, qualification-delivery-acceptance, qualification-stale-at-send, service-proof-replay, tenant-relationships, twilio-disconnect-mid-send, whisper-reply-context) fail 64/103 identically on a pristine `origin/main` worktree against the same stack: pre-existing messaging/delivery drift, not billing. All billing suites (incl. PR C/D/E1, F1 operations 14, F1 acceptance 9) pass. Upgrade verifiers for F1 and E1 PASS.
-- [x] Branch pushed; non-draft PR opened (see the PR for the number). Do NOT merge.
+- [x] Branch pushed; non-draft PR #151 opened (https://github.com/trygradia-max/Gradia-ai-platform/pull/151). Do NOT merge.
 
 ## Observations to carry into the PR text
 
