@@ -18,6 +18,15 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: codex] [DATE: 2026-11-18] [AREA: docs] [STATUS: done]
+Added a founder practice guide for the proposed December 23 Spider Capital call on
+`codex/spider-capital-call-prep`. It includes the scheduling reply, truthful founder
+story, outcome-first positioning, focused market wedge, demo flow, architecture
+explanation, investor questions, objections and practice drills. Current product
+claims distinguish merged foundations, in-progress launch acceptance and future
+enterprise requirements. No application code, pricing authority, provider, shared
+data, deployment or production state changed.
+
 [AI: claude-code] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
 Commercial Billing PR F2 (`claude/commercial-billing-sandbox-f2`, Stripe TEST mode only; PR opened non-draft, not merged): the exact Founder Pilot
 subscription item set (licensed base x1 + the six reviewed metered Prices, by lookup key, any order, no quantity on metered items) now gates Checkout
