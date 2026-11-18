@@ -10,6 +10,8 @@ import {
   REVIEWED_VALUE_BASIS,
   SETTLEMENT_COMPONENTS,
   SETTLEMENT_METER_EVENT_NAMES,
+  validateMeterMapping,
+  type MeterMapping,
   type SettlementComponent,
   type SettlementDocument,
 } from "@/lib/commercial-settlement"
@@ -90,6 +92,20 @@ export const SANDBOX_METERS: readonly SandboxMeterSpec[] = SETTLEMENT_COMPONENTS
   meteredPriceLookupKey: `gradia_fp_2026_11_${component}_metered`,
   meteredUnitAmountCents: meteredUnitCents(component),
 }))
+
+/**
+ * True only when a settlement mapping is provisioned, valid, and EXACTLY the sandbox contract: the same six
+ * components, the same event names, the same value basis, nothing extra. The mapping is promoted from null names only
+ * on this condition (PR F2); the readiness report and the worker re-check it at run time.
+ */
+export function mappingMatchesSandboxContract(mapping: MeterMapping): boolean {
+  if (!validateMeterMapping(mapping).ok) return false
+  if (mapping.entries.length !== SANDBOX_METERS.length) return false
+  return SANDBOX_METERS.every((meter) => {
+    const entry = mapping.entries.find((candidate) => candidate.component === meter.component)
+    return entry !== undefined && entry.eventName === meter.eventName && entry.valueBasis === meter.valueBasis
+  })
+}
 
 export const SANDBOX_REQUIRED_PRICE_LOOKUP_KEYS = [
   SANDBOX_BASE_PRICE.lookupKey,

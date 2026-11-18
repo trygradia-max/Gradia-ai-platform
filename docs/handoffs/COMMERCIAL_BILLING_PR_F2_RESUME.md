@@ -55,7 +55,7 @@ Do **not** merge the PR.
 - [x] M1 item-set module (`commercial-subscription-items.ts`) + `stripe-sandbox-snapshot.ts` split + readiness now returns verified price ids + tests (32)
 - [x] M2 Checkout create/retrieve with exact set (metered items carry no quantity; retrieval expands `line_items`; reviewed API version) + fingerprint includes item-set digest
 - [x] M3 webhook normalization (exact set, any order; item periods must agree) + mapping promoted to provisioned (`SETTLEMENT_METER_EVENT_NAMES` single source) + unit/int fixtures updated; int suites billing/reconciliation/settlement/acceptance/operations green (176)
-- [ ] M4 migration (lease) + worker + cron route + tests + upgrade verifier
+- [x] M4 migration `20261118120000_commercial_worker_lease.sql` (applied to the local stack + recorded in schema_migrations), `commercial-billing-worker.ts` (leased, bounded, gated, sandbox-preflight), cron route `/api/cron/commercial-billing` (+ CRON_REGISTRY, vercel.json `*/10`, tenant-scoping allowlist), unit 13 + integration 11 green, `scripts/verify-commercial-worker-lease-migration.py` PASS and fails under a mutation (F1 verifier relaxed from "latest" to "present")
 - [ ] M5 test-clock harness + runbook + tests
 - [ ] M6 readiness report
 - [ ] M7 docs, work log, validation, PR

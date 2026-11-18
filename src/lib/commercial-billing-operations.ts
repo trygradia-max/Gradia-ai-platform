@@ -33,7 +33,16 @@ import { resolveCommercialStripeConfig } from "@/lib/stripe-commercial"
 
 const worklistSchema = z.array(z.object({ shop_id: z.string().uuid(), settlement_id: z.string().uuid(), line_id: z.string().uuid() }))
 
+/**
+ * Per-item hooks supplied by the worker (PR F2). `gate` runs before EVERY item: it renews the lease and checks the time
+ * budget, and returns false to stop (never mid-item). `preflight` runs once, only when there is work, before anything is
+ * sent. Both are optional so the F1 entry points behave exactly as before.
+ */
+export type ItemGate = () => Promise<boolean>
+
 export type DispatchReport = {
+  /** True when the gate stopped the sweep early; the remainder is picked up by the next run. */
+  stoppedEarly?: true
   settlements: number
   delivered: number
   alreadyDelivered: number
@@ -67,17 +76,27 @@ function tally(report: DispatchReport, deliveries: DeliveryReport[]) {
 export async function dispatchPendingSettlementDeliveries(
   serviceClient: SupabaseClient,
   runtime: SettlementRuntime,
-  options: { limit?: number; shopId?: string } = {}
-): Promise<{ ok: true; report: DispatchReport } | { ok: false; reason: "runtime_unavailable" | "worklist_failed" }> {
+  options: { limit?: number; shopId?: string; maxSettlements?: number; gate?: ItemGate; preflight?: () => Promise<boolean> } = {}
+): Promise<{ ok: true; report: DispatchReport } | { ok: false; reason: "runtime_unavailable" | "worklist_failed" | "preflight_failed" }> {
   if (!runtime.ok) return { ok: false, reason: "runtime_unavailable" }
   const listed = await serviceClient.rpc("commercial_settlement_delivery_pending", { p_limit: options.limit ?? 50, p_shop: options.shopId ?? null })
   const parsed = worklistSchema.safeParse(listed.data)
   if (listed.error || !parsed.success) return { ok: false, reason: "worklist_failed" }
+  // Nothing is sent unless the sandbox verifies against the contract (read-only); only checked when there is work.
+  if (parsed.data.length > 0 && options.preflight && !(await options.preflight())) return { ok: false, reason: "preflight_failed" }
   const seen = new Set<string>()
   const report = emptyReport()
   for (const item of parsed.data) {
     const key = `${item.shop_id}:${item.settlement_id}`
     if (seen.has(key)) continue
+    if (options.maxSettlements !== undefined && seen.size >= options.maxSettlements) {
+      report.stoppedEarly = true
+      break
+    }
+    if (options.gate && !(await options.gate())) {
+      report.stoppedEarly = true
+      break
+    }
     seen.add(key)
     const result = await deliverCommercialSettlement(serviceClient, runtime, { shopId: item.shop_id, settlementId: item.settlement_id })
     report.settlements++
@@ -102,7 +121,7 @@ const unresolvedSchema = z.array(
 )
 
 export type ReconcileOutcome = "confirmed_delivered" | "not_confirmed" | "mismatch" | "read_failed" | "record_failed"
-export type ReconcileReport = { checked: number; outcomes: Record<ReconcileOutcome, number> }
+export type ReconcileReport = { checked: number; outcomes: Record<ReconcileOutcome, number>; stoppedEarly?: true }
 
 /** The provider's summary grain: the minute (aligned) containing the event timestamp. */
 export const minuteStartSeconds = (iso: string) => Math.floor(Date.parse(iso) / 1000 / 60) * 60
@@ -115,7 +134,7 @@ export function createRuntimeEvidenceReader(env: Record<string, string | undefin
 export async function reconcileUnknownDeliveries(
   serviceClient: SupabaseClient,
   reader: MeterEvidenceReader,
-  options: { limit?: number; shopId?: string } = {}
+  options: { limit?: number; shopId?: string; gate?: ItemGate } = {}
 ): Promise<{ ok: true; report: ReconcileReport } | { ok: false; reason: "worklist_failed" }> {
   const listed = await serviceClient.rpc("commercial_settlement_delivery_unresolved", { p_limit: options.limit ?? 50, p_shop: options.shopId ?? null })
   const parsed = unresolvedSchema.safeParse(listed.data)
@@ -125,6 +144,10 @@ export async function reconcileUnknownDeliveries(
     outcomes: { confirmed_delivered: 0, not_confirmed: 0, mismatch: 0, read_failed: 0, record_failed: 0 },
   }
   for (const line of parsed.data) {
+    if (options.gate && !(await options.gate())) {
+      report.stoppedEarly = true
+      break
+    }
     report.checked++
     const start = minuteStartSeconds(line.event_timestamp)
     let observed: number
@@ -229,14 +252,15 @@ export async function applyApprovedAdjustment(
 export async function applyApprovedAdjustments(
   serviceClient: SupabaseClient,
   runtime: AdjustmentRuntime,
-  options: { limit?: number; shopId?: string } = {}
-): Promise<{ ok: true; reports: AdjustmentReport[] } | { ok: false; reason: "runtime_unavailable" | "worklist_failed" }> {
+  options: { limit?: number; shopId?: string; gate?: ItemGate } = {}
+): Promise<{ ok: true; reports: AdjustmentReport[]; stoppedEarly?: true } | { ok: false; reason: "runtime_unavailable" | "worklist_failed" }> {
   if (!runtime.ok) return { ok: false, reason: "runtime_unavailable" }
   const listed = await serviceClient.rpc("commercial_adjustment_application_pending", { p_limit: options.limit ?? 50, p_shop: options.shopId ?? null })
   const parsed = adjustmentWorklist.safeParse(listed.data)
   if (listed.error || !parsed.success) return { ok: false, reason: "worklist_failed" }
   const reports: AdjustmentReport[] = []
   for (const item of parsed.data) {
+    if (options.gate && !(await options.gate())) return { ok: true, reports, stoppedEarly: true }
     reports.push(await applyApprovedAdjustment(serviceClient, runtime, { shopId: item.shop_id, adjustmentId: item.adjustment_id }))
   }
   return { ok: true, reports }
