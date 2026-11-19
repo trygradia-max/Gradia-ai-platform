@@ -2,7 +2,12 @@
 
 Branch `claude/signed-in-launch-acceptance`, worktree
 `/Users/harryhatch/Gradia/worktrees/claude-signed-in-launch-acceptance`, based on `origin/main`
-`763cd88` (PR #152 merged). If this session is interrupted, read this file first, then
+`763cd88` (PR #152 merged). After the acceptance pass, PR #154 was rebased without
+conflict onto `origin/main` `b528e96` (PR #153 merged). The three new regression files
+then passed 25/25, with clean TypeScript and touched-file ESLint. The browser matrix
+below remains local evidence from the pre-rebase product tree; the rebase changed only
+commercial-billing files outside these acceptance fixes. If this session is interrupted,
+read this file first, then
 `git log --oneline origin/main..HEAD` and `git status`.
 
 ## Scope (exact)

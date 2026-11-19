@@ -18,6 +18,15 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Reviewed signed-in launch acceptance PR #154, including its auth-route inventory,
+team-queue presentation scope, responsive topbar, accessibility changes and locking
+tests. Rebased `claude/signed-in-launch-acceptance` without conflict onto current
+`origin/main` `b528e96` (merged commercial-billing PR #153). After the rebase, the
+three focused regression files passed 25/25, TypeScript passed and touched-file ESLint
+passed. No authority, schema, provider, Stripe, shared data, deployment or production
+state changed; hosted acceptance and real-provider/model/Checkout paths remain gates.
+
 [AI: claude-code] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
 Commercial Billing PR F2 (`claude/commercial-billing-sandbox-f2`, Stripe TEST mode only; PR opened non-draft, not merged): the exact Founder Pilot
 subscription item set (licensed base x1 + the six reviewed metered Prices, by lookup key, any order, no quantity on metered items) now gates Checkout
