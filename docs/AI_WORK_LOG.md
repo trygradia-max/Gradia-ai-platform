@@ -3116,3 +3116,26 @@ savings, score or causal claim. Validation: unit 192 files / 3,076 passed / 4 sk
 focused integration (baseline + onboarding-progress) 14/14 on the disposable `gradia-isolated-tests` stack; headless layout check at
 390px and 1280px. Deliberately NOT done: evidence-attachment UI, day-30 comparison UI, workspace selector for multi-shop managers,
 signed-in human acceptance, deploy, merge. Details: `docs/handoffs/ONBOARDING_BASELINE_UI_RESUME.md`.
+
+[AI: claude-code] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Signed-in launch acceptance, local fixture only (`claude/signed-in-launch-acceptance`, base `763cd88`): a real-browser pass (Chrome, 1280px and
+390px) over a production build of this branch against its own disposable Supabase stack (126/126 migrations, unique ports; the shared stacks were
+not touched). Personas: new owner through real onboarding, manager with and without delegated grants, staff, a second shop owner, a manager of one
+shop who owns another, anonymous. Covered and passing: onboarding wizard with the Starting point quiz (typed 0 versus "I'm not sure" versus blank,
+validation, save/resume across reload, review, submit, evidence-labelled report), `/agents` landing, seven-step builder, immutable revisions, a
+governance evaluation, activation blocked by billing and missing Control Center policy, reviewed memory candidate -> reviewed -> published and pinned
+in the builder, `/control-center`, owner and delegated approvals (Drop verified, Send not exercised), `/billing` blocked state, owner/manager/staff
+route authority, cross-shop isolation on 12 direct URLs, workspace switching, keyboard order/focus/names, axe wcag2a/aa and horizontal overflow.
+Four blockers were reproduced and fixed, each with a regression test: (B1) signed-out deep links to `/agents /approvals /customers /billing
+/control-center /starting-point /team /conversations /activity` lost the return path (and the original query was copied onto `/login`): the proxy
+gate now lists every signed-in route with segment-boundary matching, and a test fails when a new `page.tsx` is neither public nor gated; (B2) staff and
+managers without a queue grant saw a permanent "Work status could not be verified" error on their Team home: a role with no queue now gets no brief
+(`null`), while failed reads and unmatched workspaces stay `unavailable`; (B3) topbar controls overlapped between 768 and 1280px, fixed with a
+content-sized right cluster below `2xl` (zero overlaps measured from 768 to 1920); (B4) calendar today marker contrast and a missing `/billing` h1.
+No schema, authority, approval, billing-gate, memory or provider change; no gate weakened. Checks: unit 195 files, 3,101 passed, 4 intentional
+skips (baseline 3,076 plus 25 new); `tsc --noEmit`, eslint (src, eval) and `next build --webpack` clean; focused integration 14 files, 259 tests passed
+(team-permissions, onboarding-baseline, onboarding-progress, reviewed-memory, operations-queue, delegated-message-approval, agent-builder,
+agent-definition-revisions, agent-records, membership-billing, commercial-billing, control-policy-drafts, control-execution, tenant-isolation) on
+`gradia-isolated-tests`. NOT verified: hosted/production, real Google or magic-link sign-in (the harness signs in by password locally), the Send path
+and any provider, Stripe Checkout/Portal, model-backed agent behavior, a human screen-reader pass, 200% zoom, other browsers. Details and the
+non-blocking findings: `docs/handoffs/SIGNED_IN_LAUNCH_ACCEPTANCE_RESUME.md`. Not merged, no deploy.
