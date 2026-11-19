@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const nextConfig: NextConfig = {
   // Hosts allowed to load /_next dev resources during `next dev`.
@@ -19,6 +19,6 @@ export default withSentryConfig(nextConfig, {
   silent: !process.env.CI,
   // Don't ship source maps to clients; Sentry has them, browsers don't.
   sourcemaps: { deleteSourcemapsAfterUpload: true },
-  // Tree-shake unused @sentry/* features (replay, tracing) at build.
-  disableLogger: true,
+  // Tree-shake Sentry debug statements for both Turbopack and webpack builds.
+  bundleSizeOptimizations: { excludeDebugStatements: true },
 });
