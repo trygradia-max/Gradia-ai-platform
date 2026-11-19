@@ -81,8 +81,10 @@ export async function AppShell({
         {/* Topbar (spec §3): page title · search/composer (⌘K) · usage
             pill in human units · help. The composer sits in the center
             from the lg breakpoint up so it does not share a cluster with
-            usage, setup, and help. */}
-        <header className="sticky top-0 z-10 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-background px-3 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)_minmax(0,1fr)]">
+            usage, setup, and help. Below 2xl the right cluster is sized to its
+            content (the side columns are not equal), so the usage pill, setup
+            pill and help never overlap the composer at laptop and tablet widths. */}
+        <header className="sticky top-0 z-10 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border bg-background px-3 sm:px-4 lg:grid-cols-[minmax(10rem,1fr)_minmax(12rem,28rem)_auto] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)_minmax(0,1fr)]">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger className="size-11 shrink-0" />
             <div className="min-w-0">

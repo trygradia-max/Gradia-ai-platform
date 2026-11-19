@@ -29,7 +29,7 @@ export async function UsagePill() {
     <Link
       href="/billing"
       className={cn(
-        "hidden items-center gap-1.5 rounded-full border px-3 py-1 font-data text-xs transition-colors duration-150 sm:inline-flex",
+        "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1 font-data text-xs transition-colors duration-150 sm:inline-flex",
         warn
           ? "border-status-warning-fg/30 bg-status-warning-bg text-status-warning-fg"
           : "border-border/70 bg-card text-muted-foreground hover:border-border-strong hover:text-foreground"

@@ -28,7 +28,7 @@ export async function SetupProgressPill() {
   return (
     <Link
       href={progress.nextHref ?? "/settings"}
-      className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] font-medium tracking-wide text-foreground hover:bg-muted/70"
+      className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] font-medium tracking-wide text-foreground hover:bg-muted/70"
     >
       <CircleDashed
         className="size-3 text-muted-foreground"
@@ -41,7 +41,7 @@ export async function SetupProgressPill() {
         {progress.connected}/{progress.total}
       </span>
       {progress.nextLabel ? (
-        <span className="hidden text-muted-foreground md:inline">
+        <span className="hidden text-muted-foreground 2xl:inline">
           · Next: {progress.nextLabel}
         </span>
       ) : null}
