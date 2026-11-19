@@ -3169,3 +3169,14 @@ and activation gates remain visible and honest. Added a fail-closed remote-targe
 `--allow-remote`, while loopback targets remain convenient. Added `docs/demo/INVESTOR_DEMO_RUNBOOK.md` with a twelve-minute story, safe claims,
 environment rules and reset steps, plus source-lock tests for the safety gate and current builder flow. No schema, authority, billing, provider,
 model, deploy, production secret or shared-data change.
+
+[AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Launch dependency security refresh (`codex/launch-dependency-security`, base `24cf532`): upgraded Next.js and its ESLint config from 16.2.6 to
+16.4.6, Sentry 10.53.1 to 10.78.0, MCP SDK 1.29.0 to 1.32.2, Zod 4.4.3 to 4.6.7 and shadcn 4.7.0 to 4.23.0 (moved the CLI to
+devDependencies). Refreshed vulnerable transitive packages within their declared ranges and migrated Sentry's config import plus debug-statement
+tree-shaking option to its current API. Production `npm audit` moved from 3 critical / 15 high / 25 moderate / 1 low findings to 0 critical /
+0 high / 5 moderate / 0 low; the full development tree is also at 0 critical / 0 high / 8 moderate. Remaining Sentry build-tool findings
+require a major upgrade and are tracked rather than force-upgraded. Verification: unit 200 files,
+3,169 passed / 4 intentional skips; `tsc --noEmit`; ESLint 0 errors (the newer Next rule reports three pre-existing internal-navigation
+warnings); Next 16.4.6 Turbopack production build passed without Sentry deprecation warnings; production audit at high severity exits clean.
+No schema, authority, billing behavior, provider call, deploy, production secret or shared-data change.
