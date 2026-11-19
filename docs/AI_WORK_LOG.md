@@ -19,6 +19,18 @@ merged, deployed, or changed production.
 ## Entries
 
 [AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Added a bounded demo-readiness polish slice on `codex/demo-readiness-polish` after
+merged signed-in acceptance PR #154. `UsagePill` now preserves Next.js redirect and
+not-found control flow before handling genuine optional-read failures; delegated
+message approvals render a semantic, human-readable UTC queue time; Settings retains
+one `knowledge` navigation anchor with a distinct reviewed-memory card id; and the
+chat eyebrow/progress text uses the full muted token that passed acceptance contrast.
+Added four source locks. Validation: 199 unit files, 3,166 passed and four intentional
+skips; focused tests 21/21; TypeScript, touched-file ESLint, `git diff --check` and the
+isolated Next.js 16.2.6 webpack production build passed. No schema, authority, billing,
+provider, shared data, deployment or production state changed.
+
+[AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
 Reviewed signed-in launch acceptance PR #154, including its auth-route inventory,
 team-queue presentation scope, responsive topbar, accessibility changes and locking
 tests. Rebased `claude/signed-in-launch-acceptance` without conflict onto current
