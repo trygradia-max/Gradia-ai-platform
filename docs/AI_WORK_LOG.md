@@ -3160,3 +3160,12 @@ agent-definition-revisions, agent-records, membership-billing, commercial-billin
 `gradia-isolated-tests`. NOT verified: hosted/production, real Google or magic-link sign-in (the harness signs in by password locally), the Send path
 and any provider, Stripe Checkout/Portal, model-backed agent behavior, a human screen-reader pass, 200% zoom, other browsers. Details and the
 non-blocking findings: `docs/handoffs/SIGNED_IN_LAUNCH_ACCEPTANCE_RESUME.md`. Not merged, no deploy.
+
+[AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Investor demo-kit modernization (`codex/demo-kit-modernization`, base `bca3155`): aligned the synthetic smoke seed with the governed Agent OS.
+The seed continues to create marked CRM, vehicle, service, quote, job and approval records, but no longer inserts a legacy `custom_agents` row;
+the investor walkthrough now creates the agent through the real seven-step builder so saving, exact-revision testing, reviewed-memory selection
+and activation gates remain visible and honest. Added a fail-closed remote-target gate: service-role writes require an explicit
+`--allow-remote`, while loopback targets remain convenient. Added `docs/demo/INVESTOR_DEMO_RUNBOOK.md` with a twelve-minute story, safe claims,
+environment rules and reset steps, plus source-lock tests for the safety gate and current builder flow. No schema, authority, billing, provider,
+model, deploy, production secret or shared-data change.

@@ -3,9 +3,12 @@
 //
 //   P1 (in-app approvals): a pending create_lead shows in /approvals + the
 //       sidebar badge; Approve finalizes a real lead.
-//   P2 (free-form chat agent): a "ceramic quote, never booked" audience that
-//       the dry-run Preview resolves — and proves the opt-out guardrail
-//       (the STOP customer is excluded). Zero sends.
+//   P2 (governed Agent OS builder): CRM context for a ceramic-quote recovery
+//       workflow, including a visible STOP interaction to carry into the
+//       definition's stop conditions. The agent is deliberately created
+//       through the real immutable-revision builder, never seeded as a legacy
+//       custom_agents row. Its Test step checks governance, not live audience
+//       membership or answer quality. Zero sends.
 //   P3 (credits fail-closed): with --fill-credits, the period's usage is
 //       pushed to the limit so an agent run pauses (requires FEATURES.paywall).
 //   C1 (CRM foundation): vehicles (one per customer, sized), a size-class
@@ -19,10 +22,11 @@
 //   node --env-file=.env.local scripts/seed-smoke.mjs --shop <SHOP_ID>
 //   node --env-file=.env.local scripts/seed-smoke.mjs --shop <SHOP_ID> --fill-credits
 //   node --env-file=.env.local scripts/seed-smoke.mjs --shop <SHOP_ID> --clean-only
+// Add --allow-remote only when intentionally targeting a protected hosted
+// preview. Loopback Supabase targets do not require it.
 //
 // Needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (service role
-// bypasses RLS). ANTHROPIC_API_KEY must be set in the app env for the P2
-// preview drafts to render.
+// bypasses RLS).
 
 import { createClient } from "@supabase/supabase-js"
 
@@ -36,6 +40,7 @@ const valOf = (f) => {
 const SHOP_ID = valOf("--shop") || process.env.SMOKE_SHOP_ID
 const CLEAN_ONLY = has("--clean-only")
 const FILL_CREDITS = has("--fill-credits")
+const ALLOW_REMOTE = has("--allow-remote")
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -43,6 +48,22 @@ if (!url || !key) {
   console.error(
     "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.\n" +
       "Run with:  node --env-file=.env.local scripts/seed-smoke.mjs --shop <id>"
+  )
+  process.exit(1)
+}
+
+let target
+try {
+  target = new URL(url)
+} catch {
+  console.error("NEXT_PUBLIC_SUPABASE_URL is not a valid URL.")
+  process.exit(1)
+}
+const isLoopback = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(target.hostname)
+if (!isLoopback && !ALLOW_REMOTE) {
+  console.error(
+    "Refusing to write demo rows to a remote Supabase target without --allow-remote.\n" +
+      "Use a protected preview shop, verify --shop, then rerun with the explicit flag."
   )
   process.exit(1)
 }
@@ -334,49 +355,6 @@ async function main() {
     .single()
   if (pErr) throw new Error(`pending_action: ${pErr.message}`)
 
-  // --- Free-form agent (P2) — disabled; preview/Run-now from the UI ------
-  const config = {
-    name: "SMOKE: ceramic quote follow-up",
-    short_description:
-      "We text leads who got a ceramic quote and never booked.",
-    trigger: { kind: "schedule", schedule_summary: "every day at 9am" },
-    audience: {
-      entity: "leads",
-      filters_summary: ["status quoted", "mentions ceramic", "never booked"],
-    },
-    action: {
-      kind: "draft_sms",
-      intent_summary: "a warm nudge to come book their ceramic coating",
-    },
-    prerequisites_needed: ["Twilio number connected", "Anthropic key on server"],
-    human_in_the_loop_note:
-      "Every text lands as an approval before it sends.",
-    freeform: {
-      entity: "leads",
-      channel: "sms",
-      filters: { lead_status: "quoted", keyword: "ceramic", max_age_days: 365 },
-      message_intent:
-        "a warm, brief nudge to come book their ceramic coating if they're still interested",
-      max_recipients: 50,
-      cooldown_days: 30,
-    },
-    schedule: { cadence: "daily", hour_of_day: 14 },
-  }
-  const { data: agent, error: aErr } = await db
-    .from("custom_agents")
-    .insert({
-      shop_id: shop.id,
-      owner_id: owner,
-      name: config.name,
-      description: config.short_description,
-      problem_text: "Text leads who got a ceramic quote and never booked.",
-      config,
-      enabled: false,
-    })
-    .select("id")
-    .single()
-  if (aErr) throw new Error(`custom_agent: ${aErr.message}`)
-
   // --- Optional: push credits to the limit (P3 fail-closed) --------------
   let creditNote = "skipped (pass --fill-credits to test P3 fail-closed)"
   if (FILL_CREDITS) {
@@ -400,19 +378,21 @@ async function main() {
   console.log(`    quote: ${quote.id} (sent, $700 = truck_suv price) → /q/${quote.public_token ?? "?"}`)
   console.log(`    jobs: 3 across statuses (confirmed / in_progress mobile / paid)`)
   console.log(`    pending approval: ${pending.id}`)
-  console.log(`    free-form agent: ${agent.id} (disabled)`)
+  console.log("    governed agent: create live in /agents/build (no legacy row seeded)")
   console.log(`    credits: ${creditNote}\n`)
 
   console.log("Run the smokes:\n")
   console.log("  P1 — /approvals shows 'SMOKE: Pat Walk-in' + the sidebar badge")
   console.log("       increments. Approve → a real lead appears in /leads.\n")
-  console.log("  P2 — /agents/build → \"text leads who got a ceramic quote and")
-  console.log("       never booked\" → Plan → Preview audience. Expect 1 recipient")
-  console.log("       (Ada) — Cy is excluded by the STOP opt-out — plus a sample")
-  console.log("       SMS draft. Nothing sends. (Run-now staging also needs a")
-  console.log("       connected Twilio number.)\n")
+  console.log("  P2 — /agents/build → create \"Ceramic quote recovery\" through")
+  console.log("       Job, Schedule, Tools, Knowledge, Limits, Test and Activate.")
+  console.log("       Add explicit STOP/opt-out stop conditions, save an immutable")
+  console.log("       revision, then run its deterministic governance checks. The Test")
+  console.log("       step does not inspect a live audience or score model quality.")
+  console.log("       Activation stays blocked until exact-revision evidence and")
+  console.log("       connector checks pass.\n")
   console.log("  P3 — requires FEATURES.paywall=true. With --fill-credits, open the")
-  console.log("       SMOKE agent and Run now → it should NOT fire ('credit limit")
+  console.log("       governed agent you created and Run now → it should NOT fire ('credit limit")
   console.log("       reached'). Raise the limit in /settings → Usage to clear it.\n")
   console.log("Re-run anytime (it re-seeds cleanly); `--clean-only` to remove.")
 }
