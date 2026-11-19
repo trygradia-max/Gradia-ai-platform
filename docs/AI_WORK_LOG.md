@@ -3180,3 +3180,10 @@ require a major upgrade and are tracked rather than force-upgraded. Verification
 3,169 passed / 4 intentional skips; `tsc --noEmit`; ESLint 0 errors (the newer Next rule reports three pre-existing internal-navigation
 warnings); Next 16.4.6 Turbopack production build passed without Sentry deprecation warnings; production audit at high severity exits clean.
 No schema, authority, billing behavior, provider call, deploy, production secret or shared-data change.
+
+[AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
+Commercial sandbox environment-template completion (`codex/commercial-env-template`, base `b5cbb0f`): added the four commercial billing flags
+that the merged sandbox verifier, dedicated webhook, worker and real test-clock harness require to `.env.example`, beside the existing Stripe,
+cron and dashboard settings. Copy explicitly labels the contract TEST-only, keeps the worker fail-closed, forbids webhook-secret reuse and says
+never to place the test-clock mutation opt-in in Vercel/shared runtime. Added a source-lock test covering the complete setting inventory and safety
+copy. No secret value, Stripe call, schema, billing behavior, deploy, provider call or shared-data change.
