@@ -11,7 +11,7 @@ import {
 } from "@/lib/operations-queue-reader"
 import { requireShop, requireUser } from "@/lib/shop"
 import { createClient } from "@/lib/supabase/server"
-import { TEAM_CAPABILITIES } from "@/lib/team-permissions"
+import { TEAM_CAPABILITIES, canReadOperationsQueue } from "@/lib/team-permissions"
 
 const workspaceSchema = z.object({
   id: z.string().uuid(),
@@ -45,7 +45,7 @@ export async function loadOperationsOverviewForCurrentShop(
 export async function loadOperationsOverviewForWorkspace(
   workspaceId: string | undefined,
   options: QueueOptions = {}
-): Promise<OperationsOverview> {
+): Promise<OperationsOverview | null> {
   await requireUser()
   const db = await createClient()
   const result = await db.rpc("team_workspaces")
@@ -53,17 +53,16 @@ export async function loadOperationsOverviewForWorkspace(
   if (result.error || !parsed.success) {
     return operationsOverviewFromPage(unavailableOperationsQueuePage())
   }
-  const allowed = parsed.data.filter(
-    (workspace) =>
-      workspace.role === "owner" ||
-      (workspace.role === "manager" &&
-        workspace.capabilities.some((capability) =>
-          ["crm.read", "approvals.messages", "delivery.reconcile"].includes(capability)
-        ))
-  )
+  const allowed = parsed.data.filter(canReadOperationsQueue)
   const workspace = workspaceId
     ? allowed.find((candidate) => candidate.id === workspaceId)
     : allowed[0]
-  if (!workspace) return operationsOverviewFromPage(unavailableOperationsQueuePage())
+  if (!workspace) {
+    // A verified membership whose role carries no queue grant has no queue to show: that is
+    // "not part of this role" (null), not a failed read. A workspace that cannot be matched to a
+    // live membership at all stays unavailable, never an all-clear.
+    const known = workspaceId ? parsed.data.find((candidate) => candidate.id === workspaceId) : parsed.data[0]
+    return known ? null : operationsOverviewFromPage(unavailableOperationsQueuePage())
+  }
   return operationsOverviewFromPage(await readOperationsQueuePage(db, workspace.id, options))
 }

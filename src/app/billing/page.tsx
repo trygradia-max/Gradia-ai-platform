@@ -33,7 +33,7 @@ export default async function BillingPage() {
       </div>
       <Card className="ring-1 ring-border">
         <CardHeader className="space-y-1">
-          <CardTitle className="font-display text-2xl tracking-tight">
+          <CardTitle role="heading" aria-level={1} className="font-display text-2xl tracking-tight">
             {active ? "Your Gradia plan" : "Activate Gradia"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">

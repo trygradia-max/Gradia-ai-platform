@@ -202,7 +202,7 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
                 <p
                   className={cn(
                     "text-xs font-medium",
-                    isToday ? "text-primary" : "text-foreground"
+                    isToday ? "text-accent-text" : "text-foreground"
                   )}
                 >
                   {day.toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
@@ -283,7 +283,7 @@ export function CalendarWeekView({ initial }: { initial: CalendarWeek }) {
           const isToday = day.toDateString() === new Date().toDateString()
           return (
             <section key={day.toISOString()} className="space-y-2">
-              <p className={cn("text-xs font-medium", isToday ? "text-primary" : "text-foreground")}>
+              <p className={cn("text-xs font-medium", isToday ? "text-accent-text" : "text-foreground")}>
                 {day.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
               </p>
               {list.map((job) => (

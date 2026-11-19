@@ -20,6 +20,17 @@ export type TeamWorkspace = {
   capabilities: TeamCapability[]
   location_id: string
 }
+/**
+ * Whether a workspace grant can ever yield operations-queue rows. Owners always can; a manager
+ * only with a grant that names a queue source. Staff never can: their Team home shows assigned
+ * work, not the shop queue. This is a presentation rule only: the queue RPC re-checks live
+ * membership and filters every source itself, so a `true` here grants nothing.
+ */
+export const OPERATIONS_QUEUE_GRANTS: readonly TeamCapability[] = ["crm.read", "approvals.messages", "delivery.reconcile"]
+export function canReadOperationsQueue(workspace: Pick<TeamWorkspace, "role" | "capabilities">): boolean {
+  if (workspace.role === "owner") return true
+  return workspace.role === "manager" && workspace.capabilities.some((capability) => OPERATIONS_QUEUE_GRANTS.includes(capability))
+}
 export type TeamMember = {
   id: string
   user_id: string
