@@ -40,6 +40,8 @@ export async function updateSession(request: NextRequest) {
   if (!user && pathRequiresSession(path)) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"
+    // Only `next` is carried. The original query travels inside it, never as stray `/login` parameters.
+    redirectUrl.search = ""
     redirectUrl.searchParams.set("next", `${path}${request.nextUrl.search}`)
     return NextResponse.redirect(redirectUrl)
   }
@@ -54,16 +56,43 @@ export async function updateSession(request: NextRequest) {
   return supabaseResponse
 }
 
-function pathRequiresSession(pathname: string): boolean {
-  if (pathname === "/") {
-    return false
-  }
-  const protectedPrefixes = [
-    "/dashboard",
-    "/leads",
-    "/schedule",
-    "/settings",
-    "/onboarding",
-  ]
-  return protectedPrefixes.some((p) => pathname.startsWith(p))
+/**
+ * Signed-in route prefixes. A signed-out visitor to any of these is redirected to
+ * `/login?next=<path+query>` here, before render, so the original destination survives sign-in
+ * (the callback still validates `next`). Pages also fail closed on their own; this gate exists so a
+ * deep link keeps its return path instead of falling through `requireUser()` -> `/login` (no
+ * `next`) or `requireShop()` -> `/onboarding` -> `/login?next=/onboarding`.
+ *
+ * Every page route is either listed here or in `PUBLIC_PAGE_PATHS`; `eval/proxy-auth-gate.test.ts`
+ * fails when a new page route is added to neither.
+ */
+export const SIGNED_IN_PREFIXES = [
+  "/dashboard",
+  "/leads",
+  "/schedule",
+  "/settings",
+  "/onboarding",
+  "/agents",
+  "/agent",
+  "/approvals",
+  "/activity",
+  "/billing",
+  "/calendar",
+  "/calls",
+  "/chat",
+  "/control-center",
+  "/conversations",
+  "/customers",
+  "/intake",
+  "/receptionist",
+  "/recovery",
+  "/starting-point",
+  "/team",
+] as const
+
+/** Page routes that are intentionally reachable while signed out. `/q/[token]` is a customer quote link. */
+export const PUBLIC_PAGE_PATHS = ["/", "/login", "/how-it-works", "/q/[token]"] as const
+
+export function pathRequiresSession(pathname: string): boolean {
+  return SIGNED_IN_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 }
