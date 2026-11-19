@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { unstable_rethrow } from "next/navigation"
 
 import { getUsageState } from "@/app/actions/billing"
 import { cn } from "@/lib/utils"
@@ -14,6 +15,9 @@ export async function UsagePill() {
   try {
     usage = await getUsageState()
   } catch (err) {
+    // `getUsageState` can reach `requireShop`, whose redirect is framework control flow.
+    // Preserve that redirect; only genuine usage-read failures are best-effort here.
+    unstable_rethrow(err)
     console.error("[usage-pill] usage state failed:", err)
     return null
   }

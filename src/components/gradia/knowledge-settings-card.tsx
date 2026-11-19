@@ -169,7 +169,7 @@ export function KnowledgeSettingsCard({
   }
 
   return (
-    <Card id="knowledge" className="scroll-mt-20 border-border/80">
+    <Card id="knowledge-card" className="border-border/80">
       <CardHeader className="flex flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60">
           <BookOpen className="size-5 text-primary" aria-hidden />

@@ -347,9 +347,9 @@ export function BiChat({
     >
       <div className="flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5 sm:px-6">
         <div className="flex items-center gap-2">
-          <p className="label-eyebrow text-muted-foreground/70">Chat</p>
+          <p className="label-eyebrow text-muted-foreground">Chat</p>
           {pending ? (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
               <TypingDots />
             </span>
           ) : null}

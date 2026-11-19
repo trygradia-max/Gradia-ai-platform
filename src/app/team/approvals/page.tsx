@@ -15,6 +15,16 @@ import { DelegatedApproveButton } from "./approve-button"
 export const dynamic = "force-dynamic"
 const channels = { send_sms: "Text message", send_email: "Email" } as const
 
+function formatQueuedAt(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "time unavailable"
+  return `${new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(date)} UTC`
+}
+
 /** Delegated message approval. Address selectors are never authorization; the
  *  list and the approval each recheck live membership and the grant in SQL. */
 export default async function DelegatedApprovalsPage({
@@ -75,7 +85,8 @@ export default async function DelegatedApprovalsPage({
                 evidence={
                   <>
                     <p>
-                      Recipient: {item.destination ?? "missing"} · Queued {item.created_at} ·{" "}
+                      Recipient: {item.destination ?? "missing"} · Queued{" "}
+                      <time dateTime={item.created_at}>{formatQueuedAt(item.created_at)}</time> ·{" "}
                       {item.purpose === "service" ? "Owner-reviewed service reply" : "Marketing rules apply"}
                     </p>
                     {item.subject ? <p>Subject: {item.subject}</p> : null}
