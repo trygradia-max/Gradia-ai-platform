@@ -3225,3 +3225,18 @@ that the merged sandbox verifier, dedicated webhook, worker and real test-clock 
 cron and dashboard settings. Copy explicitly labels the contract TEST-only, keeps the worker fail-closed, forbids webhook-secret reuse and says
 never to place the test-clock mutation opt-in in Vercel/shared runtime. Added a source-lock test covering the complete setting inventory and safety
 copy. No secret value, Stripe call, schema, billing behavior, deploy, provider call or shared-data change.
+
+[AI: claude-code] [DATE: 2026-11-19] [AREA: platform] [STATUS: done]
+Call Copilot PR D (`codex/call-copilot-consent`, base `01eacaa`; PR opened non-draft, not merged): durable, tenant-isolated, append-only ingress and
+all-party disclosure/consent/pause/stop evidence for human-first inbound calls on a Gradia-controlled path, backend only. Migration
+`20261119130000_call_copilot_ingress.sql` adds objects only (`call_copilot_calls/_events/_conflicts`, one writer, an order-independent consent fold and a
+deny-by-default gate); `call_records` is untouched. Exact replay is a duplicate (12-way concurrent), changed replay or a reused sequence is a stored conflict that
+fails the call closed, a missing sequence fails closed, and reordering cannot manufacture consent (all 120 arrival orders of the five consent events plus seeded
+shuffles are safe at every step and converge on the in-order result). Decline is final; pause voids consent, records an explicit gap and needs fresh
+both-party consent to resume; uncaptured time is never backfilled. `src/lib/call-copilot/` is the typed adapter (strict, content-free vocabulary;
+`requireCaptureGrant` fails closed). Verified on the disposable stack: probe PASS (and FAIL under four mutations), 42 integration + 35 unit tests, unit suite
+203 files / 3206 passed / 4 skipped, tsc and ESLint clean; `tenant-relationships` has one failure that is identical without this migration.
+Deliberately NOT done: any route or provider implementation (no verified provider contract yet emits disclosure/consent evidence), audio, transcript, model
+use, extraction, CRM proposals or mutation, UI, outbound AI calls, disclosure wording or jurisdiction interpretation, per-shop enablement (the gate is
+necessary, not sufficient), retention job, linking to `call_records`/`interactions`, deploy, shared DB or production data. Details:
+`docs/architecture/CALL_COPILOT_INGRESS.md`; handoff: `docs/handoffs/CALL_COPILOT_PR_D_RESUME.md`.
