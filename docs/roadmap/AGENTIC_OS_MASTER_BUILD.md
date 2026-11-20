@@ -69,9 +69,12 @@ parts of the same Agentic OS, not new model personalities or authority systems.
   evaluation evidence, and tenant/revision-scoped trace/cache identity.
 - The operations queue and daily brief now consume the tenant-authorized server
   contract. Signed-in hosted acceptance is still required.
-- Scheduled custom agents now claim a durable run before recipe work, but there is
-  not yet one complete restart-safe run/step/command/attempt lifecycle for every
-  trigger and external effect.
+- Scheduled custom agents claim a durable run before recipe work. The governed-run
+  lifecycle (steps, stable commands, write-ahead attempts, heartbeats, stale-lease recovery,
+  pause/cancel/kill, waits, reconciliation and pre-effect rechecks) is implemented and proven on
+  a disposable stack by PR C (`docs/architecture/AGENT_RUN_LIFECYCLE.md`), but the governed
+  executor is still off: no playbook or provider effect runs through it yet, and only
+  interval-scheduled governed runs have a bound claim path.
 - Reviewed publication, provenance, conflict handling, revocation and revision-bound
   retrieval are enforced for the new memory path. Provider-boundary classification,
   PII minimization and the full malicious-input/deletion matrix remain.
@@ -86,7 +89,8 @@ parts of the same Agentic OS, not new model personalities or authority systems.
 - Arbitrary autonomous execution, universal browser control or an unrestricted
   “super agent.”
 - Persisted immutable employee-definition revisions with one atomic active revision.
-- Restart-safe claims, cancellation and reconciliation for every external attempt.
+- Restart-safe claims, cancellation and reconciliation **for production effects**: the lifecycle
+  exists (PR C) but no playbook, provider adapter or trusted content classifier uses it yet.
 - Prompt-injection classification and PII minimization at every provider boundary,
   plus the complete reviewed-memory adversarial/deletion test matrix.
 - The complete Cursor builder and operations/exception-desk UI.
@@ -179,20 +183,27 @@ the handoff sequence for Claude and Cursor.
 
 - [ ] Persist immutable employee-definition revisions and atomic active revision.
 - [ ] Compile a saved revision into the existing Control Center operation envelope.
-- [ ] Extend the merged scheduled-run lifecycle into durable step and attempt records
+- [x] Extend the merged scheduled-run lifecycle into durable step and attempt records
   around existing workflows,
   pending actions, provider proofs and agent runs; do not create a second executor.
+  _PR C: `agent_run_steps/commands/attempts/waits/events`, extending `custom_agent_runs`._
 - [x] Implement the first scheduled-run claim, lease and compare-and-set terminal
   transition with concurrent-worker tests.
-- [ ] Add heartbeats and extend restart-safe claims/transitions to every selected
+- [x] Add heartbeats and extend restart-safe claims/transitions to every selected
   pilot trigger, step and consequential external attempt.
-- [ ] Implement pause/cancel/kill semantics and distinguish requested cancellation
-  from confirmed provider cancellation.
-- [ ] Persist wait reason, due time, owner, escalation and reconciliation links.
-- [ ] Recheck current policy, consent, connector readiness, approval revision,
+  _PR C, with limits: interval-scheduled governed runs only (event and manual governed triggers
+  still refuse), and no pilot playbook is wired to it yet._
+- [x] Implement pause/cancel/kill semantics and distinguish requested cancellation
+  from confirmed provider cancellation. _PR C: request vs acknowledgement; `cancel_state` per attempt._
+- [x] Persist wait reason, due time, owner, escalation and reconciliation links.
+  _PR C. Escalation is recorded once; delivering it (notification, queue entry, operator screen) is not built._
+- [x] Recheck current policy, consent, connector readiness, approval revision,
   budgets and grants immediately before each consequential operation.
-- [ ] Prove restart recovery, idempotent retry, unknown provider outcome, revocation,
+  _PR C: the database gate plus `pre-effect-checks.ts`. No production effect calls it yet, and
+  `safetyVerified` has no trusted classifier, so the production policy resolver blocks until one exists._
+- [x] Prove restart recovery, idempotent retry, unknown provider outcome, revocation,
   cross-shop denial and concurrent transition behavior in disposable integration.
+  _PR C: 52 new lifecycle integration tests (87 with the existing lifecycle and binding suites), a 28-check upgrade probe and mutation checks (see the PR C doc)._
 
 Acceptance: a worker can stop mid-run, restart, and continue or reconcile without
 duplicating an external action or declaring an unknown action complete.

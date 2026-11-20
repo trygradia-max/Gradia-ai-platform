@@ -947,7 +947,19 @@ export type CustomAgentRunRow = {
   /** Durable lifecycle exists first for scheduled runs. Historical, manual and
    * event rows are terminal history and have no trigger key or worker lease. */
   trigger_key: string | null
-  state: "running" | "succeeded" | "skipped" | "failed" | "unknown"
+  /** `unknown` = an external attempt (or the worker) has no confirmed outcome; `failed` = stopped with a
+   * known state; `cancelled` / `killed` = a stop request was acknowledged; `waiting` / `paused` = open work
+   * that resumes later. Only governed runs can be waiting, paused, cancelled or killed. */
+  state:
+    | "running"
+    | "waiting"
+    | "paused"
+    | "succeeded"
+    | "skipped"
+    | "failed"
+    | "unknown"
+    | "cancelled"
+    | "killed"
   attempt: number
   worker_id: string | null
   lease_expires_at: string | null
@@ -959,6 +971,12 @@ export type CustomAgentRunRow = {
   knowledge_revision: number | null
   wait_reason: string | null
   error_code: string | null
+  last_heartbeat_at?: string | null
+  lease_started_at?: string | null
+  /** A pause / cancel / kill that was asked for; acknowledged only once `control_acked_at` is set. */
+  control_request?: "pause" | "cancel" | "kill" | null
+  control_requested_at?: string | null
+  control_acked_at?: string | null
   created_at: string
 }
 

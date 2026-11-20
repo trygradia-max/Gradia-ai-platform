@@ -211,6 +211,9 @@ describe("commercial lapse gate on the scheduled tick (PR E1)", () => {
     const client = {
       rpc: async (fn: string) => {
         rpcCalls.push(fn)
+        // Restart recovery runs first on every tick and is legacy-neutral (PR C).
+        if (fn === "recover_stale_agent_runs") return { data: { recovered: {}, escalated: 0 }, error: null }
+        if (fn === "claim_resumable_agent_run") return { data: { outcome: "none" }, error: null }
         if (fn === "commercial_execution_gate") return gate()
         throw new Error(`unexpected rpc ${fn}`)
       },
@@ -233,14 +236,14 @@ describe("commercial lapse gate on the scheduled tick (PR E1)", () => {
     const { result, rpcCalls, called } = await run(() => ({ data: { allowed: false, mode: "commercial", state: "past_due", reason: "subscription_past_due" }, error: null }))
     expect(result.fired).toBe(0)
     expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringMatching(/billing is not active \(subscription_past_due\)/) })
-    expect(rpcCalls).toEqual(["commercial_execution_gate"])
+    expect(rpcCalls).toEqual(["recover_stale_agent_runs", "claim_resumable_agent_run", "commercial_execution_gate"])
     expect(called).toBe(0)
   })
   it("fails closed when the gate cannot be read or answers nonsense", async () => {
     for (const gate of [() => ({ data: null, error: { code: "XX000", message: "down" } }), () => ({ data: { allowed: "yes" }, error: null }), () => { throw new Error("boom") }]) {
       const { result, rpcCalls, called } = await run(gate)
       expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringMatching(/billing is not active \(billing_state_unavailable\)/) })
-      expect(rpcCalls).toEqual(["commercial_execution_gate"])
+      expect(rpcCalls).toEqual(["recover_stale_agent_runs", "claim_resumable_agent_run", "commercial_execution_gate"])
       expect(called).toBe(0)
     }
   })
@@ -256,6 +259,8 @@ describe("an agent that becomes governed between the tick's state read and its l
       rpc: async (fn: string, args: Record<string, unknown>) => {
         rpcCalls.push({ fn, args })
         // The commercial lapse gate runs before any claim; a workspace with no billing account is legacy.
+        if (fn === "recover_stale_agent_runs") return { data: { recovered: {}, escalated: 0 }, error: null }
+        if (fn === "claim_resumable_agent_run") return { data: { outcome: "none" }, error: null }
         if (fn === "commercial_execution_gate") return { data: { allowed: true, mode: "legacy_no_commercial_account", state: null, reason: null }, error: null }
         if (fn === "claim_scheduled_agent_run") return { data: claimedReply, error: null }
         if (fn === "finish_scheduled_agent_run") return { data: true, error: null }
@@ -274,8 +279,8 @@ describe("an agent that becomes governed between the tick's state read and its l
     const result = await runScheduledAgents(client)
     expect(result.fired).toBe(0)
     expect(result.outcomes[0]).toMatchObject({ fired: false, reason: expect.stringContaining("became governed") })
-    expect(rpcCalls.map((c) => c.fn)).toEqual(["commercial_execution_gate", "claim_scheduled_agent_run", "finish_scheduled_agent_run"])
-    expect(rpcCalls[2].args).toMatchObject({ p_state: "skipped", p_fired: false, p_error_code: "governed_during_tick" })
+    expect(rpcCalls.map((c) => c.fn)).toEqual(["recover_stale_agent_runs", "claim_resumable_agent_run", "commercial_execution_gate", "claim_scheduled_agent_run", "finish_scheduled_agent_run"])
+    expect(rpcCalls[4].args).toMatchObject({ p_state: "skipped", p_fired: false, p_error_code: "governed_during_tick" })
     expect(handler).not.toHaveBeenCalled()
     handler.mockRestore()
   })

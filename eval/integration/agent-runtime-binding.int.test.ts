@@ -542,25 +542,28 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("trusted evaluation and durable runti
   })
 
   describe("unknown outcomes", () => {
-    it("an expired lease becomes unknown, never a free retry; and does not hold a new window forever", async () => {
+    it("an expired governed lease is classified from its evidence and never a free retry; it does not hold a new window forever", async () => {
+      // PR C (agent_run_step_lifecycle): a governed run with NO in-flight attempt has provably done nothing
+      // external (an attempt is durable before any provider call), so it becomes resumable (`waiting`) instead
+      // of `unknown`. A run with an in-flight attempt still becomes `unknown`: see agent-run-step-lifecycle.int.test.ts.
       const x = await world()
       const { agent } = await governed(x)
       const key = `lease-${uniq()}`
       const c = await claimed(agent, key)
       expect((await db.from("custom_agent_runs").update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq("id", c.run_id)).error).toBeNull()
-      // Same window: unknown, reconcile before retrying.
-      expect(await claimed(agent, key)).toMatchObject({ outcome: "unknown", run_id: c.run_id })
-      expect(await runRow(c.run_id)).toMatchObject({ state: "unknown", error_code: "lease_expired", wait_reason: "reconciliation_required", fired: false })
-      // A late finish from the lost worker can no longer overwrite the unknown outcome.
+      // Same window: open work, not a second claim and not a duplicate execution.
+      expect(await claimed(agent, key)).toMatchObject({ outcome: "open_duplicate", run_id: c.run_id, state: "waiting" })
+      expect(await runRow(c.run_id)).toMatchObject({ state: "waiting", wait_reason: "restart_recovery", fired: false, lease_expires_at: null })
+      // A late finish from the lost worker can no longer overwrite it.
       expect((await finish(c.run_id, c.worker)).data).toBe(false)
 
-      // A different window whose predecessor expired in flight: the predecessor is marked unknown, the new run proceeds.
+      // A different window whose predecessor expired: the predecessor is recovered, the new run proceeds.
       const d = await claimed(agent, `lease-${uniq()}`)
       expect(d.outcome).toBe("claimed")
       expect((await db.from("custom_agent_runs").update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq("id", d.run_id)).error).toBeNull()
       const e = await claimed(agent, `lease-${uniq()}`)
       expect(e.outcome).toBe("claimed")
-      expect((await runRow(d.run_id)).state).toBe("unknown")
+      expect((await runRow(d.run_id)).state).toBe("waiting")
     })
   })
 
