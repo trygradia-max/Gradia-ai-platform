@@ -96,6 +96,11 @@ database error or an unreadable or contradictory answer is a denial.
 **A grant is necessary, not sufficient.** It says nothing about Control Center policy, approval,
 membership or CRM authority, and does not claim a recording is complete.
 
+> **PR E (2026-11-20)** builds on this ledger: consented transcript segments, evidence revisions, source-cited extraction
+> and approval-first proposals. See `CALL_COPILOT_PROPOSALS.md`. The "no audio, transcript, extraction or CRM proposal"
+> items below describe PR D as merged; PR E adds those as backend-only, gated and approval-required, and still adds no
+> route, provider, live model or UI.
+
 ## What is NOT built (explicit)
 
 * **No route and no provider implementation.** `CallCopilotProviderSeam` and

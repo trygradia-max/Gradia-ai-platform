@@ -525,6 +525,14 @@ export async function executeApproval(
         location_unavailable: "The workspace location could not be verified.",
         owner_approval_required: "Only the shop owner can approve this kind of action.",
         review_changed: "This message changed or is being edited. Refresh and review it again before approving.",
+        // Call Copilot proposals: the call evidence or CRM changed since the proposal was made.
+        call_human_approval_required: "Call proposals always need a person to approve them. Nothing ran.",
+        call_proposal_edited: "This call proposal was edited after it was created. Create a fresh proposal from the call.",
+        call_consent_unavailable: "Consent for this call no longer permits using it. Nothing was changed.",
+        call_evidence_changed: "The call evidence changed since this proposal was made. Review the call again.",
+        call_requester_revoked: "The person who requested this proposal no longer has access. Create a fresh proposal.",
+        call_definition_inactive: "The agent revision behind this proposal is no longer active.",
+        call_crm_state_changed: "The customer record changed since this proposal was made. Review it again.",
       }
       return { ok: false, error: reasons[String(data.denied)] ?? "Execution status could not be verified. Review action history before retrying." }
     }
