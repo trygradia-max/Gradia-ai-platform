@@ -3225,3 +3225,32 @@ that the merged sandbox verifier, dedicated webhook, worker and real test-clock 
 cron and dashboard settings. Copy explicitly labels the contract TEST-only, keeps the worker fail-closed, forbids webhook-secret reuse and says
 never to place the test-clock mutation opt-in in Vercel/shared runtime. Added a source-lock test covering the complete setting inventory and safety
 copy. No secret value, Stripe call, schema, billing behavior, deploy, provider call or shared-data change.
+
+[AI: claude-code] [DATE: 2026-11-19] [AREA: platform] [STATUS: done]
+Call Copilot PR D (`codex/call-copilot-consent`, base `01eacaa`; PR opened non-draft, not merged): durable, tenant-isolated, append-only ingress and
+all-party disclosure/consent/pause/stop evidence for human-first inbound calls on a Gradia-controlled path, backend only. Migration
+`20261119130000_call_copilot_ingress.sql` adds objects only (`call_copilot_calls/_events/_conflicts`, one writer, an order-independent consent fold and a
+deny-by-default gate); `call_records` is untouched. Exact replay is a duplicate (12-way concurrent), changed replay or a reused sequence is a stored conflict that
+fails the call closed, a missing sequence fails closed, and reordering cannot manufacture consent (all 120 arrival orders of the five consent events plus seeded
+shuffles are safe at every step and converge on the in-order result). Decline is final; pause voids consent, records an explicit gap and needs fresh
+both-party consent to resume; uncaptured time is never backfilled. `src/lib/call-copilot/` is the typed adapter (strict, content-free vocabulary;
+`requireCaptureGrant` fails closed). Verified on the disposable stack: probe PASS (and FAIL under four mutations), 42 integration + 35 unit tests, unit suite
+203 files / 3206 passed / 4 skipped, tsc and ESLint clean; `tenant-relationships` has one failure that is identical without this migration.
+Deliberately NOT done: any route or provider implementation (no verified provider contract yet emits disclosure/consent evidence), audio, transcript, model
+use, extraction, CRM proposals or mutation, UI, outbound AI calls, disclosure wording or jurisdiction interpretation, per-shop enablement (the gate is
+necessary, not sufficient), retention job, linking to `call_records`/`interactions`, deploy, shared DB or production data. Details:
+`docs/architecture/CALL_COPILOT_INGRESS.md`; handoff: `docs/handoffs/CALL_COPILOT_PR_D_RESUME.md`.
+
+[AI: claude-code] [DATE: 2026-11-20] [AREA: platform] [STATUS: done]
+Call Copilot PR D review blocker (`codex/call-copilot-consent`, PR #159, not merged): `call_copilot_capture_state` tracked each party's consent as a boolean, so
+operator consent to disclosure version A plus caller consent to version B activated capture; the product contract requires both parties to consent to the SAME
+version. The fold now keeps each party's consented version (NULL when none, reset by a pause) and both the first activation and a `capture_resumed` require the two
+to be present and equal. Fixed in place in the still-unmerged migration `20261119130000_call_copilot_ingress.sql` (no new migration, no other function changed). A
+party's later valid consent replaces its earlier one, so a mismatch is repaired only by a party consenting to the other's version. Tests: 11 new integration tests
+(mismatch never activates, incl. all 120 arrival orders of the five consent events; matching versions still activate; repair; resume after a pause with mismatched
+fresh consent, in shuffled orders, then repaired resume) and 3 structural unit locks on the fold; each new integration test that exercises the bug fails against the old
+function (7 of 11; the rest were already correct). Probe extended with mismatch, repair and mismatched-resume cases. Verified on disposable stacks: integration 53/53
+three consecutive runs, unit 203 files / 3209 passed / 4 skipped, `tsc --noEmit` and ESLint clean, probe PASS and FAILS when the version comparison is removed. Note: the
+unmodified probe cannot run on `gradia-isolated-tests` any more (stack already holds this migration and a later one), so it was run unchanged except project name and repo
+root against the pre-migration `gradia-voice-columns` stack. The corrected function was applied to `gradia-isolated-tests` with `CREATE OR REPLACE` for the integration run.
+Left alone: provider, route, UI, disclosure wording, every other migration and function; no deploy, merge or production data.
