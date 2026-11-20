@@ -1,6 +1,6 @@
 # PR C resume handoff: governed run lifecycle
 
-_2026-11-19. Branch `claude/selected-playbook-lifecycle`. PR opened non-draft against `main`; not merged._
+_2026-11-19. Branch `claude/selected-playbook-lifecycle`. PR #161, non-draft, against `main`; not merged._
 
 ## State
 

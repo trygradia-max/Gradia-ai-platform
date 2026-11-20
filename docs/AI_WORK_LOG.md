@@ -19,7 +19,7 @@ merged, deployed, or changed production.
 ## Entries
 
 [AI: claude-code] [DATE: 2026-11-19] [AREA: platform] [STATUS: done]
-PR C, governed (selected-playbook) run lifecycle (`claude/selected-playbook-lifecycle`; PR opened non-draft against main, not merged).
+PR C, governed (selected-playbook) run lifecycle (`claude/selected-playbook-lifecycle`; PR #161, non-draft, not merged).
 Extends the merged scheduled-run claim (no second executor, no second claim table): migration `20261120103700_agent_run_step_lifecycle.sql`
 adds steps, stable commands (immutable identity, database-derived idempotency key, optional per-agent dedupe key) and write-ahead attempts,
 heartbeats, stale-lease recovery that classifies a dead worker from its evidence (in-flight attempt => `unknown` + one reconciliation wait;
