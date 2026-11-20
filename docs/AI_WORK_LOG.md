@@ -42,6 +42,20 @@ waits/control/reconciliation, event/manual governed triggers, ledger retention, 
 The migration was renamed from `20261119120000` because a parallel session already used that version. Details and limitations:
 `docs/architecture/AGENT_RUN_LIFECYCLE.md`; handoff: `docs/handoffs/CLAUDE_AGENT_RUN_LIFECYCLE_PR_C_RESUME.md`.
 
+[AI: claude-code] [DATE: 2026-11-19] [AREA: platform] [STATUS: done]
+Commercial Billing PR F3 (`claude/commercial-billing-f3-reconciliation`, base `01eacaa`, Stripe TEST mode only; PR opened non-draft, not merged): polling reconciliation of subscription state for when signed Stripe
+webhooks stop. A fourth leased worker task (`subscription_poll`, same cron route) claims ONE due shop at a time (migration `20261119120000_commercial_subscription_poll.sql`: per-shop schedule/rate limit + append-only
+observations as the replay claim; tenant, customer, known subscription and Checkout attempt come only from server rows), reads Stripe GET-only (`GET /subscriptions?customer=…&status=all`, plus the server-held Checkout session for a
+never-seen subscription), judges it with the SAME normalizer as the signed webhook, and applies a material difference only through the one subscription writer under a new source `provider_poll`. It cannot clear a sticky integrity
+block (only `reviewed_reconciliation` can), never marks `active` from ambiguous/unverified evidence (truncated reads, another live subscription, unverified/elapsed period, unbound subscription), still applies restrictive states
+(past_due/canceled), orders its evidence 5 minutes before the claim so a fresh signed webhook wins, treats a metadata shop id as a cross-check that blocks only the customer's own shop, backs off 15 min→6 h on failures, and is
+observable (observation rows, overview function, worker counts, all-unreadable run = 503 alert). `commercial_subscription_apply_evidence` and `commercial_execution_gate` were widened in place (source `provider_poll`, verified
+period required; the gate widening was found necessary by the first integration run). Verified: unit 202 files / 3205 passed (+28 poll, +6 worker), integration `commercial-subscription-poll` 32/32 (x3) and 10 commercial/membership/tenant
+files 263/263, upgrade verifier PASS and both `--mutate` checks fail as required, F1/F2 verifiers PASS, types/lint clean. **No real Stripe request was made** (no TEST credentials were used); the real object shapes, a
+webhooks-stopped renewal on a test clock, the failure directions and zero-write confirmation are manual (runbook section 7). Deliberately NOT done: live mode, deploy, production/shared Supabase, any merge, settlement scheduling, polling of
+Checkout-create unknowns, advancing expired Checkout attempts, provider-fact rows from polling, resubscription, and every open founder policy (proration, grace/dunning, tax, refunds, reviewer role, resend policy, Metronome, production
+promotion). Details: `docs/architecture/COMMERCIAL_SANDBOX_ACCEPTANCE.md` ("PR F3"), `docs/qa/COMMERCIAL_SANDBOX_ACCEPTANCE_RUNBOOK.md`, `docs/handoffs/COMMERCIAL_BILLING_PR_F3_RESUME.md`.
+
 [AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
 Added a bounded demo-readiness polish slice on `codex/demo-readiness-polish` after
 merged signed-in acceptance PR #154. `UsagePill` now preserves Next.js redirect and

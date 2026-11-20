@@ -269,4 +269,99 @@ pass (for CI).
    meters for this contract. Revisit before the production decision.
 5. Resend policy for an `unknown` delivery that reconciliation cannot confirm, seat partial-day proration, grace/dunning, tax, refund/credit eligibility,
    resubscription, reviewer role/UI and voice/SMS runtime gating remain open and unimplemented.
-6. Polling reconciliation of subscription state when webhooks stop is unchanged (PR F3).
+6. Polling reconciliation of subscription state when webhooks stop: implemented in PR F3 (next section); the real-Stripe evidence for it is still manual (runbook section 7).
+
+---
+
+# PR F3 — polling reconciliation of subscription state (2026-11-19)
+
+Sandbox/test mode only. No live Stripe, no production or shared Supabase, no deploy, no real customer, no real money, no public pricing UI. Prices, allowances, caps, the exact
+Founder Pilot item set, period boundaries, signed adjustments and cents-based charges are unchanged. Nothing in this PR mutates Stripe: the new reader admits GET only.
+
+**Problem.** Subscription state reaches Postgres only through signed webhooks (PR E1). If Stripe stops delivering, the last state stands until the verified period ends, then the lapse gate
+blocks (`subscription_period_elapsed`): a paying workspace that renewed is blocked, and a workspace that canceled or failed payment keeps working until the period ends.
+
+**Approach.** Postgres stays the authority and Stripe stays evidence. A leased worker task compares what Stripe REPORTS for the subscription the SERVER already binds to a shop with what the
+database holds, and hands a material difference to the one subscription writer (`commercial_subscription_apply_evidence`) under a new evidence source, `provider_poll`.
+
+## What exists
+
+| Piece | Location |
+| --- | --- |
+| Migration (new tables + 3 functions; two functions and three closed sets widened in place) | `supabase/migrations/20261119120000_commercial_subscription_poll.sql` |
+| GET-only provider reader + pure decisions (the SAME normalizer as the signed webhook) | `src/lib/commercial-subscription-poll.ts` (`normalizeSubscription` is now exported from `commercial-webhook.ts`) |
+| Claim / read / decide / record orchestration, sweep report | `src/lib/commercial-subscription-poll-service.ts` |
+| Fourth leased worker task `subscription_poll` (bounded, run-level time budget) | `src/lib/commercial-billing-worker.ts`; entry point unchanged (`GET /api/cron/commercial-billing`) |
+| Unit tests | `eval/commercial-subscription-poll.test.ts` (28), `eval/commercial-billing-worker.test.ts` (19, +6 poll) |
+| Integration tests (real Postgres, fake provider reader) | `eval/integration/commercial-subscription-poll.int.test.ts` (32) |
+| Non-destructive upgrade verifier (+ `--mutate sticky|tenant`, which MUST fail) | `scripts/verify-commercial-subscription-poll-migration.py` |
+
+## The flow (one shop per claim)
+
+1. **Claim** (`commercial_subscription_poll_claim`, service role). Eligible = a test-mode account with a bound platform customer in `checkout_pending`, `active`, `past_due`, `incomplete` or
+   `unknown`, AND something server-held to compare (recorded subscription evidence, or a Checkout attempt with a recorded session). `canceled` is terminal and `reconciliation_required` is a
+   sticky integrity block, so neither is polled. The account row is the per-shop mutex (`FOR UPDATE SKIP LOCKED`, schedule re-read under it), so concurrent claimers cannot both win a shop.
+   The claim returns the tenant, the bound customer, the known subscription and the Checkout session/attempt: all from server rows. Nothing comes from the request, the environment or Stripe.
+2. **Read** (GET only, PLATFORM account, reviewed API version, the refused-if-live PR C configuration). A known subscription costs ONE list read of that customer
+   (`GET /v1/subscriptions?customer=…&status=all`). A subscription this shop has never recorded is discovered ONLY through the server-held Checkout session
+   (`GET /v1/checkout/sessions/{id}`: attempt reference, subscription mode, test mode and bound customer all verified; metadata is not consulted), then the same list read.
+3. **Decide** (pure). The answer must be COMPLETE (list and items not truncated), TEST-mode and about the bound customer, or it is `ambiguous` and changes nothing. The exact Founder Pilot item
+   set and period agreement are judged by the same normalizer as the webhook. `active` is never produced from ambiguous evidence (see table).
+4. **Record** (`commercial_subscription_poll_record`). One observation per claim, ever. A material difference goes through `commercial_subscription_apply_evidence('provider_poll', …)`.
+
+| Situation | Result |
+| --- | --- |
+| Provider and database agree | `unchanged`: an observation row only (no evidence row, no state change) |
+| Renewal / recovery / cancellation / payment failure the webhook never delivered | `applied` (or `not_current` if the writer's ordering says so) through the single writer |
+| Truncated list or items, live object, foreign customer, unreadable entry, target missing, unrecognised status | `ambiguous` (finite code), nothing changes |
+| `active` with another live subscription on the customer (possible duplicate), an unverified period, or an already-elapsed period | `ambiguous`; a MORE RESTRICTIVE state (`past_due`, `canceled`, `incomplete`, `unknown`) is still applied: that is the fail-closed direction |
+| Never-seen subscription that the server-held session did not name | `ambiguous` (`subscription_unbound`); a stray subscription is never adopted |
+| Checkout session still open / expired | `session_pending`, nothing changes |
+| Provider read failed | `unreadable` (finite code, never the error text), nothing changes, the shop backs off |
+| Observation about a customer other than the server-held binding | `refused` (`customer_mismatch`), nothing changes |
+| Metadata `shop_id` disagrees with the server binding | `refused` (`tenant_conflict`): blocks ONLY the customer's own shop (sticky, as the webhook does); the shop the metadata named is untouched |
+| Account already sticky, or terminal `canceled` | not claimed; if the block lands between claim and record the writer records the polled evidence as `blocked_pending_review` and changes nothing |
+
+## Guarantees and where each is enforced
+
+- **Tenant-bound.** Shop, customer, known subscription and attempt come from the claim; the record function re-checks the customer against `commercial_billing_accounts.platform_customer_id`, requires the
+  claim to be the live claim of that exact shop, and ignores the metadata `checkout_attempt_id` (discarded in the reader). Provider metadata is only a cross-check.
+- **Replay-safe.** `commercial_subscription_poll_observations` (append-only, UNIQUE claim token) is the replay claim: an identical replay returns the stored result, changed content is `CB409`, a
+  superseded or expired claim is `CB409` and writes nothing. The polled evidence id is `poll_<claim token>`. Concurrent identical records write one observation and one evidence row.
+- **Rate-limited.** `commercial_subscription_poll_schedule` holds `next_due_at`. After a poll: 6 h for a healthy `active` shop with more than 2 h left in its verified period, otherwise 15 min;
+  after an `ambiguous` / `unreadable` / `refused` poll (or an abandoned claim) the wait is 15 min doubling per consecutive failure, capped at 6 h. The worker also caps polls per run (10) and
+  gives the poll task a 60 s budget inside a 240 s run budget.
+- **Lease-safe.** The `subscription_poll` lease row stops overlapping cron runs from doing the same sweep. The lease is an optimization: the per-shop claim is the safety (tested: 10 concurrent claimers
+  → one winner; 5 concurrent sweeps → one provider read, one observation, one evidence row). A holder that lost the lease stops before its next claim.
+- **Ordering.** Polled evidence is ordered at the claim time MINUS the 5-minute webhook signature tolerance, so a signed webhook created in that window always wins and the poll never overrides fresher
+  signed evidence (`out_of_order`). Older evidence cannot regress newer, `canceled` stays terminal, a second live subscription is `duplicate_subscription`: all existing writer rules.
+- **Sticky integrity failures are preserved.** `provider_poll` is not `reviewed_reconciliation`: the writer's sticky rule still blocks it, and polling never clears a block. A polled catalog mismatch is the same sticky
+  failure the webhook produces.
+- **Never active from ambiguous or unverified evidence.** `provider_poll` is refused by the writer unless `p_require_period` is true (an `active` without a verified period is not active), the record function refuses an
+  elapsed/unverified period, and the lapse gate accepts polled `active` evidence only with a verified period. Checkout completion is still never payment proof.
+- **Observable.** Every poll is a durable observation row (finite outcome + reason, digest, no payload, URL, secret or id in logs); the worker reports counts, `overdue` (eligible shops an hour late) and `failing`
+  (shops backing off); `commercial_subscription_poll_overview()` gives the same counts to an operator; a run in which every attempted poll was unreadable is `failed` (503, ops alert), any ambiguity/refusal is `partial`.
+- **Live mode and provider mutation stay fail-closed.** The reader type admits GET only; the worker is disabled without the flag and a TEST key; a live-shaped key, a live object, a Connect account or a non-loopback
+  base is refused before any read; the database refuses live evidence. Nothing here can create a settlement, adjustment, refund, credit, cancellation, retry, payment or meter event.
+- **Unknown delivery outcomes are reconciled, never resent.** Unchanged: `unknown` meter deliveries are reconciled by `delivery_reconcile` (evidence only) and ambiguous adjustment applications are never resent. The poll task
+  touches neither (it has no settlement, line or adjustment access), and a held/ambiguous poll never triggers a resend.
+
+## Widened in place (the only changes to existing behavior)
+
+- `commercial_subscription_apply_evidence` and `commercial_execution_gate`: byte-identical to PR E1 except the source set also contains `provider_poll`, the writer refuses it without a required verified period, and the gate
+  opens for it only with a verified period. The migration text diff is two small hunks per function.
+- Closed sets: `commercial_subscription_evidence.evidence_source`, `commercial_billing_events.kind` (+`subscription_poll_conflict`), `commercial_worker_leases.worker` (+`subscription_poll`, one new idle row).
+- Worker report: a task skipped as `not_configured` (older callers/tests) is not an error; a `null` poll reader is a misconfiguration like the other runtimes. The run now has a 240 s total budget (each task still 120 s, poll 60 s).
+
+## Limitations (all fail closed)
+
+1. **Not exercised against real Stripe.** The reader and decisions are proven against a local fake provider that encodes the documented object shapes. The real shapes (list-by-customer on `2024-09-30.acacia`
+   with a test-clock customer, `items.has_more`, top-level period fields, `subscription` on a completed session, `client_reference_id`) are an assumption until the manual evidence in runbook section 7 is gathered; if
+   any field differs the poll is `ambiguous` (finite code) and changes nothing.
+2. Provider facts (`payment_failed`/`cancellation` rows) are written only by the signed-webhook path; polling updates subscription evidence and state, not the fact ledger. Refund/credit facts are never polled.
+3. A second live subscription on the bound customer blocks polled `active` (ambiguous) but is not itself recorded or adopted: duplicates are still surfaced by the webhook path / a human. Resubscription after cancel is not implemented.
+4. Checkout sessions that expired are observed (`session_pending`/`session_expired`) but the attempt row is not advanced by polling.
+5. Unknown **Checkout create** outcomes (an attempt `unknown` before a session id exists) are not reconciled by polling (Stripe offers no lookup by our idempotency key without a session id). They remain a manual
+   reconciliation as before.
+6. Founder policy still open and unimplemented: partial-day seat proration, grace/dunning timing, tax, refund/credit eligibility, resubscription, reviewer role/UI, voice/SMS runtime gating, unknown-delivery resend
+   policy, who triggers `settleCommercialPeriod`, Metronome vs Billing Meters, and the production promotion decision.

@@ -23,6 +23,8 @@ const depsFor = (fake: FakeStripeSandbox, shopId: string, over: Partial<WorkerDe
   settlementRuntime: runtimeFor(fake),
   adjustmentRuntime: { ok: true, provider: createAdjustmentProvider(FAKE_CONFIG, fake.request) },
   evidenceReader: createMeterEvidenceReader(FAKE_CONFIG, fake.request),
+  // F3: the poll task runs too (nothing is due for these shops, so it makes no provider read and sends nothing).
+  subscriptionPollReader: { listCustomerSubscriptions: async () => { throw new Error("unexpected poll read") }, retrieveCheckoutSession: async () => { throw new Error("unexpected poll read") } },
   sandboxReady: async () => true,
   shopId,
   limits: { maxSettlements: 200 },
@@ -146,7 +148,7 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("commercial billing worker + lease (P
         // `generation = 0 WHERE generation > 0` can legitimately match nothing; every other statement must be refused.
         if (!stmt.includes("generation = 0")) expect(r.ok, stmt).toBe(false)
       }
-      expect((await db.from("commercial_worker_leases").select("worker")).data).toHaveLength(3)
+      expect((await db.from("commercial_worker_leases").select("worker")).data).toHaveLength(4) // three F2 workers + subscription_poll (F3)
     })
 
     it("acquireWorkerLease reports a held lease and hands a working Lease to the holder", async () => {

@@ -231,8 +231,10 @@ shop-deletion cascade removes rows). Live mode is unrepresentable; event details
 2. The gate covers the **agent runtime** entry points (scheduled, run-now, event recipes). Voice/SMS channel
    handlers and `setVoiceLive` are not gated here (they have their own launch gates; wiring them is a follow-on).
    A governed definition's executor is still disabled, so the post-claim re-check is not needed yet.
-3. There is no heartbeat/poll: if Stripe stops delivering events the last known state stands until the period ends,
-   then the gate blocks (`subscription_period_elapsed`). Reconciling against Stripe by polling is PR F.
+3. There is no heartbeat/poll in this PR: if Stripe stops delivering events the last known state stands until the period ends,
+   then the gate blocks (`subscription_period_elapsed`). **Update 2026-11-19 (PR F3, `COMMERCIAL_SANDBOX_ACCEPTANCE.md`):** a leased worker task now polls Stripe
+   (GET only, TEST mode) and feeds material differences through `commercial_subscription_apply_evidence` as source `provider_poll`; it cannot clear a sticky block,
+   cannot mark `active` from ambiguous evidence, and the gate accepts polled `active` evidence only with a verified period.
 4. Tax, grace length, automatic dunning timing, refund eligibility and credit policy are **founder-policy-required**
    and are not implemented (fail closed): no tax, no grace, no automatic refund/credit/cancel/retry.
 5. The partial-day seat question above, meter provisioning/event names, and the Stripe API-version check for
@@ -243,5 +245,5 @@ shop-deletion cascade removes rows). Live mode is unrepresentable; event details
 
 ## Follow-on
 
-PR F: Stripe test-clock acceptance, polling reconciliation, meter provisioning review, the human review surface and
+PR F: Stripe test-clock acceptance, polling reconciliation (done in PR F3), meter provisioning review, the human review surface and
 application path for approved adjustments, resubscription, and any production activation decision.

@@ -74,15 +74,42 @@ READY needs everything: the contract, exact items, webhook rule, worker configur
 - Route: `GET /api/cron/commercial-billing` with `Authorization: Bearer $CRON_SECRET`. Disabled (200 `disabled`) unless `GRADIA_COMMERCIAL_BILLING_WORKER=enabled` and a TEST key; scheduled
   every 10 minutes in `vercel.json` (no effect while crons/deployments stay disabled). A 503 means misconfigured or the sandbox did not verify (nothing was sent); a 200 with a `lease_held`
   task means an overlapping run was skipped (normal).
-- Order per run: dispatch pending deliveries → reconcile `unknown` deliveries (evidence only) → apply human-approved adjustments. It never resends an `unknown` or `rejected` line, never
+- Order per run: dispatch pending deliveries → reconcile `unknown` deliveries (evidence only) → apply human-approved adjustments → (F3) poll due subscriptions (GET only). It never resends an `unknown` or `rejected` line, never
   applies an unreviewed adjustment, and never settles a period (settlement trigger is a founder decision). Usage must reach Stripe before the renewal invoice finalizes (~1 h after the boundary).
 - Operator view of leases: `commercial_worker_lease_read()` (service role) shows held / generation / last outcome; the token is never returned.
 
-## 7. Tests
+## 7. Subscription polling (PR F3): the Stripe evidence that is STILL REQUIRED
+
+The polling task (`subscription_poll`, same cron, same flag, GET only) is proven against a local fake provider. **Nothing below has been run against real Stripe**: this session had no Stripe TEST credentials and
+does not claim it. Do these in the Stripe TEST sandbox only, with the worker enabled (`GRADIA_COMMERCIAL_BILLING_WORKER=enabled`, a TEST key) against a disposable/sandbox database, never production or shared data. Record
+**finite results only** (outcome names and counts from `commercial_subscription_poll_overview()` and the cron response); never paste ids, URLs, keys or payloads.
+
+1. **Real object shapes (read-only).** For one sandbox customer with the 7-item subscription (from section 4/5), confirm with `GET /v1/subscriptions?customer=<id>&status=all` on API version `2024-09-30.acacia`: the
+   test-clock customer's subscription IS listed; `items.has_more` is `false`; `current_period_start/end` and `start_date` are present at the top level; every item's `price.lookup_key` is present and the base item
+   has `quantity: 1`. For a completed hosted Checkout (manual step 1) confirm `GET /v1/checkout/sessions/<cs_test_id>` returns `status: complete`, `subscription` as an id string, `client_reference_id` equal to the attempt
+   and `customer` equal to the bound customer. If any of these differ the poll is `ambiguous` (`items_incomplete`, `period_not_verified`, `session_binding_mismatch`, `session_subscription_missing`, `target_missing`):
+   it fails closed, and the finding must be reported before this is relied on.
+2. **Webhooks stopped, renewal learned by polling (the main case).** With the dedicated webhook endpoint disabled (Developers → Webhooks → disable, TEST mode) or its signing secret deliberately not configured, advance the
+   test clock of an `active` sandbox subscription past its period end plus about 2 h. Confirm in order: the lapse gate blocks (`subscription_period_elapsed`); after the next cron tick the poll records `applied`; the
+   account is `active` with a new verified period (source `provider_poll`); the gate allows again; the next poll within the interval is not even claimed (no provider read), and a forced re-poll is `unchanged`.
+   Re-enable the endpoint afterwards and confirm a later signed event converges to the same state (a signed event inside the 5-minute window wins over a poll).
+3. **The fail-closed directions.** Same setup with webhooks stopped: (a) renewal with a card that cannot be charged (`4000 0000 0000 0341`) → the poll records `past_due` and the gate blocks; (b) cancel the subscription in the
+   Dashboard → the poll records `canceled` (terminal) and the account stops being polled; (c) create a second subscription on the same customer in the Dashboard → polled `active` becomes `ambiguous`
+   (`unexpected_subscription`) and nothing is marked active.
+4. **Zero writes at Stripe.** Compare the Dashboard event log (Developers → Logs, TEST) before and after a poll run: only `GET /v1/subscriptions` and `GET /v1/checkout/sessions/…` requests from the platform key; no POST/DELETE.
+5. **Real rate behavior.** Confirm there is no TEST-mode rate-limit response (HTTP 429) for the polling volume (at most 10 shops per run, two reads each). A 429 is recorded as `unreadable` and backs the shop off.
+6. **Cleanup.** Polling creates nothing at Stripe. Delete the test clock/simulation as in section 4.
+
+Operator view (service role only): `select public.commercial_subscription_poll_overview();` returns `eligible`, `due`, `claimed`, `never_polled`, `failing`, `overdue`, `oldest_last_observed_at`, `outcomes_24h`
+(counts only). Per-shop history is the append-only `commercial_subscription_poll_observations` table. `overdue > 0` or a run that is `failed` means polls are not completing: check the Stripe key and connectivity first.
+
+## 8. Tests
 
 ```
 npm test                                  # unit (no network)
 npm run test:int                          # needs the disposable stack; see the resume handoffs for the env
 python3 scripts/verify-commercial-worker-lease-migration.py
 python3 scripts/verify-commercial-sandbox-acceptance-migration.py
+python3 scripts/verify-commercial-subscription-poll-migration.py            # PASS
+python3 scripts/verify-commercial-subscription-poll-migration.py --mutate sticky   # must report EXPECTED FAIL
 ```

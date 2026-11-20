@@ -10,6 +10,8 @@ import {
   type AdjustmentRuntime,
 } from "@/lib/commercial-billing-operations"
 import { REVIEWED_SETTLEMENT_METER_MAPPING } from "@/lib/commercial-settlement"
+import { createSubscriptionPollReader, type SubscriptionPollReader } from "@/lib/commercial-subscription-poll"
+import { runSubscriptionPollSweep } from "@/lib/commercial-subscription-poll-service"
 import { resolveSettlementRuntime, type SettlementRuntime } from "@/lib/commercial-settlement-service"
 import type { MeterEvidenceReader } from "@/lib/commercial-settlement-provider"
 import { resolveCommercialStripeConfig } from "@/lib/stripe-commercial"
@@ -17,12 +19,15 @@ import { mappingMatchesSandboxContract } from "@/lib/stripe-sandbox-contract"
 import { verifyStripeSandbox } from "@/lib/stripe-sandbox-verifier"
 
 /**
- * The Commercial Billing worker (PR F2). Service-only: it is reached by the cron route (bearer CRON_SECRET) and by
- * nothing a browser can call. One bounded, leased sweep per task kind per invocation:
+ * The Commercial Billing worker (PR F2, extended in PR F3). Service-only: it is reached by the cron route (bearer CRON_SECRET)
+ * and by nothing a browser can call. One bounded, leased sweep per task kind per invocation:
  *
  *   settlement_dispatch  pending / in-flight settlement lines -> the SAME claim/record functions as settlement
  *   delivery_reconcile   `unknown` lines -> append-only provider evidence (NEVER resends)
  *   adjustment_apply     human-APPROVED adjustments (either sign) -> one pending invoice item each
+ *   subscription_poll    (F3) due shops -> a GET-only provider read compared with the database, applied ONLY through the single
+ *                        subscription writer (never marks active from ambiguous evidence, never clears a sticky integrity block,
+ *                        never mutates the provider)
  *
  * Safety layering (each layer is independent):
  *   1. configuration: disabled unless explicitly enabled AND the PR C test-mode config is valid; a live key is refused;
@@ -36,18 +41,33 @@ import { verifyStripeSandbox } from "@/lib/stripe-sandbox-verifier"
  * Nothing here creates a settlement, adjustment, review, refund, credit, cancellation or subscription state.
  */
 
-export type WorkerKind = "settlement_dispatch" | "delivery_reconcile" | "adjustment_apply"
-export const WORKER_KINDS: readonly WorkerKind[] = ["settlement_dispatch", "delivery_reconcile", "adjustment_apply"]
+export type WorkerKind = "settlement_dispatch" | "delivery_reconcile" | "adjustment_apply" | "subscription_poll"
+export const WORKER_KINDS: readonly WorkerKind[] = ["settlement_dispatch", "delivery_reconcile", "adjustment_apply", "subscription_poll"]
 
 export const WORKER_ENABLE_FLAG = "GRADIA_COMMERCIAL_BILLING_WORKER"
 
-export const WORKER_LIMITS: Readonly<{ maxSettlements: number; maxReconciliations: number; maxAdjustments: number; budgetMs: number; leaseTtlSeconds: number }> = {
+export const WORKER_LIMITS: Readonly<{
+  maxSettlements: number
+  maxReconciliations: number
+  maxAdjustments: number
+  maxPolls: number
+  budgetMs: number
+  pollBudgetMs: number
+  runBudgetMs: number
+  leaseTtlSeconds: number
+}> = {
   /** Settlements swept per invocation (each carries up to six lines). */
   maxSettlements: 10,
   maxReconciliations: 25,
   maxAdjustments: 10,
+  /** Subscription polls per invocation (each is at most two GET reads of one customer). The per-shop interval is the database's. */
+  maxPolls: 10,
   /** No new item starts after this much wall clock; an in-flight item may finish (<= 6 x 15 s). */
   budgetMs: 120_000,
+  /** The poll is a bounded read-only tail: it gets a shorter budget so the four tasks fit one invocation. */
+  pollBudgetMs: 60_000,
+  /** No task starts new work after this much wall clock for the whole invocation (route `maxDuration` is 300 s). */
+  runBudgetMs: 240_000,
   leaseTtlSeconds: 300,
 }
 
@@ -119,7 +139,7 @@ export async function acquireWorkerLease(
 
 export type TaskReport =
   | { worker: WorkerKind; status: "ran"; outcome: LeaseOutcome; counts: Record<string, number>; stoppedEarly: boolean }
-  | { worker: WorkerKind; status: "skipped"; reason: "lease_held" | "lease_unavailable" | "runtime_unavailable" }
+  | { worker: WorkerKind; status: "skipped"; reason: "lease_held" | "lease_unavailable" | "runtime_unavailable" | "not_configured" }
 
 export type WorkerRunReport = {
   ok: boolean
@@ -130,6 +150,11 @@ export type WorkerDeps = {
   settlementRuntime: SettlementRuntime
   adjustmentRuntime: AdjustmentRuntime
   evidenceReader: MeterEvidenceReader | null
+  /**
+   * GET-only provider reader for subscription polling (F3). `undefined` = the task is not configured for this run (skipped, not an
+   * error: older callers and tests); `null` = configured but unavailable (a misconfiguration, like the other runtimes).
+   */
+  subscriptionPollReader?: SubscriptionPollReader | null
   /** True only when the read-only sandbox verification passes. Called once, only when dispatch has work. */
   sandboxReady: () => Promise<boolean>
   /** Operator/test scoping to one workspace. Omitted in production: the sweep is tenant-blind and each item is shop-bound. */
@@ -138,11 +163,17 @@ export type WorkerDeps = {
   limits?: Partial<typeof WORKER_LIMITS>
 }
 
+function createRuntimePollReader(env: Record<string, string | undefined>): SubscriptionPollReader | null {
+  const config = resolveCommercialStripeConfig(env)
+  return config.ok ? createSubscriptionPollReader(config.config) : null
+}
+
 export function resolveWorkerDeps(env: Record<string, string | undefined> = process.env): WorkerDeps {
   return {
     settlementRuntime: resolveSettlementRuntime(env),
     adjustmentRuntime: resolveAdjustmentRuntime(env),
     evidenceReader: createRuntimeEvidenceReader(env),
+    subscriptionPollReader: createRuntimePollReader(env),
     sandboxReady: async () => {
       const verification = await verifyStripeSandbox(env)
       return verification.status === "checked" && verification.ready
@@ -155,8 +186,13 @@ export async function runCommercialBillingWorker(service: SupabaseClient, deps: 
   const now = deps.nowMs ?? Date.now
   const tasks: TaskReport[] = []
   let ok = true
+  const runDeadline = now() + limits.runBudgetMs
 
   for (const worker of WORKER_KINDS) {
+    if (worker === "subscription_poll" && deps.subscriptionPollReader === undefined) {
+      tasks.push({ worker, status: "skipped", reason: "not_configured" })
+      continue
+    }
     const taken = await acquireWorkerLease(service, worker, limits.leaseTtlSeconds)
     if (!taken.ok) {
       tasks.push({ worker, status: "skipped", reason: taken.reason })
@@ -165,7 +201,7 @@ export async function runCommercialBillingWorker(service: SupabaseClient, deps: 
       continue
     }
     const { lease } = taken
-    const deadline = now() + limits.budgetMs
+    const deadline = Math.min(now() + (worker === "subscription_poll" ? limits.pollBudgetMs : limits.budgetMs), runDeadline)
     let stopped = false
     // Before every item: still within budget AND the lease is still ours (renewal also extends it).
     const gate = async () => {
@@ -214,6 +250,26 @@ export async function runCommercialBillingWorker(service: SupabaseClient, deps: 
           if (result.report.stoppedEarly) stopped = true
           if (result.report.outcomes.read_failed > 0 || result.report.outcomes.record_failed > 0 || result.report.outcomes.mismatch > 0) outcome = "partial"
         }
+      } else if (worker === "subscription_poll") {
+        if (!deps.subscriptionPollReader) {
+          await lease.release("worker_misconfigured")
+          tasks.push({ worker, status: "skipped", reason: "runtime_unavailable" })
+          ok = false
+          continue
+        }
+        const report = await runSubscriptionPollSweep(service, deps.subscriptionPollReader, {
+          limit: limits.maxPolls,
+          shopId: deps.shopId,
+          gate,
+          nowMs: now,
+        })
+        counts = { claimed: report.claimed, ...report.outcomes, recordFailed: report.recordFailed, overdue: report.overdue, failing: report.failing }
+        if (report.stoppedEarly) stopped = true
+        const succeeded =
+          report.outcomes.applied + report.outcomes.not_current + report.outcomes.unchanged + report.outcomes.no_subscription + report.outcomes.session_pending
+        const unhealthy = report.outcomes.unreadable + report.recordFailed
+        if (report.claimFailed || (report.claimed > 0 && succeeded === 0 && unhealthy > 0)) outcome = "failed"
+        else if (unhealthy > 0 || report.outcomes.ambiguous > 0 || report.outcomes.refused > 0 || report.overdue > 0) outcome = "partial"
       } else {
         const result = await applyApprovedAdjustments(service, deps.adjustmentRuntime, { limit: limits.maxAdjustments, shopId: deps.shopId, gate })
         if (!result.ok) {

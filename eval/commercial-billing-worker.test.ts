@@ -94,6 +94,10 @@ function memoryService(opts: { held?: Partial<Record<string, boolean>>; renewOk?
       case "commercial_settlement_delivery_unresolved":
       case "commercial_adjustment_application_pending":
         return { data: [], error: null }
+      case "commercial_subscription_poll_claim":
+        return { data: { claimed: false, reason: "nothing_due" }, error: null }
+      case "commercial_subscription_poll_overview":
+        return { data: { eligible: 0, due: 0, claimed: 0, never_polled: 0, failing: 0, overdue: 0 }, error: null }
       default:
         // Any other database function is unavailable in this in-memory stand-in: a failed read, never a success.
         return { data: null, error: { code: "XX000", message: "unavailable" } }
@@ -106,6 +110,7 @@ const deps = (over: Partial<WorkerDeps> = {}): WorkerDeps => ({
   settlementRuntime: { ok: true, provider: { submitMeterEvent: vi.fn() }, mapping: REVIEWED_SETTLEMENT_METER_MAPPING },
   adjustmentRuntime: { ok: true, provider: { createPendingInvoiceItem: vi.fn() } },
   evidenceReader: { readObservedTotal: vi.fn() },
+  subscriptionPollReader: { listCustomerSubscriptions: vi.fn(), retrieveCheckoutSession: vi.fn() },
   sandboxReady: vi.fn(async () => true),
   ...over,
 })
@@ -117,8 +122,8 @@ describe("the worker run", () => {
     expect(report.ok).toBe(true)
     expect(report.tasks.map((t) => t.worker)).toEqual([...WORKER_KINDS])
     expect(report.tasks.every((t) => t.status === "ran" && t.outcome === "completed")).toBe(true)
-    expect(calls.filter((c) => c === "commercial_worker_lease_acquire")).toHaveLength(3)
-    expect(calls.filter((c) => c === "commercial_worker_lease_release")).toHaveLength(3)
+    expect(calls.filter((c) => c === "commercial_worker_lease_acquire")).toHaveLength(4)
+    expect(calls.filter((c) => c === "commercial_worker_lease_release")).toHaveLength(4)
     expect(leases.size).toBe(0) // every lease handed back
     // An empty worklist never calls the sandbox (no needless provider reads).
     const d = deps()
@@ -145,7 +150,7 @@ describe("the worker run", () => {
 
   it("a missing runtime (unconfigured provider) skips that task, releases the lease and reports not ok", async () => {
     const { service, leases } = memoryService()
-    const report = await runCommercialBillingWorker(service, deps({ settlementRuntime: { ok: false, reason: "billing_unconfigured" }, evidenceReader: null, adjustmentRuntime: { ok: false, reason: "billing_misconfigured" } }))
+    const report = await runCommercialBillingWorker(service, deps({ settlementRuntime: { ok: false, reason: "billing_unconfigured" }, evidenceReader: null, subscriptionPollReader: null, adjustmentRuntime: { ok: false, reason: "billing_misconfigured" } }))
     expect(report.ok).toBe(false)
     expect(report.tasks.every((t) => t.status === "skipped" && t.reason === "runtime_unavailable")).toBe(true)
     expect(leases.size).toBe(0)
@@ -168,7 +173,9 @@ describe("the worker run", () => {
     expect(dispatch).toMatchObject({ worker: "settlement_dispatch", status: "ran", stoppedEarly: true })
     // Exactly one settlement was attempted (one line claim); the second gate call found the lease lost and stopped.
     expect(wrapped.mock.calls.filter(([n]) => n === "commercial_settlement_delivery_claim")).toHaveLength(1)
-    expect(renewals).toBe(2)
+    // Two renewals belong to dispatch (one granted, one refused); the poll task asks once more, is refused, and claims nothing.
+    expect(renewals).toBe(3)
+    expect(wrapped.mock.calls.map(([n]) => n)).not.toContain("commercial_subscription_poll_claim")
   })
 
   it("dispatch refuses to send when the sandbox is not ready, and releases with sandbox_not_ready", async () => {
@@ -186,6 +193,94 @@ describe("the worker run", () => {
     expect(wrapped.mock.calls.map(([n]) => n)).not.toContain("commercial_settlement_delivery_claim")
     expect((d.settlementRuntime as unknown as { provider: { submitMeterEvent: ReturnType<typeof vi.fn> } }).provider.submitMeterEvent).not.toHaveBeenCalled()
     expect(base.leases.size).toBe(0)
+  })
+
+  describe("the subscription poll task (PR F3)", () => {
+    const claimRow = {
+      claimed: true, claim_token: "44444444-4444-4444-8444-444444444444", shop_id: "11111111-1111-4111-8111-111111111111", customer_id: "cus_PollCustomer01",
+      state: "active", known_subscription_id: "sub_PollSubscription01", attempt_id: null, session_id: null, requested_at: "2026-11-19T12:00:00Z", observed_at: "2026-11-19T11:55:00Z",
+    }
+    /** A claim that is handed out `times` times, then nothing is due. Records are answered with `outcome`. */
+    function pollingService(times: number, outcome: string, overdue = 0) {
+      const base = memoryService()
+      const original = base.service.rpc as unknown as (n: string, a?: Record<string, unknown>) => Promise<unknown>
+      let left = times
+      const wrapped = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+        if (name === "commercial_subscription_poll_claim") {
+          return left-- > 0 ? { data: { ...claimRow, claim_token: `44444444-4444-4444-8444-${String(left).padStart(12, "0")}` }, error: null } : { data: { claimed: false, reason: "nothing_due" }, error: null }
+        }
+        if (name === "commercial_subscription_poll_record") return { data: { outcome, reason: null, replayed: false }, error: null }
+        if (name === "commercial_subscription_poll_overview") return { data: { eligible: 1, due: 0, claimed: 0, never_polled: 0, failing: 0, overdue }, error: null }
+        return original(name, args)
+      })
+      return { service: { rpc: wrapped } as unknown as SupabaseClient, wrapped, leases: base.leases }
+    }
+    const failingReader = { listCustomerSubscriptions: vi.fn(async () => { throw new Error("down") }), retrieveCheckoutSession: vi.fn() }
+    const pollOf = (report: Awaited<ReturnType<typeof runCommercialBillingWorker>>) => report.tasks.find((t) => t.worker === "subscription_poll")!
+
+    it("an older caller that does not configure the poll skips it quietly (not an alert)", async () => {
+      const { service } = memoryService()
+      const d = deps()
+      delete d.subscriptionPollReader
+      const report = await runCommercialBillingWorker(service, d)
+      expect(pollOf(report)).toEqual({ worker: "subscription_poll", status: "skipped", reason: "not_configured" })
+      expect(report.ok).toBe(true)
+    })
+
+    it("a configured-but-unavailable reader (null) is a misconfiguration: lease released, not ok", async () => {
+      const { service, leases } = memoryService()
+      const report = await runCommercialBillingWorker(service, deps({ subscriptionPollReader: null }))
+      expect(pollOf(report)).toEqual({ worker: "subscription_poll", status: "skipped", reason: "runtime_unavailable" })
+      expect(report.ok).toBe(false)
+      expect(leases.size).toBe(0)
+    })
+
+    it("every poll unreadable is a FAILED run (it alerts); the finite counts carry no identifier", async () => {
+      const { service } = pollingService(2, "unreadable")
+      const report = await runCommercialBillingWorker(service, deps({ subscriptionPollReader: failingReader }))
+      expect(pollOf(report)).toMatchObject({ status: "ran", outcome: "failed", counts: { claimed: 2, unreadable: 2 } })
+      expect(report.ok).toBe(false)
+      expect(JSON.stringify(report)).not.toMatch(/cus_|sub_|sk_test|1111/)
+    })
+
+    it("some success with some ambiguity is partial (visible, not an alert); all clean is completed", async () => {
+      const ambiguous = await runCommercialBillingWorker(pollingService(1, "ambiguous").service, deps())
+      expect(pollOf(ambiguous)).toMatchObject({ outcome: "partial", counts: { claimed: 1, ambiguous: 1 } })
+      expect(ambiguous.ok).toBe(true)
+      const clean = await runCommercialBillingWorker(pollingService(2, "unchanged").service, deps())
+      expect(pollOf(clean)).toMatchObject({ outcome: "completed", counts: { claimed: 2, unchanged: 2 } })
+      // An hour-overdue shop is surfaced as partial even when every poll in this run was fine.
+      const overdue = await runCommercialBillingWorker(pollingService(1, "unchanged", 3).service, deps())
+      expect(pollOf(overdue)).toMatchObject({ outcome: "partial", counts: { overdue: 3 } })
+    })
+
+    it("is bounded by maxPolls and stops between polls when the lease is lost", async () => {
+      const bounded = pollingService(50, "unchanged")
+      const report = await runCommercialBillingWorker(bounded.service, deps({ limits: { maxPolls: 3 } }))
+      expect(pollOf(report)).toMatchObject({ counts: { claimed: 3 } })
+
+      let renewals = 0
+      const base = memoryService({ renewOk: () => ++renewals <= 1 })
+      const wrapped = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+        if (name === "commercial_subscription_poll_claim") return { data: claimRow, error: null }
+        if (name === "commercial_subscription_poll_record") return { data: { outcome: "unchanged", reason: null, replayed: false }, error: null }
+        if (name === "commercial_subscription_poll_overview") return { data: null, error: { code: "x" } }
+        return (base.service.rpc as unknown as (n: string, a?: Record<string, unknown>) => Promise<unknown>)(name, args)
+      })
+      const lost = await runCommercialBillingWorker({ rpc: wrapped } as unknown as SupabaseClient, deps())
+      // The lease was renewed once for the first poll, then refused: exactly one claim happened.
+      expect(wrapped.mock.calls.filter(([n]) => n === "commercial_subscription_poll_claim")).toHaveLength(1)
+      expect(pollOf(lost)).toMatchObject({ stoppedEarly: true })
+    })
+
+    it("a spent run budget leaves no time for polling (the poll never claims)", async () => {
+      const { service, wrapped } = pollingService(5, "unchanged")
+      let t = 0
+      // Every clock read advances 100 s: the 240 s run budget is gone before the poll task's first gate.
+      const report = await runCommercialBillingWorker(service, deps({ nowMs: () => (t += 100_000) }))
+      expect(wrapped.mock.calls.map(([n]) => n)).not.toContain("commercial_subscription_poll_claim")
+      expect(pollOf(report)).toMatchObject({ stoppedEarly: true })
+    })
   })
 
   it("a thrown error is reported as failed without echoing it, and the lease is still released", async () => {
