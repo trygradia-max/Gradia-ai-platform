@@ -1,6 +1,7 @@
 /**
- * Commercial Billing worker cron (PR F2, sandbox/test mode only). Sweeps pending settlement deliveries, reconciles
- * `unknown` deliveries (evidence only, never a resend) and applies human-approved adjustments. Cross-tenant by design
+ * Commercial Billing worker cron (PR F2, sandbox/test mode only; PR F3 adds subscription polling). Sweeps pending settlement deliveries, reconciles
+ * `unknown` deliveries (evidence only, never a resend), applies human-approved adjustments and polls due subscriptions
+ * (GET-only reads, applied only through the single subscription writer). Cross-tenant by design
  * like the other crons, but every item is bound to its own shop by the database row; nothing in the request names a
  * tenant, period, customer, event or amount.
  *

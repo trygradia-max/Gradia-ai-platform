@@ -142,7 +142,11 @@ const CURRENCY = /^[A-Za-z]{3}$/
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 
-function normalizeSubscription(object: Record<string, unknown>): Record<string, unknown> | null {
+/**
+ * The ONE subscription normalizer: used by the signed webhook and, unchanged, by polling reconciliation (PR F3), so a polled
+ * subscription and a webhook subscription are judged by exactly the same rules (exact item set, period agreement).
+ */
+export function normalizeSubscription(object: Record<string, unknown>): Record<string, unknown> | null {
   const subId = idOrNull(object.id, SUB_ID)
   const customer = idOrNull(object.customer, CUSTOMER_ID)
   const status = typeof object.status === "string" ? object.status : null
