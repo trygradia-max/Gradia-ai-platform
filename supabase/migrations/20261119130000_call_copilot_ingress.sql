@@ -217,7 +217,11 @@ $$;
 --     while an earlier decline or pause may still be in flight, whatever the arrival order.
 --   * Capture needs BOTH parties (operator and caller) to have been disclosed to and to have
 --     granted for exactly that disclosure (same party, same version, earlier sequence, after any
---     pause). The customer staying on the line is never consent.
+--     pause) AND both to have consented to the SAME disclosure version. The fold keeps each party's
+--     consented version (not a boolean); operator-on-A with caller-on-B never activates or resumes
+--     capture. A party's later valid consent replaces its earlier one, so a mismatch can be repaired
+--     only by that party consenting to the other's version. The customer staying on the line is never
+--     consent.
 --   * A decline is honoured even without a valid disclosure reference and is final for the call.
 --   * A pause closes the interval and explicitly records the gap; it voids all consent. Resuming
 --     needs fresh disclosure + both consents first; the uncaptured span is never backfilled.
@@ -243,8 +247,8 @@ DECLARE
   paused boolean := false;
   last_pause integer := 0;
   disc jsonb := '{}'::jsonb;
-  consent_operator boolean := false;
-  consent_caller boolean := false;
+  consent_operator text := NULL; -- disclosure version the operator validly consented to (NULL = none)
+  consent_caller text := NULL;   -- disclosure version the caller validly consented to (NULL = none)
   active boolean := false;
   intervals jsonb := '[]'::jsonb;
   gaps jsonb := '[]'::jsonb;
@@ -313,8 +317,10 @@ BEGIN
       d := disc -> e.responds_to_sequence::text;
       IF d IS NOT NULL AND d ->> 'party' = e.party AND d ->> 'version' = e.disclosure_version
          AND e.responds_to_sequence > last_pause THEN
-        IF e.party = 'operator' THEN consent_operator := true; ELSE consent_caller := true; END IF;
-        IF NOT paused AND NOT active AND consent_operator AND consent_caller THEN
+        IF e.party = 'operator' THEN consent_operator := e.disclosure_version; ELSE consent_caller := e.disclosure_version; END IF;
+        IF NOT paused AND NOT active
+           AND consent_operator IS NOT NULL AND consent_caller IS NOT NULL
+           AND consent_operator = consent_caller THEN
           IF gap_open THEN
             gaps := gaps || jsonb_build_array(jsonb_build_object(
               'started_sequence', gap_from_seq, 'started_at', public.call_copilot_ts(gap_from),
@@ -346,10 +352,11 @@ BEGIN
         gap_open := true; gap_from := e.occurred_at; gap_from_seq := e.sequence; gap_why := 'paused';
       END IF;
       paused := true; last_pause := e.sequence;
-      consent_operator := false; consent_caller := false;
+      consent_operator := NULL; consent_caller := NULL;
 
     ELSIF e.kind = 'capture_resumed' THEN
-      IF paused AND consent_operator AND consent_caller THEN
+      IF paused AND consent_operator IS NOT NULL AND consent_caller IS NOT NULL
+         AND consent_operator = consent_caller THEN
         IF gap_open THEN
           gaps := gaps || jsonb_build_array(jsonb_build_object(
             'started_sequence', gap_from_seq, 'started_at', public.call_copilot_ts(gap_from),

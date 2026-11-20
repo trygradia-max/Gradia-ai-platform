@@ -63,6 +63,21 @@ const pauseResume = (c: string): Ev[] => [
   simple(c, 12, "capture_resumed", 25),
 ]
 
+/** Operator heard and consented to d1, caller heard and consented to d2: each consent is individually valid. */
+const mismatched = (c: string): Ev[] => [
+  open(c), disclose(c, 2, "operator", 1, "d1"), disclose(c, 3, "caller", 2, "d2"),
+  grant(c, 4, "operator", 2, 3, "d1"), grant(c, 5, "caller", 3, 4, "d2"),
+]
+
+/** consenting on d1, pause (6), then FRESH but mismatched consent (operator d2, caller d3) and a resume (11). */
+const mismatchedResume = (c: string): Ev[] => [
+  ...consenting(c),
+  simple(c, 6, "capture_paused", 10, "operator_request"),
+  disclose(c, 7, "operator", 21, "d2"), disclose(c, 8, "caller", 22, "d3"),
+  grant(c, 9, "operator", 7, 23, "d2"), grant(c, 10, "caller", 8, 24, "d3"),
+  simple(c, 11, "capture_resumed", 25),
+]
+
 /** One caller declines after the operator already consented; a later "grant" must not matter. */
 const declined = (c: string): Ev[] => [
   open(c), disclose(c, 2, "operator", 1), disclose(c, 3, "caller", 2),
@@ -183,6 +198,72 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("Call Copilot ingress and consent evi
       expect(await denied(a.shopId, callId, "recording")).toBe("consent_not_established")
     })
 
+    it("both parties must consent to the SAME disclosure version: operator on d1 and caller on d2 never activates capture", async () => {
+      const c = newCallId()
+      const out = await feed(a.shopId, mismatched(c))
+      expect(out.every((x) => x.outcome === "recorded" && !x.capturePermittedNow)).toBe(true)
+      expect(out[4]).toMatchObject({ status: "awaiting_consent", capturePermittedNow: false })
+      const callId = await callIdOf(a.shopId, c)
+      const state = await readCaptureState(db, { shopId: a.shopId, callId })
+      expect(state).toMatchObject({ status: "awaiting_consent", reason: "consent_not_established", capturePermittedNow: false, derivationPermitted: false })
+      expect(state.intervals).toHaveLength(0)
+      // each consent was individually valid, so the refusal is the version mismatch and nothing else
+      expect(state.ignored).toEqual([])
+      for (const purpose of CALL_COPILOT_CAPTURE_PURPOSES) {
+        expect(await denied(a.shopId, callId, purpose)).toMatch(/consent_not_established|no_consented_capture/)
+      }
+    })
+
+    it("the mismatch is not order-sensitive: caller on d2 first, operator on d1 second never activates either", async () => {
+      const c = newCallId()
+      await feed(a.shopId, [
+        open(c), disclose(c, 2, "caller", 1, "d2"), disclose(c, 3, "operator", 2, "d1"),
+        grant(c, 4, "caller", 2, 3, "d2"), grant(c, 5, "operator", 3, 4, "d1"),
+      ])
+      const state = await readCaptureState(db, { shopId: a.shopId, callId: await callIdOf(a.shopId, c) })
+      expect(state).toMatchObject({ status: "awaiting_consent", capturePermittedNow: false, derivationPermitted: false })
+    })
+
+    it.each([
+      ["d1", "d1"],
+      ["2026-11-19-b", "2026-11-19-b"],
+    ])("matching versions still activate (%s / %s)", async (vo, vc) => {
+      const c = newCallId()
+      const out = await feed(a.shopId, [
+        open(c), disclose(c, 2, "operator", 1, vo), disclose(c, 3, "caller", 2, vc),
+        grant(c, 4, "operator", 2, 3, vo), grant(c, 5, "caller", 3, 4, vc),
+      ])
+      expect(out.slice(0, 4).every((x) => x.outcome === "recorded" && !x.capturePermittedNow)).toBe(true)
+      expect(out[4]).toMatchObject({ status: "active", capturePermittedNow: true })
+      const callId = await callIdOf(a.shopId, c)
+      await requireCaptureGrant(db, { shopId: a.shopId, callId, purpose: "recording" })
+    })
+
+    it("a mismatch is repaired only when one party validly consents to the other's version; then capture activates", async () => {
+      const c = newCallId()
+      const out = await feed(a.shopId, [
+        ...mismatched(c), // operator d1, caller d2: no capture
+        disclose(c, 6, "caller", 5, "d1"), // the caller is now told d1
+        grant(c, 7, "caller", 6, 6, "d1"), // and consents to d1: both on d1
+      ])
+      expect(out.slice(0, 6).every((x) => x.outcome === "recorded" && !x.capturePermittedNow)).toBe(true)
+      expect(out[6]).toMatchObject({ status: "active", capturePermittedNow: true })
+      const state = await readCaptureState(db, { shopId: a.shopId, callId: await callIdOf(a.shopId, c) })
+      expect(state.intervals).toHaveLength(1)
+      expect(state.intervals[0]).toMatchObject({ startedSequence: 7 })
+    })
+
+    it("a party's later consent to a different version replaces its earlier one rather than pairing with a stale answer", async () => {
+      const c = newCallId()
+      // operator d1, caller d2; the caller then moves to d3, which still is not the operator's d1.
+      await feed(a.shopId, [
+        ...mismatched(c),
+        disclose(c, 6, "caller", 5, "d3"), grant(c, 7, "caller", 6, 6, "d3"),
+      ])
+      const state = await readCaptureState(db, { shopId: a.shopId, callId: await callIdOf(a.shopId, c) })
+      expect(state).toMatchObject({ status: "awaiting_consent", capturePermittedNow: false, derivationPermitted: false })
+    })
+
     it("a decline is final: nothing re-enables capture or any derived use", async () => {
       const c = newCallId()
       await feed(a.shopId, declined(c))
@@ -262,6 +343,44 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("Call Copilot ingress and consent evi
       expect(state.gaps.map((g) => g.reason)).toEqual(["before_consent", "paused"])
       expect(state.gaps[1]).toMatchObject({ startedSequence: 6, endedSequence: 12 })
       expect(state.ignored).toEqual([{ sequence: 7, reason: "resume_without_fresh_consent" }])
+    })
+
+    it("resume after a pause with fresh consent on DIFFERENT versions stays off until the parties match", async () => {
+      const c = newCallId()
+      const out = await feed(a.shopId, mismatchedResume(c))
+      expect(out[4]).toMatchObject({ status: "active", capturePermittedNow: true }) // the original d1/d1 consent
+      expect(out[5]).toMatchObject({ status: "paused", capturePermittedNow: false })
+      for (const r of out.slice(6)) expect(r).toMatchObject({ status: "paused", capturePermittedNow: false })
+      const callId = await callIdOf(a.shopId, c)
+      let state = await readCaptureState(db, { shopId: a.shopId, callId })
+      expect(state).toMatchObject({ status: "paused", capturePermittedNow: false })
+      expect(state.ignored).toEqual([{ sequence: 11, reason: "resume_without_fresh_consent" }])
+      expect(state.intervals).toHaveLength(1)
+      expect(await denied(a.shopId, callId, "recording")).toBe("paused")
+
+      // repair: the caller is told d2 and consents to it; the earlier refused resume does not count, a new one does
+      await feed(a.shopId, [disclose(c, 12, "caller", 26, "d2"), grant(c, 13, "caller", 12, 27, "d2")])
+      state = await readCaptureState(db, { shopId: a.shopId, callId })
+      expect(state).toMatchObject({ status: "paused", capturePermittedNow: false }) // consent alone never resumes
+      await feed(a.shopId, [simple(c, 14, "capture_resumed", 28)])
+      state = await readCaptureState(db, { shopId: a.shopId, callId })
+      expect(state).toMatchObject({ status: "active", capturePermittedNow: true })
+      expect(state.intervals).toHaveLength(2)
+      expect(state.intervals[1]).toMatchObject({ startedSequence: 14 })
+      expect(state.ignored).toEqual([{ sequence: 11, reason: "resume_without_fresh_consent" }])
+    })
+
+    it("resume cannot pair one party's fresh consent with the other party's voided pre-pause consent", async () => {
+      const c = newCallId()
+      await feed(a.shopId, [
+        ...consenting(c), // d1 / d1, active
+        simple(c, 6, "capture_paused", 10),
+        disclose(c, 7, "operator", 11, "d2"), grant(c, 8, "operator", 7, 12, "d2"), // only the operator is fresh, on d2
+        simple(c, 9, "capture_resumed", 13),
+      ])
+      const state = await readCaptureState(db, { shopId: a.shopId, callId: await callIdOf(a.shopId, c) })
+      expect(state).toMatchObject({ status: "paused", capturePermittedNow: false })
+      expect(state.ignored).toEqual([{ sequence: 9, reason: "resume_without_fresh_consent" }])
     })
 
     it("uncaptured time can never be backfilled, live or derived", async () => {
@@ -408,6 +527,49 @@ describe.skipIf(!INTEGRATION_WITH_SESSION)("Call Copilot ingress and consent evi
         expect(state).toMatchObject({ status: "declined", capturePermittedNow: false, derivationPermitted: false })
       }
     }, 240_000)
+
+    it("mismatched versions: all 120 arrival orders of the five consent events never permit capture at any step", async () => {
+      const template = mismatched("template-call-x")
+      const { timeline, final } = await inOrderTimeline(rekey(template, newCallId()))
+      expect(timeline.every((t) => !t.permitted)).toBe(true)
+      expect(final).toMatchObject({ status: "awaiting_consent", capturePermittedNow: false, derivationPermitted: false })
+      const norm = (st: Awaited<ReturnType<typeof readCaptureState>>) => JSON.stringify(st)
+      for (const perm of permutations([0, 1, 2, 3, 4])) {
+        const state = await checkOrder(template, perm, timeline)
+        expect(norm(state)).toBe(norm(final))
+        expect(state.capturePermittedNow).toBe(false)
+      }
+    }, 240_000)
+
+    it("the repaired mismatch activates only when the repair arrives, in any arrival order", async () => {
+      const template = [
+        ...mismatched("template-call-x"),
+        disclose("template-call-x", 6, "caller", 5, "d1"), grant("template-call-x", 7, "caller", 6, 6, "d1"),
+      ]
+      const { timeline, final } = await inOrderTimeline(rekey(template, newCallId()))
+      expect(timeline.map((t) => t.permitted)).toEqual([false, false, false, false, false, false, false, true])
+      expect(final).toMatchObject({ status: "active", capturePermittedNow: true })
+      const rand = mulberry32(20261120)
+      for (let i = 0; i < 30; i++) {
+        const state = await checkOrder(template, shuffled(template.map((_, k) => k), rand), timeline)
+        expect(state).toMatchObject({ status: "active", capturePermittedNow: true })
+        expect(state.intervals).toEqual(final.intervals)
+      }
+    }, 240_000)
+
+    it("mismatched fresh consent after a pause never resumes capture, in any arrival order", async () => {
+      const template = mismatchedResume("template-call-x")
+      const { timeline, final } = await inOrderTimeline(rekey(template, newCallId()))
+      expect(timeline.map((t) => t.permitted)).toEqual([false, false, false, false, false, true, false, false, false, false, false, false])
+      expect(final).toMatchObject({ status: "paused", capturePermittedNow: false })
+      const rand = mulberry32(11)
+      for (let i = 0; i < 40; i++) {
+        const state = await checkOrder(template, shuffled(template.map((_, k) => k), rand), timeline)
+        expect(state).toMatchObject({ status: "paused", capturePermittedNow: false })
+        expect(state.intervals).toEqual(final.intervals)
+        expect(state.ignored).toEqual(final.ignored)
+      }
+    }, 300_000)
 
     it("pause/resume arrives in any order without ever permitting capture the in-order call would not", async () => {
       const template = pauseResume("template-call-x")

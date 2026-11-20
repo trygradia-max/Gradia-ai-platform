@@ -3240,3 +3240,17 @@ Deliberately NOT done: any route or provider implementation (no verified provide
 use, extraction, CRM proposals or mutation, UI, outbound AI calls, disclosure wording or jurisdiction interpretation, per-shop enablement (the gate is
 necessary, not sufficient), retention job, linking to `call_records`/`interactions`, deploy, shared DB or production data. Details:
 `docs/architecture/CALL_COPILOT_INGRESS.md`; handoff: `docs/handoffs/CALL_COPILOT_PR_D_RESUME.md`.
+
+[AI: claude-code] [DATE: 2026-11-20] [AREA: platform] [STATUS: done]
+Call Copilot PR D review blocker (`codex/call-copilot-consent`, PR #159, not merged): `call_copilot_capture_state` tracked each party's consent as a boolean, so
+operator consent to disclosure version A plus caller consent to version B activated capture; the product contract requires both parties to consent to the SAME
+version. The fold now keeps each party's consented version (NULL when none, reset by a pause) and both the first activation and a `capture_resumed` require the two
+to be present and equal. Fixed in place in the still-unmerged migration `20261119130000_call_copilot_ingress.sql` (no new migration, no other function changed). A
+party's later valid consent replaces its earlier one, so a mismatch is repaired only by a party consenting to the other's version. Tests: 11 new integration tests
+(mismatch never activates, incl. all 120 arrival orders of the five consent events; matching versions still activate; repair; resume after a pause with mismatched
+fresh consent, in shuffled orders, then repaired resume) and 3 structural unit locks on the fold; each new integration test that exercises the bug fails against the old
+function (7 of 11; the rest were already correct). Probe extended with mismatch, repair and mismatched-resume cases. Verified on disposable stacks: integration 53/53
+three consecutive runs, unit 203 files / 3209 passed / 4 skipped, `tsc --noEmit` and ESLint clean, probe PASS and FAILS when the version comparison is removed. Note: the
+unmodified probe cannot run on `gradia-isolated-tests` any more (stack already holds this migration and a later one), so it was run unchanged except project name and repo
+root against the pre-migration `gradia-voice-columns` stack. The corrected function was applied to `gradia-isolated-tests` with `CREATE OR REPLACE` for the integration run.
+Left alone: provider, route, UI, disclosure wording, every other migration and function; no deploy, merge or production data.

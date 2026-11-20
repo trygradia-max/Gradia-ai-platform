@@ -23,7 +23,7 @@ capability must pass. It answers one question truthfully and fails closed on eve
 | Consent state machine | `call_copilot_capture_state(shop, call)` | Pure fold over the contiguous sequence prefix. Same result for every arrival order |
 | Gate | `call_copilot_assert_capture(shop, call, purpose, at?)` | Raises `CC403` unless consent evidence supports the purpose |
 | Typed adapter | `src/lib/call-copilot/{events,ingress,capture-gate,provider-seam}.ts` | Strict zod vocabulary; `recordCallCopilotEvent`; `requireCaptureGrant` / `CaptureGrant`; the provider-seam contract and `handleCallCopilotCallback` |
-| Tests | `eval/call-copilot-*.test.ts` (35 unit), `eval/integration/call-copilot-ingress.int.test.ts` (42), `scripts/verify-call-copilot-migration.py` | See "Evidence" |
+| Tests | `eval/call-copilot-*.test.ts` (35 unit), `eval/integration/call-copilot-ingress.int.test.ts` (53), `scripts/verify-call-copilot-migration.py` | See "Evidence" |
 
 ### Events (all content-free, closed vocabulary)
 
@@ -62,13 +62,18 @@ everything has arrived the answer equals the in-order answer.
 
 Capture becomes active only when **both** parties have a `consent_granted` that cites a
 `disclosure_delivered` of the **same party and same version** with an **earlier sequence**, after
-any pause. Otherwise the consent is recorded but ineffective (listed in `ignored`).
+any pause, **and both parties consented to the same disclosure version**. The fold keeps each
+party's consented version (not a boolean): operator consent to version A with caller consent to
+version B never activates or resumes capture, whatever the arrival order. A party's later valid
+consent replaces its earlier one, so a mismatch is repaired only by a party validly consenting to the
+other's version. A consent without a valid disclosure reference is recorded but ineffective (listed in
+`ignored`); a version mismatch leaves both consents valid and capture simply off (`awaiting_consent`).
 
 | Event | Effect |
 | --- | --- |
 | `consent_declined` (either party) | Final for the call, honoured even without a valid reference. Nothing re-enables capture or any derived use |
 | `capture_paused` | Closes the consented interval, opens an explicit **gap**, voids all consent |
-| `capture_resumed` | Effective only after a pause **and** fresh disclosure + consent from both parties. Otherwise recorded as ignored and capture stays off |
+| `capture_resumed` | Effective only after a pause **and** fresh disclosure + consent from both parties **on the same version**. Otherwise recorded as ignored and capture stays off |
 | `capture_stopped` / `call_ended` | End capture. Nothing restarts a closed call |
 | `provider_outcome_unknown` | Ends capture, status `unknown_outcome`, the gap stays open. Never reported as complete, never replayed |
 | `participant_added` | Ends capture (`unconsented_participant`): all-party consent cannot cover someone who was never asked |
@@ -131,13 +136,13 @@ later provider activation should still follow the lifecycle's reconciliation con
   ACLs, append-only, replay, conflict, tenant, reorder, decline, pause/gap and gate behaviour. Four
   deliberate mutations (pause keeps consent, fold past gaps, replay ignores digest, gate permits all)
   each make it FAIL. It requires a stack that does not yet hold the migration.
-* Integration `call-copilot-ingress.int.test.ts`: 42 tests, 3 consecutive runs green. Includes
+* Integration `call-copilot-ingress.int.test.ts`: 53 tests, 3 consecutive runs green (11 cover the same-version rule, below). Includes
   **all 120 arrival orders** of the five consent events (safe at every step, converging on the
   in-order result), seeded shuffles of the decline and pause/resume scenarios, 5 concurrent shuffled
   deliveries, 16-way concurrent first delivery, the two-shops race, privilege checks (service role
   direct writes, owner session and anon refused) and cascade on shop delete. Swapping in a
   gap-ignoring state function makes the four reorder/gap tests fail.
-* Unit: 203 files, 3206 passed, 4 intentional skips. `tsc --noEmit` and ESLint on the touched files clean.
+* Unit: 203 files, 3209 passed, 4 intentional skips. `tsc --noEmit` and ESLint on the touched files clean.
 * Neighbours: `vapi-replay` 14, `customer-merge` 9, `tenant-isolation` 8, `provider-events` 15 pass.
   `tenant-relationships` has one failing test (`real recipient lookups reject cross-shop IDs...`) that
   fails identically with this migration removed (send-policy, unrelated).

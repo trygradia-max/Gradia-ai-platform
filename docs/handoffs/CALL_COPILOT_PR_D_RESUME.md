@@ -5,7 +5,7 @@ _2026-11-19. Branch `codex/call-copilot-consent`, based on `origin/main` `01eaca
 ## State
 
 Implemented and verified (see `docs/architecture/CALL_COPILOT_INGRESS.md`): migration
-`20261119130000_call_copilot_ingress.sql`, `src/lib/call-copilot/`, 35 unit + 42 integration tests,
+`20261119130000_call_copilot_ingress.sql`, `src/lib/call-copilot/`, 38 unit + 53 integration tests,
 and an upgrade probe. Open as a non-draft PR; **not merged**, not deployed.
 
 ## Re-run

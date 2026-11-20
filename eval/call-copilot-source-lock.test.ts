@@ -69,6 +69,40 @@ describe("Call Copilot PR D boundary", () => {
     expect(sql).not.toMatch(/ALTER\s+TABLE\s+public\.call_records/i) // never alters the receptionist artifact
   })
 
+  describe("the consent fold requires both parties to consent to the SAME disclosure version", () => {
+    const dir = join(ROOT, "supabase", "migrations")
+    const file = readdirSync(dir).find((f) => f.endsWith("_call_copilot_ingress.sql"))!
+    const sql = readFileSync(join(dir, file), "utf8")
+    const start = sql.indexOf("CREATE FUNCTION public.call_copilot_capture_state")
+    const fold = sql.slice(start, sql.indexOf("END $$;", start))
+
+    it("tracks each party's consented version, never a bare boolean", () => {
+      expect(start).toBeGreaterThan(0)
+      expect(fold).toMatch(/consent_operator text\b/)
+      expect(fold).toMatch(/consent_caller text\b/)
+      expect(fold).not.toMatch(/consent_(operator|caller)\s+boolean/)
+      expect(fold).not.toMatch(/consent_(operator|caller)\s*:=\s*(true|false)\b/i)
+      expect(fold).toMatch(/consent_operator := e\.disclosure_version/)
+      expect(fold).toMatch(/consent_caller := e\.disclosure_version/)
+    })
+
+    it("a pause voids both parties' recorded versions", () => {
+      expect(fold).toMatch(/consent_operator := NULL;\s*consent_caller := NULL;/)
+    })
+
+    it("both the first activation and a resume compare the two versions, and neither can pass on presence alone", () => {
+      const activation = fold.match(/IF NOT paused AND NOT active[\s\S]*?THEN/)?.[0] ?? ""
+      const resume = fold.match(/IF paused AND consent_operator[\s\S]*?THEN/)?.[0] ?? ""
+      for (const guard of [activation, resume]) {
+        expect(guard).toMatch(/consent_operator IS NOT NULL/)
+        expect(guard).toMatch(/consent_caller IS NOT NULL/)
+        expect(guard).toMatch(/consent_operator = consent_caller/)
+      }
+      // the only two places the fold ever turns capture on
+      expect((fold.match(/active := true/g) ?? []).length).toBe(2)
+    })
+  })
+
   it("stores no content: the ledger has no free-text, audio, transcript, number or name column", () => {
     const dir = join(ROOT, "supabase", "migrations")
     const file = readdirSync(dir).find((f) => f.endsWith("_call_copilot_ingress.sql"))!

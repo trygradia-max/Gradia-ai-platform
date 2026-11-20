@@ -201,6 +201,43 @@ BEGIN
  IF s->>'status' <> 'active' OR jsonb_array_length(s->'intervals') <> 2 THEN RAISE EXCEPTION 'resume: %', s; END IF;
  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(s->'gaps') g WHERE g->>'reason' = 'paused' AND g->>'ended_at' IS NOT NULL) THEN RAISE EXCEPTION 'pause gap missing: %', s; END IF;
 
+ -- all-party means the SAME disclosure version: operator on v1 with caller on v2 never activates capture
+ PERFORM pg_temp.ev('{S(1)}','CAcall0005','m1',1,'call_opened');
+ PERFORM pg_temp.ev('{S(1)}','CAcall0005','m2',2,'disclosure_delivered','operator','v1',NULL,1);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0005','m3',3,'disclosure_delivered','caller','v2',NULL,2);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0005','m4',4,'consent_granted','operator','v1',2,3);
+ r := pg_temp.ev('{S(1)}','CAcall0005','m5',5,'consent_granted','caller','v2',3,4);
+ s := pg_temp.st('{S(1)}','CAcall0005');
+ IF (r->>'capture_permitted_now')::boolean OR (s->>'capture_permitted_now')::boolean OR (s->>'derivation_permitted')::boolean
+    OR s->>'status' <> 'awaiting_consent' THEN RAISE EXCEPTION 'mismatched versions must not activate: %', s; END IF;
+ BEGIN
+  PERFORM public.call_copilot_assert_capture('{S(1)}', (SELECT id FROM public.call_copilot_calls WHERE provider_call_id='CAcall0005'), 'recording');
+  RAISE EXCEPTION 'gate allowed recording on mismatched versions';
+ EXCEPTION WHEN SQLSTATE 'CC403' THEN NULL; END;
+ -- repair: the caller is told v1 and consents to it -> now both are on v1 and capture activates
+ PERFORM pg_temp.ev('{S(1)}','CAcall0005','m6',6,'disclosure_delivered','caller','v1',NULL,5);
+ r := pg_temp.ev('{S(1)}','CAcall0005','m7',7,'consent_granted','caller','v1',6,6);
+ IF NOT (r->>'capture_permitted_now')::boolean THEN RAISE EXCEPTION 'matching versions must activate: %', r; END IF;
+
+ -- resume after a pause with fresh consent on DIFFERENT versions stays off; matching versions resume
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r1',1,'call_opened');
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r2',2,'disclosure_delivered','operator','v1',NULL,1);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r3',3,'disclosure_delivered','caller','v1',NULL,2);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r4',4,'consent_granted','operator','v1',2,3);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r5',5,'consent_granted','caller','v1',3,4);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r6',6,'capture_paused',NULL,NULL,NULL,10);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r7',7,'disclosure_delivered','operator','v2',NULL,11);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r8',8,'disclosure_delivered','caller','v3',NULL,12);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r9',9,'consent_granted','operator','v2',7,13);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r10',10,'consent_granted','caller','v3',8,14);
+ r := pg_temp.ev('{S(1)}','CAcall0006','r11',11,'capture_resumed',NULL,NULL,NULL,15);
+ s := pg_temp.st('{S(1)}','CAcall0006');
+ IF r->>'status' <> 'paused' OR (s->>'capture_permitted_now')::boolean OR jsonb_array_length(s->'intervals') <> 1 THEN RAISE EXCEPTION 'mismatched resume must stay paused: %', s; END IF;
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r12',12,'disclosure_delivered','caller','v2',NULL,16);
+ PERFORM pg_temp.ev('{S(1)}','CAcall0006','r13',13,'consent_granted','caller','v2',12,17);
+ r := pg_temp.ev('{S(1)}','CAcall0006','r14',14,'capture_resumed',NULL,NULL,NULL,18);
+ IF r->>'status' <> 'active' OR NOT (r->>'capture_permitted_now')::boolean THEN RAISE EXCEPTION 'matching resume must activate: %', r; END IF;
+
  -- the gate: denied for every purpose when not consented, allowed when consented, never inside a gap
  FOREACH x IN ARRAY ARRAY['recording','transcription','model_use','summarization','extraction','crm_mutation'] LOOP
   BEGIN
