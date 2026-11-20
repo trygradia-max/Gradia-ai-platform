@@ -98,6 +98,30 @@ function runCopy(run: CustomAgentRunRow): {
         tone: "muted",
         body: run.reason ?? "Skipped — nothing matched.",
       }
+    case "waiting":
+      return {
+        label: "Waiting",
+        tone: "accent",
+        body: run.wait_reason ?? "Waiting for something before it continues.",
+      }
+    case "paused":
+      return {
+        label: "Paused",
+        tone: "muted",
+        body: "Paused. It continues only when someone resumes it.",
+      }
+    case "cancelled":
+      return {
+        label: "Cancelled",
+        tone: "muted",
+        body: run.reason ?? "Cancelled before it finished.",
+      }
+    case "killed":
+      return {
+        label: "Stopped",
+        tone: "muted",
+        body: run.reason ?? "Stopped immediately by request.",
+      }
   }
 }
 

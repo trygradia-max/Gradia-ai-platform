@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { looksOptedOut, resolveFreeformAudience } from "@/lib/agent-audience"
 import { parseAgentConfig } from "@/lib/agent-config-schema"
+import { claimResumableRun, recoverStaleRuns } from "@/lib/agent-os/run-lifecycle"
 import {
   assertGovernedRunCurrent,
   claimScheduledAgentRun,
@@ -1993,9 +1994,11 @@ export async function runGovernedScheduledAgent(
           ? "already running for this schedule window"
           : claim.outcome === "unknown"
             ? "previous attempt outcome unknown — reconciliation required"
-            : claim.outcome === "terminal_duplicate"
-              ? "schedule window already handled"
-              : "agent disabled before its schedule claim",
+            : claim.outcome === "open_duplicate"
+              ? "this schedule window already has open work that is waiting or paused"
+              : claim.outcome === "terminal_duplicate"
+                ? "schedule window already handled"
+                : "agent disabled before its schedule claim",
     }
   }
   const ctx = { runId: claim.runId, attempt: claim.attempt, workerId }
@@ -2026,6 +2029,38 @@ export async function runGovernedScheduledAgent(
     )
   }
   return finish("governed execution is not implemented", "governed_executor_disabled")
+}
+
+/**
+ * Resume claims for governed runs that are ready to continue (approval decided, due, restart recovery).
+ * While the governed executor is off nothing can have been run, so a resumable run is finished truthfully
+ * rather than left open: `skipped` when it has no recorded commands, `failed` (evidence kept) when it does.
+ * Enabling execution replaces the body with `runPlaybook` from `agent-os/run-executor.ts` and a playbook
+ * registry; that is a separate, reviewed change.
+ */
+export async function drainResumableGovernedRuns(supabase: SupabaseClient, max = 10): Promise<number> {
+  let handled = 0
+  for (let i = 0; i < max; i++) {
+    const workerId = randomUUID()
+    const claim = await claimResumableRun(supabase, { workerId })
+    if (claim.outcome === "none") break
+    handled += 1
+    const commands = await supabase
+      .from("agent_run_commands")
+      .select("id", { count: "exact", head: true })
+      .eq("run_id", claim.lease.runId)
+      .eq("shop_id", claim.shopId)
+    const hasCommands = commands.error ? true : (commands.count ?? 0) > 0
+    const state = hasCommands ? "failed" : "skipped"
+    const reason = GOVERNED_EXECUTOR_ENABLED
+      ? "governed execution is not implemented"
+      : "governed execution is not enabled yet, nothing further was run"
+    const done = await finishScheduledAgentRun(supabase, {
+      runId: claim.lease.runId, workerId, attempt: claim.lease.attempt, state, fired: false, reason, errorCode: "governed_executor_disabled",
+    })
+    if (!done) await markScheduledAgentRunUnknown(supabase, claim.lease.runId)
+  }
+  return handled
 }
 
 /**
@@ -2167,6 +2202,17 @@ export async function runScheduledAgents(
   const outcomes: AgentRunOutcome[] = []
   let fired = 0
 
+  // Restart recovery for governed runs: classify every run whose lease expired from its own evidence
+  // (in-flight attempts become UNKNOWN, never retried), then hand any resumable run to the one
+  // governed path. DB-only and legacy-neutral: it never touches a run without a definition binding, and a
+  // failure here must not stop the other agents from running.
+  try {
+    await recoverStaleRuns(supabase)
+    await drainResumableGovernedRuns(supabase)
+  } catch (err) {
+    console.error("[agent-runtime] governed run recovery failed:", err)
+  }
+
   // Governed agents (a definition state row exists) run only through bound claims. If this cannot
   // be read, nothing runs: a governed agent must never be executed as a legacy one by mistake.
   const governedStates = await loadGovernedAgentStates(
@@ -2271,9 +2317,11 @@ export async function runScheduledAgents(
             ? "already running for this schedule window"
             : claim.outcome === "unknown"
               ? "previous attempt outcome unknown — reconciliation required"
-              : claim.outcome === "terminal_duplicate"
-                ? "schedule window already handled"
-                : "agent disabled before its schedule claim"
+              : claim.outcome === "open_duplicate"
+                ? "this schedule window already has open work that is waiting or paused"
+                : claim.outcome === "terminal_duplicate"
+                  ? "schedule window already handled"
+                  : "agent disabled before its schedule claim"
         outcomes.push({
           agentId: agent.id,
           agentName: agent.name,

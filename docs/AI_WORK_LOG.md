@@ -18,6 +18,30 @@ merged, deployed, or changed production.
 
 ## Entries
 
+[AI: claude-code] [DATE: 2026-11-19] [AREA: platform] [STATUS: done]
+PR C, governed (selected-playbook) run lifecycle (`claude/selected-playbook-lifecycle`; PR #161, non-draft, not merged).
+Extends the merged scheduled-run claim (no second executor, no second claim table): migration `20261120103700_agent_run_step_lifecycle.sql`
+adds steps, stable commands (immutable identity, database-derived idempotency key, optional per-agent dedupe key) and write-ahead attempts,
+heartbeats, stale-lease recovery that classifies a dead worker from its evidence (in-flight attempt => `unknown` + one reconciliation wait;
+nothing in flight => resumable), pause/cancel/kill request and acknowledgement (requested is not stopped; provider cancellation is a separate
+per-attempt state), one open wait per run with reason/due/owner/escalation/typed tenant-checked links, a resume claim that bumps the attempt
+fence and re-validates the exact binding, human reconciliation (owner/manager, written note; only a confirmed non-effect allows one new
+admitted attempt), an append-only event ledger, and a pre-effect gate (binding, immutable grant, credit budget, approval status + payload hash,
+plus six application checks stored as evidence). Unknown provider outcomes are never retried. New states `waiting/paused/cancelled/killed`
+exist only for governed runs; legacy rows are untouched. TS: `run-lifecycle.ts` (fail-closed wrappers), `pre-effect-checks.ts`,
+`run-executor.ts` (step runner; effects injected, no provider imports); the cron tick runs `recoverStaleRuns` + `drainResumableGovernedRuns`
+(executor stays OFF). Existing run-list copy gained wording for the four new states. One deliberate contract change: an expired governed lease
+with NO attempt in flight is now resumable instead of `unknown` (`agent-runtime-binding.int.test.ts` updated); an in-flight attempt is still
+`unknown`. Evidence on the disposable local stack (Node 24.15.0): 52 new integration tests (36 lifecycle + 16 executor) and the existing
+lifecycle/binding suites (87 total) pass twice; unit 202 files / 3,190 passed, 4 skipped; tsc and eslint clean (3 existing warnings);
+`next build --webpack` exit 0; upgrade probe `scripts/verify-agent-run-lifecycle-migration.py` (28 checks, rolled back) on a stack still at
+the previous schema; 7 mutation checks (each caught, then restored). Related suites: `tenant-relationships` has one failure in the service-proof
+send path ("Service purpose could not be verified"), unrelated to this change and not re-checked on pristine main. Not done: enabling the
+governed executor, any playbook or provider adapter, a trusted content classifier, escalation delivery, any operator screen for
+waits/control/reconciliation, event/manual governed triggers, ledger retention, deploy, shared or production data, billing, Call Copilot, merge.
+The migration was renamed from `20261119120000` because a parallel session already used that version. Details and limitations:
+`docs/architecture/AGENT_RUN_LIFECYCLE.md`; handoff: `docs/handoffs/CLAUDE_AGENT_RUN_LIFECYCLE_PR_C_RESUME.md`.
+
 [AI: codex] [DATE: 2026-11-18] [AREA: platform] [STATUS: done]
 Added a bounded demo-readiness polish slice on `codex/demo-readiness-polish` after
 merged signed-in acceptance PR #154. `UsagePill` now preserves Next.js redirect and

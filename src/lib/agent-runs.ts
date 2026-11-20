@@ -52,7 +52,9 @@ export type ScheduledAgentRunClaim =
       governed?: GovernedRunBinding
     }
   | {
-      outcome: "active_duplicate" | "unknown" | "terminal_duplicate"
+      /** `open_duplicate`: this window already has a waiting or paused run; it continues through the resume
+       * claim (`claimResumableRun`), never through a second window claim. */
+      outcome: "active_duplicate" | "unknown" | "terminal_duplicate" | "open_duplicate"
       runId: string
       attempt: number
       state?: CustomAgentRunRow["state"]
@@ -98,7 +100,8 @@ function scheduledClaimFromRpc(data: unknown): ScheduledAgentRunClaim {
   if (
     (row.outcome === "active_duplicate" ||
       row.outcome === "unknown" ||
-      row.outcome === "terminal_duplicate") &&
+      row.outcome === "terminal_duplicate" ||
+      row.outcome === "open_duplicate") &&
     typeof row.run_id === "string" &&
     Number.isInteger(row.attempt)
   ) {

@@ -351,7 +351,15 @@ function LastRunPanel({ run }: { run: CustomAgentRunRow }) {
         : (run.reason ??
           (run.state === "failed"
             ? "Failed before completion."
-            : "Skipped — nothing matched."))
+            : run.state === "waiting"
+              ? (run.wait_reason ?? "Waiting before it continues.")
+              : run.state === "paused"
+                ? "Paused until someone resumes it."
+                : run.state === "cancelled"
+                  ? "Cancelled before it finished."
+                  : run.state === "killed"
+                    ? "Stopped immediately by request."
+                    : "Skipped — nothing matched."))
   return (
     <div className="rounded-md border border-border/50 bg-muted/15 px-3.5 py-3">
       <div className="flex items-start gap-2.5">
