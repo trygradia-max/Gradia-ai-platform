@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 import { ActivityEvent } from "@/components/gradia/activity-event"
 import { ApprovalsList } from "@/components/gradia/approvals-list"
 import { SectionHeader } from "@/components/gradia/section-header"
@@ -33,6 +35,14 @@ export default async function ApprovalsPage() {
             : STRINGS.pages.approvals.subtitleWaiting(pendingCount, editCount)
         }
       />
+
+      <p className="text-sm text-muted-foreground">
+        Calls Gradia listened to with both people&apos;s consent are reviewed with their quoted words in{" "}
+        <Link href="/calls/copilot" className="inline-flex min-h-11 items-center text-accent-text underline-offset-4 hover:underline">
+          Call review
+        </Link>
+        .
+      </p>
 
       <ApprovalsList items={items} />
 

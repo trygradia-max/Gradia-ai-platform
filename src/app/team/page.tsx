@@ -121,6 +121,7 @@ export default async function TeamPage({
       )}
       {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read"))) ? <Link href={`/intake?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Review unresolved intake</Link> : null}
       {workspace && (workspace.role === "owner" || (workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("delivery.reconcile"))) ? <Link href={`/team/delivery-reviews?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Review held message delivery</Link> : null}
+      {workspace && workspace.role === "manager" && workspace.capabilities.includes("crm.read") ? <Link href={`/team/calls?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Review calls (read only)</Link> : null}
       {workspace && workspace.role === "manager" && workspace.capabilities.includes("crm.read") && workspace.capabilities.includes("approvals.messages") ? <Link href={`/team/approvals?shop=${workspace.id}`} className="block min-h-11 text-sm text-accent-text underline-offset-4 hover:underline">Approve queued messages</Link> : null}
       <AcceptInvitation />
     </TeamChrome>

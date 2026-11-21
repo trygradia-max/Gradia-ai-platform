@@ -1,3 +1,4 @@
+import { PR_F_REVIEW_FILES } from "./_call-copilot-pr-f-files"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -54,12 +55,12 @@ describe("Call Copilot PR E boundary (TypeScript)", () => {
     }
   })
 
-  it("is imported by nothing outside the module (no route, page, action, cron or worker)", () => {
+  it("is imported by nothing outside the module except the PR F review surface (no webhook, cron or worker)", () => {
     const users = walk(SRC)
       .filter((p) => /\.(ts|tsx)$/.test(p) && !p.startsWith(LIB))
       .filter((p) => /call-copilot|call_copilot/.test(read(p)))
-    // the single exception is the read-only pre-effect recheck the executor calls; it imports nothing from the module
-    expect(users.map(rel)).toEqual([join("src", "lib", "approval-pre-effect.ts")])
+    // exceptions: the read-only pre-effect recheck the executor calls (it imports nothing from the module) and the PR F review surface
+    expect(users.map(rel).sort()).toEqual([join("src", "lib", "approval-pre-effect.ts"), ...PR_F_REVIEW_FILES].sort())
     expect(read(join(SRC, "lib", "approval-pre-effect.ts"))).not.toMatch(/from\s+["']@\/lib\/call-copilot/)
   })
 
