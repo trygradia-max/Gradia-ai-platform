@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { describe, expect, it } from "vitest"
 
+import { PR_F_REVIEW_FILES } from "./_call-copilot-pr-f-files"
+
 /**
  * PR D is the ingress and consent-evidence boundary ONLY. These locks keep it that way until a later,
  * reviewed PR changes them on purpose (PR E extraction/proposals, PR F UI, provider activation).
@@ -21,16 +23,21 @@ const read = (p: string) => readFileSync(p, "utf8")
 const rel = (p: string) => relative(ROOT, p)
 
 describe("Call Copilot PR D boundary", () => {
-  it("is imported by nothing outside its own module: no route, page, action, cron or worker uses it yet", () => {
+  it("is imported by nothing outside its own module except the executor's recheck and the PR F review surface: no webhook, cron or worker uses it", () => {
     const users = sources.filter((p) => !p.startsWith(LIB)).filter((p) => /call-copilot|call_copilot/.test(read(p)))
-    // The single exception (PR E fix): the executor's read-only pre-effect recheck RPC wrapper. It imports nothing from this module.
-    expect(users.map(rel)).toEqual(["src/lib/approval-pre-effect.ts"])
+    // Exceptions: (PR E fix) the executor's read-only pre-effect recheck RPC wrapper, which imports nothing from this module;
+    // (PR F) the owner / manager review pages, their server actions and components, listed explicitly in eval/_call-copilot-pr-f-files.ts.
+    expect(users.map(rel).sort()).toEqual(["src/lib/approval-pre-effect.ts", ...PR_F_REVIEW_FILES].sort())
     expect(read(join(SRC, "lib", "approval-pre-effect.ts"))).not.toMatch(/from\s+["']@\/lib\/call-copilot/)
   })
 
-  it("adds no route, no page and no provider webhook", () => {
+  it("adds no provider webhook, ingestion route or cron: the only route and action are the signed-in review surface", () => {
     const names = walk(SRC).filter((p) => /call-?copilot/i.test(relative(SRC, p)) && !p.startsWith(LIB))
-    expect(names.map(rel)).toEqual([])
+    // The one file named for it outside the module is the review server-action file.
+    expect(names.map(rel)).toEqual(["src/app/actions/call-copilot-review.ts"])
+    const apiRoutes = walk(join(SRC, "app", "api")).filter((p) => /copilot/i.test(read(p)))
+    expect(apiRoutes.map(rel)).toEqual([])
+    expect(walk(SRC).filter((p) => /route\.ts$/.test(p) && /copilot/i.test(read(p))).map(rel)).toEqual([])
   })
 
   it("only the typed adapter files in the module name the three database entry points", () => {
