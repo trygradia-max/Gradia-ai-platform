@@ -14,6 +14,7 @@ import { isRecordAction, type RecordCommand } from "@/lib/control-center/record-
 
 import { servicePayload, claimServiceExecution, completeServiceExecution, auditServiceActionRetry, serviceActionIsUnspent } from "@/lib/service-purpose"
 import { validTenantReferences } from "@/lib/tenant-references"
+import { recheckBeforeEffect } from "@/lib/approval-pre-effect"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { dispatchAgentEvent } from "@/lib/agent-events"
@@ -317,6 +318,18 @@ async function rollbackClaim(
     .eq("shop_id", claimed.shop_id)
 }
 
+/**
+ * Call Copilot proposals: the claim re-verified consent, evidence, requester, definition and CRM identity, but a booking,
+ * a draft quote and a text run AFTER that transaction committed. Ask the database again immediately before the effect;
+ * anything but an explicit yes releases the claim and does nothing. Every other action answers yes unchanged.
+ */
+async function denyBeforeEffect(supabase: SupabaseClient, claimed: ClaimedAction): Promise<ApprovalResult | null> {
+  const check = await recheckBeforeEffect(supabase, claimed)
+  if (check.allowed) return null
+  await rollbackClaim(supabase, claimed)
+  return { ok: false, error: check.message }
+}
+
 async function executeCreateLead(
   supabase: SupabaseClient,
   claimed: ClaimedAction
@@ -525,6 +538,16 @@ export async function executeApproval(
         location_unavailable: "The workspace location could not be verified.",
         owner_approval_required: "Only the shop owner can approve this kind of action.",
         review_changed: "This message changed or is being edited. Refresh and review it again before approving.",
+        // Call Copilot proposals: the call evidence or CRM changed since the proposal was made.
+        call_human_approval_required: "Call proposals always need a person to approve them. Nothing ran.",
+        call_proposal_edited: "This call proposal was edited after it was created. Create a fresh proposal from the call.",
+        call_consent_unavailable: "Consent for this call no longer permits using it. Nothing was changed.",
+        call_evidence_changed: "The call evidence changed since this proposal was made. Review the call again.",
+        call_requester_revoked: "The person who requested this proposal no longer has access. Create a fresh proposal.",
+        call_definition_inactive: "The agent revision behind this proposal is no longer active.",
+        call_crm_state_changed: "The customer record changed since this proposal was made. Review it again.",
+        call_proposal_expired: "The proposed appointment time has passed. Create a fresh proposal from the call.",
+        call_proposal_unknown: "This call proposal could not be found. Nothing ran.",
       }
       return { ok: false, error: reasons[String(data.denied)] ?? "Execution status could not be verified. Review action history before retrying." }
     }
@@ -1412,6 +1435,12 @@ async function executeBookAppointment(
     }
   }
 
+  // Call Copilot proposals: re-verify immediately before the first domain write (customer resolution).
+  {
+    const denied = await denyBeforeEffect(supabase, claimed)
+    if (denied) return denied
+  }
+
   const customerResult = await findOrCreateCustomer(supabase, claimed.shop_id, {
     name: proposal.customer_name,
     phone: proposal.phone,
@@ -1438,6 +1467,12 @@ async function executeBookAppointment(
     customerResult.customer.id,
     vehicle
   )
+
+  // ...and again immediately before the authoritative appointment write.
+  {
+    const denied = await denyBeforeEffect(supabase, claimed)
+    if (denied) return denied
+  }
 
   let write: SerializedWriteResult
   try {
@@ -1914,6 +1949,12 @@ async function executeCreateQuote(
     return { ok: false, error: "Quote proposal is missing the customer." }
   }
 
+  // Call Copilot proposals: re-verify immediately before the first domain write (customer resolution, then the draft).
+  {
+    const denied = await denyBeforeEffect(supabase, claimed)
+    if (denied) return denied
+  }
+
   const customerResult = await findOrCreateCustomer(supabase, claimed.shop_id, {
     name: proposal.customer_name,
     phone: proposal.phone,
@@ -2164,6 +2205,12 @@ async function executeSendSms(
   if (!policy.allowed) {
     await rollbackClaim(supabase, claimed)
     return { ok: false, error: policy.reason }
+  }
+
+  // Call Copilot proposals: re-verify immediately before the provider is asked (before any proof is consumed).
+  {
+    const denied = await denyBeforeEffect(supabase, claimed)
+    if (denied) return denied
   }
 
   if (proposal.category !== "transactional" && !await serviceActionIsUnspent(supabase,claimed.shop_id,claimed.id)) {

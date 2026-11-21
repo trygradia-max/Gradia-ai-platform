@@ -130,6 +130,8 @@ function mockDb(opts: {
   return {
     rpc: (fn: string) => {
       if (fn === "claim_control_action") return Promise.resolve({ data: claimed, error: null })
+      // The Call Copilot pre-effect recheck (real behaviour is tested against PostgreSQL): an ordinary action is not a call proposal.
+      if (fn === "call_copilot_pre_effect_recheck") return Promise.resolve({ data: { ok: true, call_proposal: false }, error: null })
       if (opts.rpcResult instanceof Error) {
         return Promise.resolve({ data: null, error: { message: opts.rpcResult.message } })
       }

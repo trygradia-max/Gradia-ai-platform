@@ -23,7 +23,9 @@ const rel = (p: string) => relative(ROOT, p)
 describe("Call Copilot PR D boundary", () => {
   it("is imported by nothing outside its own module: no route, page, action, cron or worker uses it yet", () => {
     const users = sources.filter((p) => !p.startsWith(LIB)).filter((p) => /call-copilot|call_copilot/.test(read(p)))
-    expect(users.map(rel)).toEqual([])
+    // The single exception (PR E fix): the executor's read-only pre-effect recheck RPC wrapper. It imports nothing from this module.
+    expect(users.map(rel)).toEqual(["src/lib/approval-pre-effect.ts"])
+    expect(read(join(SRC, "lib", "approval-pre-effect.ts"))).not.toMatch(/from\s+["']@\/lib\/call-copilot/)
   })
 
   it("adds no route, no page and no provider webhook", () => {
