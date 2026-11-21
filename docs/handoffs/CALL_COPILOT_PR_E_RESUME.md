@@ -47,6 +47,45 @@ Open as a non-draft PR against `main`; **not merged, not deployed**. No route, U
   delegated-message-approval...) need `SUPABASE_SERVICE_ROLE_KEY` exported too (CI's `export-test-env.mjs` sets it). Without it 64
   tests fail identically with and without this migration; with it all 103 of those pass on the pre-migration schema.
 
+## Review-fix round (2026-11-20, same branch / PR #162)
+
+Three confirmed blockers fixed in place (the migration is unmerged, so it was edited, not superseded):
+
+1. **Identity.** `run_key` now includes the requesting member and the exact agent definition binding (and the CRM digest includes the shop
+   timezone); `proposal_key` includes confidence, ambiguity, customer, vehicle, the CRM binding snapshot, the definition binding and the
+   requester. New table `call_copilot_run_proposals` makes a deduplicated answer and its replays name the same ids. Tests: a different known
+   customer, a different requester and a changed active definition (revision 2 of the same agent) each create their own run and proposals.
+2. **Customer memory is review-only.** `call_copilot_submit_memory_candidate`, `call_copilot_memory_submissions`, the `authenticated`
+   grant and `submitMemoryCandidate` are removed; a table CHECK plus a writer guard refuse an executable memory proposal; the review reason is
+   now `customer_memory_review_only`. Source lock + probe + integration tests assert no path into reviewed memory.
+3. **Post-claim effects.** `call_copilot_pre_effect_recheck` (+ shared `call_copilot_recheck`) and `denyBeforeEffect` in `approvals.ts`
+   before booking (twice), draft quote and text. Fail-closed, audited, and mutation-tested (disabling it fails 11 integration tests).
+   Granted to `authenticated` as well as `service_role` (the dashboard executor runs with the approver's session); caller verified inside.
+4. **Appointment grounding** (`timing-grounding.ts`): start and duration must be literally supported by the cited words in the shop's
+   timezone; hedged or ambiguous timing is review-only (unit + integration + planner tests).
+
+### Evidence for the review-fix round (2026-11-20, Node 24.15.0, disposable stacks only)
+
+* Unit: 211 files, 3,400 passed, 4 skipped. `tsc --noEmit` clean; full `npm run lint` 0 errors (3 existing warnings); `next build --webpack`
+  (Next 16.4.6) exit 0.
+* Probe `scripts/verify-call-copilot-proposals-migration.py` (new `PROBE_PROJECT` override, default unchanged) PASS on a stack reset to the
+  pre-migration state; `--mutate all` 21 of 21 defects caught (6 new: run key without requester, proposal key without subject, deduplicated
+  answer without ids, pre-effect recheck ignored, pre-effect accepts an unclaimed action, memory stageable).
+* From zero: a fresh stack applied all 131 migrations; its `call_copilot_*` / `control_claim` / claim functions (definition md5 + ACL),
+  columns, constraints, indexes, triggers and table ACLs are IDENTICAL to the upgraded stack (321 lines compared).
+  Integration tests only run against the three allow-listed stack URLs, so they ran on the upgraded `gradia-isolated-tests` stack (the
+  from-zero stack uses a different port and the guard in `_db.ts` was deliberately not widened).
+* Integration `call-copilot-proposals.int.test.ts`: 69/69 (was 41), including 16 post-claim race tests. With `denyBeforeEffect` disabled, 11
+  of them fail (the effect happens), so the tests do exercise the recheck.
+* Existing suites touching `control_claim`/booking/quote/text (approvals, control-execution, delegated-message-approval, mcp-capabilities,
+  reviewed-memory, customer-merge, tenant-isolation, team-permissions, create-quote-action, service-proof-replay, call-copilot-ingress,
+  booking-atomicity, booking-confirmation, conflict-enforcement, booking-duration, agent-records, operations-queue) all passed, but NOT in one
+  clean pass: the host was loaded (load average 14-17) and five suites failed on a first attempt only with `createUser failed: {}`,
+  `sign-in failed: {}`, `An invalid response was received from the upstream server` or a 60 s hook timeout; each passed when re-run. The full
+  `eval/integration` folder was NOT run as one clean pass: treat `ci-integration` as the authority.
+* A leftover shop from my own first failed run (hard-coded `aurinko_account_id`) collided with two other suites' fixtures; it was deleted
+  from the disposable stack and the new tests use random values.
+
 ## Re-run
 
 ```sh
@@ -81,6 +120,11 @@ architecture doc and the functions the migration created (`DROP FUNCTION public.
 * `tenant-relationships.int.test.ts` "real recipient lookups reject cross-shop IDs..." may fail with and without this
   migration (pre-existing).
 * Never stage `tests/supabase/.temp`.
+* **Deploy order**: apply the migration BEFORE (or with) the application build. `approvals.ts` now calls
+  `call_copilot_pre_effect_recheck` before every booking, draft quote and text, and **fails closed** if it cannot get an explicit yes, so
+  code deployed ahead of the migration would refuse those approvals until the function exists.
+* Unit tests that fake a Supabase client for `executeApproval` must answer `call_copilot_pre_effect_recheck` with
+  `{ ok: true, call_proposal: false }` (see `eval/booking-atomicity.test.ts`).
 
 ## Next (not started)
 
@@ -95,5 +139,6 @@ architecture doc and the functions the migration created (`DROP FUNCTION public.
    (today service-role only) and show coverage, gaps, citations, ambiguity and the denial reasons. `Approve selected` calls the
    existing `executeApproval`; the vehicle proposal must run before the customer proposal (see limitation 4).
 4. Guarded executors for lead stage/owner/next action and follow-up tasks, so those review-only kinds can be staged.
-5. **Customer-scoped memory retrieval** before any owner publishes a `call-copilot:customer:*` candidate (limitation 1).
+5. **Customer-scoped memory publication AND retrieval**, end to end, before ANY hand-off from a call proposal into reviewed memory
+   (there is deliberately none today; limitation 1). Do not re-add `call_copilot_submit_memory_candidate`.
 6. Retention for the transcript table via the safety-retention review; transcripts must be deleted before audio rules matter.

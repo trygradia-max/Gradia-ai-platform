@@ -33,8 +33,11 @@ export function cite(segments: FixtureSegment[], segmentIndex: number, needle: s
 type Conf = "low" | "medium" | "high"
 export const f = <T>(value: T, citations: Citation[], confidence: Conf = "high") => ({ value, confidence, citations })
 
-/** A complete, well-formed extraction of SEGMENTS covering every approved proposal kind. */
-export function fullOutput(segments: FixtureSegment[] = SEGMENTS, startIso = "2099-12-04T09:00:00-08:00") {
+/**
+ * A complete, well-formed extraction of SEGMENTS covering every approved proposal kind. The appointment start is the shop-local
+ * (America/Los_Angeles) time the operator actually says (Friday December 4th at 9 am), valid for a call made in late November 2026.
+ */
+export function fullOutput(segments: FixtureSegment[] = SEGMENTS, startIso = "2026-12-04T09:00:00-08:00") {
   return {
     proposals: [
       {

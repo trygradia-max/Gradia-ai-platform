@@ -21,6 +21,7 @@ import {
   type ProposalKind,
 } from "./extraction-schema"
 import { containsSensitive, hasLinkOrContact, looksLikeInstruction } from "./redaction"
+import { groundDuration, groundStart } from "./timing-grounding"
 
 /**
  * Deterministic planner (PR E): turns validated extractor output into proposals that the database can
@@ -48,6 +49,8 @@ export type PlanContext = {
   segments: ReadonlyMap<number, SegmentView>
   crm: CrmSnapshot
   now: Date
+  /** The shop's IANA timezone, read by trusted server code. Null/invalid means an appointment start cannot be verified. */
+  timezone: string | null
 }
 
 export type PlannedField = {
@@ -420,8 +423,20 @@ function planAppointment(b: Built, customer: CrmCustomer | undefined, ctx: PlanC
   const start = val(b, "start")
   const duration = val<number>(b, "duration_minutes")
   if (!start || Date.parse(start) <= ctx.now.getTime()) return review(b, "start_unusable", { customerId: customer.id })
+  // A well-formed future timestamp with a citation is NOT enough: the cited words must literally say that date and time in
+  // the shop's timezone, unhedged and unambiguous. Anything less stays a review-only proposal for a person to confirm.
+  const utterances = (name: string): string[] => {
+    const f = b.fields.find((x) => x.name === name)
+    return [...new Set((f?.citations ?? []).map((c) => ctx.segments.get(c.segment_index)?.text ?? ""))].filter(Boolean)
+  }
+  const startCheck = groundStart({
+    iso: start, spanText: b.cited.get("start") ?? "", utteranceTexts: utterances("start"), timezone: ctx.timezone, now: ctx.now,
+  })
+  if (!startCheck.ok) return review(b, startCheck.reason, { customerId: customer.id })
   // Availability is NEVER assumed: the booking executor re-checks it at approval. A duration is never guessed.
   if (!duration) return review(b, "duration_unconfirmed", { customerId: customer.id })
+  const durationCheck = groundDuration({ minutes: duration, spanText: b.cited.get("duration_minutes") ?? "", utteranceTexts: utterances("duration_minutes") })
+  if (!durationCheck.ok) return review(b, durationCheck.reason, { customerId: customer.id })
   if (!customer.phoneCanonical) return review(b, "no_verified_phone", { customerId: customer.id })
   if (!customer.name) return review(b, "customer_name_missing", { customerId: customer.id })
   const payload = {
@@ -539,12 +554,12 @@ export function planProposals(output: ExtractorOutput, ctx: PlanContext): PlanRe
         planned.push(review(b, "no_guarded_executor", who ? { customerId: who.id } : {}))
         break
       case "memory_candidate": {
-        // Customer scope only. Inert until an owner submits it into the existing reviewed-memory
-        // lifecycle, where it still needs review and publication before anything can retrieve it.
+        // Customer scope only, and REVIEW-ONLY for good: the reviewed-memory store and its retrieval are shop-wide, so no path
+        // from here into it exists until customer-scoped publication AND retrieval do. The database refuses to stage one.
         const bad = ungrounded(b)
         if (!who) planned.push(withReason(review(b, "customer_unresolved")))
         else if (lowConfidence(b) || bad.length) planned.push(review(b, lowConfidence(b) ? "low_confidence" : "unsupported_value", { customerId: who.id }))
-        else planned.push(review(b, "memory_requires_review", { customerId: who.id }))
+        else planned.push(review(b, "customer_memory_review_only", { customerId: who.id }))
         break
       }
     }

@@ -58,14 +58,17 @@ describe("Call Copilot PR E boundary (TypeScript)", () => {
     const users = walk(SRC)
       .filter((p) => /\.(ts|tsx)$/.test(p) && !p.startsWith(LIB))
       .filter((p) => /call-copilot|call_copilot/.test(read(p)))
-    expect(users.map(rel)).toEqual([])
+    // the single exception is the read-only pre-effect recheck the executor calls; it imports nothing from the module
+    expect(users.map(rel)).toEqual([join("src", "lib", "approval-pre-effect.ts")])
+    expect(read(join(SRC, "lib", "approval-pre-effect.ts"))).not.toMatch(/from\s+["']@\/lib\/call-copilot/)
   })
 
-  it("the only existing-module edit is owner-readable denial wording in approvals.ts", () => {
+  it("the only existing-module edit is denial wording plus the pre-effect recheck in approvals.ts", () => {
     const s = read(join(SRC, "lib", "approvals.ts"))
-    for (const reason of ["call_human_approval_required", "call_proposal_edited", "call_consent_unavailable", "call_evidence_changed", "call_requester_revoked", "call_definition_inactive", "call_crm_state_changed"]) {
+    for (const reason of ["call_human_approval_required", "call_proposal_edited", "call_consent_unavailable", "call_evidence_changed", "call_requester_revoked", "call_definition_inactive", "call_crm_state_changed", "call_proposal_expired"]) {
       expect(s).toContain(`${reason}:`)
     }
+    expect(s).toContain('import { recheckBeforeEffect } from "@/lib/approval-pre-effect"')
     expect(s).not.toMatch(/call-copilot|call_copilot/)
   })
 
@@ -86,7 +89,11 @@ describe("Call Copilot PR E boundary (migration)", () => {
     // outside the verbatim control_claim copy, nothing writes an existing table except staging a pending action
     const own = sql.slice(0, sql.indexOf("CREATE OR REPLACE FUNCTION public.control_claim"))
     expect(own).not.toMatch(/^\s*(UPDATE|DELETE\s+FROM)\s+public\./im)
-    expect([...own.matchAll(/^\s*(?:INSERT\s+INTO)\s+(public\.\w+)/gim)].map((m) => m[1]).filter((t) => !t.startsWith("public.call_copilot_"))).toEqual(["public.pending_actions"])
+    // staging a pending action, and ONE audit row (a denial) next to the claim's own decision
+    expect([...own.matchAll(/^\s*(?:INSERT\s+INTO)\s+(public\.\w+)/gim)].map((m) => m[1]).filter((t) => !t.startsWith("public.call_copilot_"))).toEqual(["public.pending_actions", "public.control_execution_decisions"])
+    const pre = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_pre_effect_recheck"), sql.indexOf("-- control_claim: IDENTICAL"))
+    expect(pre).toMatch(/VALUES \(p_shop, p_action, last\.actor_id[\s\S]*?false, reason\)/)
+    expect(pre.match(/INSERT INTO/g)).toHaveLength(1)
     const replaced = [...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(public\.\w+)/gi)].map((m) => m[1])
     expect(replaced).toEqual(["public.control_claim"])
   })
@@ -115,10 +122,11 @@ describe("Call Copilot PR E boundary (migration)", () => {
     const grants = sql.match(/GRANT SELECT ON[\s\S]*?;/)![0]
     expect(grants).not.toMatch(/transcript_segments|transcript_conflicts/)
     expect(grants).not.toMatch(/\b(anon|authenticated)\b/)
-    // the ONLY thing granted to an API session role is the owner-session memory hand-off
+    // the ONLY thing granted to an API session role is the read-only pre-effect recheck (caller verified inside).
+    // There is no memory hand-off, no submission function and no grant that could reach the shop-wide memory store.
     const execs = [...sql.matchAll(/GRANT EXECUTE ON FUNCTION([\s\S]*?)TO (\w+(?:, \w+)*);/g)].map((m) => ({ fns: m[1], to: m[2] }))
-    expect(execs.filter((e) => /authenticated|anon/.test(e.to)).map((e) => e.fns.trim())).toEqual(["public.call_copilot_submit_memory_candidate(uuid, uuid)"])
-    expect(execs.find((e) => e.to === "service_role")!.fns).not.toMatch(/claim_recheck|control_claim|actor_ok/)
+    expect(execs.filter((e) => /authenticated|anon/.test(e.to)).map((e) => e.fns.trim().split("\n").pop())).toEqual(["public.call_copilot_pre_effect_recheck(uuid, uuid)"])
+    expect(execs.find((e) => e.to === "service_role")!.fns).not.toMatch(/claim_recheck|control_claim|actor_ok|call_copilot_recheck/)
   })
 
   it("every proposal starts approval-required and a segment is gated before anything is stored", () => {
@@ -130,26 +138,55 @@ describe("Call Copilot PR E boundary (migration)", () => {
   })
 
   it("staging inserts only ordinary pending actions with the default status (never approved/executed)", () => {
-    const rec = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_record_extraction"), sql.indexOf("CREATE FUNCTION public.call_copilot_claim_recheck"))
+    const rec = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_record_extraction"), sql.indexOf("CREATE FUNCTION public.call_copilot_find_unknown_run"))
     const inserts = [...rec.matchAll(/INSERT INTO public\.pending_actions \(([^)]*)\)/g)].map((m) => m[1].replace(/\s+/g, ""))
     expect(inserts).toEqual(["id,shop_id,requested_by,action_type,payload"])
     expect(rec).not.toMatch(/status\s*=\s*'approved'|decided_at|decided_by|result_id/)
     expect(rec).not.toMatch(/INSERT INTO public\.(customers|vehicles|leads|quotes|appointments|interactions|reviewed_memory)/)
   })
 
-  it("memory goes through the EXISTING candidate function and never touches a memory table itself", () => {
-    expect(sql).toMatch(/public\.create_reviewed_memory_candidate\(/)
-    expect(sql).not.toMatch(/INSERT INTO public\.reviewed_memory/)
-    expect(sql).not.toMatch(/publish_memory_revision|review_memory_revision/)
+  it("customer-specific memory is REVIEW-ONLY: no path from a call proposal into the shop-wide reviewed-memory store", () => {
+    expect(sql).not.toMatch(/create_reviewed_memory_candidate|reviewed_memory|publish_memory_revision|review_memory_revision/)
+    expect(sql).not.toMatch(/call_copilot_submit_memory_candidate|call_copilot_memory_submissions/)
+    expect(sql).toMatch(/CHECK \(kind <> 'memory_candidate' OR route = 'review_only'\)/)
+    expect(sql).toMatch(/Customer memory is review-only/)
+    for (const p of libFiles) expect(code(p), rel(p)).not.toMatch(/reviewed_memory|create_reviewed_memory_candidate|submit_memory|submitMemory/)
   })
 
-  it("the recheck covers payload edits, requester, consent, evidence, definition and CRM identity", () => {
-    const fn = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_claim_recheck"), sql.indexOf("CREATE FUNCTION public.call_copilot_submit_memory_candidate"))
-    for (const reason of ["call_human_approval_required", "call_proposal_edited", "call_requester_revoked", "call_consent_unavailable", "call_evidence_changed", "call_definition_inactive", "call_crm_state_changed"]) {
+  it("run and proposal identity cover every execution-critical input", () => {
+    const rec = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_record_extraction"), sql.indexOf("CREATE FUNCTION public.call_copilot_find_unknown_run"))
+    const runKey = rec.slice(rec.indexOf("v_run_key := encode("), rec.indexOf("IF v_status IN ('completed', 'unknown_outcome') THEN"))
+    for (const part of ["rev.evidence_digest", "extractor_id", "extractor_version", "schema_version", "crm_context_digest", "p_actor::text", "v_def_agent", "v_def_rev"]) expect(runKey).toContain(part)
+    const propKey = rec.slice(rec.indexOf("v_key := encode("), rec.indexOf("SELECT id INTO v_existing"))
+    for (const part of ["p ->> 'kind'", "v_route", "v_atype", "v_payload", "v_fields", "v_reason", "v_conf", "p -> 'ambiguity'", "v_cust", "v_vehicle", "v_binding", "v_def_agent", "v_def_rev", "p_actor"]) expect(propKey).toContain(part)
+    // every dedupe and replay answer comes from the run's own ordered list
+    expect(rec).toMatch(/call_copilot_run_proposals/)
+  })
+
+  it("the shared recheck covers payload edits, requester, consent, evidence, definition, CRM identity and expiry", () => {
+    const fn = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_recheck"), sql.indexOf("CREATE FUNCTION public.call_copilot_claim_recheck"))
+    for (const reason of ["call_proposal_edited", "call_requester_revoked", "call_consent_unavailable", "call_evidence_changed", "call_definition_inactive", "call_crm_state_changed", "call_proposal_expired"]) {
       expect(fn).toContain(`'${reason}'`)
     }
     expect(fn).toMatch(/'crm_mutation'/)
-    expect(fn).toMatch(/p_context IS DISTINCT FROM 'hitl' THEN RETURN 'call_human_approval_required'/)
     expect(fn).toMatch(/FOR SHARE/)
+  })
+
+  it("the claim recheck is human-only and delegates to the shared recheck", () => {
+    const fn = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_claim_recheck"), sql.indexOf("CREATE FUNCTION public.call_copilot_pre_effect_recheck"))
+    expect(fn).toMatch(/p_context IS DISTINCT FROM 'hitl' THEN RETURN 'call_human_approval_required'/)
+    expect(fn).toMatch(/RETURN public\.call_copilot_recheck\(p_shop, prop\.id, p_payload\)/)
+  })
+
+  it("the pre-effect recheck is bound to the claimed action, re-runs the shared recheck and verifies its caller", () => {
+    const fn = sql.slice(sql.indexOf("CREATE FUNCTION public.call_copilot_pre_effect_recheck"), sql.indexOf("-- control_claim: IDENTICAL"))
+    expect(fn).toMatch(/pending_action_id = p_action/)
+    expect(fn).toMatch(/action\.status::text <> 'approved' OR action\.decided_by_user IS NULL THEN\s+reason := 'call_action_not_claimed'/)
+    expect(fn).toMatch(/reason := public\.call_copilot_recheck\(p_shop, prop\.id, action\.payload\)/)
+    expect(fn).toMatch(/auth\.role\(\) IS DISTINCT FROM 'service_role' AND NOT \(/)
+    // a non-proposal answers yes (the unchanged path); a proposal answers yes only when every check holds
+    expect(fn).toMatch(/'call_proposal', false/)
+    expect(fn).toMatch(/IF reason IS NULL THEN RETURN jsonb_build_object\('ok', true, 'call_proposal', true\)/)
+    expect(fn).not.toMatch(/UPDATE\s+public\.|DELETE\s+FROM/i)
   })
 })

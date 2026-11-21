@@ -24,7 +24,13 @@ ROLLBACK, so no database state is changed. Inside it the probe
        * approval re-verifies, through the existing claim, payload edits, consent, evidence revision, the
          requester, the agent definition and the CRM identity, and an unedited proposal executes through the
          existing record command exactly once,
-       * a customer-specific memory proposal enters the EXISTING reviewed-memory candidate lifecycle inert,
+       * customer-specific memory is REVIEW-ONLY: no hand-off function or table exists, nothing reaches the shop-wide
+         reviewed-memory system, and the trusted writer refuses to stage a memory proposal as an executable action,
+       * run and proposal identity cover authority, subject, binding and definition (identical content about a
+         different customer or from a different requester is a NEW proposal; a deduplicated answer names the
+         existing ids and replays identically),
+       * the pre-effect recheck (the executor asks again before any effect that runs after the claim commits)
+         passes only for a claimed, intact proposal and denies after a late decline,
        * a shop delete still cascades every new row,
   3. rolls back, then confirms the schema and ledger are exactly as before.
 No credential-bearing output is printed.
@@ -39,9 +45,13 @@ import subprocess
 import sys
 
 root = Path(__file__).resolve().parent.parent
-project = 'gradia-isolated-tests'
+project = os.environ.get('PROBE_PROJECT', 'gradia-isolated-tests')  # a disposable local stack that does NOT yet hold the migration
 config = root / 'tests/supabase/config.toml'
-assert f'project_id = "{project}"' in config.read_text() and 'env(' not in config.read_text()
+assert project == 'gradia-isolated-tests' or os.environ.get('PROBE_PROJECT'), 'unreachable'
+if project == 'gradia-isolated-tests':
+    assert f'project_id = "{project}"' in config.read_text() and 'env(' not in config.read_text()
+else:
+    assert project.startswith('gradia-') and 'prod' not in project, 'the probe only runs against a disposable local stack'
 assert not (root / '.local-tools/supabase-test/supabase/.temp/project-ref').exists(), 'remote links forbidden'
 
 NEW = '20261120140000'
@@ -150,7 +160,7 @@ CREATE TEMP TABLE def_before AS SELECT pg_get_functiondef('public.control_claim(
 CHECKS = T(r"""
 DO $$
 DECLARE n integer; r jsonb; s jsonb; x text; cid uuid; call_a uuid; rev jsonb; rev2 jsonb; run jsonb; prop record; act uuid;
- res jsonb; pid uuid; defn text; before_d text; after_d text;
+ res jsonb; pid uuid; defn text; before_d text; after_d text; idr jsonb;
 BEGIN
  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
 
@@ -185,7 +195,7 @@ BEGIN
 
  -- ------------------------------------------------------------------ RLS and privileges
  FOREACH x IN ARRAY ARRAY['call_copilot_transcript_segments','call_copilot_transcript_conflicts','call_copilot_evidence_revisions',
-   'call_copilot_extraction_runs','call_copilot_proposals','call_copilot_memory_submissions'] LOOP
+   'call_copilot_extraction_runs','call_copilot_proposals','call_copilot_run_proposals'] LOOP
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = ('public.'||x)::regclass) THEN RAISE EXCEPTION 'RLS disabled on %', x; END IF;
   IF has_table_privilege('anon','public.'||x,'SELECT') OR has_table_privilege('authenticated','public.'||x,'SELECT')
      OR has_table_privilege('authenticated','public.'||x,'INSERT') OR has_table_privilege('anon','public.'||x,'INSERT') THEN RAISE EXCEPTION 'browser role can reach %', x; END IF;
@@ -204,12 +214,20 @@ BEGIN
  END LOOP;
  FOREACH x IN ARRAY ARRAY['call_copilot_claim_recheck(uuid,uuid,jsonb,text)','call_copilot_actor_ok(uuid,uuid)','call_copilot_evidence_snapshot(uuid,uuid,boolean,integer)',
    'call_copilot_evidence_is_current(uuid,uuid)','call_copilot_assert_span(uuid,uuid,timestamptz,timestamptz,text)','call_copilot_resolve_fields(uuid,uuid,jsonb)',
-   'call_copilot_customer_binding(uuid,uuid,text[])','control_claim(uuid,uuid,uuid,text,text)'] LOOP
+   'call_copilot_customer_binding(uuid,uuid,text[])','call_copilot_recheck(uuid,uuid,jsonb)','control_claim(uuid,uuid,uuid,text,text)'] LOOP
   IF has_function_privilege('service_role','public.'||x,'EXECUTE') OR has_function_privilege('anon','public.'||x,'EXECUTE') OR has_function_privilege('authenticated','public.'||x,'EXECUTE') THEN
     RAISE EXCEPTION 'internal function callable via API: %', x; END IF;
  END LOOP;
- IF NOT has_function_privilege('authenticated','public.call_copilot_submit_memory_candidate(uuid,uuid)','EXECUTE') OR has_function_privilege('anon','public.call_copilot_submit_memory_candidate(uuid,uuid)','EXECUTE')
-    OR has_function_privilege('service_role','public.call_copilot_submit_memory_candidate(uuid,uuid)','EXECUTE') THEN RAISE EXCEPTION 'memory submit ACL wrong'; END IF;
+ -- the ONE function an API session may run: the read-only pre-effect recheck (caller verified inside); never anon
+ IF NOT has_function_privilege('authenticated','public.call_copilot_pre_effect_recheck(uuid,uuid)','EXECUTE')
+    OR NOT has_function_privilege('service_role','public.call_copilot_pre_effect_recheck(uuid,uuid)','EXECUTE')
+    OR has_function_privilege('anon','public.call_copilot_pre_effect_recheck(uuid,uuid)','EXECUTE') THEN RAISE EXCEPTION 'pre-effect recheck ACL wrong'; END IF;
+ -- customer-specific memory has no hand-off into the shop-wide reviewed-memory system: nothing to grant, nothing to call
+ IF to_regprocedure('public.call_copilot_submit_memory_candidate(uuid,uuid)') IS NOT NULL OR to_regclass('public.call_copilot_memory_submissions') IS NOT NULL THEN
+   RAISE EXCEPTION 'a memory hand-off object exists'; END IF;
+ IF EXISTS (SELECT 1 FROM pg_proc f JOIN pg_namespace n ON n.oid = f.pronamespace WHERE n.nspname = 'public' AND f.proname LIKE 'call\_copilot\_%'
+            AND pg_get_functiondef(f.oid) ~* '(create_reviewed_memory_candidate|reviewed_memory_)') THEN
+   RAISE EXCEPTION 'a Call Copilot function reaches the reviewed-memory system'; END IF;
 
  -- ------------------------------------------------------------------ the gate runs BEFORE any text is stored
  SELECT id INTO call_a FROM public.call_copilot_calls WHERE provider_call_id = 'CAlegacy01';
@@ -311,6 +329,33 @@ BEGIN
    (SELECT jsonb_build_array(jsonb_build_object('kind','followup_task','route','review_only','review_reason','no_guarded_executor','confidence','medium',
      'fields', jsonb_build_array(jsonb_build_object('name','title','value','call back','confidence','medium','citations', jsonb_build_array(jsonb_build_object('segment_index',2,'start',0,'end',4))))))));
  IF (r->>'created')::integer <> 0 OR (r->>'deduplicated')::integer <> 1 THEN RAISE EXCEPTION 'dedupe: %', r; END IF;
+ -- a deduplicated answer names the EXISTING proposal ids, and its replay names exactly the same ones
+ IF jsonb_array_length(r->'proposal_ids') <> 1 THEN RAISE EXCEPTION 'a deduplicated answer must name the existing proposal ids: %', r; END IF;
+ idr := public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run || '{"extractor_version":"2"}'::jsonb, '[]'::jsonb);
+ IF idr->>'outcome' <> 'replayed' OR idr->'proposal_ids' IS DISTINCT FROM r->'proposal_ids' THEN RAISE EXCEPTION 'replay of a deduplicated run must name the same ids: % vs %', idr, r; END IF;
+ -- identical content about a DIFFERENT customer is a new proposal bound to that customer, never the old customer's
+ INSERT INTO public.customers (shop_id, name, phone) VALUES ('@S1@', 'Casey Morgan', '+1 555 014 3001') RETURNING id INTO cid;
+ idr := public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run || ('{"extractor_version":"ident","crm_context_digest":"' || repeat('c',64) || '"}')::jsonb,
+   jsonb_build_array(jsonb_build_object('kind','memory_candidate','route','review_only','review_reason','customer_memory_review_only','confidence','high','customer_id','@C1@',
+     'fields', jsonb_build_array(jsonb_build_object('name','preference','value','Prefers mornings','confidence','high','citations', jsonb_build_array(jsonb_build_object('segment_index',0,'start',11,'end',24)))))));
+ r := public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run || ('{"extractor_version":"ident","crm_context_digest":"' || repeat('d',64) || '"}')::jsonb,
+   jsonb_build_array(jsonb_build_object('kind','memory_candidate','route','review_only','review_reason','customer_memory_review_only','confidence','high','customer_id',cid,
+     'fields', jsonb_build_array(jsonb_build_object('name','preference','value','Prefers mornings','confidence','high','citations', jsonb_build_array(jsonb_build_object('segment_index',0,'start',11,'end',24)))))));
+ IF idr->>'outcome' <> 'recorded' OR r->>'outcome' <> 'recorded' OR (r->>'created')::integer <> 1 OR (r->>'deduplicated')::integer <> 0 OR r->'proposal_ids' = idr->'proposal_ids' THEN
+   RAISE EXCEPTION 'identical content about another customer must be a NEW proposal: % / %', idr, r; END IF;
+ IF NOT EXISTS (SELECT 1 FROM public.call_copilot_proposals WHERE id = (r->'proposal_ids'->>0)::uuid AND customer_id = cid AND crm_binding->>'customer_id' = cid::text)
+    OR NOT EXISTS (SELECT 1 FROM public.call_copilot_proposals WHERE id = (idr->'proposal_ids'->>0)::uuid AND customer_id = '@C1@') THEN
+   RAISE EXCEPTION 'proposals are not bound to their own customer'; END IF;
+ -- the SAME content, evidence and extractor requested by a different member is a different run with that member's own proposals
+ idr := public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run || '{"extractor_version":"auth"}'::jsonb,
+   jsonb_build_array(jsonb_build_object('kind','followup_task','route','review_only','review_reason','no_guarded_executor','confidence','medium',
+     'fields', jsonb_build_array(jsonb_build_object('name','title','value','call back','confidence','medium','citations', jsonb_build_array(jsonb_build_object('segment_index',2,'start',0,'end',4)))))));
+ r := public.call_copilot_record_extraction('@S1@','@U4@', call_a, (rev->>'evidence_revision_id')::uuid, run || '{"extractor_version":"auth"}'::jsonb,
+   jsonb_build_array(jsonb_build_object('kind','followup_task','route','review_only','review_reason','no_guarded_executor','confidence','medium',
+     'fields', jsonb_build_array(jsonb_build_object('name','title','value','call back','confidence','medium','citations', jsonb_build_array(jsonb_build_object('segment_index',2,'start',0,'end',4)))))));
+ IF idr->>'outcome' <> 'recorded' OR r->>'outcome' <> 'recorded' OR (r->>'created')::integer <> 1 OR r->'proposal_ids' = idr->'proposal_ids'
+    OR (SELECT created_by FROM public.call_copilot_proposals WHERE id = (r->'proposal_ids'->>0)::uuid) <> '@U4@' THEN
+   RAISE EXCEPTION 'a different requester must get its own run and proposals: % / %', idr, r; END IF;
  -- forged citations / customers / action types are refused and leave nothing behind
  BEGIN PERFORM public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run || '{"extractor_version":"3"}'::jsonb,
     jsonb_build_array(jsonb_build_object('kind','timing','route','review_only','review_reason','customer_unresolved','confidence','high','fields',
@@ -380,7 +425,7 @@ BEGIN
      'payload', jsonb_build_object('customer_id','@C1@','channel','note','role','system','content','Call note: mornings','metadata',jsonb_build_object('origin','call_copilot')),
      'fields', jsonb_build_array(jsonb_build_object('name','preferred_timing','value','mornings','confidence','high','citations', jsonb_build_array(jsonb_build_object('segment_index',0,'start',33,'end',41)))),
      'customer_id','@C1@'),
-   jsonb_build_object('kind','memory_candidate','route','review_only','review_reason','memory_requires_review','confidence','high',
+   jsonb_build_object('kind','memory_candidate','route','review_only','review_reason','customer_memory_review_only','confidence','high',
      'fields', jsonb_build_array(jsonb_build_object('name','preference','value','Prefers drop-off after 9 am','confidence','high','citations', jsonb_build_array(jsonb_build_object('segment_index',0,'start',9,'end',28)))),
      'customer_id','@C1@')));
  -- a manager with crm.read may request extraction; if that manager loses access the proposal can no longer be approved
@@ -404,20 +449,61 @@ BEGIN
  IF coalesce((r->>'already_decided')::boolean,false) IS NOT TRUE THEN RAISE EXCEPTION 'second claim must be already_decided: %', r; END IF;
  IF (SELECT count(*) FROM public.interactions WHERE shop_id='@S1@') <> 2 THEN RAISE EXCEPTION 'executed twice'; END IF;
 
- -- ------------------------------------------------------------------ memory: existing candidate lifecycle, inert
+ -- ------------------------------------------------------------------ pre-effect recheck: effects that run after the claim commits
+ res := public.call_copilot_pre_effect_recheck('@S1@', act);
+ IF res IS DISTINCT FROM '{"ok": true, "call_proposal": true}'::jsonb THEN RAISE EXCEPTION 'a claimed, intact proposal must pass the pre-effect recheck: %', res; END IF;
+ res := public.call_copilot_pre_effect_recheck('@S1@', '00000000-0000-4000-8000-0000000d0002');
+ IF res IS DISTINCT FROM '{"ok": true, "call_proposal": false}'::jsonb THEN RAISE EXCEPTION 'a non-Call-Copilot action must pass unchanged: %', res; END IF;
+ res := public.call_copilot_pre_effect_recheck('@S1@', (SELECT pending_action_id FROM public.call_copilot_proposals WHERE call_id = call_a AND kind='timing'));
+ IF res->>'denied' IS DISTINCT FROM 'call_action_not_claimed' THEN RAISE EXCEPTION 'an unclaimed proposal must not pass the recheck: %', res; END IF;
+ -- the caller is verified inside: this shop's owner may ask, another shop's owner and an anonymous session may not
  PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"@U1@"}',true);
- r := public.call_copilot_submit_memory_candidate('@S1@', pid);
- IF r->>'outcome' <> 'submitted' OR r->>'state' <> 'candidate' THEN RAISE EXCEPTION 'memory submit: %', r; END IF;
- IF EXISTS (SELECT 1 FROM public.reviewed_memory_active WHERE shop_id='@S1@') THEN RAISE EXCEPTION 'a memory candidate became active'; END IF;
- IF (SELECT state FROM public.reviewed_memory_revisions WHERE shop_id='@S1@' AND source_id=(r->>'source_id')::uuid) <> 'candidate' THEN RAISE EXCEPTION 'memory candidate must be inert'; END IF;
- r := public.call_copilot_submit_memory_candidate('@S1@', pid);
- IF r->>'outcome' <> 'already_submitted' THEN RAISE EXCEPTION 'memory submit must be idempotent: %', r; END IF;
- BEGIN PERFORM public.call_copilot_submit_memory_candidate('@S1@', (SELECT id FROM public.call_copilot_proposals WHERE call_id = call_a AND kind='service_request')); RAISE EXCEPTION 'a non-memory proposal was submitted';
- EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+ res := public.call_copilot_pre_effect_recheck('@S1@', act);
+ IF res IS DISTINCT FROM '{"ok": true, "call_proposal": true}'::jsonb THEN RAISE EXCEPTION 'the approving owner session must get the answer: %', res; END IF;
  PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"@U2@"}',true);
- BEGIN PERFORM public.call_copilot_submit_memory_candidate('@S1@', pid); RAISE EXCEPTION 'another shop owner submitted memory';
+ BEGIN PERFORM public.call_copilot_pre_effect_recheck('@S1@', act); RAISE EXCEPTION 'another shop owner used the recheck';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
+ BEGIN PERFORM public.call_copilot_pre_effect_recheck('@S1@', act); RAISE EXCEPTION 'an anonymous session used the recheck';
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
+
+ -- ------------------------------------------------------------------ memory: REVIEW-ONLY, no path into the shop-wide reviewed-memory system
+ IF (SELECT count(*) FROM public.call_copilot_proposals WHERE call_id = call_a AND kind='memory_candidate' AND route='review_only' AND pending_action_id IS NULL AND staged_payload IS NULL) <> 1 THEN
+   RAISE EXCEPTION 'the memory proposal must be review-only'; END IF;
+ IF EXISTS (SELECT 1 FROM public.reviewed_memory_revisions WHERE shop_id='@S1@') OR EXISTS (SELECT 1 FROM public.reviewed_memory_active WHERE shop_id='@S1@') THEN
+   RAISE EXCEPTION 'a call proposal reached the reviewed-memory system'; END IF;
+ -- even the trusted writer cannot stage a memory proposal as an executable action
+ BEGIN
+  PERFORM public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run || '{"extractor_version":"memstage"}'::jsonb, jsonb_build_array(
+   jsonb_build_object('kind','memory_candidate','route','pending_action','action_type','record_interaction','confidence','high',
+     'payload', jsonb_build_object('customer_id','@C1@','channel','note','role','system','content','Prefers drop-off after nine','metadata','{}'::jsonb),
+     'fields', jsonb_build_array(jsonb_build_object('name','preference','value','Prefers drop-off after 9 am','confidence','high','citations', jsonb_build_array(jsonb_build_object('segment_index',0,'start',9,'end',28)))),
+     'customer_id','@C1@')));
+  RAISE EXCEPTION 'a memory proposal was staged as an executable action';
+ EXCEPTION WHEN SQLSTATE '22023' THEN NULL; WHEN check_violation THEN NULL; END;
+ IF EXISTS (SELECT 1 FROM public.call_copilot_proposals WHERE kind='memory_candidate' AND route <> 'review_only') THEN RAISE EXCEPTION 'an executable memory proposal exists'; END IF;
+
+ -- ------------------------------------------------------------------ a late decline after the CLAIM is caught by the pre-effect recheck
+ PERFORM pg_temp.consent('@S1@','CAlate0001');
+ SELECT id INTO call_a FROM public.call_copilot_calls WHERE provider_call_id='CAlate0001';
+ PERFORM public.call_copilot_record_segment('@S1@', call_a, 0, 'l-0', 'caller', now()-interval '10 minutes'+interval '5 seconds', now()-interval '10 minutes'+interval '7 seconds', 'I need a quote', '{}');
+ rev := public.call_copilot_seal_evidence('@S1@','@U1@', call_a, false, NULL);
+ PERFORM public.call_copilot_record_extraction('@S1@','@U1@', call_a, (rev->>'evidence_revision_id')::uuid, run, jsonb_build_array(
+   jsonb_build_object('kind','service_request','route','pending_action','action_type','record_interaction','confidence','high',
+     'payload', jsonb_build_object('customer_id','@C1@','channel','note','role','system','content','Call note: late','metadata',jsonb_build_object('origin','call_copilot')),
+     'fields', jsonb_build_array(jsonb_build_object('name','service','value','quote','confidence','high','citations', jsonb_build_array(jsonb_build_object('segment_index',0,'start',9,'end',14)))),
+     'customer_id','@C1@')));
+ act := (SELECT pending_action_id FROM public.call_copilot_proposals WHERE call_id = call_a);
+ r := public.claim_control_action('@S1@', act, '@U1@', 'hitl');
+ IF r->>'denied' IS NOT NULL THEN RAISE EXCEPTION 'the claim should have passed before the late decline: %', r; END IF;
+ PERFORM pg_temp.ev('@S1@','CAlate0001','lt6',6,'consent_declined','caller','v1',3,30);
+ res := public.call_copilot_pre_effect_recheck('@S1@', act);
+ IF res IS DISTINCT FROM '{"ok": false, "denied": "call_consent_unavailable"}'::jsonb THEN RAISE EXCEPTION 'a decline after the claim must deny before the effect: %', res; END IF;
+ IF NOT EXISTS (SELECT 1 FROM public.control_execution_decisions WHERE action_id = act AND NOT allowed AND reason = 'call_consent_unavailable')
+    OR NOT EXISTS (SELECT 1 FROM public.control_execution_decisions WHERE action_id = act AND allowed) THEN RAISE EXCEPTION 'the late denial was not audited next to the claim'; END IF;
+ PERFORM public.call_copilot_pre_effect_recheck('@S1@', act);
+ IF (SELECT count(*) FROM public.control_execution_decisions WHERE action_id = act AND NOT allowed) <> 1 THEN RAISE EXCEPTION 'a repeated denial must not spam the audit log'; END IF;
 
  -- ------------------------------------------------------------------ a decline after proposals blocks approval AND derivation
  PERFORM pg_temp.consent('@S1@','CAdecl0001');
@@ -480,7 +566,7 @@ BEGIN
 
  -- ------------------------------------------------------------------ shop delete cascades every new row
  DELETE FROM public.shops WHERE id = '@S1@';
- FOREACH x IN ARRAY ARRAY['call_copilot_transcript_segments','call_copilot_transcript_conflicts','call_copilot_evidence_revisions','call_copilot_extraction_runs','call_copilot_proposals','call_copilot_memory_submissions'] LOOP
+ FOREACH x IN ARRAY ARRAY['call_copilot_transcript_segments','call_copilot_transcript_conflicts','call_copilot_evidence_revisions','call_copilot_extraction_runs','call_copilot_proposals','call_copilot_run_proposals'] LOOP
   EXECUTE format('SELECT count(*) FROM public.%I WHERE shop_id = %L', x, '@S1@') INTO n;
   IF n <> 0 THEN RAISE EXCEPTION 'shop delete did not cascade %', x; END IF;
  END LOOP;
@@ -503,15 +589,22 @@ MUTATIONS = {
     'proposal_staged_as_approved': ("VALUES (v_cmd, p_shop, p_actor, v_atype::public.pending_action_type, v_payload);", "VALUES (v_cmd, p_shop, p_actor, v_atype::public.pending_action_type, v_payload); UPDATE public.pending_actions SET status = 'approved' WHERE id = v_cmd;"),
     'forged_citation_trusted': ("      IF NOT FOUND OR s < 0 OR e <= s OR e > length(seg.text) THEN\n        RAISE EXCEPTION 'Citation does not match the transcript' USING ERRCODE = '22023';\n      END IF;\n", ""),
     'conflict_not_fail_closed': ("ok := (st ->> 'derivation_permitted')::boolean AND tconf = 0 AND outside = 0;", "ok := (st ->> 'derivation_permitted')::boolean AND outside = 0;"),
-    'memory_published_active': ("  INSERT INTO public.call_copilot_memory_submissions (proposal_id, shop_id, source_id, revision, submitted_by)", "  INSERT INTO public.reviewed_memory_active (shop_id, source_id, revision, activated_by) VALUES (p_shop, (res ->> 'source_id')::uuid, (res ->> 'revision')::integer, auth.uid());\n  INSERT INTO public.call_copilot_memory_submissions (proposal_id, shop_id, source_id, revision, submitted_by)"),
+    'run_key_omits_authority': ("|| '|' || p_actor::text || '|' || coalesce(v_def_agent::text, '-') || '|' || coalesce(v_def_rev::text, '-'), 'UTF8')), 'hex');", "|| '|' || coalesce(v_def_agent::text, '-') || '|' || coalesce(v_def_rev::text, '-'), 'UTF8')), 'hex');"),
+    'proposal_key_omits_subject': ("      || '|' || coalesce(v_cust::text, '-') || '|' || coalesce(v_vehicle::text, '-') || '|' || coalesce(v_binding::text, '-')\n", "\n"),
+    'dedupe_answer_omits_existing_ids': ("      IF NOT v_ids @> jsonb_build_array(v_existing) THEN\n        v_ids := v_ids || to_jsonb(v_existing);", "      IF false THEN\n        v_ids := v_ids || to_jsonb(v_existing);"),
+    'pre_effect_recheck_ignored': ("reason := public.call_copilot_recheck(p_shop, prop.id, action.payload);", "reason := NULL;"),
+    'pre_effect_accepts_unclaimed': ("IF NOT FOUND OR action.status::text <> 'approved' OR action.decided_by_user IS NULL THEN", "IF NOT FOUND THEN"),
+    'memory_stageable': [("    IF p ->> 'kind' = 'memory_candidate' AND v_route <> 'review_only' THEN\n      RAISE EXCEPTION 'Customer memory is review-only' USING ERRCODE = '22023';\n    END IF;\n", ""), ("  CHECK (kind <> 'memory_candidate' OR route = 'review_only'),\n", "")],
 }
 args = sys.argv[1:]
 if args[:1] == ['--mutate']:
     names = list(MUTATIONS) if args[1:2] == ['all'] else args[1:2]
     for name in names:
-        old, new = MUTATIONS[name]
-        assert body.count(old) == 1, f'mutation {name} does not apply exactly once'
-        broken = body.replace(old, new)
+        pairs = MUTATIONS[name] if isinstance(MUTATIONS[name], list) else [MUTATIONS[name]]
+        broken = body
+        for old, new in pairs:
+            assert broken.count(old) == 1, f'mutation {name} does not apply exactly once'
+            broken = broken.replace(old, new)
         try:
             run(f"BEGIN;\n{SEED}\n{broken}\n{CHECKS}\nROLLBACK;")
         except SystemExit as failure:
@@ -529,4 +622,5 @@ assert run("SELECT count(*) FROM public.call_records WHERE vapi_call_id = 'legac
 print('PASS: upgrade probe applied the real migration SQL on existing data, proved every existing table and the claim ACLs are unchanged, '
       'control_claim differs only by the recheck hook, ordinary claims behave identically, the gate runs before storage, coverage is truthful, '
       'proposals stage as approval-required pending actions and execute only through the existing claim after it re-verifies consent, evidence, '
-      'payload, requester and CRM identity, memory enters the existing candidate lifecycle inert, and rolled back')
+      'payload, requester and CRM identity, the pre-effect recheck denies a late decline, run and proposal identity cover requester and customer, '
+      'customer memory is review-only with no path into shop-wide memory, and rolled back')

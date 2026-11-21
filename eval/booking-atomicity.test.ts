@@ -120,6 +120,8 @@ function mockDb(opts: {
     rpc: (fn: string, args: Record<string, unknown>) => {
       // Policy claim is tested against PostgreSQL in control-execution.int.test.ts.
       if (fn === "claim_control_action") return Promise.resolve({ data: claimed ?? { already_decided: true }, error: null })
+      // The Call Copilot pre-effect recheck (real behaviour is tested against PostgreSQL): an ordinary action is not a call proposal.
+      if (fn === "call_copilot_pre_effect_recheck") return Promise.resolve({ data: { ok: true, call_proposal: false }, error: null })
       rpcCalls.push({ fn, args })
       if (opts.rpcResult instanceof Error) {
         return Promise.resolve({

@@ -19,7 +19,11 @@ import { readEvidenceTranscript, type Coverage } from "./transcript"
  * message row is written, no message is sent, no memory is published, and nothing is retried. The
  * existing executor runs an approved proposal only after `control_claim` re-verifies membership,
  * current policy, consent/capture evidence, the sealed evidence revision, the agent definition
- * (when bound) and the CRM identity the proposal was built against.
+ * (when bound) and the CRM identity the proposal was built against, and re-asks immediately before
+ * each effect that happens after that claim (see `approvals.ts`, `call_copilot_pre_effect_recheck`).
+ *
+ * Customer-specific memory is review-only: there is deliberately NO hand-off into the shop-wide
+ * reviewed-memory store from here.
  *
  * Failure is visible, not silent: every outcome is a typed result, and a failed or unknown-outcome
  * extraction is recorded on a run so a lead is never silently lost. An `unknown_outcome` run is
@@ -60,6 +64,20 @@ export class ProposalError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "ProposalError"
+  }
+}
+
+/** The shop's IANA timezone (trusted server read). Anything unreadable or invalid is null: an appointment start then cannot be verified. */
+async function loadShopTimezone(db: SupabaseClient, shopId: string): Promise<string | null> {
+  const { data, error } = await db.from("shops").select("timezone").eq("id", shopId).maybeSingle()
+  if (error) throw new ProposalError(`Shop timezone could not be read (${error.code ?? "unknown"}).`)
+  const tz = (data as { timezone?: unknown } | null)?.timezone
+  if (typeof tz !== "string" || tz.length === 0 || tz.length > 80) return null
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz })
+    return tz
+  } catch {
+    return null
   }
 }
 
@@ -174,18 +192,20 @@ export async function proposeFromCall(
 
   // 4. Existing customer/vehicle resolution (read-only), then deterministic planning.
   const crm = await loadCrmSnapshot(db, { shopId: input.shopId, output, knownCustomerId: input.knownCustomerId })
+  const timezone = await loadShopTimezone(db, input.shopId)
   const plan: PlanResult = planProposals(output, {
     callId: input.callId,
     evidence: { revisionId: transcript.evidenceRevisionId, revision: transcript.revision },
     segments: new Map(transcript.segments.map((s) => [s.index, { index: s.index, text: s.text }])),
     crm,
     now: input.now ?? new Date(),
+    timezone,
   })
 
   // 5. One atomic record: run + proposals + staging of executable proposals as pending actions.
   const rec = await record(db, input, {
     status: "completed", refusedCount: plan.refused.length,
-    extractor: { id: extractor.id, version: extractor.version }, crmDigest: crmContextDigest(crm),
+    extractor: { id: extractor.id, version: extractor.version }, crmDigest: crmContextDigest(crm, { timezone }),
   }, plan.planned)
   if (!rec.ok) return rec.outcome
   const executable = plan.planned.filter((p) => p.route === "pending_action").length
@@ -202,36 +222,4 @@ export async function proposeFromCall(
       deduplicated: rec.value.outcome === "recorded" ? rec.value.deduplicated : plan.planned.length,
     },
   }
-}
-
-/**
- * Hand a customer-specific memory proposal to the EXISTING reviewed-memory candidate lifecycle. Call it
- * with an OWNER SESSION client (the existing candidate function requires `auth.uid()`). The text is the
- * proposal's stored, cited value; the candidate is inert until the existing review and publication.
- */
-export async function submitMemoryCandidate(
-  ownerSession: SupabaseClient,
-  input: { shopId: string; proposalId: string },
-): Promise<
-  | { outcome: "submitted" | "already_submitted"; sourceId: string; revision: number }
-  | { outcome: "denied"; reason: string }
-> {
-  if (!z.string().uuid().safeParse(input.shopId).success || !z.string().uuid().safeParse(input.proposalId).success) {
-    return { outcome: "denied", reason: "invalid_identifier" }
-  }
-  const { data, error } = await ownerSession.rpc("call_copilot_submit_memory_candidate", {
-    p_shop: input.shopId, p_proposal: input.proposalId,
-  })
-  if (error) {
-    if (error.code === "42501") return { outcome: "denied", reason: error.details?.trim() || "owner_required" }
-    if (error.code === "CC403") return { outcome: "denied", reason: error.details?.trim() || "capture_not_permitted" }
-    if (error.code === "PT409") return { outcome: "denied", reason: error.details?.trim() || "evidence_changed" }
-    if (error.code === "22023") return { outcome: "denied", reason: "not_submittable" }
-    throw new ProposalError(`Memory candidate was not submitted (${error.code ?? "unknown"}).`)
-  }
-  const parsed = z
-    .object({ outcome: z.enum(["submitted", "already_submitted"]), source_id: z.string().uuid(), revision: z.number().int() })
-    .safeParse(typeof data === "string" ? JSON.parse(data) : data)
-  if (!parsed.success) throw new ProposalError("Memory candidate result could not be read.")
-  return { outcome: parsed.data.outcome, sourceId: parsed.data.source_id, revision: parsed.data.revision }
 }

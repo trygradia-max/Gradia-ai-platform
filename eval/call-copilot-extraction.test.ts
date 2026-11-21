@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest"
 import { crmContextDigest, emptyCrmSnapshot, loadCrmSnapshot } from "@/lib/call-copilot/crm-resolution"
 import { EXTRACTOR_INSTRUCTIONS, EXTRACTOR_LIMITS, buildExtractorInput, runExtractor } from "@/lib/call-copilot/extractor"
 import { extractorOutputSchema, type ExtractorInput } from "@/lib/call-copilot/extraction-schema"
-import { proposeFromCall, submitMemoryCandidate } from "@/lib/call-copilot/proposals"
+import * as proposalsModule from "@/lib/call-copilot/proposals"
+import { proposeFromCall } from "@/lib/call-copilot/proposals"
 import { readEvidenceTranscript, recordTranscriptSegment, sealEvidence } from "@/lib/call-copilot/transcript"
 
 import { FixtureExtractor, SEGMENTS, fullOutput } from "./_call-copilot-fixtures"
@@ -255,9 +256,7 @@ describe("proposeFromCall: gate first, then one bounded extractor call, then one
     expect(await proposeFromCall(db, { extractor: ex }, { ...input, shopId: "x" })).toEqual({ status: "denied", reason: "invalid_identifier" })
     expect(calls).toEqual([])
   })
-  it("submitMemoryCandidate maps database refusals and validates its identifiers", async () => {
-    expect(await submitMemoryCandidate(fakeDb({}).db, { shopId: "x", proposalId: RUN })).toEqual({ outcome: "denied", reason: "invalid_identifier" })
-    const owner = fakeDb({ call_copilot_submit_memory_candidate: () => ({ error: { code: "42501", details: "call_requester_revoked" } }) }).db
-    expect(await submitMemoryCandidate(owner, { shopId: SHOP, proposalId: RUN })).toEqual({ outcome: "denied", reason: "call_requester_revoked" })
+  it("there is no hand-off of a call proposal into the shop-wide reviewed-memory store", () => {
+    expect(Object.keys(proposalsModule).sort()).toEqual(["ProposalError", "proposeFromCall"])
   })
 })

@@ -132,9 +132,9 @@ export async function loadCrmSnapshot(
 
 /**
  * Stable digest of the CRM facts a plan was built from. It is part of the extraction run identity, so
- * the same evidence planned against changed CRM state is a NEW run, while an identical replay is not.
+ * the same evidence planned against changed CRM state (or a different shop timezone) is a NEW run, while an identical replay is not.
  */
-export function crmContextDigest(snap: CrmSnapshot): string {
+export function crmContextDigest(snap: CrmSnapshot, shop: { timezone?: string | null } = {}): string {
   const sortById = <T extends { id: string }>(xs: T[]) => [...xs].sort((a, b) => a.id.localeCompare(b.id))
   const view = (c: CrmCustomer) => [c.id, c.name, c.phoneCanonical, c.emailCanonical, c.updatedAt]
   const norm = {
@@ -146,5 +146,6 @@ export function crmContextDigest(snap: CrmSnapshot): string {
       k, sortById(snap.vehiclesByCustomer[k]).map((v) => [v.id, v.make, v.model, v.year, v.color, v.updatedAt]),
     ]),
   }
-  return createHash("sha256").update(JSON.stringify(["crm-context-v1", norm])).digest("hex")
+  // The shop's timezone decides whether an appointment start is verifiable, so it is part of what a plan was built from.
+  return createHash("sha256").update(JSON.stringify(["crm-context-v2", norm, shop.timezone ?? null])).digest("hex")
 }

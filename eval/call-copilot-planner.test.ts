@@ -20,12 +20,13 @@ const VEH = (over: Partial<CrmVehicle> = {}): CrmVehicle => ({
   updatedAt: "2026-11-02T10:00:00.5+00:00", ...over,
 })
 
-function ctx(over: { crm?: Partial<CrmSnapshot>; segments?: FixtureSegment[] } = {}): PlanContext {
+function ctx(over: { crm?: Partial<CrmSnapshot>; segments?: FixtureSegment[]; timezone?: string | null } = {}): PlanContext {
   const segs = over.segments ?? SEGMENTS
   return {
     callId: CALL, evidence: REV, now: NOW,
     segments: new Map(segs.map((s) => [s.index, { index: s.index, text: s.text }])),
     crm: { ...emptyCrmSnapshot(), ...over.crm },
+    timezone: over.timezone === undefined ? "America/Los_Angeles" : over.timezone,
   }
 }
 const parse = (o: unknown) => extractorOutputSchema.parse(o)
@@ -218,6 +219,99 @@ describe("planner: notes, quote, appointment, message", () => {
     const medium = one("appointment_draft", { service: f("Ceramic coating", [cite(SEGMENTS, 2, "ceramic coating")], "medium") })
     expect(only(planProposals(medium, ctx({ crm: known() }))).review_reason).toBe("needs_high_confidence")
   })
+  describe("an appointment start and duration must be literally grounded in the cited words", () => {
+    const seg = (text: string): FixtureSegment[] => [
+      ...SEGMENTS.slice(0, 5),
+      { index: 5, speaker: "operator", text },
+      ...SEGMENTS.slice(6),
+    ]
+    /** An appointment proposal citing `startWords` and `durationWords` from a rewritten segment 5. */
+    function appt(text: string, startWords: string, startIso: string, durationWords: string | null, minutes: number | null, over: { tz?: string | null; now?: Date } = {}) {
+      const segs = seg(text)
+      const p: Record<string, unknown> = {
+        kind: "appointment_draft",
+        start: f(startIso, [cite(segs, 5, startWords)]),
+        service: f("Ceramic coating", [cite(SEGMENTS, 2, "ceramic coating")]),
+      }
+      if (durationWords && minutes) p.durationMinutes = f(minutes, [cite(segs, 5, durationWords)])
+      const c = ctx({ crm: known(), segments: segs, timezone: over.tz })
+      if (over.now) c.now = over.now
+      return only(planProposals(parse({ proposals: [p] }), c))
+    }
+    const ISO = "2026-12-04T09:00:00-08:00"
+    const SAID = "I will book Friday December 4th at 9 am for 180 minutes and send you a quote."
+
+    it("an explicit date, an explicit time and an explicit length that match the shop-local instant are executable", () => {
+      expect(appt(SAID, "Friday December 4th at 9 am", ISO, "180 minutes", 180)).toMatchObject({ route: "pending_action", action_type: "book_appointment" })
+      // the model's own offset is never trusted: only the INSTANT, rendered in the shop's timezone, is compared
+      expect(appt(SAID, "Friday December 4th at 9 am", "2026-12-04T17:00:00Z", "180 minutes", 180)).toMatchObject({ route: "pending_action" })
+      expect(appt("Book it for December 4, 2026 at 9:00 am for three hours.", "December 4, 2026 at 9:00 am", ISO, "three hours", 180)).toMatchObject({ route: "pending_action" })
+    })
+    it("a future timestamp with a citation that does not say it is review-only", () => {
+      // the words say a different day, a different hour, a different month, or nothing specific at all
+      expect(appt("I will book Saturday December 5th at 9 am for 180 minutes.", "Saturday December 5th at 9 am", ISO, "180 minutes", 180)).toMatchObject({ route: "review_only", review_reason: "start_ungrounded" })
+      expect(appt("I will book Friday December 4th at 10 am for 180 minutes.", "Friday December 4th at 10 am", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+      expect(appt("I will book Friday January 4th at 9 am for 180 minutes.", "Friday January 4th at 9 am", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+      expect(appt("We will get you in sometime next week for 180 minutes.", "sometime next week", ISO, "180 minutes", 180)).toMatchObject({ route: "review_only" })
+      expect(appt("Mornings work best for 180 minutes.", "Mornings work best", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+    })
+    it("relative dates, numeric dates and a bare hour are unsupported, never guessed", () => {
+      expect(appt("I will book tomorrow at 9 am for 180 minutes.", "tomorrow at 9 am", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+      expect(appt("I will book 12/4 at 9 am for 180 minutes.", "12/4 at 9 am", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+      expect(appt("I will book Friday December 4th at 9 for 180 minutes.", "Friday December 4th at 9", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+    })
+    it("a far-future year cannot ride a month/day citation, and a stated year must match", () => {
+      expect(appt(SAID, "Friday December 4th at 9 am", "2099-12-04T09:00:00-08:00", "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+      expect(appt("I will book Friday December 4th at 9 am for 180 minutes.", "Friday December 4th at 9 am", "2027-12-04T09:00:00-08:00", "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+      // a date that has already passed this year means next year
+      expect(appt("I will book Saturday January 2nd at 9 am for 180 minutes.", "Saturday January 2nd at 9 am", "2027-01-02T09:00:00-08:00", "180 minutes", 180)).toMatchObject({ route: "pending_action" })
+      expect(appt("I will book Saturday January 2nd at 9 am for 180 minutes.", "Saturday January 2nd at 9 am", "2026-01-02T09:00:00-08:00", "180 minutes", 180)).toMatchObject({ review_reason: "start_unusable" })
+    })
+    it("a named weekday must be the weekday of that date", () => {
+      expect(appt("I will book Thursday December 4th at 9 am for 180 minutes.", "Thursday December 4th at 9 am", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ungrounded" })
+    })
+    it("two candidate dates or times, hedging, ranges and corrections are ambiguous", () => {
+      for (const [text, words] of [
+        ["I will book Friday December 4th or Saturday December 5th at 9 am for 180 minutes.", "Friday December 4th or Saturday December 5th at 9 am"],
+        ["I will book Friday December 4th at 9 am or 10 am for 180 minutes.", "Friday December 4th at 9 am or 10 am"],
+        ["Maybe Friday December 4th at 9 am for 180 minutes.", "Friday December 4th at 9 am"],
+        ["Around Friday December 4th at 9 am for 180 minutes.", "Friday December 4th at 9 am"],
+        ["If it works, Friday December 4th at 9 am for 180 minutes.", "Friday December 4th at 9 am"],
+        ["Friday December 4th at 9 am, actually no, make it later, for 180 minutes.", "Friday December 4th at 9 am"],
+        ["Friday December 4th between 9 am and 11 am for 180 minutes.", "Friday December 4th between 9 am and 11 am"],
+        ["Friday December 4th at 9 am is not confirmed for 180 minutes.", "Friday December 4th at 9 am"],
+      ] as const) {
+        expect(appt(text, words, ISO, "180 minutes", 180), text).toMatchObject({ route: "review_only", review_reason: "start_ambiguous" })
+      }
+    })
+    it("hedging in the utterance around a narrow citation cannot be laundered away", () => {
+      // the cited words alone look clean; the rest of the same utterance retracts them
+      expect(appt("Friday December 4th at 9 am maybe, I'll check the schedule, 180 minutes.", "Friday December 4th at 9 am", ISO, "180 minutes", 180)).toMatchObject({ review_reason: "start_ambiguous" })
+    })
+    it("an unknown or invalid shop timezone cannot verify a start", () => {
+      expect(appt(SAID, "Friday December 4th at 9 am", ISO, "180 minutes", 180, { tz: null })).toMatchObject({ route: "review_only", review_reason: "timezone_unknown" })
+      expect(appt(SAID, "Friday December 4th at 9 am", ISO, "180 minutes", 180, { tz: "Not/AZone" })).toMatchObject({ review_reason: "timezone_unknown" })
+      // the same words in the wrong timezone are a different instant
+      expect(appt(SAID, "Friday December 4th at 9 am", ISO, "180 minutes", 180, { tz: "America/New_York" })).toMatchObject({ review_reason: "start_ungrounded" })
+    })
+    it("a duration must be stated, literal and singular", () => {
+      expect(appt(SAID, "Friday December 4th at 9 am", ISO, "180 minutes", 120)).toMatchObject({ review_reason: "duration_ungrounded" })
+      expect(appt("I will book Friday December 4th at 9 am. It takes a while.", "Friday December 4th at 9 am", ISO, "It takes a while", 180)).toMatchObject({ review_reason: "duration_ungrounded" })
+      // a hedge anywhere in the utterance is ambiguous (the start is judged first, and is review-only either way)
+      for (const text of ["I will book Friday December 4th at 9 am for 2 hours or 3 hours.", "I will book Friday December 4th at 9 am for about 3 hours."]) {
+        const r = appt(text, "Friday December 4th at 9 am", ISO, text.includes("about") ? "about 3 hours" : "2 hours or 3 hours", text.includes("about") ? 180 : 120)
+        expect(r.route, text).toBe("review_only")
+        expect(r.review_reason, text).toMatch(/_ambiguous$/)
+      }
+      expect(appt("I will book Friday December 4th at 9 am for an hour and a half.", "Friday December 4th at 9 am", ISO, "an hour and a half", 90)).toMatchObject({ route: "pending_action" })
+      expect(appt("I will book Friday December 4th at 9 am for 1 hour 30 minutes.", "Friday December 4th at 9 am", ISO, "1 hour 30 minutes", 90)).toMatchObject({ route: "pending_action" })
+    })
+    it("a review-only appointment carries no payload and no action type", () => {
+      const r = appt("I will book Saturday December 5th at 9 am for 180 minutes.", "Saturday December 5th at 9 am", ISO, "180 minutes", 180)
+      expect(r.payload).toBeUndefined()
+      expect(r.action_type).toBeUndefined()
+    })
+  })
   it("a message draft is staged as the strictest category to the CRM's own number", () => {
     const p = only(planProposals(one("message_draft"), ctx({ crm: known() })))
     expect(p).toMatchObject({ route: "pending_action", action_type: "send_sms" })
@@ -241,8 +335,8 @@ describe("planner: review-only kinds", () => {
       expect(p.payload).toBeUndefined()
     }
   })
-  it("memory is customer-scoped, inert and reviewable only for a resolved customer", () => {
-    expect(only(planProposals(one("memory_candidate"), ctx({ crm: { known: CUST() } })))).toMatchObject({ route: "review_only", review_reason: "memory_requires_review", customer_id: CUST().id })
+  it("memory is customer-scoped, review-only for good and reviewable only for a resolved customer", () => {
+    expect(only(planProposals(one("memory_candidate"), ctx({ crm: { known: CUST() } })))).toMatchObject({ route: "review_only", review_reason: "customer_memory_review_only", customer_id: CUST().id })
     expect(only(planProposals(one("memory_candidate"), ctx()))).toMatchObject({ review_reason: "customer_unresolved" })
   })
 })

@@ -19,18 +19,24 @@ BEGIN;
 --                                       confidence, ambiguity, CRM snapshot, route. Executable ones are
 --                                       staged as ordinary APPROVAL-REQUIRED pending_actions; the rest
 --                                       are review-only. Creating a proposal grants no execution.
---  * call_copilot_memory_submissions    an owner-session hand-off of a customer-specific memory proposal
---                                       to the EXISTING reviewed-memory candidate lifecycle (inert).
+--  * call_copilot_run_proposals        which proposals a run produced or deduplicated onto (a replay returns
+--                                       exactly the ids the original answer returned).
+--
+-- Customer-specific memory is REVIEW-ONLY here: the existing reviewed-memory store and its retrieval are
+-- shop-wide, so there is deliberately NO path from a Call Copilot proposal into it (no submission function,
+-- no table, no grant) until customer-scoped publication AND retrieval exist end to end.
 --
 -- Existing behaviour changes in exactly one place: control_claim gains a pre-effect recheck that only
 -- ever DENIES, and only for pending actions that are linked to a Call Copilot proposal. Every other
 -- action takes the identical path as before. No existing table, column, row or grant is altered.
+-- The same recheck is exposed (read-only) as call_copilot_pre_effect_recheck so the executor can run it
+-- again immediately before each effect that happens AFTER the claim transaction commits.
 
 DO $$
 BEGIN
   IF to_regclass('public.call_copilot_calls') IS NULL OR to_regclass('public.pending_actions') IS NULL
-     OR to_regclass('public.reviewed_memory_revisions') IS NULL OR to_regprocedure('public.control_claim(uuid,uuid,uuid,text,text)') IS NULL THEN
-    RAISE EXCEPTION 'PR D ledger, pending_actions, reviewed memory and control_claim are required' USING ERRCODE = '23514';
+     OR to_regprocedure('public.control_claim(uuid,uuid,uuid,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'PR D ledger, pending_actions and control_claim are required' USING ERRCODE = '23514';
   END IF;
 END $$;
 
@@ -223,6 +229,9 @@ CREATE TABLE public.call_copilot_proposals (
   CHECK ((route = 'pending_action') = (action_type IS NOT NULL AND staged_payload IS NOT NULL)),
   CHECK ((route = 'review_only') = (review_reason IS NOT NULL)),
   CHECK ((definition_agent_id IS NULL) = (definition_revision IS NULL)),
+  -- Customer-specific memory can never be executable: it has no guarded executor and the shop-wide reviewed-memory
+  -- store cannot hold a customer-scoped entry. It stays a review-only proposal.
+  CHECK (kind <> 'memory_candidate' OR route = 'review_only'),
   UNIQUE (shop_id, evidence_revision_id, proposal_key),
   UNIQUE (shop_id, id),
   FOREIGN KEY (shop_id, call_id) REFERENCES public.call_copilot_calls(shop_id, id) ON DELETE CASCADE,
@@ -236,15 +245,17 @@ CREATE UNIQUE INDEX call_copilot_proposals_action_unique ON public.call_copilot_
   WHERE pending_action_id IS NOT NULL;
 CREATE INDEX call_copilot_proposals_call_idx ON public.call_copilot_proposals (shop_id, call_id, created_at);
 
-CREATE TABLE public.call_copilot_memory_submissions (
-  proposal_id uuid PRIMARY KEY,
+-- Which proposals a run produced or deduplicated onto, in order. A replay returns exactly these ids, so a run that
+-- reused an existing identical proposal is answered the same way the first time and every time.
+CREATE TABLE public.call_copilot_run_proposals (
   shop_id uuid NOT NULL,
-  source_id uuid NOT NULL,
-  revision integer NOT NULL,
-  submitted_by uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-  FOREIGN KEY (shop_id, proposal_id) REFERENCES public.call_copilot_proposals(shop_id, id) ON DELETE CASCADE,
-  FOREIGN KEY (shop_id, source_id, revision) REFERENCES public.reviewed_memory_revisions(shop_id, source_id, revision) ON DELETE CASCADE
+  run_id uuid NOT NULL,
+  position integer NOT NULL CHECK (position BETWEEN 0 AND 99),
+  proposal_id uuid NOT NULL,
+  PRIMARY KEY (run_id, position),
+  UNIQUE (run_id, proposal_id),
+  FOREIGN KEY (shop_id, run_id) REFERENCES public.call_copilot_extraction_runs(shop_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (shop_id, proposal_id) REFERENCES public.call_copilot_proposals(shop_id, id) ON DELETE CASCADE
 );
 
 DO $$
@@ -252,7 +263,7 @@ DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['call_copilot_transcript_segments', 'call_copilot_transcript_conflicts',
     'call_copilot_evidence_revisions', 'call_copilot_extraction_runs', 'call_copilot_proposals',
-    'call_copilot_memory_submissions'] LOOP
+    'call_copilot_run_proposals'] LOOP
     EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.call_copilot_append_only()', t || '_append_only', t);
     EXECUTE format('CREATE TRIGGER %I BEFORE TRUNCATE ON public.%I FOR EACH STATEMENT EXECUTE FUNCTION public.call_copilot_append_only()', t || '_no_truncate', t);
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
@@ -262,7 +273,7 @@ END $$;
 -- Transcript text and conflict evidence: reachable ONLY through the gated functions below.
 -- The derived tables are readable by the service role (the future owner UI adds its own RLS read policy).
 GRANT SELECT ON public.call_copilot_evidence_revisions, public.call_copilot_extraction_runs,
-  public.call_copilot_proposals, public.call_copilot_memory_submissions TO service_role;
+  public.call_copilot_proposals, public.call_copilot_run_proposals TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- Gate for a transcript span: PR D's derived gate at the span START, plus the whole span must lie
@@ -567,7 +578,7 @@ DECLARE
   v_run_key text; v_status text; v_def_agent uuid; v_def_rev integer; p jsonb;
   v_fields jsonb; v_route text; v_atype text; v_payload jsonb; v_reason text; v_cust uuid; v_binding jsonb;
   v_key text; v_cmd uuid; v_prop_id uuid; v_conf text; v_existing uuid; v_ids jsonb := '[]'::jsonb; v_count integer := 0;
-  v_vehicle uuid; v_skipped integer := 0; v_bind text[];
+  v_vehicle uuid; v_skipped integer := 0; v_bind text[]; v_pos integer := 0;
 BEGIN
   IF NOT public.call_copilot_actor_ok(p_shop, p_actor) THEN
     RAISE EXCEPTION 'Extraction actor unavailable' USING ERRCODE = '42501';
@@ -603,17 +614,21 @@ BEGIN
     RAISE EXCEPTION 'Agent definition revision is not active' USING ERRCODE = 'PT409', DETAIL = 'call_definition_inactive';
   END IF;
 
+  -- Run identity = EVERYTHING that decides what a run may produce and who it is bound to: the exact evidence, the
+  -- extractor identity and schema, the CRM facts it was planned against, the requesting member (authority) and the
+  -- exact agent definition binding. Changing any of them is a NEW run; an identical request is a replay.
   v_run_key := encode(sha256(convert_to(
-    'v1|' || rev.evidence_digest || '|' || (p_run ->> 'extractor_id') || '|' || (p_run ->> 'extractor_version')
-    || '|' || (p_run ->> 'schema_version') || '|' || (p_run ->> 'crm_context_digest'), 'UTF8')), 'hex');
+    'v2|' || rev.evidence_digest || '|' || (p_run ->> 'extractor_id') || '|' || (p_run ->> 'extractor_version')
+    || '|' || (p_run ->> 'schema_version') || '|' || (p_run ->> 'crm_context_digest')
+    || '|' || p_actor::text || '|' || coalesce(v_def_agent::text, '-') || '|' || coalesce(v_def_rev::text, '-'), 'UTF8')), 'hex');
 
   IF v_status IN ('completed', 'unknown_outcome') THEN
     SELECT * INTO run_row FROM public.call_copilot_extraction_runs
      WHERE shop_id = p_shop AND call_id = p_call AND run_key = v_run_key AND status IN ('completed', 'unknown_outcome');
     IF FOUND THEN
       RETURN jsonb_build_object('outcome', 'replayed', 'run_id', run_row.id, 'status', run_row.status,
-        'proposal_ids', coalesce((SELECT jsonb_agg(id ORDER BY created_at, id) FROM public.call_copilot_proposals
-                                   WHERE shop_id = p_shop AND run_id = run_row.id), '[]'::jsonb));
+        'proposal_ids', coalesce((SELECT jsonb_agg(rp.proposal_id ORDER BY rp.position) FROM public.call_copilot_run_proposals rp
+                                   WHERE rp.shop_id = p_shop AND rp.run_id = run_row.id), '[]'::jsonb));
     END IF;
   END IF;
 
@@ -643,6 +658,9 @@ BEGIN
        OR (v_route = 'review_only' AND (v_reason IS NULL OR v_atype IS NOT NULL OR v_payload IS NOT NULL)) THEN
       RAISE EXCEPTION 'Invalid proposal shape' USING ERRCODE = '22023';
     END IF;
+    IF p ->> 'kind' = 'memory_candidate' AND v_route <> 'review_only' THEN
+      RAISE EXCEPTION 'Customer memory is review-only' USING ERRCODE = '22023';
+    END IF;
     IF v_payload IS NOT NULL AND public.call_copilot_has_card_number(v_payload::text) THEN
       RAISE EXCEPTION 'Payment-card data cannot be proposed' USING ERRCODE = '22023';
     END IF;
@@ -660,12 +678,28 @@ BEGIN
       RAISE EXCEPTION 'Vehicle unavailable' USING ERRCODE = '42501';
     END IF;
 
+    -- Proposal identity = the staged content AND everything that gives it authority or a subject: confidence, the
+    -- ambiguity it carries, the customer / vehicle it is about, the CRM identity snapshot the database just read,
+    -- the exact definition binding and the requesting member. Identical words about a DIFFERENT known customer,
+    -- under a different definition, or from a different requester are therefore a different proposal and can never
+    -- be answered with (or staged as) the old one.
     v_key := encode(sha256(convert_to(
-      'v1|' || (p ->> 'kind') || '|' || v_route || '|' || coalesce(v_atype, '-') || '|' || coalesce(v_payload::text, '-')
-      || '|' || v_fields::text || '|' || coalesce(v_reason, '-'), 'UTF8')), 'hex');
+      'v2|' || (p ->> 'kind') || '|' || v_route || '|' || coalesce(v_atype, '-') || '|' || coalesce(v_payload::text, '-')
+      || '|' || v_fields::text || '|' || coalesce(v_reason, '-') || '|' || v_conf || '|' || coalesce((p -> 'ambiguity')::text, '-')
+      || '|' || coalesce(v_cust::text, '-') || '|' || coalesce(v_vehicle::text, '-') || '|' || coalesce(v_binding::text, '-')
+      || '|' || coalesce(v_def_agent::text, '-') || '|' || coalesce(v_def_rev::text, '-') || '|' || p_actor::text, 'UTF8')), 'hex');
     SELECT id INTO v_existing FROM public.call_copilot_proposals
      WHERE shop_id = p_shop AND evidence_revision_id = p_revision AND proposal_key = v_key;
-    IF FOUND THEN v_skipped := v_skipped + 1; CONTINUE; END IF;
+    IF FOUND THEN
+      -- Same evidence, same subject, same authority: the existing proposal IS this proposal. The run still lists it,
+      -- so the answer (now and on every replay) names every relevant proposal id.
+      IF NOT v_ids @> jsonb_build_array(v_existing) THEN
+        v_ids := v_ids || to_jsonb(v_existing);
+        INSERT INTO public.call_copilot_run_proposals (shop_id, run_id, position, proposal_id) VALUES (p_shop, run_row.id, v_pos, v_existing);
+        v_pos := v_pos + 1;
+      END IF;
+      v_skipped := v_skipped + 1; CONTINUE;
+    END IF;
 
     v_cmd := NULL;
     IF v_route = 'pending_action' THEN
@@ -689,7 +723,8 @@ BEGIN
       v_payload, v_reason, v_conf, v_fields, p -> 'ambiguity', v_binding, v_cust, v_def_agent, v_def_rev, p_actor)
     RETURNING id INTO v_prop_id;
     v_ids := v_ids || to_jsonb(v_prop_id);
-    v_count := v_count + 1;
+    INSERT INTO public.call_copilot_run_proposals (shop_id, run_id, position, proposal_id) VALUES (p_shop, run_row.id, v_pos, v_prop_id);
+    v_pos := v_pos + 1; v_count := v_count + 1;
   END LOOP;
 
   RETURN jsonb_build_object('outcome', 'recorded', 'run_id', run_row.id, 'status', v_status,
@@ -711,25 +746,21 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- The pre-effect recheck, called by control_claim for EVERY claim. It returns NULL for any pending
--- action that is not a Call Copilot proposal, so unrelated actions take the unchanged path. For a
--- proposal it can only DENY. It re-verifies, at the moment of approval: the staged payload is
--- unedited, the requester is still an authorized member, the call's consent/capture evidence still
--- permits CRM mutation, the sealed evidence is unchanged, the agent definition (if bound) is still
--- active, and the CRM customer the proposal was built against still has the same identity.
+-- The shared recheck. Given a Call Copilot proposal and the payload that is about to be (or has just been) acted on,
+-- it re-verifies, at this moment: the staged payload is unedited, the requester is still an authorized member, the
+-- call's consent/capture evidence still permits CRM mutation, the sealed evidence is unchanged, the agent definition
+-- (if bound) is still active, and the CRM customer the proposal was built against still has the same identity.
+-- It returns NULL when everything holds and a stable denial reason otherwise; it can only DENY.
 -- ---------------------------------------------------------------------------
-CREATE FUNCTION public.call_copilot_claim_recheck(p_shop uuid, p_action uuid, p_payload jsonb, p_context text) RETURNS text
+CREATE FUNCTION public.call_copilot_recheck(p_shop uuid, p_proposal uuid, p_payload jsonb) RETURNS text
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE prop public.call_copilot_proposals; cur jsonb; now_binding jsonb;
 BEGIN
-  SELECT * INTO prop FROM public.call_copilot_proposals WHERE shop_id = p_shop AND pending_action_id = p_action;
-  IF NOT FOUND THEN RETURN NULL; END IF;
-  -- Call Copilot proposals are approval-first until an explicit per-operation opt-in exists, and transcript text can never
-  -- raise that authority: only a human decision (hitl) may claim one. No autonomy setting changes this.
-  IF p_context IS DISTINCT FROM 'hitl' THEN RETURN 'call_human_approval_required'; END IF;
-  -- Serialise against event / segment writers for this call: for record commands the effect is applied inside
-  -- this same claim transaction, so consent cannot change between this check and the write. Lock order is
-  -- shop -> call everywhere (the claim already holds the shop lock).
+  SELECT * INTO prop FROM public.call_copilot_proposals WHERE shop_id = p_shop AND id = p_proposal;
+  IF NOT FOUND THEN RETURN 'call_proposal_unknown'; END IF;
+  -- Serialise against event / segment writers for this call. For record commands the effect is applied inside the claim
+  -- transaction, so consent cannot change between this check and the write. Lock order is shop -> call everywhere (the
+  -- claim already holds the shop lock).
   PERFORM 1 FROM public.call_copilot_calls WHERE id = prop.call_id AND shop_id = p_shop FOR SHARE;
 
   -- An edit of any operative field invalidates the proof. System annotations written by the executor
@@ -739,6 +770,11 @@ BEGIN
     RETURN 'call_proposal_edited';
   END IF;
   IF NOT public.call_copilot_actor_ok(p_shop, prop.created_by) THEN RETURN 'call_requester_revoked'; END IF;
+  -- A proposed appointment time that has passed can never be booked from a stale proposal.
+  IF prop.action_type = 'book_appointment' AND (
+       prop.staged_payload ->> 'iso_start_time' IS NULL OR (prop.staged_payload ->> 'iso_start_time')::timestamptz <= clock_timestamp()) THEN
+    RETURN 'call_proposal_expired';
+  END IF;
   BEGIN
     PERFORM public.call_copilot_assert_capture(p_shop, prop.call_id, 'crm_mutation', NULL);
   EXCEPTION WHEN OTHERS THEN
@@ -760,56 +796,64 @@ BEGIN
   RETURN NULL;
 END $$;
 
--- ---------------------------------------------------------------------------
--- Hand-off of a customer-specific memory proposal to the EXISTING reviewed-memory candidate lifecycle.
--- Owner SESSION only (the existing create function re-checks auth.uid()). The text is the proposal's
--- stored, cited value; the caller supplies nothing but the proposal id. The candidate stays inert:
--- it still needs the existing owner review and publication before anything can retrieve it.
--- ---------------------------------------------------------------------------
-CREATE FUNCTION public.call_copilot_submit_memory_candidate(p_shop uuid, p_proposal uuid) RETURNS jsonb
+-- Called by control_claim for EVERY claim. NULL for any pending action that is not a Call Copilot proposal, so
+-- unrelated actions take the unchanged path. For a proposal it can only DENY.
+CREATE FUNCTION public.call_copilot_claim_recheck(p_shop uuid, p_action uuid, p_payload jsonb, p_context text) RETURNS text
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE
-  prop public.call_copilot_proposals; sub public.call_copilot_memory_submissions; cur jsonb; text_value text;
-  res jsonb; rev_no integer; content text;
+DECLARE prop public.call_copilot_proposals;
 BEGIN
-  IF auth.uid() IS NULL OR NOT public.team_is_owner(p_shop) THEN
-    RAISE EXCEPTION 'Owner review is required' USING ERRCODE = '42501';
+  SELECT * INTO prop FROM public.call_copilot_proposals WHERE shop_id = p_shop AND pending_action_id = p_action;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  -- Call Copilot proposals are approval-first until an explicit per-operation opt-in exists, and transcript text can never
+  -- raise that authority: only a human decision (hitl) may claim one. No autonomy setting changes this.
+  IF p_context IS DISTINCT FROM 'hitl' THEN RETURN 'call_human_approval_required'; END IF;
+  RETURN public.call_copilot_recheck(p_shop, prop.id, p_payload);
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Pre-effect recheck for effects that run AFTER the claim transaction has committed (booking, quote draft, text).
+-- control_claim cannot hold a lock across them, so the executor asks again immediately before each effect and does
+-- nothing unless the answer is {ok:true}. Read-only apart from one audit row on a denial. Bound to the same pending
+-- action, proposal, call evidence revision and agent definition as the claim, and additionally requires that the
+-- action was in fact claimed by a person (status approved, decided by a human).
+--
+-- Caller: the service role, or the active owner / manager whose session is running the approval (the executor runs
+-- with the approver's session in the owner dashboard, so a service-only grant would leave that path unchecked). The
+-- answer is only a denial code for a proposal of the caller's own shop.
+-- Anything that is not a Call Copilot proposal answers {ok:true, call_proposal:false}.
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION public.call_copilot_pre_effect_recheck(p_shop uuid, p_action uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE prop public.call_copilot_proposals; action public.pending_actions; reason text; last public.control_execution_decisions;
+BEGIN
+  IF p_shop IS NULL OR p_action IS NULL THEN RETURN jsonb_build_object('ok', false, 'denied', 'call_recheck_invalid'); END IF;
+  IF auth.role() IS DISTINCT FROM 'service_role' AND NOT (
+       auth.uid() IS NOT NULL AND EXISTS (
+         SELECT 1 FROM public.shop_memberships m JOIN public.shops s ON s.id = m.shop_id
+          WHERE m.shop_id = p_shop AND m.user_id = auth.uid() AND m.active
+            AND ((m.role = 'owner' AND s.owner_id = m.user_id) OR (m.role = 'manager' AND 'crm.read' = ANY (m.capabilities))))) THEN
+    RAISE EXCEPTION 'Recheck caller is not authorized' USING ERRCODE = '42501';
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('call_copilot_memory:' || p_proposal::text, 0));
-  SELECT * INTO prop FROM public.call_copilot_proposals WHERE shop_id = p_shop AND id = p_proposal;
-  IF NOT FOUND OR prop.kind <> 'memory_candidate' OR prop.customer_id IS NULL OR prop.review_reason IS DISTINCT FROM 'memory_requires_review' THEN
-    RAISE EXCEPTION 'Not a submittable memory proposal' USING ERRCODE = '22023';
+  SELECT * INTO prop FROM public.call_copilot_proposals WHERE shop_id = p_shop AND pending_action_id = p_action;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', true, 'call_proposal', false); END IF;
+
+  SELECT * INTO action FROM public.pending_actions WHERE shop_id = p_shop AND id = p_action;
+  IF NOT FOUND OR action.status::text <> 'approved' OR action.decided_by_user IS NULL THEN
+    reason := 'call_action_not_claimed';
+  ELSE
+    reason := public.call_copilot_recheck(p_shop, prop.id, action.payload);
   END IF;
-  SELECT * INTO sub FROM public.call_copilot_memory_submissions WHERE proposal_id = p_proposal;
-  IF FOUND THEN
-    RETURN jsonb_build_object('outcome', 'already_submitted', 'source_id', sub.source_id, 'revision', sub.revision);
+  IF reason IS NULL THEN RETURN jsonb_build_object('ok', true, 'call_proposal', true); END IF;
+
+  -- Audit the denial next to the claim's own decision row (once per reason).
+  SELECT * INTO last FROM public.control_execution_decisions WHERE shop_id = p_shop AND action_id = p_action ORDER BY id DESC LIMIT 1;
+  IF FOUND AND NOT (last.allowed = false AND last.reason = reason) THEN
+    INSERT INTO public.control_execution_decisions (shop_id, action_id, actor_id, actor_role, location_id, action_type, policy_revision,
+      staged_revision, payload_hash, context, mode, allowed, reason)
+    VALUES (p_shop, p_action, last.actor_id, last.actor_role, last.location_id, last.action_type, last.policy_revision,
+      last.staged_revision, last.payload_hash, last.context, last.mode, false, reason);
   END IF;
-  IF NOT public.call_copilot_actor_ok(p_shop, prop.created_by) THEN
-    RAISE EXCEPTION 'Requester is no longer authorized' USING ERRCODE = '42501', DETAIL = 'call_requester_revoked';
-  END IF;
-  PERFORM public.call_copilot_assert_capture(p_shop, prop.call_id, 'extraction', NULL);
-  cur := public.call_copilot_evidence_is_current(p_shop, prop.evidence_revision_id);
-  IF NOT coalesce((cur ->> 'current')::boolean, false) THEN
-    RAISE EXCEPTION 'Evidence revision is not current' USING ERRCODE = 'PT409', DETAIL = 'call_evidence_changed';
-  END IF;
-  IF public.call_copilot_customer_binding(p_shop, prop.customer_id,
-       ARRAY(SELECT k FROM jsonb_object_keys(prop.crm_binding) k WHERE k <> 'customer_id')) IS DISTINCT FROM prop.crm_binding THEN
-    RAISE EXCEPTION 'Customer changed since the proposal' USING ERRCODE = 'PT409', DETAIL = 'call_crm_state_changed';
-  END IF;
-  SELECT f ->> 'value' INTO text_value FROM jsonb_array_elements(prop.fields) f WHERE f ->> 'name' = 'preference' LIMIT 1;
-  text_value := coalesce(text_value, '');
-  IF length(btrim(text_value)) NOT BETWEEN 1 AND 600 THEN
-    RAISE EXCEPTION 'Memory proposal has no preference text' USING ERRCODE = '22023';
-  END IF;
-  SELECT revision INTO rev_no FROM public.call_copilot_evidence_revisions WHERE shop_id = p_shop AND id = prop.evidence_revision_id;
-  content := 'Customer-specific preference (customer ' || prop.customer_id::text || ', call evidence revision ' || rev_no::text
-             || '): ' || text_value;
-  res := public.create_reviewed_memory_candidate(
-    p_shop, 'call-copilot:customer:' || prop.customer_id::text, content, jsonb_build_array(jsonb_build_object('content', content)));
-  INSERT INTO public.call_copilot_memory_submissions (proposal_id, shop_id, source_id, revision, submitted_by)
-  VALUES (p_proposal, p_shop, (res ->> 'source_id')::uuid, (res ->> 'revision')::integer, auth.uid());
-  RETURN jsonb_build_object('outcome', 'submitted', 'source_id', res ->> 'source_id', 'revision', (res ->> 'revision')::integer,
-    'state', res ->> 'state', 'safety_status', res ->> 'safety_status');
+  RETURN jsonb_build_object('ok', false, 'denied', reason);
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -892,8 +936,8 @@ END $$;
 
 
 -- ---------------------------------------------------------------------------
--- Function ACLs. Only the service role runs the writers/readers; only an authenticated owner session
--- can submit a memory candidate. Internal helpers are not directly callable by any API role.
+-- Function ACLs. Only the service role runs the writers/readers. The one function an authenticated session may run is
+-- the read-only pre-effect recheck (caller verified inside). Internal helpers are not directly callable by any API role.
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION
   public.call_copilot_actor_ok(uuid, uuid), public.call_copilot_luhn(text), public.call_copilot_has_card_number(text),
@@ -908,8 +952,9 @@ REVOKE ALL ON FUNCTION
   public.call_copilot_customer_binding(uuid, uuid, text[]),
   public.call_copilot_record_extraction(uuid, uuid, uuid, uuid, jsonb, jsonb),
   public.call_copilot_find_unknown_run(uuid, uuid, uuid, uuid, text, text, integer),
+  public.call_copilot_recheck(uuid, uuid, jsonb),
   public.call_copilot_claim_recheck(uuid, uuid, jsonb, text),
-  public.call_copilot_submit_memory_candidate(uuid, uuid)
+  public.call_copilot_pre_effect_recheck(uuid, uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION
@@ -919,6 +964,7 @@ GRANT EXECUTE ON FUNCTION
   public.call_copilot_record_extraction(uuid, uuid, uuid, uuid, jsonb, jsonb),
   public.call_copilot_find_unknown_run(uuid, uuid, uuid, uuid, text, text, integer)
   TO service_role;
-GRANT EXECUTE ON FUNCTION public.call_copilot_submit_memory_candidate(uuid, uuid) TO authenticated;
+-- Read-only pre-effect recheck: the service role, or the approving owner / manager session (verified inside).
+GRANT EXECUTE ON FUNCTION public.call_copilot_pre_effect_recheck(uuid, uuid) TO authenticated, service_role;
 
 COMMIT;
